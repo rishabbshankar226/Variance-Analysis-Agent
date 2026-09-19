@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "variance-analysis-agent"
+version = "0.1.0"
+description = "Deterministic FP&A variance analysis engine with auditable materiality, F/U logic, and evidence controls."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Rishabb Shankar" }]
+dependencies = []
+
+[project.optional-dependencies]
+excel = ["openpyxl>=3.1"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+variance-agent = "variance_agent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/variance_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

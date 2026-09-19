@@ -1,0 +1,6 @@
+Line Item,Type,Budget,Actual,Budget Volume,Actual Volume,Budget Price,Actual Price
+Subscription Revenue,Revenue,100000,115500,10000,10500,10,11
+Services Revenue,Revenue,50000,47000,,,,
+Payroll Expense,Expense,60000,68000,,,,
+Marketing Expense,Expense,20000,33000,,,,
+Rent Expense,Expense,15000,15000,,,,
