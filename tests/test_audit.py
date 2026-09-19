@@ -123,3 +123,28 @@ def test_source_fingerprint_and_json_writer_create_nested_output(tmp_path):
     write_audit_json(output, record)
     loaded = json.loads(output.read_text(encoding="utf-8"))
     assert loaded["analysis_fingerprint"] == record["analysis_fingerprint"]
+
+
+def test_audit_totals_are_not_complete_when_an_entire_category_is_missing():
+    result = _result()
+    expense_only = AnalysisResult(
+        config=result.config,
+        rows=(result.rows[1],),
+        material_rows=(result.rows[1],),
+        revenue=Aggregate(
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("0"),
+            None,
+            Status.NEUTRAL,
+        ),
+        expenses=result.expenses,
+        warnings=(),
+    )
+    record = build_audit_record(expense_only)
+    assert record["data_quality"]["classification_coverage_percent"] == "100.00"
+    assert record["data_quality"]["totals_complete"] is False
+    assert record["data_quality"]["net_operating_impact_available"] is False
+    assert record["totals"]["revenue"]["present"] is False
+    assert record["totals"]["revenue"]["complete"] is False
