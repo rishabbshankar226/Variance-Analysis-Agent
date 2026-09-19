@@ -113,8 +113,8 @@ def build_audit_record(
         row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
         for row in result.rows
     )
-    totals_complete = unclassified_count == 0
-    net_operating_available = totals_complete and has_revenue and has_expenses
+    totals_complete = unclassified_count == 0 and has_revenue and has_expenses
+    net_operating_available = totals_complete
     supported_driver_count = sum(
         bool(row.driver_evidence and row.driver_evidence.reconciles)
         for row in result.material_rows
