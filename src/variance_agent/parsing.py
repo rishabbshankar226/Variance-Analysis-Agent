@@ -12,13 +12,19 @@ from typing import Any, Iterable
 _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
 
 
+def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
+    if not number.is_finite():
+        raise ValueError(f"{line_item}: field '{field}' must be a finite number.")
+    return number
+
+
 def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
     if value is None:
         raise ValueError(f"{line_item}: required field '{field}' is missing.")
     if isinstance(value, Decimal):
-        return value
+        return _require_finite(value, field=field, line_item=line_item)
     if isinstance(value, (int, float)):
-        return Decimal(str(value))
+        return _require_finite(Decimal(str(value)), field=field, line_item=line_item)
 
     text = str(value).strip()
     if text.lower() in _MISSING:
@@ -44,7 +50,9 @@ def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
             f"{line_item}: field '{field}' is not numeric: {value!r}."
         ) from exc
 
-    return -number if negative_parentheses else number
+    if negative_parentheses:
+        number = -number
+    return _require_finite(number, field=field, line_item=line_item)
 
 
 def normalize_key(key: str) -> str:
@@ -53,15 +61,54 @@ def normalize_key(key: str) -> str:
     return key.strip("_")
 
 
+def _normalized_headers(headers: Iterable[Any]) -> list[str]:
+    normalized: list[str] = []
+    seen: dict[str, str] = {}
+    for raw in headers:
+        original = "" if raw is None else str(raw)
+        key = normalize_key(original) if raw is not None else ""
+        if key and key in seen:
+            raise ValueError(
+                f"Columns {seen[key]!r} and {original!r} normalize to the same key {key!r}."
+            )
+        if key:
+            seen[key] = original
+        normalized.append(key)
+    return normalized
+
+
 def normalize_row(row: dict[str, Any]) -> dict[str, Any]:
-    return {normalize_key(str(k)): v for k, v in row.items() if k is not None}
+    normalized: dict[str, Any] = {}
+    originals: dict[str, str] = {}
+    for raw_key, value in row.items():
+        if raw_key is None:
+            continue
+        original = str(raw_key)
+        key = normalize_key(original)
+        if key in normalized:
+            raise ValueError(
+                f"Columns {originals[key]!r} and {original!r} normalize to the same key {key!r}."
+            )
+        normalized[key] = value
+        originals[key] = original
+    return normalized
 
 
 def load_csv_text(text: str) -> list[dict[str, Any]]:
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         raise ValueError("CSV input has no header row.")
-    return [normalize_row(dict(row)) for row in reader]
+    normalized_headers = _normalized_headers(reader.fieldnames)
+    output: list[dict[str, Any]] = []
+    for row in reader:
+        output.append(
+            {
+                header: row[raw_header]
+                for raw_header, header in zip(reader.fieldnames, normalized_headers)
+                if header
+            }
+        )
+    return output
 
 
 def load_json_text(text: str) -> list[dict[str, Any]]:
@@ -94,9 +141,10 @@ def load_file(path: str | Path) -> list[dict[str, Any]]:
         ws = wb.active
         rows = ws.iter_rows(values_only=True)
         try:
-            headers = [normalize_key(str(v)) if v is not None else "" for v in next(rows)]
+            raw_headers = list(next(rows))
         except StopIteration as exc:
             raise ValueError("Excel input is empty.") from exc
+        headers = _normalized_headers(raw_headers)
         output: list[dict[str, Any]] = []
         for values in rows:
             output.append({h: v for h, v in zip(headers, values) if h})

@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .analysis import analyze_rows
+from .audit import build_audit_record, sha256_file, write_audit_json
 from .models import AnalysisConfig, LineType
 from .parsing import load_file
 from .report import render_markdown
@@ -57,12 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
+    parser.add_argument(
+        "--audit-json",
+        help="Write a machine-readable audit/agent-context record with source provenance.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    rows = load_file(args.input)
+    input_path = Path(args.input)
+    rows = load_file(input_path)
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -72,9 +78,18 @@ def main(argv: list[str] | None = None) -> int:
     result = analyze_rows(rows, config)
     report = render_markdown(result)
     if args.output:
-        Path(args.output).write_text(report, encoding="utf-8")
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report, encoding="utf-8")
     else:
         print(report)
+    if args.audit_json:
+        record = build_audit_record(
+            result,
+            source_name=input_path.name,
+            source_sha256=sha256_file(input_path),
+        )
+        write_audit_json(args.audit_json, record)
     return 0
 
 

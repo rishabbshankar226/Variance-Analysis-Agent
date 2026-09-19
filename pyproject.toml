@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "variance-analysis-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic FP&A variance analysis engine with auditable materiality, F/U logic, and evidence controls."
 readme = "README.md"
 requires-python = ">=3.11"

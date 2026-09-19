@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any, Iterable
 
@@ -22,8 +23,6 @@ _ACTUAL_KEYS = ("actual", "actual_amount", "actuals")
 _TYPE_KEYS = ("type", "line_type", "revenue_expense_type", "classification")
 
 _SUMMARY_RE = re.compile(r"\b(grand\s+total|sub\s*total|subtotal|total)\b", re.IGNORECASE)
-
-# Conservative label cues. Anything not clearly matched remains Unclassified.
 _REVENUE_RE = re.compile(r"\b(revenue|sales|income)\b", re.IGNORECASE)
 _EXPENSE_RE = re.compile(
     r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b",
@@ -117,7 +116,11 @@ def _status(line_type: LineType, variance: Decimal) -> Status:
 def _driver_evidence(
     row: dict[str, Any], budget: Decimal, actual: Decimal, line_item: str
 ) -> DriverEvidence | None:
-    tolerance = max(Decimal("0.01"), abs(budget) * Decimal("0.000001"), abs(actual) * Decimal("0.000001"))
+    tolerance = max(
+        Decimal("0.01"),
+        abs(budget) * Decimal("0.000001"),
+        abs(actual) * Decimal("0.000001"),
+    )
 
     for model_name, bq, aq, br, ar, quantity_label, rate_label in _DRIVER_MODELS:
         required = (bq, aq, br, ar)
@@ -131,17 +134,53 @@ def _driver_evidence(
 
         modeled_budget = budget_quantity * budget_rate
         modeled_actual = actual_quantity * actual_rate
-        reconciles = abs(modeled_budget - budget) <= tolerance and abs(modeled_actual - actual) <= tolerance
+        reconciles = (
+            abs(modeled_budget - budget) <= tolerance
+            and abs(modeled_actual - actual) <= tolerance
+        )
 
         quantity_effect = (actual_quantity - budget_quantity) * budget_rate
         rate_effect = (actual_rate - budget_rate) * actual_quantity
 
         return DriverEvidence(
             label=model_name,
-            components=((f"{quantity_label} effect", quantity_effect), (f"{rate_label} effect", rate_effect)),
+            components=(
+                (f"{quantity_label} effect", quantity_effect),
+                (f"{rate_label} effect", rate_effect),
+            ),
             reconciles=reconciles,
         )
     return None
+
+
+def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
+    detail_types = {
+        row.line_type
+        for row in rows
+        if not row.excluded_from_aggregation and row.line_type != LineType.UNCLASSIFIED
+    }
+
+    for line_type in (LineType.REVENUE, LineType.EXPENSE):
+        summaries = [
+            row
+            for row in rows
+            if row.line_type == line_type and row.excluded_from_aggregation
+        ]
+        if line_type not in detail_types and len(summaries) > 1:
+            raise ValueError(
+                f"Multiple {line_type.value} summary rows were supplied without detail rows; "
+                "aggregation would be ambiguous and could double count."
+            )
+
+    return [
+        replace(
+            row,
+            excluded_from_aggregation=(
+                row.excluded_from_aggregation and row.line_type in detail_types
+            ),
+        )
+        for row in rows
+    ]
 
 
 def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
@@ -164,7 +203,63 @@ def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
     )
 
 
+def _verification_failure(message: str) -> RuntimeError:
+    return RuntimeError(f"Final verification failed: {message}")
+
+
+def _verify_result(
+    rows: list[AnalyzedRow],
+    material_rows: list[AnalyzedRow],
+    revenue: Aggregate,
+    expenses: Aggregate,
+    config: AnalysisConfig,
+) -> None:
+    for row in rows:
+        if row.variance_dollars != row.actual - row.budget:
+            raise _verification_failure(f"dollar variance mismatch for {row.line_item!r}")
+        expected_material = (
+            abs(row.variance_dollars) > config.dollar_threshold
+            or (
+                row.variance_percent is not None
+                and abs(row.variance_percent) > config.percent_threshold
+            )
+        )
+        if row.material != expected_material:
+            raise _verification_failure(f"materiality mismatch for {row.line_item!r}")
+
+    expected_order = sorted(
+        material_rows, key=lambda row: abs(row.variance_dollars), reverse=True
+    )
+    if material_rows != expected_order:
+        raise _verification_failure("material variance sort order is incorrect")
+
+    revenue_rows = [
+        row
+        for row in rows
+        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
+    ]
+    expense_rows = [
+        row
+        for row in rows
+        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
+    ]
+
+    checks = (
+        (revenue.budget, sum((row.budget for row in revenue_rows), Decimal("0")), "revenue budget"),
+        (revenue.actual, sum((row.actual for row in revenue_rows), Decimal("0")), "revenue actual"),
+        (expenses.budget, sum((row.budget for row in expense_rows), Decimal("0")), "expense budget"),
+        (expenses.actual, sum((row.actual for row in expense_rows), Decimal("0")), "expense actual"),
+    )
+    for observed, expected, label in checks:
+        if observed != expected:
+            raise _verification_failure(f"{label} reconciliation mismatch")
+
+
 def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> AnalysisResult:
+    if not rows:
+        raise ValueError("Dataset contains no data rows.")
+    if not config.dollar_threshold.is_finite() or not config.percent_threshold.is_finite():
+        raise ValueError("Materiality thresholds must be finite numbers.")
     if config.dollar_threshold < 0 or config.percent_threshold < 0:
         raise ValueError("Materiality thresholds must be non-negative.")
 
@@ -190,11 +285,12 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         )
 
         line_type = _classify(line_item, row, config)
-        excluded = bool(_SUMMARY_RE.search(line_item))
+        summary_candidate = bool(_SUMMARY_RE.search(line_item))
         variance = actual - budget
         pct, pct_label = _percent_variance(budget, actual)
-        material = abs(variance) > config.dollar_threshold or (
-            pct is not None and abs(pct) > config.percent_threshold
+        material = (
+            abs(variance) > config.dollar_threshold
+            or (pct is not None and abs(pct) > config.percent_threshold)
         )
         driver = _driver_evidence(row, budget, actual, line_item)
 
@@ -209,11 +305,13 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
                 percent_label=pct_label,
                 status=_status(line_type, variance),
                 material=material,
-                excluded_from_aggregation=excluded,
+                excluded_from_aggregation=summary_candidate,
                 driver_evidence=driver,
                 raw=row,
             )
         )
+
+    analyzed = _resolve_summary_rows(analyzed)
 
     normalized_names: dict[str, int] = {}
     for row in analyzed:
@@ -232,7 +330,9 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
             + ("..." if len(duplicate_unique) > 5 else "")
         )
 
-    unclassified = [row.line_item for row in analyzed if row.line_type == LineType.UNCLASSIFIED]
+    unclassified = [
+        row.line_item for row in analyzed if row.line_type == LineType.UNCLASSIFIED
+    ]
     if unclassified:
         sample = ", ".join(unclassified[:5])
         suffix = "..." if len(unclassified) > 5 else ""
@@ -260,7 +360,11 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         )
 
     material_rows = sorted(
-        (row for row in analyzed if row.material),
+        (
+            row
+            for row in analyzed
+            if row.material and not row.excluded_from_aggregation
+        ),
         key=lambda row: abs(row.variance_dollars),
         reverse=True,
     )
@@ -268,29 +372,7 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
     revenue = _aggregate(analyzed, LineType.REVENUE)
     expenses = _aggregate(analyzed, LineType.EXPENSE)
 
-    # Final deterministic verification.
-    for row in analyzed:
-        assert row.variance_dollars == row.actual - row.budget
-        expected_material = abs(row.variance_dollars) > config.dollar_threshold or (
-            row.variance_percent is not None
-            and abs(row.variance_percent) > config.percent_threshold
-        )
-        assert row.material == expected_material
-    assert material_rows == sorted(
-        material_rows, key=lambda row: abs(row.variance_dollars), reverse=True
-    )
-    revenue_rows = [
-        row for row in analyzed
-        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
-    ]
-    expense_rows = [
-        row for row in analyzed
-        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
-    ]
-    assert revenue.budget == sum((row.budget for row in revenue_rows), Decimal("0"))
-    assert revenue.actual == sum((row.actual for row in revenue_rows), Decimal("0"))
-    assert expenses.budget == sum((row.budget for row in expense_rows), Decimal("0"))
-    assert expenses.actual == sum((row.actual for row in expense_rows), Decimal("0"))
+    _verify_result(analyzed, material_rows, revenue, expenses, config)
 
     return AnalysisResult(
         config=config,

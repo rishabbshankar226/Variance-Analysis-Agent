@@ -26,3 +26,10 @@ The prompt is retained under `prompt/` as the behavioral reference, but the fina
 ## Intentional scope boundary
 
 The engine does not infer causal explanations such as seasonality, inflation, timing, or mix unless supplied operating data mathematically supports the driver. It also does not expand into forecasting, valuation, budgeting, or scenario modeling.
+
+
+## Auditable AI handoff
+
+`src/variance_agent/audit.py` serializes only deterministic analysis outputs and data-quality metadata into a versioned JSON record. It intentionally excludes raw source rows, includes source SHA-256 provenance and an analysis fingerprint, exposes completeness flags, and marks each material driver's evidence status as `supported` or `hypothesis`.
+
+This JSON artifact is the preferred seam for any future LLM narration layer: source-derived strings remain untrusted data, while arithmetic and accounting classifications remain enforced by deterministic code.

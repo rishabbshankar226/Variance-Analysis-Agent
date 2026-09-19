@@ -1,8 +1,30 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, Status
+from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
+
+
+_INLINE_WS_RE = re.compile(r"\s+")
+
+
+def _safe_inline(value: object) -> str:
+    text = _INLINE_WS_RE.sub(" ", str(value)).strip()
+    replacements = (
+        ("\\", r"\\"),
+        ("|", r"\|"),
+        ("`", r"\`"),
+        ("*", r"\*"),
+        ("_", r"\_"),
+        ("[", r"\["),
+        ("]", r"\]"),
+        ("<", "&lt;"),
+        (">", "&gt;"),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
 
 
 def _money(value: Decimal) -> str:
@@ -26,47 +48,90 @@ def _aggregate_line(label: str, aggregate: Aggregate) -> str:
     )
 
 
-def _largest_by_status(rows: tuple[AnalyzedRow, ...], status: Status) -> AnalyzedRow | None:
+def _incomplete_aggregate_line(label: str, aggregate: Aggregate) -> str:
+    return (
+        f"- {label}: N/A (classification incomplete; classified subtotal: "
+        f"{_money(aggregate.actual)} vs. {_money(aggregate.budget)}, "
+        f"{_money(aggregate.variance_dollars)}, "
+        f"{_pct(aggregate.variance_percent, aggregate.percent_label)}, {aggregate.status})"
+    )
+
+
+def _largest_by_status(
+    rows: tuple[AnalyzedRow, ...], status: Status
+) -> AnalyzedRow | None:
     return next((row for row in rows if row.status == status), None)
 
 
-def _bottom_line(result: AnalysisResult) -> str:
-    impact = result.revenue.variance_dollars - result.expenses.variance_dollars
-    direction = "above" if impact > 0 else "below" if impact < 0 else "in line with"
-    sentence_one = (
-        f"Revenue and expense variances imply a net operating variance of {_money(impact)}, "
-        f"{direction} budget on this simplified revenue-less-expense basis."
-    )
-
+def _bottom_line(
+    result: AnalysisResult,
+    *,
+    classification_incomplete: bool,
+    has_revenue: bool,
+    has_expenses: bool,
+) -> str:
     top = result.material_rows[0] if result.material_rows else None
+    if classification_incomplete:
+        sentence_one = (
+            "Net operating impact is N/A because one or more rows are Unclassified; "
+            "Revenue and Expense totals are incomplete."
+        )
+    elif not has_revenue or not has_expenses:
+        missing = []
+        if not has_revenue:
+            missing.append("Revenue")
+        if not has_expenses:
+            missing.append("Expense")
+        sentence_one = (
+            "Net operating impact is N/A because the dataset does not contain "
+            + " and ".join(missing)
+            + " rows."
+        )
+    else:
+        impact = result.revenue.variance_dollars - result.expenses.variance_dollars
+        direction = "above" if impact > 0 else "below" if impact < 0 else "in line with"
+        sentence_one = (
+            f"Revenue and expense variances imply a net operating variance of {_money(impact)}, "
+            f"{direction} budget on this simplified revenue-less-expense basis."
+        )
+
     if top is None:
         sentence_two = "No line item exceeded either configured materiality threshold."
     else:
         sentence_two = (
-            f"The largest material variance is {top.line_item} at "
+            f"The largest material variance is {_safe_inline(top.line_item)} at "
             f"{_money(top.variance_dollars)} ({top.status})."
         )
     return f"{sentence_one} {sentence_two}"
 
 
 def _driver_sentence(row: AnalyzedRow) -> str:
+    line_item = _safe_inline(row.line_item)
     evidence = row.driver_evidence
     if evidence and evidence.reconciles:
-        components = "; ".join(f"{name}: {_money(value)}" for name, value in evidence.components)
-        return f"**{row.line_item} — Supported driver:** {evidence.label} decomposition reconciles; {components}."
+        components = "; ".join(
+            f"{name}: {_money(value)}" for name, value in evidence.components
+        )
+        return (
+            f"**{line_item} — Supported driver:** {evidence.label} decomposition reconciles; "
+            f"{components}."
+        )
 
     likely_metrics = {
         "Revenue": "volume/units, price/rate, customer count, and mix",
         "Expense": "units/headcount, rate, vendor pricing, and timing",
-    }.get(str(row.line_type), "an explicit Revenue/Expense classification plus operating driver metrics")
+    }.get(
+        str(row.line_type),
+        "an explicit Revenue/Expense classification plus operating driver metrics",
+    )
 
     if evidence and not evidence.reconciles:
         return (
-            f"**{row.line_item} — Hypothesis:** No causal claim is supported because the supplied "
+            f"**{line_item} — Hypothesis:** No causal claim is supported because the supplied "
             f"{evidence.label} fields do not reconcile to Budget/Actual. Validate the driver data first."
         )
     return (
-        f"**{row.line_item} — Hypothesis:** No causal driver is asserted from the supplied data. "
+        f"**{line_item} — Hypothesis:** No causal driver is asserted from the supplied data. "
         f"To validate a cause, provide {likely_metrics}."
     )
 
@@ -76,16 +141,18 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str) -> str:
     if row is None:
         return f"- {kind}: No material {status.value} variance is available for a data-backed action."
 
+    line_item = _safe_inline(row.line_item)
     evidence = row.driver_evidence
     if evidence and evidence.reconciles:
         largest_component = max(evidence.components, key=lambda pair: abs(pair[1]))
         return (
-            f"- {kind}: Focus the action plan for {row.line_item} on its {largest_component[0].lower()} "
-            f"({_money(largest_component[1])}), the largest reconciled component of the variance."
+            f"- {kind}: Focus the action plan for {line_item} on its "
+            f"{largest_component[0].lower()} ({_money(largest_component[1])}), "
+            "the largest reconciled component of the variance."
         )
 
     return (
-        f"- {kind}: {row.line_item} is the largest material {status.value} variance, but the dataset "
+        f"- {kind}: {line_item} is the largest material {status.value} variance, but the dataset "
         "does not support a causal corrective action; obtain the missing operating driver data before "
         "assigning a cause-specific intervention."
     )
@@ -93,16 +160,51 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str) -> str:
 
 def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     cfg = result.config
+    classification_incomplete = any(
+        row.line_type == LineType.UNCLASSIFIED for row in result.rows
+    )
+    has_revenue = any(
+        row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
+        for row in result.rows
+    )
+    has_expenses = any(
+        row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
+        for row in result.rows
+    )
+
+    if classification_incomplete:
+        revenue_line = _incomplete_aggregate_line("Total Revenue", result.revenue)
+        expense_line = _incomplete_aggregate_line("Total Expenses", result.expenses)
+    else:
+        revenue_line = (
+            _aggregate_line("Total Revenue", result.revenue)
+            if has_revenue
+            else "- Total Revenue: N/A (no Revenue rows supplied)"
+        )
+        expense_line = (
+            _aggregate_line("Total Expenses", result.expenses)
+            if has_expenses
+            else "- Total Expenses: N/A (no Expense rows supplied)"
+        )
+
     lines: list[str] = [
-        f"# FP&A Variance Report: {cfg.period}",
+        f"# FP&A Variance Report: {_safe_inline(cfg.period)}",
         "",
         "## Executive Summary",
-        _aggregate_line("Total Revenue", result.revenue),
-        _aggregate_line("Total Expenses", result.expenses),
-        f"- Bottom Line Impact: {_bottom_line(result)}",
+        revenue_line,
+        expense_line,
+        f"- Bottom Line Impact: {_bottom_line(
+            result,
+            classification_incomplete=classification_incomplete,
+            has_revenue=has_revenue,
+            has_expenses=has_expenses,
+        )}",
     ]
     if result.warnings:
-        lines.append("- Data Quality Note: " + " ".join(result.warnings))
+        lines.append(
+            "- Data Quality Note: "
+            + " ".join(_safe_inline(warning) for warning in result.warnings)
+        )
 
     lines += [
         "",
@@ -122,7 +224,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
                 "| "
                 + " | ".join(
                     [
-                        row.line_item.replace("|", r"\|"),
+                        _safe_inline(row.line_item),
                         str(row.line_type),
                         _money(row.budget),
                         _money(row.actual),
@@ -143,16 +245,21 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     else:
         lines.append("- No material variance requires root-cause analysis.")
 
-    missing_metrics = []
-    for row in top_rows:
-        if not (row.driver_evidence and row.driver_evidence.reconciles):
-            missing_metrics.append(row.line_item)
+    missing_metrics = [
+        _safe_inline(row.line_item)
+        for row in top_rows
+        if not (row.driver_evidence and row.driver_evidence.reconciles)
+    ]
     if missing_metrics:
         data_request = (
-            "Provide reconciled operating driver metrics for: " + ", ".join(missing_metrics) + "."
+            "Provide reconciled operating driver metrics for: "
+            + ", ".join(missing_metrics)
+            + "."
         )
     else:
-        data_request = "No additional driver data is required for the analyzed top material variances."
+        data_request = (
+            "No additional driver data is required for the analyzed top material variances."
+        )
 
     lines += [
         "",

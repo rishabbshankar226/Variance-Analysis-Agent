@@ -86,6 +86,24 @@ ruff check .
 
 The audited prompt that defines the behavioral contract is stored in [`prompt/FP&A_Optimized_Prompt_v4.md`](prompt/FP&A_Optimized_Prompt_v4.md). The executable engine intentionally implements the numerical and evidence controls in code so correctness does not depend on an LLM following prose instructions.
 
+
+## Audit / AI grounding artifact
+
+Use `--audit-json` to emit a machine-readable record alongside the Markdown report:
+
+```bash
+variance-agent examples/sample_variance.csv \
+  --period "Q3 2026" \
+  --dollar-threshold 10000 \
+  --percent-threshold 5 \
+  --output reports/q3-2026.md \
+  --audit-json reports/q3-2026.audit.json
+```
+
+The audit record is designed as the safe handoff seam for a future AI layer. It includes the source file SHA-256, a deterministic analysis fingerprint, classification coverage, completeness flags, verified totals, material variances, supported-vs-hypothesis driver status, warnings, and a trust contract stating that source-derived strings remain data rather than instructions. Raw uploaded rows are intentionally excluded.
+
+This means an LLM can summarize or narrate verified results without being asked to redo accounting math or infer execution state.
+
 ## Scope
 
 This project performs descriptive variance analysis and supported driver decomposition. It does not automatically expand into forecasting, valuation, budgeting, or scenario modeling.
