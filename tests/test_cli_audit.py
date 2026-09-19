@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-
 import variance_agent.cli as cli
 from test_audit import _result
 
