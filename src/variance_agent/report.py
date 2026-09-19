@@ -187,18 +187,19 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
             else "- Total Expenses: N/A (no Expense rows supplied)"
         )
 
+    bottom_line = _bottom_line(
+        result,
+        classification_incomplete=classification_incomplete,
+        has_revenue=has_revenue,
+        has_expenses=has_expenses,
+    )
     lines: list[str] = [
         f"# FP&A Variance Report: {_safe_inline(cfg.period)}",
         "",
         "## Executive Summary",
         revenue_line,
         expense_line,
-        f"- Bottom Line Impact: {_bottom_line(
-            result,
-            classification_incomplete=classification_incomplete,
-            has_revenue=has_revenue,
-            has_expenses=has_expenses,
-        )}",
+        f"- Bottom Line Impact: {bottom_line}",
     ]
     if result.warnings:
         lines.append(
