@@ -1,21 +1,21 @@
 # Variance Analysis Agent
 
-A deterministic FP&A variance-analysis engine built around an audited prompt specification. It calculates and validates all financial outputs in Python, applies explicit favorable/unfavorable accounting logic, prevents silent imputation, separates supported drivers from hypotheses, and generates an executive-ready Markdown report.
+A command-line tool that compares budget to actual, flags material variances and writes a Markdown variance report. It started as an LLM prompt for FP&A variance analysis. This version does every calculation in Python, so the numbers don't depend on a model following instructions.
 
-## What it enforces
+## What it checks
 
 - `Variance $ = Actual - Budget`
 - `Variance % = (Actual - Budget) / Budget` when Budget is nonzero
-- Explicit zero-budget handling, including unbudgeted rows
-- Expense F/U logic: positive = Unfavorable, negative = Favorable
-- Revenue/Income F/U logic: positive = Favorable, negative = Unfavorable
-- Strict materiality: `ABS(Variance $) > threshold OR ABS(Variance %) > threshold`
-- Material rows sorted by absolute dollar variance descending
-- Conservative classification: ambiguous rows remain `Unclassified`
-- Subtotal/total detection to reduce double-counting risk
-- Supported-driver labels only when supplied operating metrics reconcile to Budget/Actual
-- Final deterministic checks before report generation
-- Rounding only at display time
+- Zero budgets are handled explicitly, including unbudgeted rows
+- Expenses: a positive variance is Unfavorable and a negative one Favorable
+- Revenue and income: a positive variance is Favorable and a negative one Unfavorable
+- A row is material when `ABS(Variance $) > threshold OR ABS(Variance %) > threshold`
+- Material rows are sorted by absolute dollar variance, largest first
+- A row whose type is unclear stays `Unclassified`
+- Subtotal and total rows are detected so nothing is counted twice
+- A driver is labeled a supported driver only when the operating metrics supplied reconcile to Budget and Actual
+- A final set of checks runs before the report is written
+- Numbers are rounded only for display
 
 ## Quick start
 
@@ -54,25 +54,25 @@ Minimum usable fields:
 | Actual | Yes | Same cleaning rules as Budget |
 | Type | Recommended | Revenue/Income/Sales or Expense/Cost. Ambiguous rows remain Unclassified |
 
-Optional reconciled driver models:
+Optional driver models:
 
 - `Budget Volume`, `Actual Volume`, `Budget Price`, `Actual Price`
 - `Budget Units`, `Actual Units`, `Budget Price`, `Actual Price`
 - `Budget Headcount`, `Actual Headcount`, `Budget Rate`, `Actual Rate`
 - `Budget Customers`, `Actual Customers`, `Budget Rate`, `Actual Rate`
 
-A driver decomposition is labeled **Supported driver** only if the supplied driver model reconciles to the row's Budget and Actual values. Otherwise the report does not assert a cause.
+A driver decomposition is labeled **Supported driver** only if the driver model reconciles to the row's Budget and Actual values. Otherwise the report doesn't assert a cause.
 
-## Data classification
+## Classifying rows
 
-The engine prefers, in order:
+Each row's type comes from the first of these that applies:
 
-1. An explicit JSON type map
-2. An explicit Type/classification column
-3. A conservative, unambiguous line-item label
-4. `Unclassified`
+1. A JSON type map passed with `--type-map`
+2. A Type or classification column
+3. A line-item label that is unambiguous
+4. Otherwise, `Unclassified`
 
-No ambiguous row is silently forced into Revenue or Expense totals.
+Unclassified rows are left out of the Revenue and Expense totals, and the report lists them in a warning.
 
 ## Tests
 
@@ -82,14 +82,13 @@ pytest
 ruff check .
 ```
 
-## Prompt reference
+## The prompt
 
-The audited prompt that defines the behavioral contract is stored in [`prompt/FP&A_Optimized_Prompt_v4.md`](prompt/FP&A_Optimized_Prompt_v4.md). The executable engine intentionally implements the numerical and evidence controls in code so correctness does not depend on an LLM following prose instructions.
+The prompt this tool grew out of is in [`prompt/variance_report_prompt.md`](prompt/variance_report_prompt.md). Its rules are implemented in code, so the arithmetic doesn't rely on a model following written instructions.
 
+## Audit JSON
 
-## Audit / AI grounding artifact
-
-Use `--audit-json` to emit a machine-readable record alongside the Markdown report:
+Use `--audit-json` to write a machine-readable record next to the Markdown report:
 
 ```bash
 variance-agent examples/sample_variance.csv \
@@ -100,10 +99,10 @@ variance-agent examples/sample_variance.csv \
   --audit-json reports/q3-2026.audit.json
 ```
 
-The audit record is designed as the safe handoff seam for a future AI layer. It includes the source file SHA-256, a deterministic analysis fingerprint, classification coverage, completeness flags, verified totals, material variances, supported-vs-hypothesis driver status, warnings, and a trust contract stating that source-derived strings remain data rather than instructions. Raw uploaded rows are intentionally excluded.
+The audit JSON is meant to be the input for an LLM, if one is added later to write the commentary. It holds the source file's SHA-256, a fingerprint of the analysis, classification coverage, completeness flags, the verified totals, the material variances, whether each driver is supported or a hypothesis, and any warnings. Its `trust_contract` block marks text taken from the source file as data for a model to read and never follow. Raw rows are left out.
 
-This means an LLM can summarize or narrate verified results without being asked to redo accounting math or infer execution state.
+That way a model can describe the verified results without redoing the math.
 
 ## Scope
 
-This project performs descriptive variance analysis and supported driver decomposition. It does not automatically expand into forecasting, valuation, budgeting, or scenario modeling.
+The tool explains variances and breaks down the drivers the data supports. It doesn't forecast, value, budget or model scenarios.

@@ -113,7 +113,7 @@ def _driver_sentence(row: AnalyzedRow) -> str:
             f"{name}: {_money(value)}" for name, value in evidence.components
         )
         return (
-            f"**{line_item} — Supported driver:** {evidence.label} decomposition reconciles; "
+            f"**{line_item} (Supported driver):** {evidence.label} decomposition reconciles; "
             f"{components}."
         )
 
@@ -127,11 +127,11 @@ def _driver_sentence(row: AnalyzedRow) -> str:
 
     if evidence and not evidence.reconciles:
         return (
-            f"**{line_item} — Hypothesis:** No causal claim is supported because the supplied "
+            f"**{line_item} (Hypothesis):** No causal claim is supported because the supplied "
             f"{evidence.label} fields do not reconcile to Budget/Actual. Validate the driver data first."
         )
     return (
-        f"**{line_item} — Hypothesis:** No causal driver is asserted from the supplied data. "
+        f"**{line_item} (Hypothesis):** No causal driver is asserted from the supplied data. "
         f"To validate a cause, provide {likely_metrics}."
     )
 
