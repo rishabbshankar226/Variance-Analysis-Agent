@@ -2,29 +2,29 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
-from .audit import build_audit_record, sha256_file, write_audit_json
+from .audit import build_audit_record, sha256_file, serialize_audit_json
 from .models import AnalysisConfig, LineType
-from .parsing import load_file
+from .parsing import load_file, load_json_value, parse_decimal
+from .output import write_text_outputs
 from .report import render_markdown
 
 
 def _decimal(text: str) -> Decimal:
     try:
-        return Decimal(text.replace(",", "").replace("$", "").strip())
-    except Exception as exc:
+        return parse_decimal(text, field="threshold", line_item="Materiality")
+    except ValueError as exc:
         raise argparse.ArgumentTypeError(f"Invalid number: {text}") from exc
 
 
 def _load_type_map(path: str | None) -> dict[str, LineType]:
     if not path:
         return {}
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = load_json_value(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense.")
     output: dict[str, LineType] = {}
@@ -103,14 +103,14 @@ def _run(args: argparse.Namespace) -> int:
         build_audit_record(result, source_name=input_path.name, source_sha256=source_hash)
         if args.audit_json else None
     )
+    outputs = {}
     if args.output:
-        output = Path(args.output)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(report, encoding="utf-8")
-    else:
-        print(report)
+        outputs[Path(args.output)] = report
     if args.audit_json:
-        write_audit_json(args.audit_json, record)
+        outputs[Path(args.audit_json)] = serialize_audit_json(record)
+    write_text_outputs(outputs)
+    if not args.output:
+        print(report)
     return 0
 
 

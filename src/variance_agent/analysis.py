@@ -85,6 +85,9 @@ def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> Li
     if line_item in config.type_map:
         return config.type_map[line_item]
 
+    type_keys = [key for key in _TYPE_KEYS if key in row]
+    if len(type_keys) > 1:
+        raise ValueError(f"{line_item}: multiple classification aliases: {', '.join(type_keys)}.")
     type_field = first_present(row, _TYPE_KEYS)
     if type_field:
         explicit = _classify_explicit(type_field[1])
@@ -248,6 +251,11 @@ def _verify_result(
     for row in rows:
         if row.variance_dollars != row.actual - row.budget:
             raise _verification_failure(f"dollar variance mismatch for {row.line_item!r}")
+        expected_percent, expected_label = _percent_variance(row.budget, row.actual)
+        if (row.variance_percent, row.percent_label) != (expected_percent, expected_label):
+            raise _verification_failure(f"percentage mismatch for {row.line_item!r}")
+        if row.status != _status(row.line_type, row.variance_dollars):
+            raise _verification_failure(f"F/U status mismatch for {row.line_item!r}")
         expected_material = (
             abs(row.variance_dollars) > config.dollar_threshold
             or (
@@ -259,10 +267,18 @@ def _verify_result(
             raise _verification_failure(f"materiality mismatch for {row.line_item!r}")
 
     expected_order = sorted(
-        material_rows, key=lambda row: abs(row.variance_dollars), reverse=True
+        (row for row in rows if row.material and not row.excluded_from_aggregation),
+        key=lambda row: abs(row.variance_dollars), reverse=True,
     )
     if material_rows != expected_order:
-        raise _verification_failure("material variance sort order is incorrect")
+        raise _verification_failure("material variance membership or sort order is incorrect")
+
+    for line_type, aggregate in ((LineType.REVENUE, revenue), (LineType.EXPENSE, expenses)):
+        variance = aggregate.actual - aggregate.budget
+        percent, label = _percent_variance(aggregate.budget, aggregate.actual)
+        if (aggregate.variance_dollars, aggregate.variance_percent, aggregate.percent_label,
+                aggregate.status) != (variance, percent, label, _status(line_type, variance)):
+            raise _verification_failure(f"{line_type.value} aggregate metrics mismatch")
 
     revenue_rows = [
         row

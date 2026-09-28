@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
+_NUMBER_RE = re.compile(
+    r"(?P<prefix>[+-]?[$€£]?|[$€£][+-]?)\s*"
+    r"(?P<number>(?:(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:_[0-9]+)*)(?:\.[0-9]*)?|\.[0-9]+)"
+    r"(?:[eE][+-]?[0-9]+)?)"
+)
+
 _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
 
 
@@ -21,6 +27,8 @@ def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
 def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
     if value is None:
         raise ValueError(f"{line_item}: required field '{field}' is missing.")
+    if isinstance(value, bool):
+        raise ValueError(f"{line_item}: field '{field}' must be numeric, not boolean.")
     if isinstance(value, Decimal):
         return _require_finite(value, field=field, line_item=line_item)
     if isinstance(value, (int, float)):
@@ -34,24 +42,19 @@ def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
     if negative_parentheses:
         text = text[1:-1]
 
-    text = (
-        text.replace("$", "")
-        .replace("€", "")
-        .replace("£", "")
-        .replace(",", "")
-        .replace("_", "")
-        .strip()
-    )
-
+    if text.strip().lower().lstrip("+-") in {"nan", "snan", "inf", "infinity"}:
+        raise ValueError(f"{line_item}: field '{field}' must be a finite number.")
+    match = _NUMBER_RE.fullmatch(text.strip())
+    if match is None or (negative_parentheses and any(sign in match["prefix"] for sign in "+-")):
+        raise ValueError(f"{line_item}: field '{field}' has an invalid numeric format: {value!r}.")
+    sign = "-" if "-" in match["prefix"] else ""
+    numeric_text = sign + match["number"].replace(",", "").replace("_", "")
     try:
-        number = Decimal(text)
+        number = Decimal(numeric_text)
     except InvalidOperation as exc:
-        raise ValueError(
-            f"{line_item}: field '{field}' is not numeric: {value!r}."
-        ) from exc
-
+        raise ValueError(f"{line_item}: field '{field}' is not numeric: {value!r}.") from exc
     if negative_parentheses:
-        number = -number
+        number = number.copy_negate()
     return _require_finite(number, field=field, line_item=line_item)
 
 
@@ -124,9 +127,16 @@ def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return output
 
 
+def load_json_value(text: str) -> Any:
+    """Decode without binary float conversion or silently overwritten keys."""
+    return json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
+
+
 def load_json_text(text: str) -> list[dict[str, Any]]:
-    payload = json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
+    payload = load_json_value(text)
     if isinstance(payload, dict):
+        if "rows" in payload and "data" in payload:
+            raise ValueError("JSON input contains both 'rows' and 'data'; supply one dataset.")
         payload = payload.get("rows", payload.get("data"))
     if not isinstance(payload, list):
         raise ValueError("JSON input must be a list of row objects or contain a 'rows'/'data' list.")
@@ -146,7 +156,7 @@ def load_file(path: str | Path) -> list[dict[str, Any]]:
         try:
             from openpyxl import load_workbook
         except ImportError as exc:
-            raise RuntimeError(
+            raise ValueError(
                 "Excel input requires the optional dependency: pip install 'variance-analysis-agent[excel]'"
             ) from exc
 

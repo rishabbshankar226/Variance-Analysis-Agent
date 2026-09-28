@@ -127,3 +127,19 @@ The tool explains variances and breaks down the drivers the data supports. It do
 The audit fingerprint includes every analyzed row, even nonmaterial rows, while
 raw input dictionaries remain excluded from the audit output. Fingerprints from
 versions before this change use a different recipe and will not match.
+
+### Verification and output safety
+
+Numeric inputs accept decimal/scientific notation, correctly grouped thousands,
+leading currency symbols, and accounting parentheses. Ambiguous forms such as
+`1,00`, `12$34`, and `(-100)` are rejected instead of silently reinterpreted.
+Accounting parentheses already mean negative; do not put another sign inside.
+Duplicate type-map keys and multiple classification columns are rejected. JSON
+wrappers must supply either `rows` or `data`, not both.
+
+Before output, the agent verifies row percentages and F/U statuses, aggregate
+metrics, and the exact membership and order of the material-variance list.
+Both output files are serialized and staged before replacement. A staging failure
+preserves existing files; each replacement is atomic. Replacing two files is not
+a single transaction: if the second replacement fails, rerun the command to
+regenerate the pair. Temporary files are cleaned up on handled failures.

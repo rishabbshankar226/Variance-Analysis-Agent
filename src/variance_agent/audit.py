@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
+from .output import write_text_outputs
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -74,13 +75,12 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def serialize_audit_json(record: dict[str, Any]) -> str:
+    return json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
+
+
 def write_audit_json(path: str | Path, record: dict[str, Any]) -> None:
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    write_text_outputs({Path(path): serialize_audit_json(record)})
 
 
 def build_audit_record(
