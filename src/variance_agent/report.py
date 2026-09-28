@@ -4,6 +4,7 @@ import re
 from decimal import Decimal
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
+from .numeric import financial_context
 
 
 _INLINE_WS_RE = re.compile(r"\s+")
@@ -158,6 +159,7 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str) -> str:
     )
 
 
+@financial_context()
 def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     cfg = result.config
     classification_incomplete = any(

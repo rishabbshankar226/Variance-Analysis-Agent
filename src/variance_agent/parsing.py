@@ -18,6 +18,10 @@ _NUMBER_RE = re.compile(
 _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
 
 
+def is_missing(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and value.strip().lower() in _MISSING)
+
+
 def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
     if not number.is_finite():
         raise ValueError(f"{line_item}: field '{field}' must be a finite number.")

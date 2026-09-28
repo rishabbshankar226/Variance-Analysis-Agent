@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Any, Iterable
 
 from .models import (
@@ -14,7 +14,8 @@ from .models import (
     LineType,
     Status,
 )
-from .parsing import first_present, normalize_row, parse_decimal
+from .parsing import first_present, normalize_row, parse_decimal, is_missing
+from .numeric import financial_context, ratio
 
 
 _LINE_ITEM_KEYS = ("line_item", "line", "item", "account", "account_name", "category")
@@ -111,10 +112,22 @@ def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> Li
 
 def _percent_variance(budget: Decimal, actual: Decimal) -> tuple[Decimal | None, str | None]:
     if budget != 0:
-        return (actual - budget) / budget, None
+        return ratio(actual - budget, budget), None
     if actual == 0:
         return Decimal("0"), None
     return None, "N/A (Unbudgeted)"
+
+
+def _is_material(budget: Decimal, variance: Decimal, config: AnalysisConfig) -> bool:
+    if abs(variance) > config.dollar_threshold:
+        return True
+    if budget == 0:
+        return False
+    # Compare |variance| > threshold * |budget| without rounding a recurring ratio.
+    with localcontext() as context:
+        context.prec = max(context.prec, len(budget.as_tuple().digits)
+                           + len(config.percent_threshold.as_tuple().digits))
+        return abs(variance) > config.percent_threshold * abs(budget)
 
 
 def _status(line_type: LineType, variance: Decimal) -> Status:
@@ -136,9 +149,10 @@ def _driver_evidence(
         abs(actual) * Decimal("0.000001"),
     )
 
+    fallback = None
     for model_name, bq, aq, br, ar, quantity_label, rate_label in _DRIVER_MODELS:
         required = (bq, aq, br, ar)
-        if not all(key in row and row[key] not in (None, "") for key in required):
+        if not all(key in row and not is_missing(row[key]) for key in required):
             continue
 
         budget_quantity = parse_decimal(row[bq], field=bq, line_item=line_item)
@@ -161,7 +175,7 @@ def _driver_evidence(
             abs(quantity_effect + rate_effect - variance) <= variance_tolerance
         )
 
-        return DriverEvidence(
+        evidence = DriverEvidence(
             label=model_name,
             components=(
                 (f"{quantity_label} effect", quantity_effect),
@@ -169,7 +183,11 @@ def _driver_evidence(
             ),
             reconciles=reconciles,
         )
-    return None
+        if reconciles:
+            return evidence
+        if fallback is None:
+            fallback = evidence
+    return fallback
 
 
 def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
@@ -256,13 +274,7 @@ def _verify_result(
             raise _verification_failure(f"percentage mismatch for {row.line_item!r}")
         if row.status != _status(row.line_type, row.variance_dollars):
             raise _verification_failure(f"F/U status mismatch for {row.line_item!r}")
-        expected_material = (
-            abs(row.variance_dollars) > config.dollar_threshold
-            or (
-                row.variance_percent is not None
-                and abs(row.variance_percent) > config.percent_threshold
-            )
-        )
+        expected_material = _is_material(row.budget, row.variance_dollars, config)
         if row.material != expected_material:
             raise _verification_failure(f"materiality mismatch for {row.line_item!r}")
 
@@ -302,6 +314,7 @@ def _verify_result(
             raise _verification_failure(f"{label} reconciliation mismatch")
 
 
+@financial_context()
 def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> AnalysisResult:
     if not rows:
         raise ValueError("Dataset contains no data rows.")
@@ -310,12 +323,18 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
     if config.dollar_threshold < 0 or config.percent_threshold < 0:
         raise ValueError("Materiality thresholds must be non-negative.")
 
+    # Validate threshold precision/range even if no row reaches a comparison.
+    +config.dollar_threshold
+    +config.percent_threshold
+
     analyzed: list[AnalyzedRow] = []
     warnings: list[str] = []
 
     for index, source_row in enumerate(rows, start=2):
         row = normalize_row(source_row)
         line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
+        if isinstance(line_item_raw, (bool, list, dict, tuple, set)):
+            raise ValueError(f"Row {index}: Line Item must be a scalar text or numeric label.")
         line_item = "" if line_item_raw is None else str(line_item_raw).strip()
         if not line_item:
             raise ValueError(f"Row {index}: Line Item is blank.")
@@ -335,10 +354,7 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         summary_candidate = bool(_SUMMARY_RE.search(line_item))
         variance = actual - budget
         pct, pct_label = _percent_variance(budget, actual)
-        material = (
-            abs(variance) > config.dollar_threshold
-            or (pct is not None and abs(pct) > config.percent_threshold)
-        )
+        material = _is_material(budget, variance, config)
         driver = _driver_evidence(row, budget, actual, line_item)
 
         analyzed.append(

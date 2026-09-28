@@ -9,6 +9,7 @@ from typing import Any
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
 from .output import write_text_outputs
+from .numeric import financial_context, ratio
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -83,6 +84,7 @@ def write_audit_json(path: str | Path, record: dict[str, Any]) -> None:
     write_text_outputs({Path(path): serialize_audit_json(record)})
 
 
+@financial_context()
 def build_audit_record(
     result: AnalysisResult,
     *,
@@ -101,7 +103,7 @@ def build_audit_record(
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
     classified_count = row_count - unclassified_count
     classification_coverage = (
-        Decimal(classified_count) * Decimal("100") / Decimal(row_count)
+        ratio(Decimal(classified_count) * Decimal("100"), Decimal(row_count))
         if row_count
         else Decimal("0")
     )

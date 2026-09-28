@@ -11,6 +11,7 @@ from .audit import build_audit_record, sha256_file, serialize_audit_json
 from .models import AnalysisConfig, LineType
 from .parsing import load_file, load_json_value, parse_decimal
 from .output import write_text_outputs
+from .numeric import financial_context
 from .report import render_markdown
 
 
@@ -83,6 +84,7 @@ def _validate_output_paths(args: argparse.Namespace) -> None:
             raise ValueError("Input, type-map, report, and audit output paths must be distinct.")
 
 
+@financial_context()
 def _run(args: argparse.Namespace) -> int:
     _validate_output_paths(args)
     input_path = Path(args.input)

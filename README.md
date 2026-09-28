@@ -143,3 +143,21 @@ Both output files are serialized and staged before replacement. A staging failur
 preserves existing files; each replacement is atomic. Replacing two files is not
 a single transaction: if the second replacement fails, rerun the command to
 regenerate the pair. Temporary files are cleaned up on handled failures.
+
+### Numerical precision and driver selection
+
+Analysis, report rendering, audit creation, and CLI threshold conversion use an
+isolated Decimal context: 50 significant digits, round-half-even, exponent limits
+-999 to 999. Caller Decimal settings cannot change the results. Financial
+arithmetic that loses information or exceeds the supported range raises an error
+instead of silently rounding amounts. Recurring percentage ratios may round to
+50 digits, but materiality compares `abs(variance)` directly with
+`percent_threshold * abs(budget)` at sufficient product precision. This avoids
+false negatives near a repeating-ratio boundary. Zero-budget rules are unchanged.
+This policy supersedes the historical precision limitations in earlier audit notes.
+
+Driver models are checked in their documented order until one reconciles.
+Optional driver values marked blank, N/A, NA, null, or a dash are unavailable;
+they do not block a later usable model. If all complete models fail reconciliation,
+the first model remains hypothesis evidence. Malformed numeric driver values
+still fail validation. Boolean or structured line-item labels are rejected.
