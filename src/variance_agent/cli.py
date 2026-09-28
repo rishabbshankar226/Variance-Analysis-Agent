@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from pathlib import Path
+from zipfile import BadZipFile
 
 from .analysis import analyze_rows
 from .audit import build_audit_record, sha256_file, write_audit_json
@@ -65,10 +67,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def _same_path(first: Path, second: Path) -> bool:
+    return first.resolve() == second.resolve() or (
+        first.exists() and second.exists() and first.samefile(second)
+    )
+
+
+def _validate_output_paths(args: argparse.Namespace) -> None:
+    inputs = [Path(args.input)]
+    if args.type_map:
+        inputs.append(Path(args.type_map))
+    outputs = [Path(value) for value in (args.output, args.audit_json) if value]
+    for index, output in enumerate(outputs):
+        if any(_same_path(output, other) for other in inputs + outputs[:index]):
+            raise ValueError("Input, type-map, report, and audit output paths must be distinct.")
+
+
+def _run(args: argparse.Namespace) -> int:
+    _validate_output_paths(args)
     input_path = Path(args.input)
+    # Capture provenance before any output is written.
+    source_hash = sha256_file(input_path) if args.audit_json else None
     rows = load_file(input_path)
+    if source_hash is not None and sha256_file(input_path) != source_hash:
+        raise ValueError("Input changed while it was being read; retry with a stable file.")
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -77,6 +99,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     result = analyze_rows(rows, config)
     report = render_markdown(result)
+    record = (
+        build_audit_record(result, source_name=input_path.name, source_sha256=source_hash)
+        if args.audit_json else None
+    )
     if args.output:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -84,13 +110,17 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(report)
     if args.audit_json:
-        record = build_audit_record(
-            result,
-            source_name=input_path.name,
-            source_sha256=sha256_file(input_path),
-        )
         write_audit_json(args.audit_json, record)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return _run(args)
+    except (OSError, ValueError, csv.Error, DecimalException, BadZipFile) as exc:
+        parser.error(str(exc))
 
 
 if __name__ == "__main__":

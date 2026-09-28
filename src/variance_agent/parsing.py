@@ -95,12 +95,16 @@ def normalize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_csv_text(text: str) -> list[dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(text), strict=True)
     if not reader.fieldnames:
         raise ValueError("CSV input has no header row.")
     normalized_headers = _normalized_headers(reader.fieldnames)
     output: list[dict[str, Any]] = []
     for row in reader:
+        if None in row or any(value is None for value in row.values()):
+            raise ValueError(f"CSV row {reader.line_num}: column count does not match header.")
+        if any(row[raw] and not header for raw, header in zip(reader.fieldnames, normalized_headers)):
+            raise ValueError(f"CSV row {reader.line_num}: data appears under a blank header.")
         output.append(
             {
                 header: row[raw_header]
@@ -111,8 +115,17 @@ def load_csv_text(text: str) -> list[dict[str, Any]]:
     return output
 
 
+def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    output: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in output:
+            raise ValueError(f"Duplicate JSON key: {key!r}.")
+        output[key] = value
+    return output
+
+
 def load_json_text(text: str) -> list[dict[str, Any]]:
-    payload = json.loads(text)
+    payload = json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
     if isinstance(payload, dict):
         payload = payload.get("rows", payload.get("data"))
     if not isinstance(payload, list):
@@ -138,17 +151,27 @@ def load_file(path: str | Path) -> list[dict[str, Any]]:
             ) from exc
 
         wb = load_workbook(path, read_only=True, data_only=True)
-        ws = wb.active
-        rows = ws.iter_rows(values_only=True)
         try:
-            raw_headers = list(next(rows))
-        except StopIteration as exc:
-            raise ValueError("Excel input is empty.") from exc
-        headers = _normalized_headers(raw_headers)
-        output: list[dict[str, Any]] = []
-        for values in rows:
-            output.append({h: v for h, v in zip(headers, values) if h})
-        return output
+            ws = wb.active
+            if ws is None:
+                raise ValueError("Excel input has no active worksheet.")
+            rows = ws.iter_rows(values_only=True)
+            try:
+                raw_headers = list(next(rows))
+            except StopIteration as exc:
+                raise ValueError("Excel input is empty.") from exc
+            headers = _normalized_headers(raw_headers)
+            output: list[dict[str, Any]] = []
+            for row_number, values in enumerate(rows, start=2):
+                if all(value is None or value == "" for value in values):
+                    continue
+                if any(value is not None and value != "" and not header
+                       for header, value in zip(headers, values)):
+                    raise ValueError(f"Excel row {row_number}: data appears under a blank header.")
+                output.append({h: v for h, v in zip(headers, values) if h})
+            return output
+        finally:
+            wb.close()
     raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
 
 

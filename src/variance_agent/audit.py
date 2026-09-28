@@ -170,6 +170,9 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
-    canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    canonical = json.dumps(
+        {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
     record["analysis_fingerprint"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return record

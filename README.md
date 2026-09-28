@@ -106,3 +106,24 @@ That way a model can describe the verified results without redoing the math.
 ## Scope
 
 The tool explains variances and breaks down the drivers the data supports. It doesn't forecast, value, budget or model scenarios.
+
+## Input validation and troubleshooting
+
+- Use one accepted column name per field; do not supply both `Budget` and `Plan`.
+- Quote comma-containing CSV values, for example `"1,000"`. Every record must match
+  the header's column count. Data under unnamed columns is rejected.
+- JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
+- Blank Excel rows are ignored; populated cells under blank headers are rejected.
+- Blank types allow label inference. Nonblank, unrecognized types stay Unclassified.
+  Net income, operating income, and gross profit labels are not inferred as revenue.
+- For each category, supply detail rows alone, one summary alone, or detail rows
+  plus one total that reconciles within $0.01. Multiple nested subtotals have no
+  hierarchy metadata and are rejected; remove them before analysis.
+- Report and audit destinations must differ from each other, the input, and the
+  type map. This also applies to symlinks and hardlinks.
+- Expected input/file errors exit with code 2 and an explanation. Fix the named
+  input or path before retrying.
+
+The audit fingerprint includes every analyzed row, even nonmaterial rows, while
+raw input dictionaries remain excluded from the audit output. Fingerprints from
+versions before this change use a different recipe and will not match.

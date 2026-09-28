@@ -56,6 +56,11 @@ _DRIVER_MODELS = (
 def _required_value(
     row: dict[str, Any], candidates: Iterable[str], display_name: str, row_number: int
 ) -> Any:
+    candidates = tuple(candidates)
+    present = [key for key in candidates if key in row]
+    if len(present) > 1:
+        raise ValueError(f"Row {row_number}: multiple aliases for '{display_name}': "
+                         + ", ".join(present) + ". Supply one column per field.")
     found = first_present(row, candidates)
     if found is None:
         raise ValueError(
@@ -85,6 +90,12 @@ def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> Li
         explicit = _classify_explicit(type_field[1])
         if explicit:
             return explicit
+        if type_field[1] is not None and str(type_field[1]).strip():
+            return LineType.UNCLASSIFIED
+
+    # Profit measures already net costs against revenue and are not additive sales.
+    if re.search(r"\b(net|operating|gross)\s+(income|profit|earnings)\b", line_item, re.I):
+        return LineType.UNCLASSIFIED
 
     revenue_match = bool(_REVENUE_RE.search(line_item))
     expense_match = bool(_EXPENSE_RE.search(line_item))
@@ -141,6 +152,11 @@ def _driver_evidence(
 
         quantity_effect = (actual_quantity - budget_quantity) * budget_rate
         rate_effect = (actual_rate - budget_rate) * actual_quantity
+        variance = actual - budget
+        variance_tolerance = max(Decimal("0.01"), abs(variance) * Decimal("0.000001"))
+        reconciles = reconciles and (
+            abs(quantity_effect + rate_effect - variance) <= variance_tolerance
+        )
 
         return DriverEvidence(
             label=model_name,
@@ -171,6 +187,21 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
                 f"Multiple {line_type.value} summary rows were supplied without detail rows; "
                 "aggregation would be ambiguous and could double count."
             )
+
+    for line_type in (LineType.REVENUE, LineType.EXPENSE):
+        details = [r for r in rows if r.line_type == line_type and not r.excluded_from_aggregation]
+        summaries = [r for r in rows if r.line_type == line_type and r.excluded_from_aggregation]
+        if not details or not summaries:
+            continue
+        # Without hierarchy metadata, multiple summaries cannot be assigned safely.
+        if len(summaries) > 1:
+            raise ValueError(f"Multiple {line_type.value} summary rows have ambiguous scope; "
+                             "supply detail rows only or one reconciled total.")
+        summary = summaries[0]
+        if (abs(summary.budget - sum((r.budget for r in details), Decimal("0"))) > Decimal("0.01")
+                or abs(summary.actual - sum((r.actual for r in details), Decimal("0"))) > Decimal("0.01")):
+            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+                             f"{line_type.value} detail rows; check for missing or overlapping data.")
 
     return [
         replace(
@@ -269,7 +300,7 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
     for index, source_row in enumerate(rows, start=2):
         row = normalize_row(source_row)
         line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
-        line_item = str(line_item_raw).strip()
+        line_item = "" if line_item_raw is None else str(line_item_raw).strip()
         if not line_item:
             raise ValueError(f"Row {index}: Line Item is blank.")
 
