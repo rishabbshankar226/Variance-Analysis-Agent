@@ -102,23 +102,22 @@ def normalize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_csv_text(text: str) -> list[dict[str, Any]]:
-    reader = csv.DictReader(io.StringIO(text), strict=True)
-    if not reader.fieldnames:
+    # Keep cells positional until validation; DictReader overwrites duplicate
+    # blank header keys and can hide populated cells from the checks below.
+    reader = csv.reader(io.StringIO(text), strict=True)
+    headers = next(reader, None)
+    if not headers:
         raise ValueError("CSV input has no header row.")
-    normalized_headers = _normalized_headers(reader.fieldnames)
+    normalized_headers = _normalized_headers(headers)
     output: list[dict[str, Any]] = []
-    for row in reader:
-        if None in row or any(value is None for value in row.values()):
+    for values in reader:
+        if not values:  # Preserve DictReader's handling of empty physical lines.
+            continue
+        if len(values) != len(headers):
             raise ValueError(f"CSV row {reader.line_num}: column count does not match header.")
-        if any(row[raw] and not header for raw, header in zip(reader.fieldnames, normalized_headers)):
+        if any(value and not header for header, value in zip(normalized_headers, values)):
             raise ValueError(f"CSV row {reader.line_num}: data appears under a blank header.")
-        output.append(
-            {
-                header: row[raw_header]
-                for raw_header, header in zip(reader.fieldnames, normalized_headers)
-                if header
-            }
-        )
+        output.append({header: value for header, value in zip(normalized_headers, values) if header})
     return output
 
 
