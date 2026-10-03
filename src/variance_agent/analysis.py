@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from decimal import Decimal, localcontext
+from decimal import Decimal, DecimalException, localcontext
 from typing import Any, Iterable
 
 from .models import (
@@ -11,8 +11,10 @@ from .models import (
     AnalysisResult,
     AnalyzedRow,
     DriverEvidence,
+    DriverReconciliation,
     LineType,
     Status,
+    SummaryVerification,
 )
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
@@ -93,25 +95,27 @@ def _classify_explicit(value: Any) -> LineType | None:
     return None
 
 
-def _summary_candidate(line_item: str, row: dict[str, Any]) -> bool:
+def _summary_candidate(line_item: str, row: dict[str, Any]) -> tuple[bool, str]:
     if "row_kind" in row and not is_missing(row["row_kind"]):
         kind = str(row["row_kind"]).strip().casefold()
         if kind == "detail":
-            return False
+            return False, "explicit_detail"
         if kind in {"total", "subtotal"}:
-            return True
+            return True, "explicit_summary"
         raise ValueError(f"{line_item}: Row Kind must be Detail, Total, or Subtotal.")
     if _CATEGORY_SUMMARY_RE.fullmatch(line_item):
-        return True
+        return True, "inferred_summary"
     if _SUMMARY_RE.search(line_item):
         raise ValueError(f"{line_item}: ambiguous summary label; specify Row Kind as "
                          "Detail, Total, or Subtotal.")
-    return False
+    return False, "detail"
 
 
-def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> LineType:
+def _classify(
+    line_item: str, row: dict[str, Any], config: AnalysisConfig
+) -> tuple[LineType, str]:
     if line_item in config.type_map:
-        return config.type_map[line_item]
+        return config.type_map[line_item], "type_map"
 
     type_keys = [key for key in _TYPE_KEYS if key in row]
     if len(type_keys) > 1:
@@ -120,21 +124,21 @@ def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> Li
     if type_field:
         explicit = _classify_explicit(type_field[1])
         if explicit:
-            return explicit
+            return explicit, "explicit_type"
         if type_field[1] is not None and str(type_field[1]).strip():
-            return LineType.UNCLASSIFIED
+            return LineType.UNCLASSIFIED, "unrecognized_type"
 
     # Profit measures already net costs against revenue and are not additive sales.
     if re.search(r"\b(net|operating|gross)\s+(income|profit|earnings)\b", line_item, re.I):
-        return LineType.UNCLASSIFIED
+        return LineType.UNCLASSIFIED, "non_additive_profit"
 
     revenue_match = bool(_REVENUE_RE.search(line_item))
     expense_match = bool(_EXPENSE_RE.search(line_item))
     if revenue_match and not expense_match:
-        return LineType.REVENUE
+        return LineType.REVENUE, "label_inference"
     if expense_match and not revenue_match:
-        return LineType.EXPENSE
-    return LineType.UNCLASSIFIED
+        return LineType.EXPENSE, "label_inference"
+    return LineType.UNCLASSIFIED, "unclassified"
 
 
 def _percent_variance(budget: Decimal, actual: Decimal) -> tuple[Decimal | None, str | None]:
@@ -202,6 +206,25 @@ def _driver_evidence(
             abs(quantity_effect + rate_effect - variance) <= variance_tolerance
         )
 
+        # Preserve the original short-circuit financial checks. Additional
+        # hypothesis diagnostics must not introduce precision/range failures.
+        residuals = []
+        for calculation in (lambda: modeled_budget - budget,
+                            lambda: modeled_actual - actual,
+                            lambda: quantity_effect + rate_effect - variance):
+            with localcontext():
+                try:
+                    residuals.append(calculation())
+                except DecimalException:
+                    residuals.append(None)
+        failures = []
+        for name, residual, allowed in zip(("budget", "actual", "components"), residuals,
+                                           (tolerance, tolerance, variance_tolerance)):
+            if residual is None:
+                failures.append(f"{name}_residual_unavailable")
+            elif abs(residual) > allowed:
+                failures.append(f"{name}_outside_tolerance")
+
         evidence = DriverEvidence(
             label=model_name,
             components=(
@@ -209,6 +232,10 @@ def _driver_evidence(
                 (f"{rate_label} effect", rate_effect),
             ),
             reconciles=reconciles,
+            reconciliation=DriverReconciliation(
+                modeled_budget, modeled_actual, *residuals, tolerance,
+                variance_tolerance, tuple(failures),
+            ),
         )
         if reconciles:
             return evidence
@@ -218,6 +245,7 @@ def _driver_evidence(
 
 
 def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
+    verifications: dict[LineType, SummaryVerification] = {}
     detail_types = {
         row.line_type
         for row in rows
@@ -246,20 +274,37 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
             raise ValueError(f"Multiple {line_type.value} summary rows have ambiguous scope; "
                              "supply detail rows only or one reconciled total.")
         summary = summaries[0]
-        if (abs(summary.budget - sum((r.budget for r in details), Decimal("0"))) > Decimal("0.01")
-                or abs(summary.actual - sum((r.actual for r in details), Decimal("0"))) > Decimal("0.01")):
+        budget_residual = summary.budget - sum((r.budget for r in details), Decimal("0"))
+        if abs(budget_residual) > Decimal("0.01"):
             raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
+        actual_residual = summary.actual - sum((r.actual for r in details), Decimal("0"))
+        if abs(actual_residual) > Decimal("0.01"):
+            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+                             f"{line_type.value} detail rows; check for missing or overlapping data.")
+        verifications[line_type] = SummaryVerification(
+            "reconciled_and_excluded", len(details), budget_residual,
+            actual_residual, Decimal("0.01"),
+        )
 
-    return [
-        replace(
+    output = []
+    for row in rows:
+        verification = None
+        if row.excluded_from_aggregation:
+            verification = verifications.get(row.line_type)
+            if verification is None:
+                verification = SummaryVerification(
+                    "unclassified" if row.line_type == LineType.UNCLASSIFIED
+                    else "included_standalone", 0,
+                )
+        output.append(replace(
             row,
             excluded_from_aggregation=(
                 row.excluded_from_aggregation and row.line_type in detail_types
             ),
-        )
-        for row in rows
-    ]
+            summary_verification=verification,
+        ))
+    return output
 
 
 def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
@@ -409,8 +454,8 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
             currency=config.currency,
         )
 
-        line_type = _classify(line_item, row, config)
-        summary_candidate = _summary_candidate(line_item, row)
+        line_type, classification_source = _classify(line_item, row, config)
+        summary_candidate, summary_source = _summary_candidate(line_item, row)
         variance = actual - budget
         pct, pct_label = _percent_variance(budget, actual)
         material = _is_material(budget, variance, config)
@@ -430,6 +475,11 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
                 excluded_from_aggregation=summary_candidate,
                 driver_evidence=driver,
                 raw=row,
+                classification_source=classification_source,
+                summary_source=summary_source,
+                materiality_reason=("absolute_amount" if abs(variance) > config.dollar_threshold
+                                    else "absolute_percent" if material
+                                    else "below_or_equal_thresholds"),
             )
         )
 

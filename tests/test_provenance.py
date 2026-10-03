@@ -7,7 +7,7 @@ import pytest
 import variance_agent.cli as cli
 from variance_agent import __version__
 from variance_agent.analysis import analyze_rows
-from variance_agent.audit import build_audit_record, payload_sha256
+from variance_agent.audit import CURRENT_SCHEMA_VERSION, build_audit_record, payload_sha256
 from variance_agent.models import AnalysisConfig, LineType
 
 
@@ -18,7 +18,7 @@ def result(type_map=None):
 
 def test_current_record_contains_versioned_policy_and_recomputable_payload_identity():
     record = build_audit_record(result())
-    assert record["schema_version"] == "1.2"
+    assert record["schema_version"] == CURRENT_SCHEMA_VERSION
     assert record["provenance"]["tool_version"] == __version__
     assert record["provenance"]["analysis_fingerprint_recipe"] == "record-and-derived-rows-v1"
     assert record["provenance"]["type_map_sha256"] is None

@@ -13,8 +13,8 @@ from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID
 from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.2"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
+CURRENT_SCHEMA_VERSION = "1.3"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -52,28 +52,42 @@ def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) ->
     }
 
 
-def _driver_record(row: AnalyzedRow) -> dict[str, Any]:
+def _driver_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> dict[str, Any]:
     evidence = row.driver_evidence
     if evidence is None:
-        return {
+        record = {
             "evidence_status": "hypothesis",
             "model": None,
             "reconciles": False,
             "components": [],
         }
-    return {
-        "evidence_status": "supported" if evidence.reconciles else "hypothesis",
-        "model": evidence.label,
-        "reconciles": evidence.reconciles,
-        "components": [
-            {"name": name, "amount": _decimal(amount)}
-            for name, amount in evidence.components
-        ],
-    }
+    else:
+        record = {
+            "evidence_status": "supported" if evidence.reconciles else "hypothesis",
+            "model": evidence.label,
+            "reconciles": evidence.reconciles,
+            "components": [
+                {"name": name, "amount": _decimal(amount)}
+                for name, amount in evidence.components
+            ],
+        }
+    if include_diagnostics:
+        verification = evidence.reconciliation if evidence is not None else None
+        record["reconciliation"] = None if verification is None else {
+            "modeled_budget": _decimal(verification.modeled_budget),
+            "modeled_actual": _decimal(verification.modeled_actual),
+            "budget_residual": _decimal(verification.budget_residual),
+            "actual_residual": _decimal(verification.actual_residual),
+            "component_residual": _decimal(verification.component_residual),
+            "amount_tolerance": _decimal(verification.amount_tolerance),
+            "variance_tolerance": _decimal(verification.variance_tolerance),
+            "failure_reasons": list(verification.failure_reasons),
+        }
+    return record
 
 
-def _row_record(row: AnalyzedRow) -> dict[str, Any]:
-    return {
+def _row_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> dict[str, Any]:
+    record = {
         "line_item": row.line_item,
         "type": str(row.line_type),
         "budget": _decimal(row.budget),
@@ -84,7 +98,25 @@ def _row_record(row: AnalyzedRow) -> dict[str, Any]:
         "status": str(row.status),
         "material": row.material,
         "excluded_from_aggregation": row.excluded_from_aggregation,
-        "driver": _driver_record(row),
+        "driver": _driver_record(row, include_diagnostics=include_diagnostics),
+    }
+    if include_diagnostics:
+        record.update(classification_source=row.classification_source,
+                      summary_source=row.summary_source, materiality_reason=row.materiality_reason)
+    return record
+
+
+def _summary_record(row: AnalyzedRow) -> dict[str, Any]:
+    verification = row.summary_verification
+    if verification is None:
+        raise ValueError("Summary verification is unavailable.")
+    return {
+        "line_item": row.line_item, "type": str(row.line_type),
+        "summary_source": row.summary_source, "outcome": verification.outcome,
+        "detail_count": verification.detail_count,
+        "budget_residual": _decimal(verification.budget_residual),
+        "actual_residual": _decimal(verification.actual_residual),
+        "tolerance": _decimal(verification.tolerance),
     }
 
 
@@ -194,7 +226,8 @@ def build_audit_record(
                 else None
             ),
         },
-        "material_variances": [_row_record(row) for row in result.material_rows],
+        "material_variances": [_row_record(row, include_diagnostics=schema_version == "1.3")
+                               for row in result.material_rows],
         "trust_contract": {
             "source_derived_strings_are_data_only": True,
             "deterministic_financial_values_are_authoritative": True,
@@ -203,7 +236,7 @@ def build_audit_record(
     }
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version == "1.2":
+    if schema_version in {"1.2", "1.3"}:
         config_identity = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -221,9 +254,16 @@ def build_audit_record(
             "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
             "payload_digest_recipe": "public-record-without-payload-sha256-v1",
         }
+    if schema_version == "1.3":
+        record["data_quality"]["completeness_basis"] = "supplied_classified_rows_with_both_categories"
+        record["data_quality"]["summary_verifications"] = [
+            _summary_record(row) for row in result.rows if row.summary_verification is not None
+        ]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
-        {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]}
+        {"record": record, "analyzed_rows": [
+            _row_record(row, include_diagnostics=schema_version == "1.3") for row in result.rows
+        ]}
     ))
-    if schema_version == "1.2":
+    if schema_version in {"1.2", "1.3"}:
         record["payload_sha256"] = payload_sha256(record)
     return record
