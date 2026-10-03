@@ -162,23 +162,42 @@ def load_json_text(text: str) -> list[dict[str, Any]]:
     return [normalize_row(row) for row in payload]
 
 
+def _excel_loader():
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise ValueError(
+            "Excel input requires the optional dependency: pip install 'variance-analysis-agent[excel]'"
+        ) from exc
+    return load_workbook
+
+
+def validate_input_format(suffix: str) -> None:
+    suffix = suffix.lower()
+    if suffix not in {".csv", ".json", ".xlsx", ".xlsm"}:
+        raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
+    if suffix in {".xlsx", ".xlsm"}:
+        _excel_loader()
+
+
 def load_file(path: str | Path) -> list[dict[str, Any]]:
     path = Path(path)
-    suffix = path.suffix.lower()
-    if suffix == ".csv":
-        return load_csv_text(path.read_text(encoding="utf-8-sig"))
-    if suffix == ".json":
-        return load_json_text(path.read_text(encoding="utf-8"))
-    if suffix in {".xlsx", ".xlsm"}:
-        try:
-            from openpyxl import load_workbook
-        except ImportError as exc:
-            raise ValueError(
-                "Excel input requires the optional dependency: pip install 'variance-analysis-agent[excel]'"
-            ) from exc
+    validate_input_format(path.suffix)
+    return load_bytes(path.read_bytes(), path.suffix, source_name=path.name)
 
-        # Owning the input handle also closes it if workbook construction fails.
-        with path.open("rb") as source:
+
+def load_bytes(data: bytes, suffix: str, *, source_name: str = "input") -> list[dict[str, Any]]:
+    """Parse the same captured bytes whose digest identifies the analysis input."""
+    suffix = suffix.lower()
+    if suffix == ".csv":
+        return load_csv_text(data.decode("utf-8-sig"))
+    if suffix == ".json":
+        return load_json_text(data.decode("utf-8"))
+    if suffix in {".xlsx", ".xlsm"}:
+        load_workbook = _excel_loader()
+
+        # Own the capture handle even if workbook construction fails.
+        with io.BytesIO(data) as source:
             wb = None
             try:
                 wb = load_workbook(source, read_only=True, data_only=True)
@@ -209,7 +228,7 @@ def load_file(path: str | Path) -> list[dict[str, Any]]:
                     output.append({h: v for h, v in zip(headers, padded) if h})
                 return output
             except (BadZipFile, KeyError, SyntaxError) as exc:
-                raise ValueError(f"Invalid Excel workbook {path.name!r}: {exc}") from exc
+                raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc
             finally:
                 if wb is not None:
                     wb.close()

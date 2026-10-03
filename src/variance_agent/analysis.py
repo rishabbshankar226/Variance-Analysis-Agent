@@ -18,6 +18,9 @@ from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
 
+CLASSIFICATION_POLICY_ID = "flat-classification-v1"
+DRIVER_POLICY_ID = "quantity-rate-reconcile-v1"
+
 
 _LINE_ITEM_KEYS = ("line_item", "line", "item", "account", "account_name", "category")
 _BUDGET_KEYS = ("budget", "budget_amount", "plan", "planned")

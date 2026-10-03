@@ -8,10 +8,10 @@ from zipfile import BadZipFile
 
 from .analysis import analyze_rows
 from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
-                    build_audit_record, sha256_file, serialize_audit_json)
+                    build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, LineType
-from .parsing import load_file, load_json_value, parse_decimal
+from .parsing import load_bytes, load_json_value, parse_decimal, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import render_markdown
@@ -31,7 +31,11 @@ def _decimal(text: str) -> Decimal:
 def _load_type_map(path: str | None) -> dict[str, LineType]:
     if not path:
         return {}
-    payload = load_json_value(Path(path).read_text(encoding="utf-8"))
+    return _parse_type_map(Path(path).read_bytes())
+
+
+def _parse_type_map(data: bytes) -> dict[str, LineType]:
+    payload = load_json_value(data.decode("utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense.")
     output: dict[str, LineType] = {}
@@ -98,23 +102,26 @@ def _validate_output_paths(args: argparse.Namespace) -> None:
 def _run(args: argparse.Namespace) -> int:
     _validate_output_paths(args)
     input_path = Path(args.input)
-    # Capture provenance before any output is written.
-    source_hash = sha256_file(input_path) if args.audit_json else None
-    rows = load_file(input_path)
-    if source_hash is not None and sha256_file(input_path) != source_hash:
-        raise ValueError("Input changed while it was being read; retry with a stable file.")
+    validate_input_format(input_path.suffix)
+    # Capture each input once, then use exactly those bytes for parsing and hashes.
+    source_bytes = input_path.read_bytes()
+    type_map_bytes = Path(args.type_map).read_bytes() if args.type_map else None
+    source_hash = sha256_bytes(source_bytes) if args.audit_json else None
+    rows = load_bytes(source_bytes, input_path.suffix, source_name=input_path.name)
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
         percent_threshold=args.percent_threshold / Decimal("100"),
-        type_map=_load_type_map(args.type_map),
+        type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
         currency=args.currency,
     )
     result = analyze_rows(rows, config)
     report = render_markdown(result)
     record = (
         build_audit_record(result, source_name=input_path.name, source_sha256=source_hash,
-                           schema_version=args.audit_schema_version)
+                           schema_version=args.audit_schema_version,
+                           type_map_sha256=(sha256_bytes(type_map_bytes)
+                                            if type_map_bytes is not None else None))
         if args.audit_json else None
     )
     outputs = {}
