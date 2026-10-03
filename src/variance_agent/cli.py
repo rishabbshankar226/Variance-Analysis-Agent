@@ -67,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--percent-threshold",
         required=True,
         type=_decimal,
-        help="Percentage threshold as a percent number (for example, 5 for 5%).",
+        help="Percentage threshold as a percent number (for example, 5 for 5%%).",
     )
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",

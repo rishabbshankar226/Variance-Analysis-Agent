@@ -1,0 +1,27 @@
+name: Bug report
+description: Report incorrect calculations, validation, reporting, or file behavior.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Use a small synthetic reproduction. Do not attach confidential ledgers.
+  - type: input
+    id: environment
+    attributes:
+      label: Tool version, Python version, operating system
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Input shape, reporting currency, and exact CLI command
+      description: Include a minimal synthetic CSV/JSON example or workbook structure.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected behavior and actual output or error
+    validations:
+      required: true
