@@ -1,6 +1,14 @@
 import json
+import pytest
 import variance_agent.cli as cli
 from test_audit import _result
+
+
+def test_cli_help_prints_percentage_example_and_exits_successfully(capsys):
+    with pytest.raises(SystemExit) as error:
+        cli.main(["--help"])
+    assert error.value.code == 0
+    assert "5%" in capsys.readouterr().out
 
 
 def test_cli_writes_report_and_audit_with_source_fingerprint(tmp_path, monkeypatch):

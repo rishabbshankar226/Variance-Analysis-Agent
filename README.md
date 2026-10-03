@@ -6,6 +6,9 @@ is performed. See [the input contract](docs/input-contract.md) and
 [the versioned audit contract](docs/audit-contract.md), including the legacy USD
 audit-format option.
 
+Current development version: 0.3.0. See [the changelog](CHANGELOG.md),
+[contributing guide](CONTRIBUTING.md), and [implementation roadmap](docs/roadmap.md).
+
 A command-line tool that compares budget to actual, flags material variances and writes a Markdown variance report. It started as an LLM prompt for FP&A variance analysis. This version does every calculation in Python, so the numbers don't depend on a model following instructions.
 
 ## What it checks

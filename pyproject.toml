@@ -1,26 +1,41 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "variance-analysis-agent"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Budget-versus-actual variance analysis with materiality flags, favorable/unfavorable logic and a Markdown report."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Rishabb Shankar" }]
 dependencies = []
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1"]
 dev = ["pytest>=8.0", "ruff>=0.6", "jsonschema>=4.23"]
+release = ["build>=1.2", "twine>=6.0"]
+
+[project.urls]
+Repository = "https://github.com/rishabbshankar226/Variance-Analysis-Agent"
+Issues = "https://github.com/rishabbshankar226/Variance-Analysis-Agent/issues"
+Changelog = "https://github.com/rishabbshankar226/Variance-Analysis-Agent/blob/main/CHANGELOG.md"
 
 [project.scripts]
 variance-agent = "variance_agent.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/variance_agent"]
+
+[tool.hatch.version]
+path = "src/variance_agent/version.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/schemas", "/examples", "/docs", "/scripts",
+           "/README.md", "/pyproject.toml", "/LICENSE", "/CHANGELOG.md",
+           "/CONTRIBUTING.md", "/SECURITY.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

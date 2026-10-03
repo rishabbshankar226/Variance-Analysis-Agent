@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Audit goldens identify exact source bytes on every platform.
+tests/fixtures/contracts/* text eol=lf

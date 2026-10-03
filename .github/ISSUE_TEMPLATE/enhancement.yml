@@ -1,0 +1,23 @@
+name: Enhancement
+description: Propose a focused variance-analysis improvement.
+title: "[Enhancement]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Financial or operator problem
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed behavior, compatibility effects, and acceptance criteria
+      description: Preserve deterministic arithmetic and variance-explanation scope.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Tests and documentation required
+    validations:
+      required: true

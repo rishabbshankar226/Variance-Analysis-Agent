@@ -64,12 +64,12 @@ def test_currency_conflicts_are_not_silently_reinterpreted(row):
 
 def test_cli_euro_report_and_versioned_audit(tmp_path):
     source = tmp_path / "eur.json"
-    source.write_text('[{"Line Item":"Sales", "Budget":"€10", "Actual":"€12"}]')
+    source.write_text('[{"Line Item":"Sales", "Budget":"€10", "Actual":"€12"}]', encoding="utf-8")
     report, audit = tmp_path / "eur.md", tmp_path / "eur.audit.json"
     assert main([str(source), "--period", "Q3", "--dollar-threshold", "1",
                  "--percent-threshold", "5", "--currency", "EUR",
                  "--output", str(report), "--audit-json", str(audit)]) == 0
-    assert "€12.00" in report.read_text()
+    assert "€12.00" in report.read_text("utf-8")
     assert json.loads(audit.read_text())["currency"] == "EUR"
 
 
