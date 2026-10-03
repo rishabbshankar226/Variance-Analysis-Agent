@@ -7,7 +7,9 @@ from pathlib import Path
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
-from .audit import build_audit_record, sha256_file, serialize_audit_json
+from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
+                    build_audit_record, sha256_file, serialize_audit_json)
+from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, LineType
 from .parsing import load_file, load_json_value, parse_decimal
 from .output import write_text_outputs
@@ -16,6 +18,10 @@ from .report import render_markdown
 
 
 def _decimal(text: str) -> Decimal:
+    if any(symbol in text for symbol in CURRENCY_SYMBOLS.values()):
+        raise argparse.ArgumentTypeError(
+            "Thresholds must be numbers without currency symbols; select --currency separately."
+        )
     try:
         return parse_decimal(text, field="threshold", line_item="Materiality")
     except ValueError as exc:
@@ -60,6 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Percentage threshold as a percent number (for example, 5 for 5%).",
     )
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
+    parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
+                        help="Reporting currency (default USD); conflicting amounts are rejected.")
+    parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
+                        default=CURRENT_SCHEMA_VERSION, help="Audit JSON format version.")
     parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
     parser.add_argument(
         "--audit-json",
@@ -98,11 +108,13 @@ def _run(args: argparse.Namespace) -> int:
         dollar_threshold=args.dollar_threshold,
         percent_threshold=args.percent_threshold / Decimal("100"),
         type_map=_load_type_map(args.type_map),
+        currency=args.currency,
     )
     result = analyze_rows(rows, config)
     report = render_markdown(result)
     record = (
-        build_audit_record(result, source_name=input_path.name, source_sha256=source_hash)
+        build_audit_record(result, source_name=input_path.name, source_sha256=source_hash,
+                           schema_version=args.audit_schema_version)
         if args.audit_json else None
     )
     outputs = {}

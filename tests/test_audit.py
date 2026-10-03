@@ -1,7 +1,7 @@
 import json
 from decimal import Decimal
 
-from variance_agent.audit import build_audit_record
+from variance_agent.audit import CURRENT_SCHEMA_VERSION, build_audit_record
 from variance_agent.models import (
     Aggregate,
     AnalysisConfig,
@@ -81,7 +81,7 @@ def test_audit_record_is_json_serializable_and_preserves_verified_values():
         _result(), source_name="sample.csv", source_sha256="a" * 64
     )
     json.dumps(record)
-    assert record["schema_version"] == "1.0"
+    assert record["schema_version"] == CURRENT_SCHEMA_VERSION
     assert record["source"]["sha256"] == "a" * 64
     assert record["data_quality"]["classification_coverage_percent"] == "100.00"
     assert record["data_quality"]["net_operating_impact_available"] is True

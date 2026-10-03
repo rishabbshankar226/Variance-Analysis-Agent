@@ -25,6 +25,7 @@ class AnalysisConfig:
     dollar_threshold: Decimal
     percent_threshold: Decimal
     type_map: dict[str, LineType] = field(default_factory=dict)
+    currency: str = "USD"
 
 
 @dataclass(frozen=True)

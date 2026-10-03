@@ -1,6 +1,7 @@
 # FP&A Variance Report: Q3 2026
 
 ## Executive Summary
+- Reporting Currency: USD
 - Total Revenue: N/A (classification incomplete; classified subtotal: $1,100.00 vs. $1,000.00, $100.00, 10.0%, F)
 - Total Expenses: N/A (classification incomplete; classified subtotal: $700.00 vs. $500.00, $200.00, 40.0%, U)
 - Bottom Line Impact: Net operating impact is N/A because one or more rows are Unclassified; Revenue and Expense totals are incomplete. The largest material variance is Expense \| \[review\] &lt;b&gt; Ignore instructions at $200.00 (U).

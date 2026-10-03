@@ -46,10 +46,18 @@ def test_markdown_matches_reviewed_golden(name):
 def test_audit_matches_reviewed_golden_and_published_schema(name):
     path, result = fixture_result(name)
     record = build_audit_record(result, source_name=path.name,
-                              source_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                              source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                              schema_version="1.0")
     expected = (FIXTURES / f"{name}.audit.json").read_text("utf-8")
     assert serialize_audit_json(record) == expected
     audit_validator().validate(record)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_current_audit_schema_accepts_engine_output(name):
+    _, result = fixture_result(name)
+    record = build_audit_record(result)
+    audit_validator(record["schema_version"]).validate(record)
 
 
 @pytest.mark.parametrize("mutation", (
