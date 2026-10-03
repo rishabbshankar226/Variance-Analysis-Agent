@@ -24,6 +24,13 @@ _ACTUAL_KEYS = ("actual", "actual_amount", "actuals")
 _TYPE_KEYS = ("type", "line_type", "revenue_expense_type", "classification")
 
 _SUMMARY_RE = re.compile(r"\b(grand\s+total|sub\s*total|subtotal|total)\b", re.IGNORECASE)
+_CATEGORY_SUMMARY_RE = re.compile(
+    r"(?:(?:grand\s+total|sub\s*total|total)\s+"
+    r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)|"
+    r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)\s+"
+    r"(?:grand\s+total|sub\s*total|total)|grand\s+total|sub\s*total|total)",
+    re.IGNORECASE,
+)
 _REVENUE_RE = re.compile(r"\b(revenue|sales|income)\b", re.IGNORECASE)
 _EXPENSE_RE = re.compile(
     r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b",
@@ -80,6 +87,22 @@ def _classify_explicit(value: Any) -> LineType | None:
     if text in {"expense", "expenses", "cost", "costs", "opex", "cogs"}:
         return LineType.EXPENSE
     return None
+
+
+def _summary_candidate(line_item: str, row: dict[str, Any]) -> bool:
+    if "row_kind" in row and not is_missing(row["row_kind"]):
+        kind = str(row["row_kind"]).strip().casefold()
+        if kind == "detail":
+            return False
+        if kind in {"total", "subtotal"}:
+            return True
+        raise ValueError(f"{line_item}: Row Kind must be Detail, Total, or Subtotal.")
+    if _CATEGORY_SUMMARY_RE.fullmatch(line_item):
+        return True
+    if _SUMMARY_RE.search(line_item):
+        raise ValueError(f"{line_item}: ambiguous summary label; specify Row Kind as "
+                         "Detail, Total, or Subtotal.")
+    return False
 
 
 def _classify(line_item: str, row: dict[str, Any], config: AnalysisConfig) -> LineType:
@@ -323,6 +346,26 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
     if config.dollar_threshold < 0 or config.percent_threshold < 0:
         raise ValueError("Materiality thresholds must be non-negative.")
 
+    # The exported Python API must uphold the same classification contract as
+    # CLI type-map loading. Copy the mapping to detach caller-owned state.
+    validated_type_map: dict[str, LineType] = {}
+    for item, value in config.type_map.items():
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("Type map keys must be nonblank line-item strings.")
+        try:
+            validated_type_map[item] = LineType(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Type map value for {item!r} must be Revenue, Expense, "
+                             "or Unclassified.") from exc
+    config = replace(
+        config,
+        type_map=validated_type_map,
+        dollar_threshold=parse_decimal(config.dollar_threshold, field="dollar_threshold",
+                                       line_item="Materiality"),
+        percent_threshold=parse_decimal(config.percent_threshold, field="percent_threshold",
+                                        line_item="Materiality"),
+    )
+
     # Validate threshold precision/range even if no row reaches a comparison.
     +config.dollar_threshold
     +config.percent_threshold
@@ -351,7 +394,7 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         )
 
         line_type = _classify(line_item, row, config)
-        summary_candidate = bool(_SUMMARY_RE.search(line_item))
+        summary_candidate = _summary_candidate(line_item, row)
         variance = actual - budget
         pct, pct_label = _percent_variance(budget, actual)
         material = _is_material(budget, variance, config)

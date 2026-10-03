@@ -7,6 +7,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
+from zipfile import BadZipFile
 
 
 _NUMBER_RE = re.compile(
@@ -25,6 +26,10 @@ def is_missing(value: Any) -> bool:
 def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
     if not number.is_finite():
         raise ValueError(f"{line_item}: field '{field}' must be a finite number.")
+    # Zero has no financial scale requirement. Extreme zero exponents bypass
+    # arithmetic traps but expand to arbitrarily large fixed-point strings.
+    if number.is_zero() and abs(number.as_tuple().exponent) > 999:
+        return Decimal("-0") if number.is_signed() else Decimal("0")
     return number
 
 
@@ -163,28 +168,42 @@ def load_file(path: str | Path) -> list[dict[str, Any]]:
                 "Excel input requires the optional dependency: pip install 'variance-analysis-agent[excel]'"
             ) from exc
 
-        wb = load_workbook(path, read_only=True, data_only=True)
-        try:
-            ws = wb.active
-            if ws is None:
-                raise ValueError("Excel input has no active worksheet.")
-            rows = ws.iter_rows(values_only=True)
+        # Owning the input handle also closes it if workbook construction fails.
+        with path.open("rb") as source:
+            wb = None
             try:
-                raw_headers = list(next(rows))
-            except StopIteration as exc:
-                raise ValueError("Excel input is empty.") from exc
-            headers = _normalized_headers(raw_headers)
-            output: list[dict[str, Any]] = []
-            for row_number, values in enumerate(rows, start=2):
-                if all(value is None or value == "" for value in values):
-                    continue
-                if any(value is not None and value != "" and not header
-                       for header, value in zip(headers, values)):
-                    raise ValueError(f"Excel row {row_number}: data appears under a blank header.")
-                output.append({h: v for h, v in zip(headers, values) if h})
-            return output
-        finally:
-            wb.close()
+                wb = load_workbook(source, read_only=True, data_only=True)
+                ws = wb.active
+                if ws is None:
+                    raise ValueError("Excel input has no active worksheet.")
+                # Producer-provided dimensions can truncate data or inflate work.
+                ws.reset_dimensions()
+                rows = ws.iter_rows(values_only=True)
+                try:
+                    raw_headers = list(next(rows))
+                except StopIteration as exc:
+                    raise ValueError("Excel input is empty.") from exc
+                headers = _normalized_headers(raw_headers)
+                output: list[dict[str, Any]] = []
+                for row_number, values in enumerate(rows, start=2):
+                    if all(value is None or value == "" for value in values):
+                        continue
+                    if any(value is not None and value != ""
+                           for value in values[len(headers):]):
+                        raise ValueError(f"Excel row {row_number}: data appears under a blank "
+                                         "header beyond the header row.")
+                    if any(value is not None and value != "" and not header
+                           for header, value in zip(headers, values)):
+                        raise ValueError(f"Excel row {row_number}: data appears under a blank header.")
+                    # Without declared dimensions, physical rows may be short.
+                    padded = list(values) + [None] * max(0, len(headers) - len(values))
+                    output.append({h: v for h, v in zip(headers, padded) if h})
+                return output
+            except (BadZipFile, KeyError, SyntaxError) as exc:
+                raise ValueError(f"Invalid Excel workbook {path.name!r}: {exc}") from exc
+            finally:
+                if wb is not None:
+                    wb.close()
     raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
 
 

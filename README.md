@@ -53,6 +53,7 @@ Minimum usable fields:
 | Budget | Yes | Currency symbols, commas, and accounting parentheses are accepted |
 | Actual | Yes | Same cleaning rules as Budget |
 | Type | Recommended | Revenue/Income/Sales or Expense/Cost. Ambiguous rows remain Unclassified |
+| Row Kind | Optional | `Detail`, `Total`, or `Subtotal`; use it when a label could be mistaken for a summary |
 
 Optional driver models:
 
@@ -114,11 +115,18 @@ The tool explains variances and breaks down the drivers the data supports. It do
   the header's column count. Data under unnamed columns is rejected.
 - JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
 - Blank Excel rows are ignored; populated cells under blank headers are rejected.
+- Excel rows are read from worksheet contents rather than trusting declared dimensions.
+  Malformed workbook structures produce an actionable Excel input error.
 - Blank types allow label inference. Nonblank, unrecognized types stay Unclassified.
   Net income, operating income, and gross profit labels are not inferred as revenue.
 - For each category, supply detail rows alone, one summary alone, or detail rows
   plus one total that reconciles within $0.01. Multiple nested subtotals have no
   hierarchy metadata and are rejected; remove them before analysis.
+- Common category labels such as `Total Revenue` and `Grand Total Expenses` are
+  recognized as summaries. Other labels containing `total` or `subtotal` require
+  `Row Kind` to resolve their meaning. For example, mark `Total Quality Management`
+  as `Detail` when it represents a separate expense account. A custom rollup can
+  use `Row Kind=Total`; the existing reconciliation rules still apply.
 - Report and audit destinations must differ from each other, the input, and the
   type map. This also applies to symlinks and hardlinks.
 - Expected input/file errors exit with code 2 and an explanation. Fix the named
@@ -155,6 +163,12 @@ instead of silently rounding amounts. Recurring percentage ratios may round to
 `percent_threshold * abs(budget)` at sufficient product precision. This avoids
 false negatives near a repeating-ratio boundary. Zero-budget rules are unchanged.
 This policy supersedes the historical precision limitations in earlier audit notes.
+Extreme exponents on zero values are canonicalized to signed zero so audit
+serialization cannot allocate an arbitrarily large fixed-point string.
+
+The exported Python API validates type-map values as `Revenue`, `Expense`, or
+`Unclassified`, and copies the mapping before analysis. Invalid values fail
+before the tool can claim complete classification.
 
 Driver models are checked in their documented order until one reconciles.
 Optional driver values marked blank, N/A, NA, null, or a dash are unavailable;
