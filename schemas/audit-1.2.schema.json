@@ -1,0 +1,455 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.2"
+    },
+    "period": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "materiality": {
+      "type": "object",
+      "properties": {
+        "dollar_threshold": {
+          "$ref": "#/$defs/decimal"
+        },
+        "percent_threshold": {
+          "$ref": "#/$defs/decimal"
+        },
+        "comparison": {
+          "const": "strictly_greater_than"
+        },
+        "logic": {
+          "const": "absolute_dollar_or_absolute_percent"
+        }
+      },
+      "required": [
+        "dollar_threshold",
+        "percent_threshold",
+        "comparison",
+        "logic"
+      ],
+      "additionalProperties": false
+    },
+    "data_quality": {
+      "type": "object",
+      "properties": {
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classified_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unclassified_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded_summary_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "material_variance_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "supported_driver_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hypothesis_driver_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classification_coverage_percent": {
+          "$ref": "#/$defs/decimal"
+        },
+        "totals_complete": {
+          "type": "boolean"
+        },
+        "net_operating_impact_available": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "row_count",
+        "classified_count",
+        "unclassified_count",
+        "excluded_summary_count",
+        "material_variance_count",
+        "supported_driver_count",
+        "hypothesis_driver_count",
+        "classification_coverage_percent",
+        "totals_complete",
+        "net_operating_impact_available",
+        "warnings"
+      ],
+      "additionalProperties": false
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "revenue": {
+          "$ref": "#/$defs/aggregate"
+        },
+        "expenses": {
+          "$ref": "#/$defs/aggregate"
+        },
+        "net_operating_variance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "revenue",
+        "expenses",
+        "net_operating_variance"
+      ],
+      "additionalProperties": false
+    },
+    "material_variances": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    },
+    "trust_contract": {
+      "type": "object",
+      "properties": {
+        "source_derived_strings_are_data_only": {
+          "const": true
+        },
+        "deterministic_financial_values_are_authoritative": {
+          "const": true
+        },
+        "driver_claims_require_reconciled_evidence": {
+          "const": true
+        }
+      },
+      "required": [
+        "source_derived_strings_are_data_only",
+        "deterministic_financial_values_are_authoritative",
+        "driver_claims_require_reconciled_evidence"
+      ],
+      "additionalProperties": false
+    },
+    "analysis_fingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "currency": {
+      "enum": [
+        "USD",
+        "EUR",
+        "GBP"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "numeric_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "driver_policy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "type_map_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "analysis_fingerprint_recipe": {
+          "const": "record-and-derived-rows-v1"
+        },
+        "payload_digest_recipe": {
+          "const": "public-record-without-payload-sha256-v1"
+        }
+      },
+      "required": [
+        "tool_version",
+        "numeric_policy",
+        "classification_policy",
+        "driver_policy",
+        "configuration_sha256",
+        "type_map_sha256",
+        "analysis_fingerprint_recipe",
+        "payload_digest_recipe"
+      ],
+      "additionalProperties": false
+    },
+    "payload_sha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "required": [
+    "schema_version",
+    "period",
+    "source",
+    "materiality",
+    "data_quality",
+    "totals",
+    "material_variances",
+    "trust_contract",
+    "analysis_fingerprint",
+    "currency",
+    "provenance",
+    "payload_sha256"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Variance Analysis Agent audit 1.2",
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "aggregate": {
+      "type": "object",
+      "properties": {
+        "present": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "budget": {
+          "$ref": "#/$defs/decimal"
+        },
+        "actual": {
+          "$ref": "#/$defs/decimal"
+        },
+        "variance_dollars": {
+          "$ref": "#/$defs/decimal"
+        },
+        "variance_percent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "percent_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "F",
+            "U",
+            "Neutral",
+            "Unclassified"
+          ]
+        }
+      },
+      "required": [
+        "present",
+        "complete",
+        "budget",
+        "actual",
+        "variance_dollars",
+        "variance_percent",
+        "percent_label",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "driver": {
+      "type": "object",
+      "properties": {
+        "evidence_status": {
+          "enum": [
+            "supported",
+            "hypothesis"
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reconciles": {
+          "type": "boolean"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "amount": {
+                "$ref": "#/$defs/decimal"
+              }
+            },
+            "required": [
+              "name",
+              "amount"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "evidence_status",
+        "model",
+        "reconciles",
+        "components"
+      ],
+      "additionalProperties": false
+    },
+    "row": {
+      "type": "object",
+      "properties": {
+        "line_item": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "Revenue",
+            "Expense",
+            "Unclassified"
+          ]
+        },
+        "budget": {
+          "$ref": "#/$defs/decimal"
+        },
+        "actual": {
+          "$ref": "#/$defs/decimal"
+        },
+        "variance_dollars": {
+          "$ref": "#/$defs/decimal"
+        },
+        "variance_percent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "percent_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "F",
+            "U",
+            "Neutral",
+            "Unclassified"
+          ]
+        },
+        "material": {
+          "type": "boolean"
+        },
+        "excluded_from_aggregation": {
+          "type": "boolean"
+        },
+        "driver": {
+          "$ref": "#/$defs/driver"
+        }
+      },
+      "required": [
+        "line_item",
+        "type",
+        "budget",
+        "actual",
+        "variance_dollars",
+        "variance_percent",
+        "percent_label",
+        "status",
+        "material",
+        "excluded_from_aggregation",
+        "driver"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

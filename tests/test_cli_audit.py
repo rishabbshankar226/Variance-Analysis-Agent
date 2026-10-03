@@ -6,7 +6,7 @@ from test_audit import _result
 def test_cli_writes_report_and_audit_with_source_fingerprint(tmp_path, monkeypatch):
     source = tmp_path / "input.csv"
     source.write_text("Line Item,Budget,Actual\nRevenue,1,2\n", encoding="utf-8")
-    monkeypatch.setattr(cli, "load_file", lambda _: [{"dummy": True}])
+    monkeypatch.setattr(cli, "load_bytes", lambda *args, **kwargs: [{"dummy": True}])
     monkeypatch.setattr(cli, "analyze_rows", lambda rows, config: _result())
     monkeypatch.setattr(cli, "render_markdown", lambda result: "# report\n")
 

@@ -9,13 +9,30 @@ from typing import Any
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
 from .output import write_text_outputs
-from .numeric import financial_context, ratio
+from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
+from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID
+from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.1"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1")
+CURRENT_SCHEMA_VERSION = "1.2"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _canonical(value: dict[str, Any]) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                      allow_nan=False).encode("utf-8")
+
+
+def payload_sha256(record: dict[str, Any]) -> str:
+    """Public integrity recipe: omit only the digest itself; this is not authentication."""
+    return sha256_bytes(_canonical({key:value for key,value in record.items()
+                                   if key != "payload_sha256"}))
 
 
 def _decimal(value: Decimal | None) -> str | None:
@@ -94,6 +111,7 @@ def build_audit_record(
     source_name: str | None = None,
     source_sha256: str | None = None,
     schema_version: str | None = None,
+    type_map_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
@@ -107,6 +125,8 @@ def build_audit_record(
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
     if source_sha256 is not None and not _SHA256_RE.fullmatch(source_sha256):
         raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")
+    if type_map_sha256 is not None and not _SHA256_RE.fullmatch(type_map_sha256):
+        raise ValueError("type_map_sha256 must be a 64-character hexadecimal SHA-256 digest.")
 
     row_count = len(result.rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
@@ -183,9 +203,27 @@ def build_audit_record(
     }
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    canonical = json.dumps(
-        {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]},
-        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-    )
-    record["analysis_fingerprint"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if schema_version == "1.2":
+        config_identity = {
+            "period": result.config.period,
+            "dollar_threshold": _decimal(result.config.dollar_threshold),
+            "percent_threshold": _decimal(result.config.percent_threshold),
+            "currency": result.config.currency,
+            "type_map": {key:str(value) for key,value in result.config.type_map.items()},
+        }
+        record["provenance"] = {
+            "tool_version": __version__,
+            "numeric_policy": NUMERIC_POLICY_ID,
+            "classification_policy": CLASSIFICATION_POLICY_ID,
+            "driver_policy": DRIVER_POLICY_ID,
+            "configuration_sha256": sha256_bytes(_canonical(config_identity)),
+            "type_map_sha256": type_map_sha256.lower() if type_map_sha256 is not None else None,
+            "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+            "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+        }
+    record["analysis_fingerprint"] = sha256_bytes(_canonical(
+        {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]}
+    ))
+    if schema_version == "1.2":
+        record["payload_sha256"] = payload_sha256(record)
     return record

@@ -14,6 +14,8 @@ from decimal import (
     localcontext,
 )
 
+NUMERIC_POLICY_ID = "decimal-50-half-even-e999-v1"
+
 
 @contextmanager
 def financial_context():
