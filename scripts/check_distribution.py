@@ -28,6 +28,7 @@ def main():
         names = source.getnames()
         for required in ("LICENSE", "pyproject.toml", "src/variance_agent/version.py",
                          "schemas/audit-1.0.schema.json", "schemas/audit-1.3.schema.json",
+                         "schemas/audit-1.4.schema.json",
                          "tests/fixtures/contracts/complete.report.md", "docs/audit-contract.md",
                          "scripts/check_installation.py"):
             assert any(name.endswith("/" + required) for name in names), required

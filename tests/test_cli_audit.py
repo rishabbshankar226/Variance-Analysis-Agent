@@ -2,6 +2,7 @@ import json
 import pytest
 import variance_agent.cli as cli
 from test_audit import _result
+from variance_agent.parsing import ParsedInput
 
 
 def test_cli_help_prints_percentage_example_and_exits_successfully(capsys):
@@ -14,7 +15,7 @@ def test_cli_help_prints_percentage_example_and_exits_successfully(capsys):
 def test_cli_writes_report_and_audit_with_source_fingerprint(tmp_path, monkeypatch):
     source = tmp_path / "input.csv"
     source.write_text("Line Item,Budget,Actual\nRevenue,1,2\n", encoding="utf-8")
-    monkeypatch.setattr(cli, "load_bytes", lambda *args, **kwargs: [{"dummy": True}])
+    monkeypatch.setattr(cli, "load_input", lambda *args, **kwargs: ParsedInput([{"dummy": True}]))
     monkeypatch.setattr(cli, "analyze_rows", lambda rows, config: _result())
     monkeypatch.setattr(cli, "render_markdown", lambda result: "# report\n")
 

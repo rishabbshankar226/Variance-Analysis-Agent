@@ -10,7 +10,7 @@ import pytest
 from jsonschema import Draft202012Validator, ValidationError
 
 from variance_agent.analysis import analyze_rows
-from variance_agent.audit import build_audit_record, serialize_audit_json
+from variance_agent.audit import SUPPORTED_SCHEMA_VERSIONS, build_audit_record, serialize_audit_json
 from variance_agent.models import AnalysisConfig
 from variance_agent.report import render_markdown
 
@@ -58,6 +58,13 @@ def test_current_audit_schema_accepts_engine_output(name):
     _, result = fixture_result(name)
     record = build_audit_record(result)
     audit_validator(record["schema_version"]).validate(record)
+
+
+@pytest.mark.parametrize("version", SUPPORTED_SCHEMA_VERSIONS)
+@pytest.mark.parametrize("name", CASES)
+def test_each_selectable_wire_version_matches_its_immutable_schema(name, version):
+    _, result = fixture_result(name)
+    audit_validator(version).validate(build_audit_record(result, schema_version=version))
 
 
 @pytest.mark.parametrize("mutation", (

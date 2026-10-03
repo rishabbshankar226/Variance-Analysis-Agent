@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import re
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
@@ -19,6 +20,12 @@ _NUMBER_RE = re.compile(
 )
 
 _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
+
+
+@dataclass(frozen=True)
+class ParsedInput:
+    rows: list[dict[str, Any]]
+    worksheet: str | None = None
 
 
 def is_missing(value: Any) -> bool:
@@ -180,19 +187,31 @@ def validate_input_format(suffix: str) -> None:
         _excel_loader()
 
 
-def load_file(path: str | Path) -> list[dict[str, Any]]:
+def load_file(path: str | Path, *, sheet: str | None = None) -> list[dict[str, Any]]:
     path = Path(path)
     validate_input_format(path.suffix)
-    return load_bytes(path.read_bytes(), path.suffix, source_name=path.name)
+    return load_bytes(path.read_bytes(), path.suffix, source_name=path.name, sheet=sheet)
 
 
-def load_bytes(data: bytes, suffix: str, *, source_name: str = "input") -> list[dict[str, Any]]:
+def load_bytes(
+    data: bytes, suffix: str, *, source_name: str = "input", sheet: str | None = None
+) -> list[dict[str, Any]]:
+    return load_input(data, suffix, source_name=source_name, sheet=sheet).rows
+
+
+def load_input(
+    data: bytes, suffix: str, *, source_name: str = "input", sheet: str | None = None
+) -> ParsedInput:
     """Parse the same captured bytes whose digest identifies the analysis input."""
     suffix = suffix.lower()
+    if sheet is not None and suffix not in {".xlsx", ".xlsm"}:
+        raise ValueError("Worksheet selection requires XLSX or XLSM input.")
+    if sheet is not None and not isinstance(sheet, str):
+        raise ValueError("Worksheet name must be text.")
     if suffix == ".csv":
-        return load_csv_text(data.decode("utf-8-sig"))
+        return ParsedInput(load_csv_text(data.decode("utf-8-sig")))
     if suffix == ".json":
-        return load_json_text(data.decode("utf-8"))
+        return ParsedInput(load_json_text(data.decode("utf-8")))
     if suffix in {".xlsx", ".xlsm"}:
         load_workbook = _excel_loader()
 
@@ -201,7 +220,9 @@ def load_bytes(data: bytes, suffix: str, *, source_name: str = "input") -> list[
             wb = None
             try:
                 wb = load_workbook(source, read_only=True, data_only=True)
-                ws = wb.active
+                if sheet is not None and sheet not in wb.sheetnames:
+                    raise ValueError(f"Worksheet {sheet!r} was not found; supply an exact --sheet name.")
+                ws = wb.active if sheet is None else wb[sheet]
                 if ws is None:
                     raise ValueError("Excel input has no active worksheet.")
                 # Producer-provided dimensions can truncate data or inflate work.
@@ -226,7 +247,7 @@ def load_bytes(data: bytes, suffix: str, *, source_name: str = "input") -> list[
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded) if h})
-                return output
+                return ParsedInput(output, ws.title)
             except (BadZipFile, KeyError, SyntaxError) as exc:
                 raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc
             finally:
