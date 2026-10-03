@@ -29,10 +29,32 @@ class AnalysisConfig:
 
 
 @dataclass(frozen=True)
+class DriverReconciliation:
+    modeled_budget: Decimal
+    modeled_actual: Decimal
+    budget_residual: Decimal | None
+    actual_residual: Decimal | None
+    component_residual: Decimal | None
+    amount_tolerance: Decimal
+    variance_tolerance: Decimal
+    failure_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class DriverEvidence:
     label: str
     components: tuple[tuple[str, Decimal], ...]
     reconciles: bool
+    reconciliation: DriverReconciliation | None = None
+
+
+@dataclass(frozen=True)
+class SummaryVerification:
+    outcome: str
+    detail_count: int
+    budget_residual: Decimal | None = None
+    actual_residual: Decimal | None = None
+    tolerance: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +71,10 @@ class AnalyzedRow:
     excluded_from_aggregation: bool
     driver_evidence: DriverEvidence | None
     raw: dict[str, Any]
+    classification_source: str = "unavailable"
+    summary_source: str = "unavailable"
+    materiality_reason: str = "unavailable"
+    summary_verification: SummaryVerification | None = None
 
 
 @dataclass(frozen=True)

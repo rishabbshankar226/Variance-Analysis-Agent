@@ -12,8 +12,10 @@ explicit unbudgeted label. Schema validation checks structure; deterministic
 Python remains responsible for reconciliation and arithmetic.
 
 Version 1.1 adds the explicit reporting `currency` (USD, EUR, or GBP).
-Version 1.2 is the default and adds policy/configuration provenance and a
-recomputable `payload_sha256`. Use `--audit-schema-version 1.0` or the Python `schema_version="1.0"`
+Version 1.2 adds policy/configuration provenance and a recomputable `payload_sha256`.
+Version 1.3 is the default and adds classification/materiality decision sources,
+summary verification, driver reconciliation diagnostics, and completeness basis.
+See [financial rules](financial-rules.md). Use `--audit-schema-version 1.0` or the Python `schema_version="1.0"`
 keyword for a legacy USD consumer. Version 1.0 cannot represent another currency
 and rejects non-USD runs. Its archived records and fingerprint recipe are retained.
 
@@ -55,7 +57,9 @@ This provides change detection, not origin authentication.
 
 `analysis_fingerprint` uses `record-and-derived-rows-v1`: the same canonicalization
 over `{record: record-before-both-digests, analyzed_rows: all-derived-row-records}`.
-Versions 1.0/1.1 retain their original record shape and fingerprint behavior.
+Versions 1.0/1.1/1.2 retain their original record shape and fingerprint behavior.
+For 1.3, derived-row records also include the new decision diagnostics. The recipe
+is unchanged; the versioned record shape makes the changed identity explicit.
 
 Completeness describes the supplied dataset: every row classified and both
 Revenue and Expense present. It does not establish completeness of a company's
