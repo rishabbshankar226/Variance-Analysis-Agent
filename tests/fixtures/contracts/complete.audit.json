@@ -1,0 +1,103 @@
+{
+  "analysis_fingerprint": "7962d88bb360c6db0bd3f2726c138fa016336460b7af1f027e922fe2d0314064",
+  "data_quality": {
+    "classification_coverage_percent": "100.00",
+    "classified_count": 2,
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 1,
+    "material_variance_count": 2,
+    "net_operating_impact_available": true,
+    "row_count": 2,
+    "supported_driver_count": 1,
+    "totals_complete": true,
+    "unclassified_count": 0,
+    "warnings": []
+  },
+  "material_variances": [
+    {
+      "actual": "1320",
+      "budget": "1000",
+      "driver": {
+        "components": [
+          {
+            "amount": "200",
+            "name": "Units effect"
+          },
+          {
+            "amount": "120",
+            "name": "Price effect"
+          }
+        ],
+        "evidence_status": "supported",
+        "model": "units / price",
+        "reconciles": true
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Subscription Revenue",
+      "material": true,
+      "percent_label": null,
+      "status": "F",
+      "type": "Revenue",
+      "variance_dollars": "320",
+      "variance_percent": "0.32"
+    },
+    {
+      "actual": "650",
+      "budget": "500",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Marketing Expense",
+      "material": true,
+      "percent_label": null,
+      "status": "U",
+      "type": "Expense",
+      "variance_dollars": "150",
+      "variance_percent": "0.3"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "100",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.05"
+  },
+  "period": "Q3 2026",
+  "schema_version": "1.0",
+  "source": {
+    "name": "complete.input.json",
+    "sha256": "e90b52202d96ae67685271b9f62dfd51a77d1810af12ba27c114ee5f8739535f"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "650",
+      "budget": "500",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "U",
+      "variance_dollars": "150",
+      "variance_percent": "0.3"
+    },
+    "net_operating_variance": "170",
+    "revenue": {
+      "actual": "1320",
+      "budget": "1000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "320",
+      "variance_percent": "0.32"
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  }
+}

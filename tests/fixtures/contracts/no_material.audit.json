@@ -1,0 +1,57 @@
+{
+  "analysis_fingerprint": "cf13d8cd28f84867350f944783b2d53f07560012f2f50570866202b44f6c29fb",
+  "data_quality": {
+    "classification_coverage_percent": "100.00",
+    "classified_count": 2,
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 0,
+    "material_variance_count": 0,
+    "net_operating_impact_available": true,
+    "row_count": 2,
+    "supported_driver_count": 0,
+    "totals_complete": true,
+    "unclassified_count": 0,
+    "warnings": []
+  },
+  "material_variances": [],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "100",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.05"
+  },
+  "period": "Q3 2026",
+  "schema_version": "1.0",
+  "source": {
+    "name": "no_material.input.json",
+    "sha256": "3ddd19b9f8b0878b90c393ed945da3c63d1a22fd9c2201be5e9e78aeafdc93c2"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "1900",
+      "budget": "2000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "-100",
+      "variance_percent": "-0.05"
+    },
+    "net_operating_variance": "150",
+    "revenue": {
+      "actual": "1050",
+      "budget": "1000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "50",
+      "variance_percent": "0.05"
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  }
+}

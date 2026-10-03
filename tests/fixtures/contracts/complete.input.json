@@ -1,0 +1,25 @@
+{
+  "config": {
+    "period": "Q3 2026",
+    "dollar_threshold": "100",
+    "percent_threshold": "0.05"
+  },
+  "rows": [
+    {
+      "Line Item": "Subscription Revenue",
+      "Type": "Revenue",
+      "Budget": "1000",
+      "Actual": "1320",
+      "Budget Units": "100",
+      "Actual Units": "120",
+      "Budget Price": "10",
+      "Actual Price": "11"
+    },
+    {
+      "Line Item": "Marketing Expense",
+      "Type": "Expense",
+      "Budget": "500",
+      "Actual": "650"
+    }
+  ]
+}

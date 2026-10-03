@@ -14,7 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 excel = ["openpyxl>=3.1"]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "jsonschema>=4.23"]
 
 [project.scripts]
 variance-agent = "variance_agent.cli:main"
