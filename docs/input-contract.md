@@ -30,3 +30,30 @@ variance-agent examples/sample_eur.csv --period 'Q3 2026' \
   --currency EUR --dollar-threshold 100 --percent-threshold 5 \
   --output report.md --audit-json audit.json
 ```
+
+## Validation without artifacts
+
+`--check-only` runs the same parser, classification, summary/driver verification,
+and deterministic analysis, then prints a bounded row/materiality/quality summary.
+It creates no report or audit files and cannot be combined with output flags.
+Required period and threshold arguments remain required. Expected errors exit 2;
+valid input exits 0. Unclassified rows and unsupported drivers retain their normal
+warning/hypothesis behavior rather than becoming invented validation errors.
+
+```sh
+variance-agent examples/sample_variance.csv --period 'Q3 2026' \
+  --dollar-threshold 100 --percent-threshold 5 --check-only
+```
+
+## Excel worksheet selection
+
+Use `--sheet 'Reviewed'` to select that exact name from XLSX/XLSM input. Name matching
+is case-sensitive; explicit selection can include a hidden worksheet. Without the
+flag, the current active worksheet remains the default. Missing/empty sheets fail
+actionably; `--sheet` with CSV/JSON is rejected. Headers/dimensions receive the same
+validation on every selected sheet.
+
+Audit 1.4 records the actual selected worksheet name, including the active-sheet
+default; CSV/JSON use null. Older explicitly selected audit versions omit this
+metadata. Excel values come from cached formula results (`data_only=True`);
+formulas are never recalculated. Missing caches remain missing input values.

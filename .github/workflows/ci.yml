@@ -91,6 +91,7 @@ jobs:
       - run: >-
           pytest tests/test_portable_output.py tests/test_currency.py
           tests/test_contract_fixtures.py tests/test_cli_audit.py tests/test_provenance.py
+          tests/test_operator_controls.py
 
   required:
     name: Required checks

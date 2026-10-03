@@ -46,13 +46,13 @@ def test_cli_hashes_the_exact_bytes_analyzed_during_source_and_map_replacement(t
     mapping.write_bytes(original_map)
     # Model an A->B->A producer replacement at the parser boundary. The result
     # must identify the bytes actually parsed, not a separate observation of A.
-    if hasattr(cli, "load_bytes"):
-        parse = cli.load_bytes
+    if hasattr(cli, "load_input"):
+        parse = cli.load_input
         def replace_after_capture(data, suffix, **kwargs):
             source.write_bytes(replacement)
             mapping.write_bytes(b'{"Sales":"Expense"}')
             return parse(data, suffix, **kwargs)
-        monkeypatch.setattr(cli, "load_bytes", replace_after_capture)
+        monkeypatch.setattr(cli, "load_input", replace_after_capture)
     else:
         parse = cli.load_file
         def replace_between_observations(path):

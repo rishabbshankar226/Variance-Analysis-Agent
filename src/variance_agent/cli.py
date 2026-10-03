@@ -11,7 +11,7 @@ from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, LineType
-from .parsing import load_bytes, load_json_value, parse_decimal, validate_input_format
+from .parsing import load_input, load_json_value, parse_decimal, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import render_markdown
@@ -70,6 +70,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Percentage threshold as a percent number (for example, 5 for 5%%).",
     )
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
+    parser.add_argument("--check-only", action="store_true",
+                        help="Validate/analyze input and print a summary without writing outputs.")
+    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet).")
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
@@ -100,14 +103,18 @@ def _validate_output_paths(args: argparse.Namespace) -> None:
 
 @financial_context()
 def _run(args: argparse.Namespace) -> int:
+    if args.check_only and (args.output or args.audit_json):
+        raise ValueError("--check-only cannot be combined with --output or --audit-json.")
     _validate_output_paths(args)
     input_path = Path(args.input)
+    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+        raise ValueError("--sheet requires XLSX or XLSM input.")
     validate_input_format(input_path.suffix)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = input_path.read_bytes()
     type_map_bytes = Path(args.type_map).read_bytes() if args.type_map else None
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
-    rows = load_bytes(source_bytes, input_path.suffix, source_name=input_path.name)
+    parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -115,13 +122,20 @@ def _run(args: argparse.Namespace) -> int:
         type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
         currency=args.currency,
     )
-    result = analyze_rows(rows, config)
+    result = analyze_rows(parsed.rows, config)
+    if args.check_only:
+        unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
+        print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "
+              f"variances, {unclassified} Unclassified, {len(result.warnings)} warnings; "
+              f"reporting currency {config.currency}.")
+        return 0
     report = render_markdown(result)
     record = (
         build_audit_record(result, source_name=input_path.name, source_sha256=source_hash,
                            schema_version=args.audit_schema_version,
                            type_map_sha256=(sha256_bytes(type_map_bytes)
-                                            if type_map_bytes is not None else None))
+                                            if type_map_bytes is not None else None),
+                           source_worksheet=parsed.worksheet)
         if args.audit_json else None
     )
     outputs = {}

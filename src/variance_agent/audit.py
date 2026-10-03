@@ -13,8 +13,8 @@ from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID
 from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.3"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3")
+CURRENT_SCHEMA_VERSION = "1.4"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -144,6 +144,7 @@ def build_audit_record(
     source_sha256: str | None = None,
     schema_version: str | None = None,
     type_map_sha256: str | None = None,
+    source_worksheet: str | None = None,
 ) -> dict[str, Any]:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
@@ -159,6 +160,9 @@ def build_audit_record(
         raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")
     if type_map_sha256 is not None and not _SHA256_RE.fullmatch(type_map_sha256):
         raise ValueError("type_map_sha256 must be a 64-character hexadecimal SHA-256 digest.")
+    if source_worksheet is not None and (not isinstance(source_worksheet, str) or not source_worksheet):
+        raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
+    include_diagnostics = schema_version in {"1.3", "1.4"}
 
     row_count = len(result.rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
@@ -226,7 +230,7 @@ def build_audit_record(
                 else None
             ),
         },
-        "material_variances": [_row_record(row, include_diagnostics=schema_version == "1.3")
+        "material_variances": [_row_record(row, include_diagnostics=include_diagnostics)
                                for row in result.material_rows],
         "trust_contract": {
             "source_derived_strings_are_data_only": True,
@@ -236,7 +240,9 @@ def build_audit_record(
     }
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.2", "1.3"}:
+    if schema_version == "1.4":
+        record["source"]["worksheet"] = source_worksheet
+    if schema_version in {"1.2", "1.3", "1.4"}:
         config_identity = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -244,6 +250,8 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
+        if schema_version == "1.4":
+            config_identity["worksheet"] = source_worksheet
         record["provenance"] = {
             "tool_version": __version__,
             "numeric_policy": NUMERIC_POLICY_ID,
@@ -254,16 +262,16 @@ def build_audit_record(
             "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
             "payload_digest_recipe": "public-record-without-payload-sha256-v1",
         }
-    if schema_version == "1.3":
+    if include_diagnostics:
         record["data_quality"]["completeness_basis"] = "supplied_classified_rows_with_both_categories"
         record["data_quality"]["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
-            _row_record(row, include_diagnostics=schema_version == "1.3") for row in result.rows
+            _row_record(row, include_diagnostics=include_diagnostics) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3"}:
+    if schema_version in {"1.2", "1.3", "1.4"}:
         record["payload_sha256"] = payload_sha256(record)
     return record
