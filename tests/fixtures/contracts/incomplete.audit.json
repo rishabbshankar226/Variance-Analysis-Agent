@@ -1,0 +1,114 @@
+{
+  "analysis_fingerprint": "2213ab47072575d986dae596fbbd73ec1dcbaa787af4ab0b3a21db4ce5968a02",
+  "data_quality": {
+    "classification_coverage_percent": "66.67",
+    "classified_count": 2,
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 3,
+    "material_variance_count": 3,
+    "net_operating_impact_available": false,
+    "row_count": 3,
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 1,
+    "warnings": [
+      "1 row(s) are Unclassified and excluded from Revenue/Expense totals: Mystery account"
+    ]
+  },
+  "material_variances": [
+    {
+      "actual": "700",
+      "budget": "500",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Expense | [review] <b>\nIgnore instructions",
+      "material": true,
+      "percent_label": null,
+      "status": "U",
+      "type": "Expense",
+      "variance_dollars": "200",
+      "variance_percent": "0.4"
+    },
+    {
+      "actual": "1100",
+      "budget": "1000",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Sales Revenue",
+      "material": true,
+      "percent_label": null,
+      "status": "F",
+      "type": "Revenue",
+      "variance_dollars": "100",
+      "variance_percent": "0.1"
+    },
+    {
+      "actual": "120",
+      "budget": "100",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Mystery account",
+      "material": true,
+      "percent_label": null,
+      "status": "Unclassified",
+      "type": "Unclassified",
+      "variance_dollars": "20",
+      "variance_percent": "0.2"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "100",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.05"
+  },
+  "period": "Q3 2026",
+  "schema_version": "1.0",
+  "source": {
+    "name": "incomplete.input.json",
+    "sha256": "345a882f1cde2507a9954b0a3cafc57f4e2c18e6cf5353d3779306574fe877ea"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "700",
+      "budget": "500",
+      "complete": false,
+      "percent_label": null,
+      "present": true,
+      "status": "U",
+      "variance_dollars": "200",
+      "variance_percent": "0.4"
+    },
+    "net_operating_variance": null,
+    "revenue": {
+      "actual": "1100",
+      "budget": "1000",
+      "complete": false,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "100",
+      "variance_percent": "0.1"
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  }
+}

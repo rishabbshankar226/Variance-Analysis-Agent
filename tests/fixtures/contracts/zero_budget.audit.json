@@ -1,0 +1,94 @@
+{
+  "analysis_fingerprint": "a1745254c40db74e8062f6e5522f34ab9cd80ae0559b9ddd4a6a36fa6c3f84d5",
+  "data_quality": {
+    "classification_coverage_percent": "100.00",
+    "classified_count": 3,
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 2,
+    "material_variance_count": 2,
+    "net_operating_impact_available": true,
+    "row_count": 3,
+    "supported_driver_count": 0,
+    "totals_complete": true,
+    "unclassified_count": 0,
+    "warnings": []
+  },
+  "material_variances": [
+    {
+      "actual": "200",
+      "budget": "0",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "New Revenue",
+      "material": true,
+      "percent_label": "N/A (Unbudgeted)",
+      "status": "F",
+      "type": "Revenue",
+      "variance_dollars": "200",
+      "variance_percent": null
+    },
+    {
+      "actual": "-150",
+      "budget": "0",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "New Expense",
+      "material": true,
+      "percent_label": "N/A (Unbudgeted)",
+      "status": "F",
+      "type": "Expense",
+      "variance_dollars": "-150",
+      "variance_percent": null
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "100",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.05"
+  },
+  "period": "Q3 2026",
+  "schema_version": "1.0",
+  "source": {
+    "name": "zero_budget.input.json",
+    "sha256": "2da029da70b4ecf8183608d04792d16c966d2e835112f222af1994e7eee7948b"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "-150",
+      "budget": "0",
+      "complete": true,
+      "percent_label": "N/A (Unbudgeted)",
+      "present": true,
+      "status": "F",
+      "variance_dollars": "-150",
+      "variance_percent": null
+    },
+    "net_operating_variance": "350",
+    "revenue": {
+      "actual": "200",
+      "budget": "0",
+      "complete": true,
+      "percent_label": "N/A (Unbudgeted)",
+      "present": true,
+      "status": "F",
+      "variance_dollars": "200",
+      "variance_percent": null
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  }
+}

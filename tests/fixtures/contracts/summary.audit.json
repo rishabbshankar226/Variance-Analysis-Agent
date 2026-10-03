@@ -1,0 +1,96 @@
+{
+  "analysis_fingerprint": "add3e03d3ad45b8d1a95b71648590d7835c6bdb3ef07f589918aae0c68d5bc1d",
+  "data_quality": {
+    "classification_coverage_percent": "100.00",
+    "classified_count": 3,
+    "excluded_summary_count": 1,
+    "hypothesis_driver_count": 2,
+    "material_variance_count": 2,
+    "net_operating_impact_available": true,
+    "row_count": 3,
+    "supported_driver_count": 0,
+    "totals_complete": true,
+    "unclassified_count": 0,
+    "warnings": [
+      "1 subtotal/total row(s) were excluded from detail aggregation to avoid double counting."
+    ]
+  },
+  "material_variances": [
+    {
+      "actual": "1200",
+      "budget": "1000",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Product Revenue",
+      "material": true,
+      "percent_label": null,
+      "status": "F",
+      "type": "Revenue",
+      "variance_dollars": "200",
+      "variance_percent": "0.2"
+    },
+    {
+      "actual": "650",
+      "budget": "500",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Payroll Expense",
+      "material": true,
+      "percent_label": null,
+      "status": "U",
+      "type": "Expense",
+      "variance_dollars": "150",
+      "variance_percent": "0.3"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "100",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.05"
+  },
+  "period": "Q3 2026",
+  "schema_version": "1.0",
+  "source": {
+    "name": "summary.input.json",
+    "sha256": "9b22b92ff04d71cf07817d171bc41c6f8570cd998beaf2754e12d6a3b4009ff7"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "650",
+      "budget": "500",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "U",
+      "variance_dollars": "150",
+      "variance_percent": "0.3"
+    },
+    "net_operating_variance": "50",
+    "revenue": {
+      "actual": "1200",
+      "budget": "1000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "200",
+      "variance_percent": "0.2"
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  }
+}

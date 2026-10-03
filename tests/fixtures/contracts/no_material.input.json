@@ -1,0 +1,19 @@
+{
+  "config": {
+    "period": "Q3 2026",
+    "dollar_threshold": "100",
+    "percent_threshold": "0.05"
+  },
+  "rows": [
+    {
+      "Line Item": "Sales Revenue",
+      "Budget": "1000",
+      "Actual": "1050"
+    },
+    {
+      "Line Item": "Rent Expense",
+      "Budget": "2000",
+      "Actual": "1900"
+    }
+  ]
+}

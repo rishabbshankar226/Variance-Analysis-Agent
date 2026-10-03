@@ -1,0 +1,25 @@
+{
+  "config": {
+    "period": "Q3 2026",
+    "dollar_threshold": "100",
+    "percent_threshold": "0.05"
+  },
+  "rows": [
+    {
+      "Line Item": "Product Revenue",
+      "Budget": "1000",
+      "Actual": "1200"
+    },
+    {
+      "Line Item": "Total Revenue",
+      "Row Kind": "Total",
+      "Budget": "1000",
+      "Actual": "1200"
+    },
+    {
+      "Line Item": "Payroll Expense",
+      "Budget": "500",
+      "Actual": "650"
+    }
+  ]
+}

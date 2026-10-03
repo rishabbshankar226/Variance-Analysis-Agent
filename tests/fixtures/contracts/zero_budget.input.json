@@ -1,0 +1,27 @@
+{
+  "config": {
+    "period": "Q3 2026",
+    "dollar_threshold": "100",
+    "percent_threshold": "0.05"
+  },
+  "rows": [
+    {
+      "Line Item": "New Revenue",
+      "Type": "Revenue",
+      "Budget": "0",
+      "Actual": "200"
+    },
+    {
+      "Line Item": "New Expense",
+      "Type": "Expense",
+      "Budget": "0",
+      "Actual": "-150"
+    },
+    {
+      "Line Item": "Empty Expense",
+      "Type": "Expense",
+      "Budget": "0",
+      "Actual": "0"
+    }
+  ]
+}
