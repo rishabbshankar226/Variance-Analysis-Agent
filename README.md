@@ -1,5 +1,11 @@
 # Variance Analysis Agent
 
+Each run uses one reporting currency: USD by default, or explicit `--currency EUR`
+or `--currency GBP`. Conflicting row codes/symbols are rejected; no FX conversion
+is performed. See [the input contract](docs/input-contract.md) and
+[the versioned audit contract](docs/audit-contract.md), including the legacy USD
+audit-format option.
+
 A command-line tool that compares budget to actual, flags material variances and writes a Markdown variance report. It started as an LLM prompt for FP&A variance analysis. This version does every calculation in Python, so the numbers don't depend on a model following instructions.
 
 ## What it checks

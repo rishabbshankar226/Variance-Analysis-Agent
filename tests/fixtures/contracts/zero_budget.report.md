@@ -1,6 +1,7 @@
 # FP&A Variance Report: Q3 2026
 
 ## Executive Summary
+- Reporting Currency: USD
 - Total Revenue: $200.00 vs. $0.00 ($200.00, N/A (Unbudgeted), F)
 - Total Expenses: -$150.00 vs. $0.00 (-$150.00, N/A (Unbudgeted), F)
 - Bottom Line Impact: Revenue and expense variances imply a net operating variance of $350.00, above budget on this simplified revenue-less-expense basis. The largest material variance is New Revenue at $200.00 (F).

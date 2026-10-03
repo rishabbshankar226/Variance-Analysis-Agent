@@ -16,6 +16,7 @@ from .models import (
 )
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
+from .currencies import validate_currency
 
 
 _LINE_ITEM_KEYS = ("line_item", "line", "item", "account", "account_name", "category")
@@ -164,7 +165,7 @@ def _status(line_type: LineType, variance: Decimal) -> Status:
 
 
 def _driver_evidence(
-    row: dict[str, Any], budget: Decimal, actual: Decimal, line_item: str
+    row: dict[str, Any], budget: Decimal, actual: Decimal, line_item: str, currency: str = "USD"
 ) -> DriverEvidence | None:
     tolerance = max(
         Decimal("0.01"),
@@ -178,10 +179,10 @@ def _driver_evidence(
         if not all(key in row and not is_missing(row[key]) for key in required):
             continue
 
-        budget_quantity = parse_decimal(row[bq], field=bq, line_item=line_item)
-        actual_quantity = parse_decimal(row[aq], field=aq, line_item=line_item)
-        budget_rate = parse_decimal(row[br], field=br, line_item=line_item)
-        actual_rate = parse_decimal(row[ar], field=ar, line_item=line_item)
+        budget_quantity = parse_decimal(row[bq], field=bq, line_item=line_item, currency=currency)
+        actual_quantity = parse_decimal(row[aq], field=aq, line_item=line_item, currency=currency)
+        budget_rate = parse_decimal(row[br], field=br, line_item=line_item, currency=currency)
+        actual_rate = parse_decimal(row[ar], field=ar, line_item=line_item, currency=currency)
 
         modeled_budget = budget_quantity * budget_rate
         modeled_actual = actual_quantity * actual_rate
@@ -339,6 +340,7 @@ def _verify_result(
 
 @financial_context()
 def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> AnalysisResult:
+    validate_currency(config.currency)
     if not rows:
         raise ValueError("Dataset contains no data rows.")
     if not config.dollar_threshold.is_finite() or not config.percent_threshold.is_finite():
@@ -382,15 +384,26 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         if not line_item:
             raise ValueError(f"Row {index}: Line Item is blank.")
 
+        if "currency" in row and not is_missing(row["currency"]):
+            row_currency = row["currency"]
+            if not isinstance(row_currency, str):
+                raise ValueError(f"{line_item}: Currency must be a reporting currency code.")
+            row_currency = validate_currency(row_currency.strip().upper())
+            if row_currency != config.currency:
+                raise ValueError(f"{line_item}: row currency {row_currency} conflicts with "
+                                 f"reporting currency {config.currency}.")
+
         budget = parse_decimal(
             _required_value(row, _BUDGET_KEYS, "Budget", index),
             field="Budget",
             line_item=line_item,
+            currency=config.currency,
         )
         actual = parse_decimal(
             _required_value(row, _ACTUAL_KEYS, "Actual", index),
             field="Actual",
             line_item=line_item,
+            currency=config.currency,
         )
 
         line_type = _classify(line_item, row, config)
@@ -398,7 +411,7 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
         variance = actual - budget
         pct, pct_label = _percent_variance(budget, actual)
         material = _is_material(budget, variance, config)
-        driver = _driver_evidence(row, budget, actual, line_item)
+        driver = _driver_evidence(row, budget, actual, line_item, config.currency)
 
         analyzed.append(
             AnalyzedRow(

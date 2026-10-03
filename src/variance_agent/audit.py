@@ -11,6 +11,9 @@ from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
 from .output import write_text_outputs
 from .numeric import financial_context, ratio
 
+CURRENT_SCHEMA_VERSION = "1.1"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1")
+
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -90,12 +93,18 @@ def build_audit_record(
     *,
     source_name: str | None = None,
     source_sha256: str | None = None,
+    schema_version: str | None = None,
 ) -> dict[str, Any]:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
     The record deliberately excludes raw source rows so it can be handed to an AI
     layer without duplicating arbitrary uploaded content into model context.
     """
+    schema_version = CURRENT_SCHEMA_VERSION if schema_version is None else schema_version
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
+    if schema_version == "1.0" and result.config.currency != "USD":
+        raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
     if source_sha256 is not None and not _SHA256_RE.fullmatch(source_sha256):
         raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")
 
@@ -123,7 +132,7 @@ def build_audit_record(
     )
 
     record = {
-        "schema_version": "1.0",
+        "schema_version": schema_version,
         "period": result.config.period,
         "source": {
             "name": source_name,
@@ -172,6 +181,8 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
+    if schema_version != "1.0":
+        record["currency"] = result.config.currency
     canonical = json.dumps(
         {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]},
         sort_keys=True, separators=(",", ":"), ensure_ascii=False,

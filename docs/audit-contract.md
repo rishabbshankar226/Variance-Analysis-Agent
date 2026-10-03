@@ -11,6 +11,11 @@ JSON floats. A zero budget with nonzero actual has a null percentage and an
 explicit unbudgeted label. Schema validation checks structure; deterministic
 Python remains responsible for reconciliation and arithmetic.
 
+Version 1.1 adds the explicit reporting `currency` (USD, EUR, or GBP) and is the
+default. Use `--audit-schema-version 1.0` or the Python `schema_version="1.0"`
+keyword for a legacy USD consumer. Version 1.0 cannot represent another currency
+and rejects non-USD runs. Its archived records and fingerprint recipe are retained.
+
 Published versions are immutable. Future shape changes receive separate schemas;
 archived records remain valid against their original version.
 
@@ -32,6 +37,8 @@ classification, zero budgets, summaries, threshold equality, and escaped labels.
 Review full financial and presentation diffs when changing a golden; do not
 regenerate them merely to make a failure disappear.
 
-The baseline documents current USD presentation. Mixing currency symbols is a
-known defect, not an accepted financial rule; no mixed-currency golden is added.
+Every report now names its reporting currency. Only that metadata line changes in
+the reviewed USD goldens; financial values are unchanged. EUR and GBP goldens
+exercise every report section. Mixing currency symbols is rejected; it is not an
+accepted financial rule.
 Run `pytest tests/test_contract_fixtures.py` after installing `.[dev,excel]`.

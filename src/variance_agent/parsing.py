@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from zipfile import BadZipFile
 
+from .currencies import SYMBOL_CURRENCIES
+
 
 _NUMBER_RE = re.compile(
     r"(?P<prefix>[+-]?[$€£]?|[$€£][+-]?)\s*"
@@ -33,7 +35,9 @@ def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
     return number
 
 
-def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
+def parse_decimal(
+    value: Any, *, field: str, line_item: str, currency: str | None = None
+) -> Decimal:
     if value is None:
         raise ValueError(f"{line_item}: required field '{field}' is missing.")
     if isinstance(value, bool):
@@ -56,6 +60,11 @@ def parse_decimal(value: Any, *, field: str, line_item: str) -> Decimal:
     match = _NUMBER_RE.fullmatch(text.strip())
     if match is None or (negative_parentheses and any(sign in match["prefix"] for sign in "+-")):
         raise ValueError(f"{line_item}: field '{field}' has an invalid numeric format: {value!r}.")
+    if currency is not None:
+        for symbol, code in SYMBOL_CURRENCIES.items():
+            if symbol in match["prefix"] and code != currency:
+                raise ValueError(f"{line_item}: field '{field}' currency {code} conflicts with "
+                                 f"reporting currency {currency}; no FX conversion is performed.")
     sign = "-" if "-" in match["prefix"] else ""
     numeric_text = sign + match["number"].replace(",", "").replace("_", "")
     try:

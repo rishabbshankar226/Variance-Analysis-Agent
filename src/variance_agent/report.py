@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
 from .numeric import financial_context
+from .currencies import CURRENCY_SYMBOLS
 
 
 _INLINE_WS_RE = re.compile(r"\s+")
@@ -28,9 +29,9 @@ def _safe_inline(value: object) -> str:
     return text
 
 
-def _money(value: Decimal) -> str:
+def _money(value: Decimal, currency: str = "USD") -> str:
     sign = "-" if value < 0 else ""
-    return f"{sign}${abs(value):,.2f}"
+    return f"{sign}{CURRENCY_SYMBOLS[currency]}{abs(value):,.2f}"
 
 
 def _pct(value: Decimal | None, label: str | None = None) -> str:
@@ -41,19 +42,19 @@ def _pct(value: Decimal | None, label: str | None = None) -> str:
     return f"{value * Decimal('100'):.1f}%"
 
 
-def _aggregate_line(label: str, aggregate: Aggregate) -> str:
+def _aggregate_line(label: str, aggregate: Aggregate, currency: str = "USD") -> str:
     return (
-        f"- {label}: {_money(aggregate.actual)} vs. {_money(aggregate.budget)} "
-        f"({_money(aggregate.variance_dollars)}, "
+        f"- {label}: {_money(aggregate.actual, currency)} vs. {_money(aggregate.budget, currency)} "
+        f"({_money(aggregate.variance_dollars, currency)}, "
         f"{_pct(aggregate.variance_percent, aggregate.percent_label)}, {aggregate.status})"
     )
 
 
-def _incomplete_aggregate_line(label: str, aggregate: Aggregate) -> str:
+def _incomplete_aggregate_line(label: str, aggregate: Aggregate, currency: str = "USD") -> str:
     return (
         f"- {label}: N/A (classification incomplete; classified subtotal: "
-        f"{_money(aggregate.actual)} vs. {_money(aggregate.budget)}, "
-        f"{_money(aggregate.variance_dollars)}, "
+        f"{_money(aggregate.actual, currency)} vs. {_money(aggregate.budget, currency)}, "
+        f"{_money(aggregate.variance_dollars, currency)}, "
         f"{_pct(aggregate.variance_percent, aggregate.percent_label)}, {aggregate.status})"
     )
 
@@ -92,7 +93,8 @@ def _bottom_line(
         impact = result.revenue.variance_dollars - result.expenses.variance_dollars
         direction = "above" if impact > 0 else "below" if impact < 0 else "in line with"
         sentence_one = (
-            f"Revenue and expense variances imply a net operating variance of {_money(impact)}, "
+            f"Revenue and expense variances imply a net operating variance of "
+            f"{_money(impact, result.config.currency)}, "
             f"{direction} budget on this simplified revenue-less-expense basis."
         )
 
@@ -101,17 +103,17 @@ def _bottom_line(
     else:
         sentence_two = (
             f"The largest material variance is {_safe_inline(top.line_item)} at "
-            f"{_money(top.variance_dollars)} ({top.status})."
+            f"{_money(top.variance_dollars, result.config.currency)} ({top.status})."
         )
     return f"{sentence_one} {sentence_two}"
 
 
-def _driver_sentence(row: AnalyzedRow) -> str:
+def _driver_sentence(row: AnalyzedRow, currency: str = "USD") -> str:
     line_item = _safe_inline(row.line_item)
     evidence = row.driver_evidence
     if evidence and evidence.reconciles:
         components = "; ".join(
-            f"{name}: {_money(value)}" for name, value in evidence.components
+            f"{name}: {_money(value, currency)}" for name, value in evidence.components
         )
         return (
             f"**{line_item} (Supported driver):** {evidence.label} decomposition reconciles; "
@@ -148,7 +150,8 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str) -> str:
         largest_component = max(evidence.components, key=lambda pair: abs(pair[1]))
         return (
             f"- {kind}: Focus the action plan for {line_item} on its "
-            f"{largest_component[0].lower()} ({_money(largest_component[1])}), "
+            f"{largest_component[0].lower()} "
+            f"({_money(largest_component[1], result.config.currency)}), "
             "the largest reconciled component of the variance."
         )
 
@@ -175,16 +178,16 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     )
 
     if classification_incomplete:
-        revenue_line = _incomplete_aggregate_line("Total Revenue", result.revenue)
-        expense_line = _incomplete_aggregate_line("Total Expenses", result.expenses)
+        revenue_line = _incomplete_aggregate_line("Total Revenue", result.revenue, cfg.currency)
+        expense_line = _incomplete_aggregate_line("Total Expenses", result.expenses, cfg.currency)
     else:
         revenue_line = (
-            _aggregate_line("Total Revenue", result.revenue)
+            _aggregate_line("Total Revenue", result.revenue, cfg.currency)
             if has_revenue
             else "- Total Revenue: N/A (no Revenue rows supplied)"
         )
         expense_line = (
-            _aggregate_line("Total Expenses", result.expenses)
+            _aggregate_line("Total Expenses", result.expenses, cfg.currency)
             if has_expenses
             else "- Total Expenses: N/A (no Expense rows supplied)"
         )
@@ -199,6 +202,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         f"# FP&A Variance Report: {_safe_inline(cfg.period)}",
         "",
         "## Executive Summary",
+        f"- Reporting Currency: {cfg.currency}",
         revenue_line,
         expense_line,
         f"- Bottom Line Impact: {bottom_line}",
@@ -213,11 +217,12 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         "",
         "## Material Variances",
         (
-            f"Thresholds: {_money(cfg.dollar_threshold)} or "
+            f"Thresholds: {_money(cfg.dollar_threshold, cfg.currency)} or "
             f"{cfg.percent_threshold * Decimal('100'):.1f}%"
         ),
         "",
-        "| Line Item | Type | Budget | Actual | Var ($) | Var (%) | Status |",
+        f"| Line Item | Type | Budget | Actual | Var ({CURRENCY_SYMBOLS[cfg.currency]}) "
+        "| Var (%) | Status |",
         "|---|---|---:|---:|---:|---:|---|",
     ]
 
@@ -229,9 +234,9 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
                     [
                         _safe_inline(row.line_item),
                         str(row.line_type),
-                        _money(row.budget),
-                        _money(row.actual),
-                        _money(row.variance_dollars),
+                        _money(row.budget, cfg.currency),
+                        _money(row.actual, cfg.currency),
+                        _money(row.variance_dollars, cfg.currency),
                         _pct(row.variance_percent, row.percent_label),
                         str(row.status),
                     ]
@@ -244,7 +249,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     lines += ["", "## Root Cause Analysis"]
     top_rows = result.material_rows[:top_root_causes]
     if top_rows:
-        lines.extend(f"- {_driver_sentence(row)}" for row in top_rows)
+        lines.extend(f"- {_driver_sentence(row, cfg.currency)}" for row in top_rows)
     else:
         lines.append("- No material variance requires root-cause analysis.")
 
