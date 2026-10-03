@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
+from .output import write_text_outputs
+from .numeric import financial_context, ratio
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -74,15 +76,15 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def serialize_audit_json(record: dict[str, Any]) -> str:
+    return json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
+
+
 def write_audit_json(path: str | Path, record: dict[str, Any]) -> None:
-    output = Path(path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    write_text_outputs({Path(path): serialize_audit_json(record)})
 
 
+@financial_context()
 def build_audit_record(
     result: AnalysisResult,
     *,
@@ -101,7 +103,7 @@ def build_audit_record(
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
     classified_count = row_count - unclassified_count
     classification_coverage = (
-        Decimal(classified_count) * Decimal("100") / Decimal(row_count)
+        ratio(Decimal(classified_count) * Decimal("100"), Decimal(row_count))
         if row_count
         else Decimal("0")
     )
@@ -170,6 +172,9 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
-    canonical = json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    canonical = json.dumps(
+        {"record": record, "analyzed_rows": [_row_record(row) for row in result.rows]},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
     record["analysis_fingerprint"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return record
