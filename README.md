@@ -1,34 +1,16 @@
 # Variance Analysis Agent
 
-Each run uses one reporting currency: USD by default, or explicit `--currency EUR`
-or `--currency GBP`. Conflicting row codes/symbols are rejected; no FX conversion
-is performed. See [the input contract](docs/input-contract.md) and
-[the versioned audit contract](docs/audit-contract.md), including the legacy USD
-audit-format option.
+A command-line tool for reviewing budget-versus-actual results. It reads CSV, JSON, or Excel data, checks classifications and totals, and writes a Markdown report of material variances. An optional audit JSON records the calculations and supporting evidence for downstream reporting.
 
-Current development version: 0.3.0. See [the changelog](CHANGELOG.md),
-[contributing guide](CONTRIBUTING.md), and [implementation roadmap](docs/roadmap.md).
+Calculations use Python `Decimal` arithmetic. The CLI makes no model calls and requires no API key.
 
-A command-line tool that compares budget to actual, flags material variances and writes a Markdown variance report. It started as an LLM prompt for FP&A variance analysis. This version does every calculation in Python, so the numbers don't depend on a model following instructions.
-
-## What it checks
-
-- `Variance $ = Actual - Budget`
-- `Variance % = (Actual - Budget) / Budget` when Budget is nonzero
-- Zero budgets are handled explicitly, including unbudgeted rows
-- Expenses: a positive variance is Unfavorable and a negative one Favorable
-- Revenue and income: a positive variance is Favorable and a negative one Unfavorable
-- A row is material when `ABS(Variance $) > threshold OR ABS(Variance %) > threshold`
-- Material rows are sorted by absolute dollar variance, largest first
-- A row whose type is unclear stays `Unclassified`
-- Subtotal and total rows are detected so nothing is counted twice
-- A driver is labeled a supported driver only when the operating metrics supplied reconcile to Budget and Actual
-- A final set of checks runs before the report is written
-- Numbers are rounded only for display
+Requires Python 3.11 or later. Current development version: **0.3.0**. See the [changelog](CHANGELOG.md).
 
 ## Quick start
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install -e .
 variance-agent examples/sample_variance.csv \
   --period "Q3 2026" \
@@ -36,69 +18,7 @@ variance-agent examples/sample_variance.csv \
   --percent-threshold 5
 ```
 
-Write the report to a file:
-
-```bash
-variance-agent examples/sample_variance.csv \
-  --period "Q3 2026" \
-  --dollar-threshold 10000 \
-  --percent-threshold 5 \
-  --output reports/q3-2026.md
-```
-
-For Excel files:
-
-```bash
-python -m pip install -e ".[excel]"
-```
-
-## Input fields
-
-Minimum usable fields:
-
-| Field | Required | Notes |
-|---|---|---|
-| Line Item | Yes | `Line Item`, `Line`, `Item`, `Account`, `Account Name`, or `Category` |
-| Budget | Yes | Currency symbols, commas, and accounting parentheses are accepted |
-| Actual | Yes | Same cleaning rules as Budget |
-| Type | Recommended | Revenue/Income/Sales or Expense/Cost. Ambiguous rows remain Unclassified |
-| Row Kind | Optional | `Detail`, `Total`, or `Subtotal`; use it when a label could be mistaken for a summary |
-
-Optional driver models:
-
-- `Budget Volume`, `Actual Volume`, `Budget Price`, `Actual Price`
-- `Budget Units`, `Actual Units`, `Budget Price`, `Actual Price`
-- `Budget Headcount`, `Actual Headcount`, `Budget Rate`, `Actual Rate`
-- `Budget Customers`, `Actual Customers`, `Budget Rate`, `Actual Rate`
-
-A driver decomposition is labeled **Supported driver** only if the driver model reconciles to the row's Budget and Actual values. Otherwise the report doesn't assert a cause.
-
-## Classifying rows
-
-Each row's type comes from the first of these that applies:
-
-1. A JSON type map passed with `--type-map`
-2. A Type or classification column
-3. A line-item label that is unambiguous
-4. Otherwise, `Unclassified`
-
-Unclassified rows are left out of the Revenue and Expense totals, and the report lists them in a warning.
-
-## Tests
-
-```bash
-python -m pip install -e ".[dev]"
-pytest
-ruff check .
-```
-
-## The prompt
-
-The prompt this tool grew out of is in [`prompt/variance_report_prompt.md`](prompt/variance_report_prompt.md). Its rules are implemented in code, so the arithmetic doesn't rely on a model following written instructions.
-
-## Audit JSON
-
-Use `--audit-json` to write a machine-readable record next to the Markdown report:
+The report prints to the terminal. To save both outputs:
 
 ```bash
 variance-agent examples/sample_variance.csv \
@@ -109,78 +29,77 @@ variance-agent examples/sample_variance.csv \
   --audit-json reports/q3-2026.audit.json
 ```
 
-The audit JSON is meant to be the input for an LLM, if one is added later to write the commentary. It holds the source file's SHA-256, a fingerprint of the analysis, classification coverage, completeness flags, the verified totals, the material variances, whether each driver is supported or a hypothesis, and any warnings. Its `trust_contract` block marks text taken from the source file as data for a model to read and never follow. Raw rows are left out.
+### What the sample shows
 
-That way a model can describe the verified results without redoing the math.
+With the thresholds above, four rows are material, in this order:
 
-## Scope
+| Line item | Variance (USD) | Variance % | Status |
+|---|---:|---:|---|
+| Subscription Revenue | $15,500 | 15.5% | Favorable |
+| Marketing Expense | $13,000 | 65.0% | Unfavorable |
+| Payroll Expense | $8,000 | 13.3% | Unfavorable |
+| Services Revenue | -$3,000 | -6.0% | Unfavorable |
 
-The tool explains variances and breaks down the drivers the data supports. It doesn't forecast, value, budget or model scenarios.
+Services Revenue is flagged by its percentage even though its dollar variance is below $10,000. Rent Expense is unchanged and is not flagged.
 
-## Input validation and troubleshooting
+Subscription Revenue also supplies volume and price inputs. The model reconciles its $15,500 variance to a $5,000 volume effect and a $10,500 price effect. Rows without reconciled operating metrics are not given a supported driver.
 
-- Use one accepted column name per field; do not supply both `Budget` and `Plan`.
-- Quote comma-containing CSV values, for example `"1,000"`. Every record must match
-  the header's column count. Data under unnamed columns is rejected.
-- JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
-- Blank Excel rows are ignored; populated cells under blank headers are rejected.
-- Excel rows are read from worksheet contents rather than trusting declared dimensions.
-  Malformed workbook structures produce an actionable Excel input error.
-- Blank types allow label inference. Nonblank, unrecognized types stay Unclassified.
-  Net income, operating income, and gross profit labels are not inferred as revenue.
-- For each category, supply detail rows alone, one summary alone, or detail rows
-  plus one total that reconciles within $0.01. Multiple nested subtotals have no
-  hierarchy metadata and are rejected; remove them before analysis.
-- Common category labels such as `Total Revenue` and `Grand Total Expenses` are
-  recognized as summaries. Other labels containing `total` or `subtotal` require
-  `Row Kind` to resolve their meaning. For example, mark `Total Quality Management`
-  as `Detail` when it represents a separate expense account. A custom rollup can
-  use `Row Kind=Total`; the existing reconciliation rules still apply.
-- Report and audit destinations must differ from each other, the input, and the
-  type map. This also applies to symlinks and hardlinks.
-- Expected input/file errors exit with code 2 and an explanation. Fix the named
-  input or path before retrying.
+## Financial rules
 
-The audit fingerprint includes every analyzed row, even nonmaterial rows, while
-raw input dictionaries remain excluded from the audit output. Fingerprints from
-versions before this change use a different recipe and will not match.
+| Rule | Behavior |
+|---|---|
+| Variance amount | `Actual - Budget` |
+| Variance percentage | `(Actual - Budget) / Budget` for nonzero Budget |
+| Zero Budget | Nonzero Actual is unbudgeted with no percentage; zero/zero has zero variance |
+| Favorable or unfavorable | Positive revenue variance is favorable; positive expense variance is unfavorable |
+| Materiality | Absolute amount **or** percentage strictly exceeds the chosen threshold; equality is not material |
+| Sorting | Material rows appear by descending absolute amount |
+| Classification | Ambiguous rows stay `Unclassified` and are excluded from category totals |
+| Summaries | Reconciled totals are excluded when their detail rows are supplied |
+| Drivers | A model is supported only when its inputs reconcile to Budget and Actual |
+| Rounding | Display values are rounded; calculations and threshold comparisons retain precision |
 
-### Verification and output safety
+Expense inputs use positive-cost amounts. A zero-budget row uses only the amount threshold. See the [financial rules](docs/financial-rules.md) for exact tolerances, formulas, and numeric limits.
 
-Numeric inputs accept decimal/scientific notation, correctly grouped thousands,
-leading currency symbols, and accounting parentheses. Ambiguous forms such as
-`1,00`, `12$34`, and `(-100)` are rejected instead of silently reinterpreted.
-Accounting parentheses already mean negative; do not put another sign inside.
-Duplicate type-map keys and multiple classification columns are rejected. JSON
-wrappers must supply either `rows` or `data`, not both.
+## Input fields
 
-Before output, the agent verifies row percentages and F/U statuses, aggregate
-metrics, and the exact membership and order of the material-variance list.
-Both output files are serialized and staged before replacement. A staging failure
-preserves existing files; each replacement is atomic. Replacing two files is not
-a single transaction: if the second replacement fails, rerun the command to
-regenerate the pair. Temporary files are cleaned up on handled failures.
+| Field | Required | Accepted values or notes |
+|---|---|---|
+| Line Item | Yes | Aliases: `Line`, `Item`, `Account`, `Account Name`, or `Category` |
+| Budget | Yes | Currency symbols, grouped thousands, and accounting parentheses are accepted |
+| Actual | Yes | Same numeric rules as Budget |
+| Type | Recommended | Revenue/Income/Sales or Expense/Cost; ambiguous types stay Unclassified |
+| Row Kind | Optional | `Detail`, `Total`, or `Subtotal` resolves ambiguous summary labels |
 
-### Numerical precision and driver selection
+Classification uses a JSON map supplied with `--type-map` first, then an explicit Type, then conservative label inference. The report warns about unclassified rows.
 
-Analysis, report rendering, audit creation, and CLI threshold conversion use an
-isolated Decimal context: 50 significant digits, round-half-even, exponent limits
--999 to 999. Caller Decimal settings cannot change the results. Financial
-arithmetic that loses information or exceeds the supported range raises an error
-instead of silently rounding amounts. Recurring percentage ratios may round to
-50 digits, but materiality compares `abs(variance)` directly with
-`percent_threshold * abs(budget)` at sufficient product precision. This avoids
-false negatives near a repeating-ratio boundary. Zero-budget rules are unchanged.
-This policy supersedes the historical precision limitations in earlier audit notes.
-Extreme exponents on zero values are canonicalized to signed zero so audit
-serialization cannot allocate an arbitrarily large fixed-point string.
+Optional driver fields are checked in this order:
 
-The exported Python API validates type-map values as `Revenue`, `Expense`, or
-`Unclassified`, and copies the mapping before analysis. Invalid values fail
-before the tool can claim complete classification.
+1. `Budget Volume`, `Actual Volume`, `Budget Price`, `Actual Price`
+2. `Budget Units`, `Actual Units`, `Budget Price`, `Actual Price`
+3. `Budget Headcount`, `Actual Headcount`, `Budget Rate`, `Actual Rate`
+4. `Budget Customers`, `Actual Customers`, `Budget Rate`, `Actual Rate`
 
-Driver models are checked in their documented order until one reconciles.
-Optional driver values marked blank, N/A, NA, null, or a dash are unavailable;
-they do not block a later usable model. If all complete models fail reconciliation,
-the first model remains hypothesis evidence. Malformed numeric driver values
-still fail validation. Boolean or structured line-item labels are rejected.
+Each run uses one reporting currency: USD by default, or `--currency EUR` or `--currency GBP`. Mixed currencies are rejected; the tool does not convert currencies.
+
+Install Excel support with `python -m pip install -e ".[excel]"`. Excel input reads cached formula values and does not recalculate the workbook. Use `--sheet 'Reviewed'` to select a worksheet.
+
+Use `--check-only` with the period and threshold arguments to validate input without writing files. See the [input contract](docs/input-contract.md) and [validation guide](docs/validation.md) for formats, numeric cleaning, summary rules, and error handling.
+
+## Audit JSON and optional commentary
+
+The versioned audit record includes the source SHA-256, analysis fingerprint, classification coverage, completeness flags, verified totals, material rows, driver evidence, and warnings. Raw source rows are excluded. Integrity hashes detect changes; they do not authenticate the source or its author. See the [audit contract](docs/audit-contract.md).
+
+The project began with the [reporting prompt](prompt/variance_report_prompt.md), which is retained as a reference and an optional interface for LLM commentary. A commentary consumer should describe the verified audit results without redoing arithmetic or inventing causes. The `trust_contract` marks source strings as untrusted data rather than instructions.
+
+## Development
+
+```bash
+python -m pip install -e ".[dev,excel]"
+pytest
+ruff check .
+```
+
+See [implementation notes](docs/IMPLEMENTATION_NOTES.md), [contributing](CONTRIBUTING.md), and the [roadmap](docs/roadmap.md).
+
+The project covers descriptive variance analysis and supported driver decomposition. Forecasting, valuation, budget creation, and scenario modeling are outside its current scope.

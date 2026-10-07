@@ -1,10 +1,10 @@
 # Implementation Notes
 
-How each rule in the prompt maps to the code.
+Where the financial rules are implemented and how report consumers receive their results.
 
 ## Rule mapping
 
-| Prompt requirement | Implementation |
+| Financial rule | Implementation |
 |---|---|
 | Python for every calculation | `src/variance_agent/analysis.py` uses `Decimal` arithmetic for every variance, threshold, aggregate, and driver calculation |
 | Actual - Budget | `_percent_variance` and row analysis preserve the signed dollar variance |
@@ -19,9 +19,9 @@ How each rule in the prompt maps to the code.
 | Reconcile before output | final assertions recheck row math, materiality, sorting, and aggregate totals |
 | Round only for display | arithmetic retains `Decimal` precision; formatting occurs in `report.py` |
 
-## Why the rules live in code
+## Calculation boundary
 
-The prompt stays in `prompt/` as the reference for the rules. The financial logic is in code, so arithmetic, materiality, classification and reconciliation don't depend on a model following instructions.
+`analysis.py` owns arithmetic, materiality, classification, and reconciliation. `report.py` formats the accepted results. The original [reporting prompt](../prompt/variance_report_prompt.md) remains a reference for the reporting rules; it is not executed by the CLI.
 
 ## Scope
 
@@ -31,4 +31,4 @@ The tool doesn't attribute a variance to seasonality, inflation, timing or mix u
 
 `src/variance_agent/audit.py` writes the analysis results and data-quality metadata to a versioned JSON record. It leaves out the raw rows, records the source file's SHA-256 and a fingerprint of the analysis, reports completeness, and marks each material driver as `supported` or `hypothesis`.
 
-If an LLM is added later to write commentary, this record is what it should read. Strings from the source file stay marked as untrusted data, and the arithmetic and classifications stay in code.
+An optional LLM commentary consumer should read this record and describe its verified results. Source strings remain untrusted data under `trust_contract`; they cannot override the reporting instructions. The consumer must not redo calculations or invent drivers.
