@@ -148,8 +148,8 @@ def build_audit_record(
 ) -> dict[str, Any]:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
-    The record deliberately excludes raw source rows so it can be handed to an AI
-    layer without duplicating arbitrary uploaded content into model context.
+    Raw source rows are excluded. Downstream report consumers receive verified
+    facts and selected source metadata; source text remains untrusted data.
     """
     schema_version = CURRENT_SCHEMA_VERSION if schema_version is None else schema_version
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
