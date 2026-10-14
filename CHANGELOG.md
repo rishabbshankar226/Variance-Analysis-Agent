@@ -7,7 +7,8 @@
 - Reject currency-decorated CLI thresholds instead of discarding their symbols.
 - Display exact configured materiality thresholds in reports, preserving fractional
   cents and percentage digits while retaining ordinary amount/percentage rounding.
-- Preserve literal HTML-entity text in source labels and reporting periods.
+- Preserve literal HTML-entity and tilde text in source labels and reporting
+  periods, including GitHub Markdown strikethrough markers.
 - Reject JSON nesting beyond 128 object/array levels with a CLI validation error
   for both inputs and type maps across supported Python versions, preserving
   existing report/audit outputs.

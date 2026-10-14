@@ -40,6 +40,10 @@ Accounting parentheses already mean negative; do not put another sign inside.
 Duplicate type-map keys and multiple classification columns are rejected. JSON
 wrappers must supply either `rows` or `data`, not both.
 
+Reports escape literal HTML-entity and tilde text in source labels and periods,
+including Markdown strikethrough markers. Analyzed labels and periods retain
+their values in audit records.
+
 Before output, the CLI verifies row percentages and F/U statuses, aggregate
 metrics, and the exact membership and order of the material-variance list.
 Both output files are serialized and staged before replacement. A staging failure

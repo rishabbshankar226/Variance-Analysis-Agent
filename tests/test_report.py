@@ -53,6 +53,30 @@ def test_source_text_remains_literal_when_html_entities_are_rendered(source, fie
     assert unescape(displayed) == source
 
 
+@pytest.mark.parametrize('source, expected', [
+    ('Cloud ~~Retired~~ Revenue', r'Cloud \~\~Retired\~\~ Revenue'),
+    ('Cloud ~Retired~ Revenue', r'Cloud \~Retired\~ Revenue'),
+    ('Estimate ~100 Revenue', r'Estimate \~100 Revenue'),
+    (r'Cloud \~~Retired~~ Revenue', r'Cloud \\\~\~Retired\~\~ Revenue'),
+])
+@pytest.mark.parametrize('field', ['line_item', 'period'])
+def test_source_tildes_remain_literal_in_markdown_reports(source, expected, field):
+    label = source if field == 'line_item' else 'Sales'
+    period = source if field == 'period' else 'Q3'
+    result = analyze_rows(
+        [{'Line Item': label, 'Budget': '100', 'Actual': '120', 'Type': 'Revenue'}],
+        AnalysisConfig(period, Decimal('1'), Decimal('.05')),
+    )
+    report = render_markdown(result)
+    if field == 'period':
+        assert report.splitlines()[0] == f'# FP&A Variance Report: {expected}'
+    else:
+        assert f'| {expected} | Revenue |' in report
+        assert f'**{expected} (Hypothesis):**' in report
+    assert result.rows[0].line_item == label
+    assert result.config.period == period
+
+
 @pytest.mark.parametrize('currency, dollars, ratio, expected', [
     ('USD', '10000', '.05', '$10,000.00 or 5.0%'),
     ('USD', '10.005', '.00001', '$10.005 or 0.001%'),
