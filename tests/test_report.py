@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from variance_agent.analysis import analyze_rows
 from variance_agent.models import AnalysisConfig
 from variance_agent.report import render_markdown
@@ -25,3 +27,44 @@ def test_report_contract_sections():
     assert "## Root Cause Analysis" in report
     assert "## Strategic Recommendations" in report
     assert "Hypothesis" in report
+
+
+@pytest.mark.parametrize('currency, dollars, ratio, expected', [
+    ('USD', '10000', '.05', '$10,000.00 or 5.0%'),
+    ('USD', '10.005', '.00001', '$10.005 or 0.001%'),
+    ('EUR', '.001', '.05005', '€0.001 or 5.005%'),
+    ('GBP', '1234.567800', '.00001000', '£1,234.5678 or 0.001%'),
+    ('USD', '0', '0', '$0.00 or 0.0%'),
+    ('USD', '-0', '-0', '$0.00 or 0.0%'),
+    ('USD', '1e-20', '1e-20', '$0.00000000000000000001 or 0.000000000000000001%'),
+])
+def test_report_shows_the_exact_materiality_thresholds(currency, dollars, ratio, expected):
+    result = analyze_rows(
+        [{'Line Item': 'Sales', 'Budget': '100', 'Actual': '120', 'Type': 'Revenue'}],
+        AnalysisConfig('Q3', Decimal(dollars), Decimal(ratio), currency=currency),
+    )
+    assert f'Thresholds: {expected}' in render_markdown(result)
+
+
+def test_displayed_dollar_threshold_explains_strict_materiality_boundary():
+    result = analyze_rows(
+        [
+            {'Line Item': 'At limit', 'Budget': '100', 'Actual': '110.005', 'Type': 'Revenue'},
+            {'Line Item': 'Above limit', 'Budget': '100', 'Actual': '110.006', 'Type': 'Revenue'},
+        ],
+        AnalysisConfig('Q3', Decimal('10.005'), Decimal('1')),
+    )
+    assert [row.line_item for row in result.material_rows] == ['Above limit']
+    assert 'Thresholds: $10.005 or 100.0%' in render_markdown(result)
+
+
+def test_displayed_percent_threshold_explains_strict_materiality_boundary():
+    result = analyze_rows(
+        [
+            {'Line Item': 'At limit', 'Budget': '100', 'Actual': '100.005', 'Type': 'Revenue'},
+            {'Line Item': 'Above limit', 'Budget': '100', 'Actual': '100.006', 'Type': 'Revenue'},
+        ],
+        AnalysisConfig('Q3', Decimal('100'), Decimal('.00005')),
+    )
+    assert [row.line_item for row in result.material_rows] == ['Above limit']
+    assert 'Thresholds: $100.00 or 0.005%' in render_markdown(result)

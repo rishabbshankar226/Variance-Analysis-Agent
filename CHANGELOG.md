@@ -5,6 +5,8 @@
 - Reject mixed reporting currencies; support explicit USD/EUR/GBP without FX
   conversion. Reports name the reporting currency throughout all sections.
 - Reject currency-decorated CLI thresholds instead of discarding their symbols.
+- Display exact configured materiality thresholds in reports, preserving fractional
+  cents and percentage digits while retaining ordinary amount/percentage rounding.
 - Fix an argparse formatting error that made `--help` crash.
 - Publish audit schemas 1.0 through 1.4 and reviewed report/audit fixtures.
 - Capture and parse the exact hashed source/type-map bytes; add versioned policy

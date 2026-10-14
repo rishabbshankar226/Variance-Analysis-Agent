@@ -42,6 +42,13 @@ def _pct(value: Decimal | None, label: str | None = None) -> str:
     return f"{value * Decimal('100'):.1f}%"
 
 
+def _threshold_number(value: Decimal, minimum_places: int) -> str:
+    """Keep every significant fractional digit in the configured cutoff."""
+    whole, _, fraction = format(value.copy_abs(), ',f').partition('.')
+    fraction = fraction.rstrip('0').ljust(minimum_places, '0')
+    return f"{whole}.{fraction}"
+
+
 def _aggregate_line(label: str, aggregate: Aggregate, currency: str = "USD") -> str:
     return (
         f"- {label}: {_money(aggregate.actual, currency)} vs. {_money(aggregate.budget, currency)} "
@@ -217,8 +224,9 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         "",
         "## Material Variances",
         (
-            f"Thresholds: {_money(cfg.dollar_threshold, cfg.currency)} or "
-            f"{cfg.percent_threshold * Decimal('100'):.1f}%"
+            f"Thresholds: {CURRENCY_SYMBOLS[cfg.currency]}"
+            f"{_threshold_number(cfg.dollar_threshold, 2)} or "
+            f"{_threshold_number(cfg.percent_threshold * Decimal('100'), 1)}%"
         ),
         "",
         f"| Line Item | Type | Budget | Actual | Var ({CURRENCY_SYMBOLS[cfg.currency]}) "
