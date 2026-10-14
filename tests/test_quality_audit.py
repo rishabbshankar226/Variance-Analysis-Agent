@@ -6,7 +6,7 @@ import pytest
 from variance_agent.analysis import analyze_rows, _verify_result
 from variance_agent.cli import main, _load_type_map
 from variance_agent.models import AnalysisConfig, Status
-from variance_agent.parsing import load_json_text, parse_decimal
+from variance_agent.parsing import load_json_text, load_json_value, parse_decimal
 
 CFG = AnalysisConfig("Q3", Decimal("10"), Decimal(".05"))
 
@@ -38,6 +38,35 @@ def test_accounting_sign_does_not_round_source_digits():
 def test_json_wrapper_cannot_silently_choose_between_datasets():
     with pytest.raises(ValueError, match="rows.*data|ambiguous"):
         load_json_text('{"rows": [], "data": [{"Line Item":"Sales","Budget":1,"Actual":2}]}')
+
+
+@pytest.mark.parametrize('opening, closing', [('[', ']'), ('{"nested":', '}')])
+def test_excessive_json_nesting_is_a_validation_error(opening, closing):
+    payload = opening * 10_000 + '0' + closing * 10_000
+    with pytest.raises(ValueError, match='JSON nesting exceeds the supported depth'):
+        load_json_value(payload)
+
+
+@pytest.mark.parametrize('location', ['input', 'type_map'])
+def test_cli_rejects_excessive_json_nesting_without_overwriting_outputs(tmp_path, capsys, location):
+    nested = '[' * 10_000 + '0' + ']' * 10_000
+    source = tmp_path / ('source.json' if location == 'input' else 'source.csv')
+    source.write_text(nested if location == 'input' else 'Line Item,Budget,Actual\nSales,100,120\n')
+    report, audit = tmp_path / 'report.md', tmp_path / 'audit.json'
+    report.write_text('Existing report')
+    audit.write_text('Existing audit')
+    options = [str(source), '--period', 'Q3', '--dollar-threshold', '10',
+               '--percent-threshold', '5', '--output', str(report), '--audit-json', str(audit)]
+    if location == 'type_map':
+        mapping = tmp_path / 'map.json'
+        mapping.write_text(nested)
+        options.extend(['--type-map', str(mapping)])
+    with pytest.raises(SystemExit) as error:
+        main(options)
+    assert error.value.code == 2
+    assert 'JSON nesting exceeds the supported depth' in capsys.readouterr().err
+    assert report.read_text() == 'Existing report'
+    assert audit.read_text() == 'Existing audit'
 
 
 def test_type_map_duplicate_keys_are_rejected(tmp_path):

@@ -8,6 +8,8 @@
 - Display exact configured materiality thresholds in reports, preserving fractional
   cents and percentage digits while retaining ordinary amount/percentage rounding.
 - Preserve literal HTML-entity text in source labels and reporting periods.
+- Reject excessive JSON nesting with a CLI validation error for both inputs and
+  type maps, preserving existing report/audit outputs.
 - Fix an argparse formatting error that made `--help` crash.
 - Publish audit schemas 1.0 through 1.4 and reviewed report/audit fixtures.
 - Capture and parse the exact hashed source/type-map bytes; add versioned policy

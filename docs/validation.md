@@ -5,6 +5,8 @@
 - Quote comma-containing CSV values, for example `"1,000"`. Every record must match
   the header's column count. Data under unnamed columns is rejected.
 - JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
+- Excessive nesting in JSON inputs or type maps returns a validation error and
+  CLI exit code 2, preserving existing report and audit files.
 - Blank Excel rows are ignored; populated cells under blank headers are rejected.
 - Excel rows are read from worksheet contents rather than trusting declared dimensions.
   Malformed workbook structures produce an actionable Excel input error.

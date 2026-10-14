@@ -153,7 +153,10 @@ def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def load_json_value(text: str) -> Any:
     """Decode without binary float conversion or silently overwritten keys."""
-    return json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
+    try:
+        return json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
+    except RecursionError as exc:
+        raise ValueError("JSON nesting exceeds the supported depth.") from exc
 
 
 def load_json_text(text: str) -> list[dict[str, Any]]:
