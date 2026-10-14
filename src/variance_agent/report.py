@@ -14,6 +14,7 @@ _INLINE_WS_RE = re.compile(r"\s+")
 def _safe_inline(value: object) -> str:
     text = _INLINE_WS_RE.sub(" ", str(value)).strip()
     replacements = (
+        ("&", "&amp;"),
         ("\\", r"\\"),
         ("|", r"\|"),
         ("`", r"\`"),

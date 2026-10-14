@@ -1,4 +1,5 @@
 from decimal import Decimal
+from html import unescape
 
 import pytest
 
@@ -27,6 +28,29 @@ def test_report_contract_sections():
     assert "## Root Cause Analysis" in report
     assert "## Strategic Recommendations" in report
     assert "Hypothesis" in report
+
+
+@pytest.mark.parametrize('source', [
+    'Licensing &copy; Revenue', 'Sales &#169;', 'Sales &#xA9;',
+    'Sales &lt;Reviewed&gt;', 'R&D <Reviewed> Revenue', 'Sales &amp; Revenue',
+    'Sales &copy Revenue',
+])
+@pytest.mark.parametrize('field', ['line_item', 'period'])
+def test_source_text_remains_literal_when_html_entities_are_rendered(source, field):
+    label = source if field == 'line_item' else 'Sales'
+    period = source if field == 'period' else 'Q3'
+    result = analyze_rows(
+        [{'Line Item': label, 'Budget': '100', 'Actual': '120', 'Type': 'Revenue'}],
+        AnalysisConfig(period, Decimal('1'), Decimal('.05')),
+    )
+    report = render_markdown(result)
+    if field == 'period':
+        displayed = report.splitlines()[0].removeprefix('# FP&A Variance Report: ')
+    else:
+        row = next(line for line in report.splitlines()
+                   if line.startswith('| ') and not line.startswith('| Line Item |'))
+        displayed = row.removeprefix('| ').split(' | ', 1)[0]
+    assert unescape(displayed) == source
 
 
 @pytest.mark.parametrize('currency, dollars, ratio, expected', [
