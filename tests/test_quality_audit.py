@@ -1,5 +1,6 @@
 from dataclasses import replace
 from decimal import Decimal, localcontext
+import json
 
 import pytest
 
@@ -45,6 +46,24 @@ def test_excessive_json_nesting_is_a_validation_error(opening, closing):
     payload = opening * 10_000 + '0' + closing * 10_000
     with pytest.raises(ValueError, match='JSON nesting exceeds the supported depth'):
         load_json_value(payload)
+
+
+@pytest.mark.parametrize('opening, closing', [('[', ']'), ('{"nested":', '}')])
+@pytest.mark.parametrize('terminal', ['0', '[]', '{}'])
+@pytest.mark.parametrize('depth', [128, 129])
+def test_json_container_depth_limit(opening, closing, terminal, depth):
+    wrappers = depth - (terminal in ('[]', '{}'))
+    payload = opening * wrappers + terminal + closing * wrappers
+    if depth == 128:
+        assert load_json_value(payload) is not None
+    else:
+        with pytest.raises(ValueError, match='JSON nesting exceeds the supported depth'):
+            load_json_value(payload)
+
+
+def test_json_depth_limit_ignores_width_and_container_characters_in_strings():
+    payload = {'label': '[{"nested":' * 1_000, 'rows': [[], {}] * 128, 'amount': 1.25}
+    assert load_json_value(json.dumps(payload)) == {**payload, 'amount': Decimal('1.25')}
 
 
 @pytest.mark.parametrize('location', ['input', 'type_map'])

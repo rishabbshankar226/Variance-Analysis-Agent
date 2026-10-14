@@ -20,6 +20,7 @@ _NUMBER_RE = re.compile(
 )
 
 _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
+_MAX_JSON_DEPTH = 128
 
 
 @dataclass(frozen=True)
@@ -151,12 +152,35 @@ def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return output
 
 
+def _validate_json_depth(payload: Any) -> None:
+    # Decoder recursion behavior varies across Python versions. Iterators keep
+    # this explicit check's memory proportional to depth, rather than row count.
+    stack = [iter((payload,))]
+    while stack:
+        try:
+            value = next(stack[-1])
+        except StopIteration:
+            stack.pop()
+            continue
+        if isinstance(value, dict):
+            children = iter(value.values())
+        elif isinstance(value, list):
+            children = iter(value)
+        else:
+            continue
+        if len(stack) > _MAX_JSON_DEPTH:
+            raise ValueError("JSON nesting exceeds the supported depth.")
+        stack.append(children)
+
+
 def load_json_value(text: str) -> Any:
-    """Decode without binary float conversion or silently overwritten keys."""
+    """Decode with bounded nesting, exact decimals, and unique object keys."""
     try:
-        return json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
+        payload = json.loads(text, parse_float=Decimal, object_pairs_hook=_json_object)
     except RecursionError as exc:
         raise ValueError("JSON nesting exceeds the supported depth.") from exc
+    _validate_json_depth(payload)
+    return payload
 
 
 def load_json_text(text: str) -> list[dict[str, Any]]:
