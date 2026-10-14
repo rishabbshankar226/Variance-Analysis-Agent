@@ -5,6 +5,10 @@
 - Quote comma-containing CSV values, for example `"1,000"`. Every record must match
   the header's column count. Data under unnamed columns is rejected.
 - JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
+- JSON inputs and type maps support at most 128 nested object/array levels,
+  counting the root container and empty containers. More levels return a validation
+  error and CLI exit code 2, preserving existing report and audit files. Row count
+  and brackets inside strings do not count toward nesting depth.
 - Blank Excel rows are ignored; populated cells under blank headers are rejected.
 - Excel rows are read from worksheet contents rather than trusting declared dimensions.
   Malformed workbook structures produce an actionable Excel input error.
@@ -35,6 +39,10 @@ leading currency symbols, and accounting parentheses. Ambiguous forms such as
 Accounting parentheses already mean negative; do not put another sign inside.
 Duplicate type-map keys and multiple classification columns are rejected. JSON
 wrappers must supply either `rows` or `data`, not both.
+
+Reports escape literal HTML-entity and tilde text in source labels and periods,
+including Markdown strikethrough markers. Analyzed labels and periods retain
+their values in audit records.
 
 Before output, the CLI verifies row percentages and F/U statuses, aggregate
 metrics, and the exact membership and order of the material-variance list.

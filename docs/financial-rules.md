@@ -58,4 +58,10 @@ silently or used to upgrade evidence to supported.
 
 `materiality_reason` records the first successful comparison (amount first, then
 percentage). It does not claim that only one comparison could have succeeded.
-Report amounts/percentages are rounded for display; thresholds use exact values.
+Report amounts/percentages are rounded for display. The threshold line preserves
+every significant fractional digit of the configured cutoffs, including fractional
+cents and small percentages; materiality comparisons use those exact values.
+
+Report labels and periods escape source Markdown/HTML characters, including
+ampersands. Literal entity text such as `&copy;` remains source text when rendered;
+audit records retain the original labels and periods.
