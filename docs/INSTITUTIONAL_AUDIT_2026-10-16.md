@@ -45,7 +45,7 @@ Local environment: Python 3.12.14. Existing dependency versions were resolved li
 | Distribution metadata/content | twine and repository distribution checker pass |
 | Clean installed console/CSV/JSON/audit checks | Both wheel and sdist pass in independent non-editable environments without Excel |
 | Strict mypy | mypy 2.4.0: Success, no issues found in 16 source files; explicit/unimported Any bans enabled. |
-| Hosted Python 3.11–3.14 and Windows CI | Prior regression run 38844852150 passed all 354 tests on each Python version and 97 Windows output tests. A fresh run including strict typing is pending publication of the approved checker changes. |
+| Hosted Python 3.11–3.14 and Windows CI | Run 38913254258: 354 tests and strict mypy across 16 files pass on each Python version; Windows output contracts: 97 passed. Minimal/distribution installations and Required checks succeed. Verified implementation: 0e0c265189eaec6c03390a25d76cbf66854f4f4c; decoded job logs retained. |
 
 Reproduction and verification commands, with the repository root as working directory:
 
@@ -69,6 +69,6 @@ The user approved the concrete checker proposal on October 16, 2026. The applied
 
 The first actual strict run at review commit `cda07635082384f7b5806601da7e3f9e56b17289` reported three errors at `src/variance_agent/analysis.py:218,528-529`: diagnostic lambdas lacked a callable type, and a raw dictionary loop variable was reused for AnalyzedRow instances. Explicit `Callable[[], Decimal]` typing and a distinct local name resolve the errors without changing financial formulas, schemas, or public signatures. Both failing and successful checker output are retained. Strict enforcement is part of the Python 3.11–3.14 CI matrix.
 
-All 16 audit findings have applied remediations. Final hosted verification is recorded when the new workflow completes; no additional dependency or schema approval gate remains.
+All 16 audit findings have applied remediations and executed verification. Hosted run 38913254258 verifies the implementation including strict typing on every supported Python version. No dependency or schema approval gate remains. The final documentation-only update records these results without changing verified implementation files.
 
 No repository directory was deleted; no published schema or CLI signature was broken. Scope remains descriptive variance analysis on supplied data. Source completeness, authentic authorship, unsupported accounting sign transformations and causal inference remain external review responsibilities. There is no live model or browser surface on which to claim model-call or browser verification.
