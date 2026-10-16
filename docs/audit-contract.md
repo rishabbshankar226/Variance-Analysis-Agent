@@ -10,6 +10,10 @@ unknown versions. Financial values are finite fixed-point decimal strings, not
 JSON floats. A zero budget with nonzero actual has a null percentage and an
 explicit unbudgeted label. Schema validation checks structure; deterministic
 Python remains responsible for reconciliation and arithmetic.
+Report and audit builders reverify financial row, aggregate, materiality, and
+supported-component identities, including manually constructed Python results.
+The generic JSON writer is a serializer, not an external-record schema validator;
+consumers must validate received records against the exact published schema.
 
 Version 1.1 adds the explicit reporting `currency` (USD, EUR, or GBP).
 Version 1.2 adds policy/configuration provenance and a recomputable `payload_sha256`.
@@ -44,6 +48,10 @@ identity recipe names. Policy IDs describe semantics and must change when those
 semantics change; tool version identifies the release, not a unique source commit.
 Pure Python callers supplying rows cannot claim file identity unless they supply
 the digest of the exact bytes they parsed. Missing file digests remain null.
+The current numeric policy is decimal-50-half-even-e999-v2; the driver policy is
+quantity-rate-reconcile-residual-v2. The latter exposes accepted model residuals
+as Unexplained residual components instead of claiming an incomplete bridge is
+fully explained. Existing schema shapes remain unchanged.
 
 `configuration_sha256` hashes the effective period, decimal threshold strings,
 currency, and validated type map using the canonicalization below. Maps with

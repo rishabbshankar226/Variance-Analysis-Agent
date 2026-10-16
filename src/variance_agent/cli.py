@@ -4,6 +4,7 @@ import argparse
 import csv
 from decimal import Decimal, DecimalException
 from pathlib import Path
+from typing import Protocol, cast
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
@@ -11,10 +12,25 @@ from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, LineType
-from .parsing import load_input, load_json_value, parse_decimal, validate_input_format
+from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import render_markdown
+from .limits import display_text
+
+
+class Arguments(Protocol):
+    input: str
+    period: str
+    dollar_threshold: Decimal
+    percent_threshold: Decimal
+    type_map: str | None
+    check_only: bool
+    sheet: str | None
+    currency: str
+    audit_schema_version: str
+    output: str | None
+    audit_json: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -31,7 +47,7 @@ def _decimal(text: str) -> Decimal:
 def _load_type_map(path: str | None) -> dict[str, LineType]:
     if not path:
         return {}
-    return _parse_type_map(Path(path).read_bytes())
+    return _parse_type_map(read_input_bytes(path))
 
 
 def _parse_type_map(data: bytes) -> dict[str, LineType]:
@@ -91,7 +107,7 @@ def _same_path(first: Path, second: Path) -> bool:
     )
 
 
-def _validate_output_paths(args: argparse.Namespace) -> None:
+def _validate_output_paths(args: Arguments) -> None:
     inputs = [Path(args.input)]
     if args.type_map:
         inputs.append(Path(args.type_map))
@@ -102,7 +118,7 @@ def _validate_output_paths(args: argparse.Namespace) -> None:
 
 
 @financial_context()
-def _run(args: argparse.Namespace) -> int:
+def _run(args: Arguments) -> int:
     if args.check_only and (args.output or args.audit_json):
         raise ValueError("--check-only cannot be combined with --output or --audit-json.")
     _validate_output_paths(args)
@@ -111,8 +127,8 @@ def _run(args: argparse.Namespace) -> int:
         raise ValueError("--sheet requires XLSX or XLSM input.")
     validate_input_format(input_path.suffix)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
-    source_bytes = input_path.read_bytes()
-    type_map_bytes = Path(args.type_map).read_bytes() if args.type_map else None
+    source_bytes = read_input_bytes(input_path)
+    type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
     parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
     config = AnalysisConfig(
@@ -130,18 +146,16 @@ def _run(args: argparse.Namespace) -> int:
               f"reporting currency {config.currency}.")
         return 0
     report = render_markdown(result)
-    record = (
-        build_audit_record(result, source_name=input_path.name, source_sha256=source_hash,
-                           schema_version=args.audit_schema_version,
-                           type_map_sha256=(sha256_bytes(type_map_bytes)
-                                            if type_map_bytes is not None else None),
-                           source_worksheet=parsed.worksheet)
-        if args.audit_json else None
-    )
-    outputs = {}
+    outputs: dict[Path, str] = {}
     if args.output:
         outputs[Path(args.output)] = report
     if args.audit_json:
+        record = build_audit_record(
+            result, source_name=input_path.name, source_sha256=source_hash,
+            schema_version=args.audit_schema_version,
+            type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
+            source_worksheet=parsed.worksheet,
+        )
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     write_text_outputs(outputs)
     if not args.output:
@@ -151,11 +165,11 @@ def _run(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = cast(Arguments, parser.parse_args(argv))
     try:
         return _run(args)
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile) as exc:
-        parser.error(str(exc))
+        parser.error(display_text(str(exc)))
 
 
 if __name__ == "__main__":

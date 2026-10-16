@@ -5,12 +5,14 @@ import json
 import re
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Mapping
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
-from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID
+from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
+from .json_types import JSONObject
+from .limits import validate_text
 from .version import __version__
 
 CURRENT_SCHEMA_VERSION = "1.4"
@@ -24,12 +26,12 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _canonical(value: dict[str, Any]) -> bytes:
+def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
                       allow_nan=False).encode("utf-8")
 
 
-def payload_sha256(record: dict[str, Any]) -> str:
+def payload_sha256(record: Mapping[str, object]) -> str:
     """Public integrity recipe: omit only the digest itself; this is not authentication."""
     return sha256_bytes(_canonical({key:value for key,value in record.items()
                                    if key != "payload_sha256"}))
@@ -39,7 +41,7 @@ def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
 
 
-def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) -> dict[str, Any]:
+def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) -> JSONObject:
     return {
         "present": present,
         "complete": complete,
@@ -52,8 +54,9 @@ def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) ->
     }
 
 
-def _driver_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> dict[str, Any]:
+def _driver_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> JSONObject:
     evidence = row.driver_evidence
+    record: JSONObject
     if evidence is None:
         record = {
             "evidence_status": "hypothesis",
@@ -86,8 +89,8 @@ def _driver_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> di
     return record
 
 
-def _row_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> dict[str, Any]:
-    record = {
+def _row_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> JSONObject:
+    record: JSONObject = {
         "line_item": row.line_item,
         "type": str(row.line_type),
         "budget": _decimal(row.budget),
@@ -106,7 +109,7 @@ def _row_record(row: AnalyzedRow, *, include_diagnostics: bool = False) -> dict[
     return record
 
 
-def _summary_record(row: AnalyzedRow) -> dict[str, Any]:
+def _summary_record(row: AnalyzedRow) -> JSONObject:
     verification = row.summary_verification
     if verification is None:
         raise ValueError("Summary verification is unavailable.")
@@ -128,11 +131,11 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def serialize_audit_json(record: dict[str, Any]) -> str:
+def serialize_audit_json(record: Mapping[str, object]) -> str:
     return json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False) + "\n"
 
 
-def write_audit_json(path: str | Path, record: dict[str, Any]) -> None:
+def write_audit_json(path: str | Path, record: Mapping[str, object]) -> None:
     write_text_outputs({Path(path): serialize_audit_json(record)})
 
 
@@ -145,23 +148,30 @@ def build_audit_record(
     schema_version: str | None = None,
     type_map_sha256: str | None = None,
     source_worksheet: str | None = None,
-) -> dict[str, Any]:
+) -> JSONObject:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
     Raw source rows are excluded. Downstream report consumers receive verified
     facts and selected source metadata; source text remains untrusted data.
     """
+    verify_result(result)
     schema_version = CURRENT_SCHEMA_VERSION if schema_version is None else schema_version
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
-    if source_sha256 is not None and not _SHA256_RE.fullmatch(source_sha256):
+    if source_name is not None:
+        validate_text(source_name, field="source_name")
+    if source_sha256 is not None and (not isinstance(source_sha256, str)
+                                      or not _SHA256_RE.fullmatch(source_sha256)):
         raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")
-    if type_map_sha256 is not None and not _SHA256_RE.fullmatch(type_map_sha256):
+    if type_map_sha256 is not None and (not isinstance(type_map_sha256, str)
+                                        or not _SHA256_RE.fullmatch(type_map_sha256)):
         raise ValueError("type_map_sha256 must be a 64-character hexadecimal SHA-256 digest.")
     if source_worksheet is not None and (not isinstance(source_worksheet, str) or not source_worksheet):
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
+    if source_worksheet is not None:
+        validate_text(source_worksheet, field="source_worksheet", nonblank=True)
     include_diagnostics = schema_version in {"1.3", "1.4"}
 
     row_count = len(result.rows)
@@ -187,32 +197,34 @@ def build_audit_record(
         for row in result.material_rows
     )
 
-    record = {
+    source: JSONObject = {
+        "name": source_name,
+        "sha256": source_sha256.lower() if source_sha256 is not None else None,
+    }
+    data_quality: JSONObject = {
+        "row_count": row_count,
+        "classified_count": classified_count,
+        "unclassified_count": unclassified_count,
+        "classification_coverage_percent": f"{classification_coverage:.2f}",
+        "excluded_summary_count": sum(row.excluded_from_aggregation for row in result.rows),
+        "material_variance_count": len(result.material_rows),
+        "supported_driver_count": supported_driver_count,
+        "hypothesis_driver_count": len(result.material_rows) - supported_driver_count,
+        "totals_complete": totals_complete,
+        "net_operating_impact_available": net_operating_available,
+        "warnings": list(result.warnings),
+    }
+    record: JSONObject = {
         "schema_version": schema_version,
         "period": result.config.period,
-        "source": {
-            "name": source_name,
-            "sha256": source_sha256.lower() if source_sha256 is not None else None,
-        },
+        "source": source,
         "materiality": {
             "dollar_threshold": _decimal(result.config.dollar_threshold),
             "percent_threshold": _decimal(result.config.percent_threshold),
             "comparison": "strictly_greater_than",
             "logic": "absolute_dollar_or_absolute_percent",
         },
-        "data_quality": {
-            "row_count": row_count,
-            "classified_count": classified_count,
-            "unclassified_count": unclassified_count,
-            "classification_coverage_percent": f"{classification_coverage:.2f}",
-            "excluded_summary_count": sum(row.excluded_from_aggregation for row in result.rows),
-            "material_variance_count": len(result.material_rows),
-            "supported_driver_count": supported_driver_count,
-            "hypothesis_driver_count": len(result.material_rows) - supported_driver_count,
-            "totals_complete": totals_complete,
-            "net_operating_impact_available": net_operating_available,
-            "warnings": list(result.warnings),
-        },
+        "data_quality": data_quality,
         "totals": {
             "revenue": _aggregate_record(
                 result.revenue,
@@ -241,9 +253,9 @@ def build_audit_record(
     if schema_version != "1.0":
         record["currency"] = result.config.currency
     if schema_version == "1.4":
-        record["source"]["worksheet"] = source_worksheet
+        source["worksheet"] = source_worksheet
     if schema_version in {"1.2", "1.3", "1.4"}:
-        config_identity = {
+        config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
             "percent_threshold": _decimal(result.config.percent_threshold),
@@ -263,8 +275,8 @@ def build_audit_record(
             "payload_digest_recipe": "public-record-without-payload-sha256-v1",
         }
     if include_diagnostics:
-        record["data_quality"]["completeness_basis"] = "supplied_classified_rows_with_both_categories"
-        record["data_quality"]["summary_verifications"] = [
+        data_quality["completeness_basis"] = "supplied_classified_rows_with_both_categories"
+        data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(

@@ -1,6 +1,7 @@
 """Deterministic decimal arithmetic with explicit precision-loss failures."""
 
 from contextlib import contextmanager
+from collections.abc import Iterator
 from decimal import (
     Context,
     Decimal,
@@ -14,17 +15,20 @@ from decimal import (
     localcontext,
 )
 
-NUMERIC_POLICY_ID = "decimal-50-half-even-e999-v1"
+NUMERIC_POLICY_ID = "decimal-50-half-even-e999-v2"
+FINANCIAL_PRECISION = 50
+MIN_EXPONENT = -999
+MAX_EXPONENT = 999
 
 
 @contextmanager
-def financial_context():
+def financial_context() -> Iterator[Context]:
     # Construct a fresh context: never inherit caller precision, rounding or traps.
     policy = Context(
-        prec=50,
+        prec=FINANCIAL_PRECISION,
         rounding=ROUND_HALF_EVEN,
-        Emin=-999,
-        Emax=999,
+        Emin=MIN_EXPONENT,
+        Emax=MAX_EXPONENT,
         capitals=1,
         clamp=0,
         flags=[],

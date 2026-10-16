@@ -14,13 +14,15 @@ import tempfile
 import variance_agent
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--without-excel", action="store_true")
     args = parser.parse_args()
     assert importlib.metadata.version("variance-analysis-agent") == variance_agent.__version__
     root = Path(__file__).resolve().parents[1]
-    assert root / "src" not in Path(variance_agent.__file__).resolve().parents
+    package_file = variance_agent.__file__
+    assert package_file is not None
+    assert root / "src" not in Path(package_file).resolve().parents
     command = Path(sys.executable).parent / ("variance-agent.exe" if os.name == "nt"
                                              else "variance-agent")
     assert command.is_file(), "Installed console entry point is missing"

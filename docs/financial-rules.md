@@ -3,6 +3,11 @@
 All financial calculations remain deterministic Python Decimal operations in an
 isolated context: 50 significant digits, round-half-even, exponent limits -999 to
 999. Recurring percentage ratios may round; materiality uses exact cross-products.
+Numeric inputs are checked against this context before analysis. Context traps
+include DivisionByZero, InvalidOperation, Overflow, Underflow, and Inexact;
+recurring ratios alone permit Inexact. Python callers must initialize Decimal
+thresholds from strings. Exact subnormals are accepted within the context's
+representable range; absent drivers do not perform unused tolerance arithmetic.
 
 Variance amount = Actual - Budget. Variance percent divides by the signed nonzero
 Budget. A zero Budget/nonzero Actual is unbudgeted with a null percentage; a
@@ -14,6 +19,8 @@ Positive expense variance is unfavorable; positive Revenue variance is favorable
 Inputs must follow the documented positive-cost expense convention. Signed-ledger
 transformations require explicit preprocessing; amounts are never silently made
 absolute. Unclassified rows remain excluded from category totals.
+The configured period must be nonblank text. If a Period column is present, every
+row must supply that reporting period; missing or conflicting periods fail.
 
 ## Classification and summaries
 
@@ -55,13 +62,26 @@ reasons. Additional diagnostics do not change the original financial checks or
 their short-circuit behavior. A hypothetical residual unrepresentable under the
 same Decimal policy is null with a residual-unavailable reason; it is never rounded
 silently or used to upgrade evidence to supported.
+For an accepted nonzero residual, an Unexplained residual component equals the
+observed variance minus the two modeled effects. The reported component tuple
+then sums exactly to observed variance. The diagnostic component_residual still
+describes the two modeled effects before this adjustment; it is not concealed or
+assigned to a quantity/rate cause. Reports request reconciliation of that residual.
 
 `materiality_reason` records the first successful comparison (amount first, then
 percentage). It does not claim that only one comparison could have succeeded.
-Report amounts/percentages are rounded for display. The threshold line preserves
+Report amounts share at least two decimal places and retain additional fractional
+places whenever needed for exact detail/total and driver reconciliation. A report
+precision note explains additional places. Quantization uses ROUND_HALF_EVEN only
+at this reporting boundary; no pennies are allocated to accounts. Percentages use
+exact integer ratios and one half-even rounding to tenths of a percent, avoiding a
+second rounding of the 50-digit API ratio. The threshold line preserves
 every significant fractional digit of the configured cutoffs, including fractional
 cents and small percentages; materiality comparisons use those exact values.
 
 Report labels and periods escape source Markdown/HTML characters, including
 ampersands. Literal entity text such as `&copy;` remains source text when rendered;
 audit records retain the original labels and periods.
+Terminal and bidirectional formatting controls are shown as visible escapes in
+reports and CLI errors. Report and audit builders independently reverify derived
+financial identities before serializing results from Python callers.

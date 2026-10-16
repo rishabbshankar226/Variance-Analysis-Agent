@@ -5,6 +5,9 @@
 - Quote comma-containing CSV values, for example `"1,000"`. Every record must match
   the header's column count. Data under unnamed columns is rejected.
 - JSON decimals are loaded directly as `Decimal`; duplicate JSON keys are rejected.
+- Nonstandard NaN/Infinity JSON constants are rejected even in metadata.
+- The reporting period must be nonblank. If any row declares Period, every row
+  must supply the configured period.
 - JSON inputs and type maps support at most 128 nested object/array levels,
   counting the root container and empty containers. More levels return a validation
   error and CLI exit code 2, preserving existing report and audit files. Row count
@@ -12,6 +15,10 @@
 - Blank Excel rows are ignored; populated cells under blank headers are rejected.
 - Excel rows are read from worksheet contents rather than trusting declared dimensions.
   Malformed workbook structures produce an actionable Excel input error.
+- OOXML preflight bounds expanded bytes, archive members, cells, and physical
+  indices before loading worksheets. DTD/entities, duplicate archive members, and
+  unordered or conflicting coordinates fail safely. Numeric XML text is retained
+  directly as Decimal, bypassing binary float conversion of financial values.
 - Blank types allow label inference. Nonblank, unrecognized types stay Unclassified.
   Net income, operating income, and gross profit labels are not inferred as revenue.
 - For each category, supply detail rows alone, one summary alone, or detail rows
@@ -43,6 +50,7 @@ wrappers must supply either `rows` or `data`, not both.
 Reports escape literal HTML-entity and tilde text in source labels and periods,
 including Markdown strikethrough markers. Analyzed labels and periods retain
 their values in audit records.
+Terminal and bidirectional controls become visible escapes in reports/errors.
 
 Before output, the CLI verifies row percentages and F/U statuses, aggregate
 metrics, and the exact membership and order of the material-variance list.
@@ -50,6 +58,8 @@ Both output files are serialized and staged before replacement. A staging failur
 preserves existing files; each replacement is atomic. Replacing two files is not
 a single transaction: if the second replacement fails, rerun the command to
 regenerate the pair. Temporary files are cleaned up on handled failures.
+The report and audit APIs also reverify results at their boundaries. A manual
+result with inconsistent facts fails rather than receiving authoritative trust flags.
 
 ## Numerical precision and driver selection
 
@@ -58,9 +68,9 @@ isolated Decimal context: 50 significant digits, round-half-even, exponent limit
 -999 to 999. Caller Decimal settings cannot change the results. Financial
 arithmetic that loses information or exceeds the supported range raises an error
 instead of silently rounding amounts. Recurring percentage ratios may round to
-50 digits, but materiality compares `abs(variance)` directly with
-`percent_threshold * abs(budget)` at sufficient product precision. This avoids
-false negatives near a repeating-ratio boundary. Zero-budget rules are unchanged.
+50 digits, but materiality compares equivalent exact integer cross-products.
+This avoids false negatives near repeating-ratio boundaries and prevents Decimal
+exponent overflow/underflow during the comparison. Zero-budget rules are unchanged.
 This policy supersedes the historical precision limitations in earlier audit notes.
 Extreme exponents on zero values are canonicalized to signed zero so audit
 serialization cannot allocate an arbitrarily large fixed-point string.

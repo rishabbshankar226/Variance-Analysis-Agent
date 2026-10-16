@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
 
 
 class LineType(StrEnum):
@@ -70,7 +69,7 @@ class AnalyzedRow:
     material: bool
     excluded_from_aggregation: bool
     driver_evidence: DriverEvidence | None
-    raw: dict[str, Any]
+    raw: dict[str, object]
     classification_source: str = "unavailable"
     summary_source: str = "unavailable"
     materiality_reason: str = "unavailable"
