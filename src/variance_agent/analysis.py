@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from decimal import Decimal, DecimalException, localcontext
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .models import (
     Aggregate,
@@ -210,9 +210,12 @@ def _driver_evidence(
         )
 
         residuals: list[Decimal | None] = []
-        for calculation in (lambda: modeled_budget - budget,
-                            lambda: modeled_actual - actual,
-                            lambda: quantity_effect + rate_effect - variance):
+        calculations: tuple[Callable[[], Decimal], ...] = (
+            lambda: modeled_budget - budget,
+            lambda: modeled_actual - actual,
+            lambda: quantity_effect + rate_effect - variance,
+        )
+        for calculation in calculations:
             with localcontext():
                 try:
                     residuals.append(calculation())
@@ -525,8 +528,8 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     analyzed = _resolve_summary_rows(analyzed)
 
     normalized_names: dict[str, int] = {}
-    for row in analyzed:
-        key = row.line_item.strip().casefold()
+    for analyzed_row in analyzed:
+        key = analyzed_row.line_item.strip().casefold()
         normalized_names[key] = normalized_names.get(key, 0) + 1
     duplicates = sorted(
         row.line_item

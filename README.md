@@ -18,7 +18,7 @@ On Windows, activate with `.venv\Scripts\activate`. Install Excel support with:
 python -m pip install -e '.[excel]'
 ```
 
-Direct dependencies and the build backend are pinned in `pyproject.toml`. Transitive dependencies are resolved by pip for the selected Python version and platform; these pins are not a complete cross-platform environment lock.
+Direct dependencies and the build backend are pinned in `pyproject.toml`; `requirements-typecheck.txt` pins the development checker and its supporting packages. Other transitive dependencies are resolved by pip for the selected Python version and platform; these pins are not a complete cross-platform environment lock.
 
 ## Operation
 
@@ -99,9 +99,10 @@ Source labels and periods are untrusted data. Reports escape Markdown/HTML and r
 ## Verification
 
 ```sh
-python -m pip install -e '.[dev,excel,release]'
+python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,release]'
 python -m pytest -q
 python -m ruff check .
+python -m mypy --strict src/variance_agent scripts
 python -m compileall -q src tests scripts
 python -m pip check
 python -m build --outdir dist
@@ -111,10 +112,6 @@ python scripts/check_distribution.py dist
 
 Tests include exact Fraction-oracle accounting/materiality properties, financial/reporting regressions, immutable audit schemas and reviewed reports, hostile workbook preflight, CLI output preservation, and distribution installation checks. `scripts/check_installation.py --without-excel` must run in a separate non-editable installation without the Excel extra.
 
-Strict source and script typing is configured in `pyproject.toml`. The checker is not yet included in the development extra; its proposed pinned version is mypy 2.4.0. Once available, the command is:
+Strict source and script typing is configured in `pyproject.toml`, including bans on explicit and unimported `Any`. The development extra includes mypy 2.4.0, and CI enforces the same command on each supported Python version.
 
-```sh
-python -m mypy --strict src/variance_agent scripts
-```
-
-See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results and remaining approval gates, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
+See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.

@@ -4,9 +4,10 @@ Use Python 3.11-3.14 and a virtual environment:
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install -e '.[dev,excel,release]'
+.venv/bin/python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,release]'
 .venv/bin/python -m pytest
 .venv/bin/ruff check .
+.venv/bin/python -m mypy --strict src/variance_agent scripts
 .venv/bin/python -m compileall -q src tests scripts
 .venv/bin/python -m pip check
 ```
@@ -34,9 +35,9 @@ Excel, wheel/sdist installations, and portable output behavior on Windows.
 Repository owners can require the stable `Required checks` job on main. Action
 SHAs must be verified against their upstream repository when updating pins.
 The source and verification scripts have a strict mypy configuration, including
-explicit/unimported Any bans. Run `python -m mypy --strict src/variance_agent scripts`
-when the development checker is available; its dependency approval status and
-executed results are recorded in the institutional audit ledger. Do not hide
+explicit/unimported Any bans. The development extra includes the pinned checker;
+CI runs `python -m mypy --strict src/variance_agent scripts` on every supported
+Python version. Executed results are recorded in the institutional audit ledger. Do not hide
 errors behind blanket ignores or introduce new third-party dependencies without
 the repository owner's approval.
 

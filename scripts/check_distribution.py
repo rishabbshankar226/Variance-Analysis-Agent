@@ -26,7 +26,8 @@ def main() -> None:
         assert b"variance-agent = variance_agent.cli:main" in entry
     with tarfile.open(sources[0], "r:gz") as source:
         names = source.getnames()
-        for required in ("LICENSE", "pyproject.toml", "src/variance_agent/version.py",
+        for required in ("LICENSE", "pyproject.toml", "requirements-typecheck.txt",
+                         "src/variance_agent/version.py",
                          "schemas/audit-1.0.schema.json", "schemas/audit-1.3.schema.json",
                          "schemas/audit-1.4.schema.json",
                          "tests/fixtures/contracts/complete.report.md", "docs/audit-contract.md",
