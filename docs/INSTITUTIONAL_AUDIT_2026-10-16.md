@@ -45,7 +45,7 @@ Local environment: Python 3.12.14. Existing dependency versions were resolved li
 | Distribution metadata/content | twine and repository distribution checker pass |
 | Clean installed console/CSV/JSON/audit checks | Both wheel and sdist pass in independent non-editable environments without Excel |
 | Strict mypy | **[Not executed in runtime]**: checker absent; the launched command exits before analysis with `No module named mypy`. Dependency approval is required. |
-| Hosted Python 3.11/3.13/3.14 and Windows CI | Pending the draft pull request run; local results do not establish those platforms. |
+| Hosted Python 3.11–3.14 and Windows CI | 354 tests pass on each Python version; Windows output contracts: 97 passed. Minimal/distribution installations and Required checks succeed. Run 38844852150 at implementation commit 52229a966b5f5677001eea561692a60cd3d4a701; decoded job logs retained. |
 
 Reproduction and verification commands, with the repository root as working directory:
 
@@ -74,4 +74,4 @@ The concrete pending proposal adds only the development checker `mypy==2.4.0`, e
 
 The user explicitly required: “STOP and ask for human approval before ... adding any new third-party dependency.” This gate prevents completing VA-13 until approval. After approval, apply the proposal, execute strict checking, fix any reported errors, rerun affected verification and CI, and update the audit ledger and delivery. The pull request remains a draft meanwhile. This audit does not claim production readiness while that gate remains open.
 
-No directory was deleted; no published schema or CLI signature was broken. Scope remains descriptive variance analysis on supplied data. Source completeness, authentic authorship, unsupported accounting sign transformations and causal inference remain external review responsibilities. There is no live model or browser surface on which to claim model-call or browser verification.
+No repository directory was deleted; no published schema or CLI signature was broken. Scope remains descriptive variance analysis on supplied data. Source completeness, authentic authorship, unsupported accounting sign transformations and causal inference remain external review responsibilities. There is no live model or browser surface on which to claim model-call or browser verification.
