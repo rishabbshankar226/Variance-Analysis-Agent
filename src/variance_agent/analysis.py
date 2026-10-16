@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from decimal import Decimal, DecimalException, localcontext
-from typing import Any, Iterable
+from typing import Iterable
 
 from .models import (
     Aggregate,
@@ -19,9 +19,12 @@ from .models import (
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
+from .limits import MAX_ROWS, validate_text
 
 CLASSIFICATION_POLICY_ID = "flat-classification-v1"
-DRIVER_POLICY_ID = "quantity-rate-reconcile-v1"
+DRIVER_POLICY_ID = "quantity-rate-reconcile-residual-v2"
+AMOUNT_TOLERANCE = Decimal("0.01")
+RELATIVE_DRIVER_TOLERANCE = Decimal("0.000001")
 
 
 _LINE_ITEM_KEYS = ("line_item", "line", "item", "account", "account_name", "category")
@@ -68,8 +71,8 @@ _DRIVER_MODELS = (
 
 
 def _required_value(
-    row: dict[str, Any], candidates: Iterable[str], display_name: str, row_number: int
-) -> Any:
+    row: dict[str, object], candidates: Iterable[str], display_name: str, row_number: int
+) -> object:
     candidates = tuple(candidates)
     present = [key for key in candidates if key in row]
     if len(present) > 1:
@@ -84,7 +87,7 @@ def _required_value(
     return found[1]
 
 
-def _classify_explicit(value: Any) -> LineType | None:
+def _classify_explicit(value: object) -> LineType | None:
     if value is None:
         return None
     text = str(value).strip().lower()
@@ -95,7 +98,7 @@ def _classify_explicit(value: Any) -> LineType | None:
     return None
 
 
-def _summary_candidate(line_item: str, row: dict[str, Any]) -> tuple[bool, str]:
+def _summary_candidate(line_item: str, row: dict[str, object]) -> tuple[bool, str]:
     if "row_kind" in row and not is_missing(row["row_kind"]):
         kind = str(row["row_kind"]).strip().casefold()
         if kind == "detail":
@@ -112,7 +115,7 @@ def _summary_candidate(line_item: str, row: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _classify(
-    line_item: str, row: dict[str, Any], config: AnalysisConfig
+    line_item: str, row: dict[str, object], config: AnalysisConfig
 ) -> tuple[LineType, str]:
     if line_item in config.type_map:
         return config.type_map[line_item], "type_map"
@@ -154,11 +157,11 @@ def _is_material(budget: Decimal, variance: Decimal, config: AnalysisConfig) -> 
         return True
     if budget == 0:
         return False
-    # Compare |variance| > threshold * |budget| without rounding a recurring ratio.
-    with localcontext() as context:
-        context.prec = max(context.prec, len(budget.as_tuple().digits)
-                           + len(config.percent_threshold.as_tuple().digits))
-        return abs(variance) > config.percent_threshold * abs(budget)
+    variance_units, variance_scale = variance.as_integer_ratio()
+    budget_units, budget_scale = budget.as_integer_ratio()
+    threshold_units, threshold_scale = config.percent_threshold.as_integer_ratio()
+    return (abs(variance_units) * budget_scale * threshold_scale
+            > abs(budget_units) * threshold_units * variance_scale)
 
 
 def _status(line_type: LineType, variance: Decimal) -> Status:
@@ -172,19 +175,19 @@ def _status(line_type: LineType, variance: Decimal) -> Status:
 
 
 def _driver_evidence(
-    row: dict[str, Any], budget: Decimal, actual: Decimal, line_item: str, currency: str = "USD"
+    row: dict[str, object], budget: Decimal, actual: Decimal, line_item: str, currency: str = "USD"
 ) -> DriverEvidence | None:
-    tolerance = max(
-        Decimal("0.01"),
-        abs(budget) * Decimal("0.000001"),
-        abs(actual) * Decimal("0.000001"),
-    )
-
     fallback = None
     for model_name, bq, aq, br, ar, quantity_label, rate_label in _DRIVER_MODELS:
         required = (bq, aq, br, ar)
         if not all(key in row and not is_missing(row[key]) for key in required):
             continue
+
+        tolerance = max(
+            AMOUNT_TOLERANCE,
+            abs(budget) * RELATIVE_DRIVER_TOLERANCE,
+            abs(actual) * RELATIVE_DRIVER_TOLERANCE,
+        )
 
         budget_quantity = parse_decimal(row[bq], field=bq, line_item=line_item, currency=currency)
         actual_quantity = parse_decimal(row[aq], field=aq, line_item=line_item, currency=currency)
@@ -201,14 +204,12 @@ def _driver_evidence(
         quantity_effect = (actual_quantity - budget_quantity) * budget_rate
         rate_effect = (actual_rate - budget_rate) * actual_quantity
         variance = actual - budget
-        variance_tolerance = max(Decimal("0.01"), abs(variance) * Decimal("0.000001"))
+        variance_tolerance = max(AMOUNT_TOLERANCE, abs(variance) * RELATIVE_DRIVER_TOLERANCE)
         reconciles = reconciles and (
             abs(quantity_effect + rate_effect - variance) <= variance_tolerance
         )
 
-        # Preserve the original short-circuit financial checks. Additional
-        # hypothesis diagnostics must not introduce precision/range failures.
-        residuals = []
+        residuals: list[Decimal | None] = []
         for calculation in (lambda: modeled_budget - budget,
                             lambda: modeled_actual - actual,
                             lambda: quantity_effect + rate_effect - variance):
@@ -225,15 +226,18 @@ def _driver_evidence(
             elif abs(residual) > allowed:
                 failures.append(f"{name}_outside_tolerance")
 
+        components: tuple[tuple[str, Decimal], ...] = (
+            (f"{quantity_label} effect", quantity_effect),
+            (f"{rate_label} effect", rate_effect),
+        )
+        if reconciles and residuals[2] is not None and residuals[2] != 0:
+            components += (("Unexplained residual", residuals[2].copy_negate()),)
         evidence = DriverEvidence(
             label=model_name,
-            components=(
-                (f"{quantity_label} effect", quantity_effect),
-                (f"{rate_label} effect", rate_effect),
-            ),
+            components=components,
             reconciles=reconciles,
             reconciliation=DriverReconciliation(
-                modeled_budget, modeled_actual, *residuals, tolerance,
+                modeled_budget, modeled_actual, residuals[0], residuals[1], residuals[2], tolerance,
                 variance_tolerance, tuple(failures),
             ),
         )
@@ -275,16 +279,16 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
                              "supply detail rows only or one reconciled total.")
         summary = summaries[0]
         budget_residual = summary.budget - sum((r.budget for r in details), Decimal("0"))
-        if abs(budget_residual) > Decimal("0.01"):
+        if abs(budget_residual) > AMOUNT_TOLERANCE:
             raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         actual_residual = summary.actual - sum((r.actual for r in details), Decimal("0"))
-        if abs(actual_residual) > Decimal("0.01"):
+        if abs(actual_residual) > AMOUNT_TOLERANCE:
             raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         verifications[line_type] = SummaryVerification(
             "reconciled_and_excluded", len(details), budget_residual,
-            actual_residual, Decimal("0.01"),
+            actual_residual, AMOUNT_TOLERANCE,
         )
 
     output = []
@@ -349,6 +353,12 @@ def _verify_result(
         expected_material = _is_material(row.budget, row.variance_dollars, config)
         if row.material != expected_material:
             raise _verification_failure(f"materiality mismatch for {row.line_item!r}")
+        driver = row.driver_evidence
+        if driver is not None and driver.reconciles:
+            if not driver.components or sum((amount for _, amount in driver.components),
+                                             Decimal("0")) != row.variance_dollars:
+                raise _verification_failure(f"driver component reconciliation mismatch for "
+                                            f"{row.line_item!r}")
 
     expected_order = sorted(
         (row for row in rows if row.material and not row.excluded_from_aggregation),
@@ -387,21 +397,44 @@ def _verify_result(
 
 
 @financial_context()
-def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> AnalysisResult:
+def verify_result(result: AnalysisResult) -> None:
+    """Recheck derived facts at each reporting boundary, including Python callers."""
+    validate_currency(result.config.currency)
+    validate_text(result.config.period, field="Period", nonblank=True)
+    if not result.rows:
+        raise _verification_failure("dataset contains no data rows")
+    _verify_result(list(result.rows), list(result.material_rows), result.revenue,
+                   result.expenses, result.config)
+
+
+@financial_context()
+def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> AnalysisResult:
+    if not isinstance(config, AnalysisConfig):
+        raise ValueError("Configuration must be an AnalysisConfig instance.")
     validate_currency(config.currency)
+    validate_text(config.period, field="Period", nonblank=True)
+    if not isinstance(rows, list):
+        raise ValueError("Rows must be a list of row objects.")
     if not rows:
         raise ValueError("Dataset contains no data rows.")
+    if len(rows) > MAX_ROWS:
+        raise ValueError(f"Dataset exceeds the supported row count ({MAX_ROWS}).")
+    if not isinstance(config.dollar_threshold, Decimal) or not isinstance(
+        config.percent_threshold, Decimal
+    ):
+        raise ValueError("Materiality thresholds must be Decimal values initialized from strings.")
     if not config.dollar_threshold.is_finite() or not config.percent_threshold.is_finite():
         raise ValueError("Materiality thresholds must be finite numbers.")
     if config.dollar_threshold < 0 or config.percent_threshold < 0:
         raise ValueError("Materiality thresholds must be non-negative.")
 
-    # The exported Python API must uphold the same classification contract as
-    # CLI type-map loading. Copy the mapping to detach caller-owned state.
+    if not isinstance(config.type_map, dict):
+        raise ValueError("Type map must be a dictionary of line-item strings to classifications.")
     validated_type_map: dict[str, LineType] = {}
     for item, value in config.type_map.items():
         if not isinstance(item, str) or not item.strip():
             raise ValueError("Type map keys must be nonblank line-item strings.")
+        validate_text(item, field="Type map key", nonblank=True)
         try:
             validated_type_map[item] = LineType(value)
         except (ValueError, TypeError) as exc:
@@ -422,15 +455,21 @@ def analyze_rows(rows: list[dict[str, Any]], config: AnalysisConfig) -> Analysis
 
     analyzed: list[AnalyzedRow] = []
     warnings: list[str] = []
+    normalized_rows = [normalize_row(row) for row in rows]
+    has_period_column = any("period" in row for row in normalized_rows)
 
-    for index, source_row in enumerate(rows, start=2):
-        row = normalize_row(source_row)
+    for index, row in enumerate(normalized_rows, start=2):
+        if has_period_column:
+            period = validate_text(row.get("period"), field=f"Row {index} Period", nonblank=True)
+            if period.strip() != config.period.strip():
+                raise ValueError(f"Row {index}: Period conflicts with the reporting period.")
         line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
         if isinstance(line_item_raw, (bool, list, dict, tuple, set)):
             raise ValueError(f"Row {index}: Line Item must be a scalar text or numeric label.")
         line_item = "" if line_item_raw is None else str(line_item_raw).strip()
         if not line_item:
             raise ValueError(f"Row {index}: Line Item is blank.")
+        validate_text(line_item, field=f"Row {index} Line Item", nonblank=True)
 
         if "currency" in row and not is_missing(row["currency"]):
             row_currency = row["currency"]

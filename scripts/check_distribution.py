@@ -7,7 +7,7 @@ import tarfile
 import zipfile
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()

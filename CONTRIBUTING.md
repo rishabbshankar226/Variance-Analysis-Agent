@@ -33,7 +33,11 @@ CI tests every declared Python version, schemas/goldens, an installation without
 Excel, wheel/sdist installations, and portable output behavior on Windows.
 Repository owners can require the stable `Required checks` job on main. Action
 SHAs must be verified against their upstream repository when updating pins.
-Type checking can be introduced incrementally at module boundaries; do not hide
-errors behind blanket ignores.
+The source and verification scripts have a strict mypy configuration, including
+explicit/unimported Any bans. Run `python -m mypy --strict src/variance_agent scripts`
+when the development checker is available; its dependency approval status and
+executed results are recorded in the institutional audit ledger. Do not hide
+errors behind blanket ignores or introduce new third-party dependencies without
+the repository owner's approval.
 
 See [release preparation](docs/releasing.md) and [security reporting](SECURITY.md).

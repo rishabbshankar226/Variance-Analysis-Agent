@@ -57,3 +57,22 @@ Audit 1.4 records the actual selected worksheet name, including the active-sheet
 default; CSV/JSON use null. Older explicitly selected audit versions omit this
 metadata. Excel values come from cached formula results (`data_only=True`);
 formulas are never recalculated. Missing caches remain missing input values.
+Numeric cells use the stored XML decimal text directly rather than openpyxl's
+binary float conversion. This preserves stored fractional cents but cannot
+recover precision discarded by the workbook's producer.
+
+## Period and resource limits
+
+The reporting period must be nonblank text. An optional Period column declares
+the row period; if it appears, every row must supply the configured period. Filter
+or aggregate multi-period ledgers deliberately before analysis.
+
+Source and type-map captures are each limited to 32 MiB. CSV/JSON allow at most
+100,000 data rows, 256 columns, and 1,000,000 cells/JSON values. Text is limited to
+128 KiB and numeric literals to 4,096 characters. JSON nesting remains limited to
+128 containers. Excel allows 2,048 archive members and 64 MiB total expanded
+content; worksheet physical indices are bounded to 100,000 rows including the
+header and 256 columns, with 1,000,000 cells per worksheet. Inflated dimension
+metadata does not expand these limits. Duplicate archive paths, DTD/entities,
+duplicate or unordered coordinates, and invalid physical positions are rejected
+before the workbook library expands a worksheet.

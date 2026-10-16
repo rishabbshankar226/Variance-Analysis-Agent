@@ -59,7 +59,7 @@ def _result(*, include_unclassified=False):
                 variance_percent=Decimal("0.2"),
                 percent_label=None,
                 status=Status.UNCLASSIFIED,
-                material=False,
+                material=True,
                 excluded_from_aggregation=False,
                 driver_evidence=None,
                 raw={},
@@ -69,7 +69,7 @@ def _result(*, include_unclassified=False):
     return AnalysisResult(
         config=AnalysisConfig("Q3 2026", Decimal("100"), Decimal("0.05")),
         rows=tuple(rows),
-        material_rows=(revenue, expense),
+        material_rows=tuple(rows),
         revenue=Aggregate(Decimal("1000"), Decimal("1320"), Decimal("320"), Decimal("0.32"), None, Status.FAVORABLE),
         expenses=Aggregate(Decimal("500"), Decimal("650"), Decimal("150"), Decimal("0.30"), None, Status.UNFAVORABLE),
         warnings=tuple(warnings),
