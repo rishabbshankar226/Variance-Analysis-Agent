@@ -69,7 +69,7 @@ or aggregate multi-period ledgers deliberately before analysis.
 
 Source and type-map captures are each limited to 32 MiB. CSV/JSON allow at most
 100,000 data rows, 256 columns, and 1,000,000 cells/JSON values. Text is limited to
-128 KiB and numeric literals to 4,096 characters. JSON nesting remains limited to
+128 KiB and numeric literals to 4,096 characters. JSON/XML nesting remains limited to
 128 containers. Excel allows 2,048 archive members and 64 MiB total expanded
 content; worksheet physical indices are bounded to 100,000 rows including the
 header and 256 columns, with 1,000,000 cells per worksheet. Inflated dimension

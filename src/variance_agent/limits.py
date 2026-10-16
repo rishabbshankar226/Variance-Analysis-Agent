@@ -11,6 +11,7 @@ MAX_CELLS: Final = 1_000_000
 MAX_TEXT_LENGTH: Final = 128 * 1024
 MAX_NUMBER_LENGTH: Final = 4096
 MAX_JSON_DEPTH: Final = 128
+MAX_XML_DEPTH: Final = 128
 
 
 def validate_text(value: object, *, field: str, nonblank: bool = False) -> str:

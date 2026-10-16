@@ -17,6 +17,7 @@ from .limits import (
     MAX_COLUMNS,
     MAX_NUMBER_LENGTH,
     MAX_ROWS,
+    MAX_XML_DEPTH,
 )
 
 _CELL_REFERENCE = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})")
@@ -61,7 +62,12 @@ def _worksheet_numbers(xml: bytes) -> dict[str, str]:
     numeric = False
     seen: set[str] = set()
     cells = 0
+    depth = 0
     for event, element in ElementTree.iterparse(io.BytesIO(xml), events=("start", "end")):
+        if event == "start":
+            depth += 1
+            if depth > MAX_XML_DEPTH:
+                raise ValueError(f"Excel XML exceeds the supported depth ({MAX_XML_DEPTH}).")
         if event == "start" and element.tag == f"{_SHEET_NAMESPACE}row":
             previous = row_index
             row_index = int(element.get("r", str(row_index + 1)))
@@ -107,6 +113,7 @@ def _worksheet_numbers(xml: bytes) -> dict[str, str]:
             numeric = False
         if event == "end":
             element.clear()
+            depth -= 1
     return numbers
 
 

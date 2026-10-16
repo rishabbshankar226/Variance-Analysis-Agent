@@ -29,6 +29,7 @@ UNSAFE_CASES = (
     "physical_cell_row_index",
     "physical_column_index",
     "xml_dtd",
+    "xml_depth",
     "xml_entity",
     "utf16_xml_entity",
     "workbook_xml_dtd",
@@ -95,6 +96,17 @@ def _unsafe_workbook(case: str) -> bytes:
         contents[SHEET_MEMBER] = _worksheet_coordinate(contents[SHEET_MEMBER], case)
     elif case == "xml_dtd":
         contents[SHEET_MEMBER] = b"<!DOCTYPE worksheet>" + contents[SHEET_MEMBER]
+    elif case == "xml_depth":
+        extension = (
+            b'<extLst><ext uri="audit"><guard xmlns="urn:variance-audit:depth">'
+            + b"<level>" * 256
+            + b"</level>" * 256
+            + b"</guard></ext></extLst>"
+        )
+        assert contents[SHEET_MEMBER].endswith(b"</worksheet>")
+        contents[SHEET_MEMBER] = contents[SHEET_MEMBER].replace(
+            b"</worksheet>", extension + b"</worksheet>"
+        )
     elif case in {"xml_entity", "utf16_xml_entity"}:
         xml = (
             b'<!DOCTYPE worksheet [<!ENTITY audit "Sales">]>'
