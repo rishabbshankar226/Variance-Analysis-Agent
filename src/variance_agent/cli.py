@@ -20,10 +20,10 @@ from .limits import display_text
 
 
 class Arguments(Protocol):
-    input: str
-    period: str
-    dollar_threshold: Decimal
-    percent_threshold: Decimal
+    input: str | None
+    period: str | None
+    dollar_threshold: Decimal | None
+    percent_threshold: Decimal | None
     type_map: str | None
     check_only: bool
     sheet: str | None
@@ -31,6 +31,7 @@ class Arguments(Protocol):
     audit_schema_version: str
     output: str | None
     audit_json: str | None
+    chat: bool
 
 
 def _decimal(text: str) -> Decimal:
@@ -71,17 +72,15 @@ def build_parser() -> argparse.ArgumentParser:
         prog="variance-agent",
         description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
     )
-    parser.add_argument("input", help="Input CSV, JSON, XLSX, or XLSM file.")
-    parser.add_argument("--period", required=True, help="Reporting period shown in the report.")
+    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file.")
+    parser.add_argument("--period", help="Reporting period shown in the report.")
     parser.add_argument(
         "--dollar-threshold",
-        required=True,
         type=_decimal,
         help="Absolute dollar materiality threshold. Uses strict > semantics.",
     )
     parser.add_argument(
         "--percent-threshold",
-        required=True,
         type=_decimal,
         help="Percentage threshold as a percent number (for example, 5 for 5%%).",
     )
@@ -98,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--audit-json",
         help="Write a machine-readable audit/agent-context record with source provenance.",
     )
+    parser.add_argument(
+        "--chat",
+        action="store_true",
+        help="Launch the interactive chatbot UI in your browser.",
+    )
     return parser
 
 
@@ -108,6 +112,7 @@ def _same_path(first: Path, second: Path) -> bool:
 
 
 def _validate_output_paths(args: Arguments) -> None:
+    assert args.input is not None
     inputs = [Path(args.input)]
     if args.type_map:
         inputs.append(Path(args.type_map))
@@ -119,6 +124,16 @@ def _validate_output_paths(args: Arguments) -> None:
 
 @financial_context()
 def _run(args: Arguments) -> int:
+    if args.chat:
+        if args.check_only or args.output or args.audit_json:
+            raise ValueError("--chat cannot be combined with --check-only, --output, or --audit-json.")
+        from .chat.server import run_chat_server
+        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet)
+
+    assert args.input is not None
+    assert args.period is not None
+    assert args.dollar_threshold is not None
+    assert args.percent_threshold is not None
     if args.check_only and (args.output or args.audit_json):
         raise ValueError("--check-only cannot be combined with --output or --audit-json.")
     _validate_output_paths(args)
@@ -166,6 +181,18 @@ def _run(args: Arguments) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = cast(Arguments, parser.parse_args(argv))
+    if not args.chat:
+        missing: list[str] = []
+        if not args.input:
+            missing.append("input")
+        if not args.period:
+            missing.append("--period")
+        if args.dollar_threshold is None:
+            missing.append("--dollar-threshold")
+        if args.percent_threshold is None:
+            missing.append("--percent-threshold")
+        if missing:
+            parser.error(f"the following arguments are required: {', '.join(missing)}")
     try:
         return _run(args)
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:

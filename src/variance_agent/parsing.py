@@ -33,6 +33,7 @@ _MISSING = {"", "na", "n/a", "none", "null", "-", "—"}
 class ParsedInput:
     rows: list[dict[str, object]]
     worksheet: str | None = None
+    sheetnames: tuple[str, ...] = ()
 
 
 def is_missing(value: object) -> bool:
@@ -335,13 +336,31 @@ def load_input(
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded) if h})
-                return ParsedInput(output, ws.title)
+                return ParsedInput(output, ws.title, tuple(wb.sheetnames))
             except (BadZipFile, KeyError, SyntaxError) as exc:
                 raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc
             finally:
                 if wb is not None:
                     wb.close()
     raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
+
+
+def get_workbook_sheets(data: bytes, suffix: str) -> list[str]:
+    """Return list of sheet names from Excel bytes without parsing data rows."""
+    suffix = suffix.lower()
+    if suffix not in {".xlsx", ".xlsm"}:
+        return []
+    load_workbook = _excel_loader()
+    with io.BytesIO(data) as source:
+        wb = None
+        try:
+            wb = load_workbook(source, read_only=True, data_only=True)
+            return list(wb.sheetnames)
+        except Exception:
+            return []
+        finally:
+            if wb is not None:
+                wb.close()
 
 
 def first_present(row: dict[str, object], candidates: Iterable[str]) -> tuple[str, object] | None:
