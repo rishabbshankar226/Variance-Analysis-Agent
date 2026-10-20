@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, Inexact, ROUND_HALF_EVEN, localcontext
+from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
 from .numeric import financial_context
@@ -30,7 +30,7 @@ def _safe_inline(value: object) -> str:
 
 
 def _money(value: Decimal, currency: str = "USD", places: int = 2) -> str:
-    with localcontext() as context:
+    with financial_context() as context:
         context.prec = max(context.prec, value.adjusted() + places + 2)
         context.traps[Inexact] = False
         rounded = value.quantize(Decimal("1").scaleb(-places), rounding=ROUND_HALF_EVEN)
@@ -44,13 +44,13 @@ def _pct(budget: Decimal, variance: Decimal, label: str | None = None) -> str:
     if budget == 0:
         return "0.0%" if variance == 0 else "N/A"
     numerator, numerator_scale = variance.as_integer_ratio()
-    denominator, denominator_scale = budget.as_integer_ratio()
+    denominator, denominator_scale = abs(budget).as_integer_ratio()
     scaled = numerator * denominator_scale * 1000
     divisor = numerator_scale * denominator
     tenths, remainder = divmod(abs(scaled), abs(divisor))
     if 2 * remainder > abs(divisor) or (2 * remainder == abs(divisor) and tenths % 2):
         tenths += 1
-    sign = "-" if tenths and ((scaled < 0) != (divisor < 0)) else ""
+    sign = "-" if tenths and (scaled < 0) else ""
     return f"{sign}{tenths // 10}.{tenths % 10}%"
 
 

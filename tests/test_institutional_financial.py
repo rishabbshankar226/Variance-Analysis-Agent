@@ -121,3 +121,83 @@ def test_large_valid_percentage_threshold_can_be_reported():
     report = render_markdown(result)
     percentage = report.split("Thresholds: ", 1)[1].split(" or ", 1)[1].split("%", 1)[0]
     assert Decimal(percentage.replace(",", "")) == Decimal("1e1001")
+
+
+def test_negative_baseline_percentage_variance_preserves_sign_polarity():
+    from variance_agent.analysis import _percent_variance
+    from variance_agent.report import _pct
+
+    # Negative baseline with positive growth (transition from loss to profit)
+    # Budget: -100, Actual: 50 -> Variance: +150 (Favorable)
+    pct, label = _percent_variance(Decimal("-100"), Decimal("50"))
+    assert pct == Decimal("1.5")  # +150%, not -150%
+    assert label is None
+    assert _pct(Decimal("-100"), Decimal("150")) == "150.0%"
+
+    # Negative baseline with worsening loss
+    # Budget: -100, Actual: -150 -> Variance: -50 (Unfavorable)
+    pct_loss, _ = _percent_variance(Decimal("-100"), Decimal("-150"))
+    assert pct_loss == Decimal("-0.5")  # -50%, not +50%
+    assert _pct(Decimal("-100"), Decimal("-50")) == "-50.0%"
+
+    # Full report rendering table verification
+    cfg = AnalysisConfig("Q3", Decimal("10"), Decimal("0.05"))
+    result = analyze_rows([{"Line Item": "Rev", "Budget": "-100", "Actual": "50", "Type": "Revenue"}], cfg)
+    report = render_markdown(result)
+    assert "| Rev | Revenue | -$100.00 | $50.00 | $150.00 | 150.0% | F |" in report
+
+
+def test_financial_context_traps_float_operations():
+    from decimal import FloatOperation
+    import pytest
+    from variance_agent.numeric import financial_context
+
+    with financial_context():
+        with pytest.raises(FloatOperation):
+            Decimal(1.5)
+
+        with pytest.raises(FloatOperation):
+            _ = Decimal("100") > 50.0
+
+        with pytest.raises(FloatOperation):
+            _ = Decimal("100") <= 50.0
+
+
+def test_ratio_isolates_from_ambient_global_context_mutation():
+    import decimal
+    from variance_agent.numeric import ratio
+
+    original_prec = decimal.getcontext().prec
+    try:
+        decimal.getcontext().prec = 4
+        result = ratio(Decimal("1"), Decimal("3"))
+        assert result == Decimal("0.33333333333333333333333333333333333333333333333333")
+    finally:
+        decimal.getcontext().prec = original_prec
+
+
+def test_cli_main_handles_runtime_error_without_raw_traceback(monkeypatch):
+    import pytest
+    from variance_agent import cli
+
+    def _failing_run(_args):
+        raise RuntimeError("Final verification failed: test integrity mismatch")
+
+    monkeypatch.setattr(cli, "_run", _failing_run)
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["dummy.csv", "--period", "Q3", "--dollar-threshold", "10", "--percent-threshold", "5"])
+    assert exc_info.value.code == 2
+
+
+def test_write_text_outputs_applies_umask_permissions_to_new_files(tmp_path):
+    import os
+    from variance_agent.output import write_text_outputs
+
+    report_path = tmp_path / "new_report.md"
+    write_text_outputs({report_path: "# FP&A Report\n"})
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    expected_mode = 0o666 & ~current_umask
+    actual_mode = report_path.stat().st_mode & 0o777
+    assert actual_mode == expected_mode
+

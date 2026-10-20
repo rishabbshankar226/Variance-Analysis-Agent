@@ -291,7 +291,7 @@ def test_financial_invariants_against_independent_fraction_oracle():
         )
         row = analyzed.rows[0]
         difference = actual - budget
-        ratio = Fraction(difference, budget) if budget else (Fraction(0) if not actual else None)
+        ratio = Fraction(difference, abs(budget)) if budget else (Fraction(0) if not actual else None)
         material = abs(difference) > dollars or (ratio is not None and abs(ratio) > Fraction(1, 20))
         expected_status = (
             Status.NEUTRAL

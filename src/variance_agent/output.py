@@ -42,6 +42,10 @@ def write_text_outputs(outputs: Mapping[Path, str]) -> None:
                 os.fsync(handle.fileno())
             if path.exists():
                 temporary.chmod(path.stat().st_mode & 0o777)
+            else:
+                current_umask = os.umask(0)
+                os.umask(current_umask)
+                temporary.chmod(0o666 & ~current_umask)
         # Each replace is atomic; multiple replaces are not a filesystem transaction.
         for temporary, path in staged:
             os.replace(temporary, path)

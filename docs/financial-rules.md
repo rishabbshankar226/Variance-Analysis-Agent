@@ -9,7 +9,7 @@ recurring ratios alone permit Inexact. Python callers must initialize Decimal
 thresholds from strings. Exact subnormals are accepted within the context's
 representable range; absent drivers do not perform unused tolerance arithmetic.
 
-Variance amount = Actual - Budget. Variance percent divides by the signed nonzero
+Variance amount = Actual - Budget. Variance percent divides by the absolute nonzero
 Budget. A zero Budget/nonzero Actual is unbudgeted with a null percentage; a
 zero/zero row has zero variance. Materiality is strict absolute amount OR absolute
 percentage greater than the threshold. Equality is not material. For zero Budget,

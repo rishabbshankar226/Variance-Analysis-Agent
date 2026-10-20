@@ -146,7 +146,7 @@ def _classify(
 
 def _percent_variance(budget: Decimal, actual: Decimal) -> tuple[Decimal | None, str | None]:
     if budget != 0:
-        return ratio(actual - budget, budget), None
+        return ratio(actual - budget, abs(budget)), None
     if actual == 0:
         return Decimal("0"), None
     return None, "N/A (Unbudgeted)"

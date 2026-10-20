@@ -7,6 +7,7 @@ from decimal import (
     Decimal,
     DecimalException,
     DivisionByZero,
+    FloatOperation,
     Inexact,
     InvalidOperation,
     Overflow,
@@ -32,7 +33,7 @@ def financial_context() -> Iterator[Context]:
         capitals=1,
         clamp=0,
         flags=[],
-        traps=[InvalidOperation, DivisionByZero, Overflow, Underflow, Inexact],
+        traps=[InvalidOperation, DivisionByZero, Overflow, Underflow, Inexact, FloatOperation],
     )
     with localcontext(policy) as context:
         try:
@@ -47,6 +48,6 @@ def financial_context() -> Iterator[Context]:
 
 def ratio(numerator: Decimal, denominator: Decimal) -> Decimal:
     """Ratios may repeat; rounding them must never drive materiality decisions."""
-    with localcontext() as context:
+    with financial_context() as context:
         context.traps[Inexact] = False
         return numerator / denominator

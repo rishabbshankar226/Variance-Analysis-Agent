@@ -168,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     args = cast(Arguments, parser.parse_args(argv))
     try:
         return _run(args)
-    except (OSError, ValueError, csv.Error, DecimalException, BadZipFile) as exc:
+    except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
         parser.error(display_text(str(exc)))
 
 
