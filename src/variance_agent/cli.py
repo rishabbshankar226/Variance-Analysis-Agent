@@ -17,7 +17,9 @@ from .models import AnalysisConfig, ComparisonBasis, LineType
 from .comparison import (
     FORECAST_SYNONYMS,
     PRIOR_PERIOD_SYNONYMS,
+    order_period_labels,
     parse_compare_to,
+    parse_period_label,
     select_strict_comparison,
 )
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
@@ -32,6 +34,16 @@ if TYPE_CHECKING:
 
 
 COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
+
+
+def _year_columns_hint(rows: list[dict[str, object]]) -> str | None:
+    """Point strict-mode users at assisted intake when the comparison lives in year-only columns."""
+    labels = {key.replace("_", " ").upper() for row in rows for key in row}
+    ordered = order_period_labels([label for label in labels if parse_period_label(label) is not None])
+    if ordered is None or len(ordered) < 2:
+        return None
+    return (f"This file has year columns ({', '.join(ordered)}); rerun with --assisted to compare "
+            "the newest year against the one before it (add --compare-to prior-period to require that).")
 
 
 def _intake_error(intake_res: IntakeResult) -> str:
@@ -316,7 +328,13 @@ def _run(args: Arguments) -> int:
         comparison_label = None
         strict_without_basis = compare_to_basis is None
         if compare_to_basis is not None:
-            parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
+            try:
+                parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
+            except ValueError as exc:
+                year_hint = _year_columns_hint(parsed_rows)
+                if compare_to_basis is ComparisonBasis.PRIOR_PERIOD and year_hint is not None:
+                    raise ValueError(f"{exc} {year_hint}") from exc
+                raise
             comparison_basis = compare_to_basis
 
     type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
@@ -336,6 +354,9 @@ def _run(args: Arguments) -> int:
             other_bases = FORECAST_SYNONYMS | PRIOR_PERIOD_SYNONYMS
             if any(key in other_bases for row in parsed_rows for key in row):
                 raise ValueError(f"{exc} {COMPARE_TO_HINT}") from exc
+            year_hint = _year_columns_hint(parsed_rows)
+            if year_hint is not None:
+                raise ValueError(f"{exc} {year_hint}") from exc
         raise
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)

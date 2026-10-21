@@ -188,3 +188,28 @@ def test_duplicate_forecast_columns_have_no_hint(
     src.write_text("Line Item,Type,Forecast,Fcst,Actual\nRent Expense,Expense,1,2,3\n", encoding="utf-8")
     error = _exit_2_error([str(src), *BASE, "--assisted", "--compare-to", "forecast", "--check-only"], capsys)
     assert "more than one forecast column" in error and "--compare-to" not in error
+
+
+ASSISTED_YEAR_HINT = (
+    "This file has year columns (FY2025, FY2024, FY2023); rerun with --assisted to compare "
+    "the newest year against the one before it (add --compare-to prior-period to require that)."
+)
+
+
+def test_strict_year_only_file_suggests_assisted(capsys: pytest.CaptureFixture[str]) -> None:
+    error = _exit_2_error([str(J), *BASE, "--check-only"], capsys)
+    assert "required field 'Budget' was not found" in error
+    assert error.endswith(ASSISTED_YEAR_HINT)
+
+
+def test_strict_compare_to_prior_period_on_year_file_suggests_assisted(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    error = _exit_2_error([str(J), *BASE, "--compare-to", "prior-period", "--check-only"], capsys)
+    assert "No prior period column found" in error
+    assert error.endswith(ASSISTED_YEAR_HINT)
+
+
+def test_suggested_assisted_rerun_works(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main([str(J), *BASE, "--assisted", "--compare-to", "prior-period", "--check-only"]) == 0
+    assert "comparing FY2025 against FY2024" in capsys.readouterr().err
