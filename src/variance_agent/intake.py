@@ -27,6 +27,7 @@ from .limits import (
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
 )
+from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, extract_statement_tables
@@ -192,6 +193,8 @@ class IntakeResult:
     visible_transformations: list[str] = field(default_factory=list)
     problems: list[IntakeProblem] = field(default_factory=list)
     blank_budget_items: list[str] = field(default_factory=list)
+    # Whether those blank budgets were read as 0 (confirmed in chat; always on for CLI --assisted).
+    blank_budgets_as_zero: bool = False
     candidate_sheets: list[SheetScore] = field(default_factory=list)
     available_sheets: list[str] = field(default_factory=list)
     has_fatal_errors: bool = False
@@ -1712,6 +1715,7 @@ def _process_raw_table(
         visible_transformations=visible_transformations,
         problems=problems,
         blank_budget_items=blank_budget_items,
+        blank_budgets_as_zero=treat_blank_budgets_as_zero,
         detected_totals=reconciled_names,
         unreconciled_totals=subtotals_det.unreconciled_totals,
         detected_unit_multiplier=detected_mult,
@@ -1725,6 +1729,46 @@ def _process_raw_table(
         comparison_label=detection.label,
         comparison_candidates=list(detection.candidates),
     )
+
+
+def audit_transformations(
+    intake_res: IntakeResult, mapping: LayoutMapping | None = None,
+) -> dict[str, object]:
+    """The audit's transformations record for an assisted read, replayed from a mapping if given.
+
+    Shared by the CLI (--assisted, --mapping) and the chat's audit export.
+    """
+    blank_budgets = len(intake_res.blank_budget_items) if intake_res.blank_budgets_as_zero else 0
+    if mapping is not None:
+        return {
+            "header_row_number": mapping.header_row_number,
+            "column_mapping": mapping.column_mapping,
+            "ignored_columns": intake_res.ignored_columns,
+            "sign_flip": mapping.flip_signs,
+            "flipped_line_items": intake_res.negative_revenue_items if mapping.flip_signs else [],
+            "unit_scale": mapping.unit_scale if mapping.unit_scale != "1" else None,
+            "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
+            "excluded_totals": mapping.exclude_totals,
+            "period_selection": mapping.period_column_selection,
+            "classification_rules": mapping.classification_rules,
+            "mapping_file_sha256": mapping_sha256(mapping),
+        }
+    return {
+        "header_row_number": intake_res.header_row_number,
+        "column_mapping": {role.value: name for role, name in intake_res.column_mapping.items()},
+        "ignored_columns": intake_res.ignored_columns,
+        "sign_flip": intake_res.detected_signed_ledger,
+        "flipped_line_items": intake_res.negative_revenue_items if intake_res.detected_signed_ledger else [],
+        "unit_scale": (
+            str(intake_res.detected_unit_multiplier)
+            if intake_res.detected_unit_multiplier != Decimal("1") else None
+        ),
+        "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
+        "excluded_totals": intake_res.detected_totals,
+        "period_selection": None,
+        "classification_rules": None,
+        "mapping_file_sha256": None,
+    }
 
 
 def format_intake_summary(result: IntakeResult) -> str:

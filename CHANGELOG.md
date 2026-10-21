@@ -2,6 +2,11 @@
 
 ## 0.3.0 — Unreleased
 
+- Record the file adjustments confirmed in the chat (header row below a title block,
+  amounts in thousands, excluded subtotals, blank budgets read as 0) in audits
+  downloaded from the chat, plus the digest of a layout mapping saved for that analysis.
+  The chat and CLI `--assisted`/`--mapping` audits now share one builder; CLI audits are
+  unchanged byte for byte.
 - Measure baseline intake friction for FP&A analysts: add 9 synthetic real-world
   fixtures, baseline chat tests, and a message inventory documenting intake errors,
   jargon rates, and dead ends.
