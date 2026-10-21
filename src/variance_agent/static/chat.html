@@ -933,12 +933,15 @@
             if (val === 'F') td.className += ' status-f';
             else if (val === 'U') td.className += ' status-u';
           } else if (col === 'Line Item') {
-            td.textContent = val;
+            const name = plainText(val);
+            td.textContent = name;
             td.className += ' clickable-item';
-            td.title = `Click to drill down: Why ${val}?`;
+            td.title = `Click to drill down: Why ${name}?`;
             td.addEventListener('click', (e) => {
               e.stopPropagation();
-              sendMessage(`Why ${val}?`);
+              const question = `Why ${name}?`;
+              addUserMessage(question);
+              postMessage(question);
             });
           } else if (col.startsWith('Var ') || col.includes('Impact')) {
             const numVal = parseNumericVal(val);
@@ -966,7 +969,7 @@
             }
             td.appendChild(cellWrapper);
           } else {
-            td.textContent = val;
+            td.textContent = plainText(val);
           }
           tr.appendChild(td);
         });
@@ -1129,7 +1132,14 @@
 
   // ── Markdown Rendering (minimal, no library) ───────────────
   function renderMarkdown(text) {
-    let html = escapeHtml(text);
+    let html = escapeHtml(decodeServerEscapes(text));
+
+    // Markdown backslash escapes (\_ \* \| ...) become literal characters, not formatting
+    const literals = [];
+    html = html.replace(mdEscapes(), (m, ch) => {
+      literals.push(ch);
+      return '\u0000' + (literals.length - 1) + '\u0000';
+    });
 
     // Horizontal rule: ---
     html = html.replace(/^---+$/gm, '<hr style="border:0;border-top:1px solid var(--border);margin:12px 0;">');
@@ -1154,7 +1164,24 @@
     // Line breaks
     html = html.replace(/\n/g, '<br>');
 
-    return html;
+    return html.replace(/\u0000(\d+)\u0000/g, (m, i) => literals[Number(i)]);
+  }
+
+  // Markdown backslash escapes. A function declaration (hoisted) so messages rendered
+  // during page start-up can use it.
+  function mdEscapes() {
+    return /\\([\\`*_{}\[\]()#+\-.!|~>])/g;
+  }
+
+  // The server escapes source labels for Markdown/HTML documents (R&D_Costs -> R&amp;D\_Costs).
+  // The chat UI escapes HTML itself, so undo the server's entity escapes exactly once here.
+  function decodeServerEscapes(text) {
+    return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  }
+
+  // Table cells are set with textContent, so they need plain text with no escapes at all.
+  function plainText(text) {
+    return decodeServerEscapes(String(text)).replace(mdEscapes(), '$1');
   }
 
   function escapeHtml(text) {

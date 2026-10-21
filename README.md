@@ -28,10 +28,11 @@ variance-agent examples/sample_variance.csv \
   --dollar-threshold 10000 \
   --percent-threshold 5 \
   --output reports/q3-2026.md \
-  --audit-json reports/q3-2026.audit.json
+  --audit-json reports/q3-2026.audit.json \
+  --xlsx reports/q3-2026.xlsx
 ```
 
-Omit `--output` to print the report. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
+Omit `--output` to print the report. `--xlsx` writes a formatted Excel workbook (Summary, Material Variances, Root Causes & Actions, All Rows) using only the standard library; Excel stores doubles, so use the CSV or audit JSON when exact decimals matter. In the chat UI, `export excel` downloads the same workbook. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
 
 ```sh
 variance-agent examples/sample_variance.csv \
@@ -40,7 +41,7 @@ variance-agent examples/sample_variance.csv \
 
 Use `--currency EUR` or `--currency GBP` for those reporting units. The default is USD. Conflicting symbols or row currencies are rejected; there is no FX conversion. `--sheet 'Reviewed'` selects an exact Excel worksheet name. Without it, the active worksheet is read. Excel formulas use stored cached values and are never recalculated; missing caches fail required-field validation.
 
-Successful commands exit 0. Expected input or filesystem failures exit 2 with an explanation. Report, audit, source, and type-map paths must be distinct, including symlink and hardlink aliases. Both outputs are staged before publication. Each replacement is atomic; two replacements are not one transaction. If the second fails, rerun the command to regenerate the pair.
+Successful commands exit 0. Expected input or filesystem failures exit 2 with an explanation. Report, audit, workbook, source, and type-map paths must be distinct, including symlink and hardlink aliases. All outputs are staged before publication. Each replacement is atomic; multiple replacements are not one transaction. If a later one fails, rerun the command to regenerate the set.
 
 ## Input contract
 
@@ -90,7 +91,7 @@ For the supplied sample and the command above, material variances are Subscripti
 
 ## Hosting the chatbot
 
-`variance-agent --chat` opens the chatbot locally. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
+`variance-agent --chat` opens the chatbot locally; add `--no-browser` to print the local URL without opening a browser. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
 
 ## Architecture and trust boundary
 

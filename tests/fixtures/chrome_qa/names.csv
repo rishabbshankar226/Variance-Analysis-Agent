@@ -1,0 +1,8 @@
+Line Item,Type,Budget,Actual
+R&D_Costs,Expense,50000,62000
+Sales & Marketing,Expense,30000,28000
+<b>Bold</b>,Revenue,10000,25000
+Café Revenue,Revenue,40000,41000
+Duplicate Item,Expense,5000,9000
+Duplicate Item,Expense,5000,4000
+🚀 Launch Revenue,Revenue,20000,30000

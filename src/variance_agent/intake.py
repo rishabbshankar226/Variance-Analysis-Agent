@@ -43,6 +43,7 @@ from .comparison import (
     select_strict_comparison,
     zero_comparison_phrase,
 )
+from .parsing import normalize_key
 
 
 class CanonicalRole(StrEnum):
@@ -140,6 +141,12 @@ _IGNORED_COMPUTED_SYNONYMS = {
 }
 
 _PERIOD_SYNONYMS = {"period", "month", "quarter", "year"}
+# Normalized keys the analysis engine reads as line item / budget / actual / type aliases.
+_ROLE_ALIAS_KEYS = frozenset({
+    "line_item", "line", "item", "account", "account_name", "category",
+    "budget", "budget_amount", "plan", "planned", "actual", "actual_amount", "actuals",
+    "type", "line_type", "revenue_expense_type", "classification", "period", "currency",
+})
 _CURRENCY_SYNONYMS = {"currency", "ccy"}
 _TYPE_SYNONYMS = {"type", "line_type", "classification"}
 
@@ -508,6 +515,8 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
     reconciled_totals: list[ReconciledTotal] = []
     unreconciled_totals: list[UnreconciledTotal] = []
     detail_indices: list[int] = []
+    # (budget, actual) of each detail row, parsed once and aligned with detail_indices.
+    detail_values: list[tuple[Decimal, Decimal]] = []
 
     for i, row in enumerate(rows):
         name = str(row.get("line_item", "")).strip()
@@ -518,22 +527,25 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
         is_total_kw = bool(_TOTAL_KEYWORD_RE.search(name))
 
         # 1. Contiguous block check over prior detail rows
+        # Blocks grow backwards from the latest detail row, so keep running sums
+        # instead of re-summing every block (large ledgers have thousands of rows).
         found_block = False
+        sum_b = Decimal("0")
+        sum_a = Decimal("0")
         for j in range(len(detail_indices) - 1, -1, -1):
-            block_idx = detail_indices[j:]
-            if len(block_idx) < 1:
-                continue
-            sum_b = sum(Decimal(str(rows[k]["budget"])) for k in block_idx)
-            sum_a = sum(Decimal(str(rows[k]["actual"])) for k in block_idx)
+            block_len = len(detail_indices) - j
+            det_b, det_a = detail_values[j]
+            sum_b += det_b
+            sum_a += det_a
             if abs(b - sum_b) <= tolerance and abs(a - sum_a) <= tolerance:
-                if len(block_idx) >= 2 or is_total_kw:
+                if block_len >= 2 or is_total_kw:
                     reconciled_totals.append(
                         ReconciledTotal(
                             line_item=name,
                             budget=b,
                             actual=a,
                             row_index=i,
-                            formula_description=f"sum of {len(block_idx)} detail rows",
+                            formula_description=f"sum of {block_len} detail rows",
                         )
                     )
                     found_block = True
@@ -545,9 +557,7 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
         found_formula = False
         prior_totals = list(reconciled_totals)
         for prev in prior_totals:
-            for d_idx in detail_indices:
-                det_b = Decimal(str(rows[d_idx]["budget"]))
-                det_a = Decimal(str(rows[d_idx]["actual"]))
+            for d_idx, (det_b, det_a) in zip(detail_indices, detail_values):
                 if abs((prev.budget - det_b) - b) <= tolerance and abs((prev.actual - det_a) - a) <= tolerance:
                     reconciled_totals.append(
                         ReconciledTotal(
@@ -584,8 +594,8 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
             continue
 
         if is_total_kw:
-            sum_prior_b = sum((Decimal(str(rows[k]["budget"])) for k in detail_indices), Decimal("0")) if detail_indices else None
-            sum_prior_a = sum((Decimal(str(rows[k]["actual"])) for k in detail_indices), Decimal("0")) if detail_indices else None
+            sum_prior_b = sum((v[0] for v in detail_values), Decimal("0")) if detail_indices else None
+            sum_prior_a = sum((v[1] for v in detail_values), Decimal("0")) if detail_indices else None
             unreconciled_totals.append(
                 UnreconciledTotal(
                     line_item=name,
@@ -598,6 +608,7 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
             )
         else:
             detail_indices.append(i)
+            detail_values.append((b, a))
 
     return SubtotalDetectionResult(
         reconciled_totals=reconciled_totals,
@@ -1170,14 +1181,8 @@ def _read_json_bytes(
             except ValueError as exc:
                 # The comparison-column error is already user-facing; no read-error prefix.
                 return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
-        canonical_rows: list[dict[str, object]] = []
-        for r in rows:
-            line_item = r.get("line_item") or r.get("account") or r.get("item")
-            canonical_rows.append({
-                "line_item": str(line_item or ""),
-                "budget": r.get("budget"),
-                "actual": r.get("actual"),
-            })
+        # JSON rows are already named; keep every field (Type, Row Kind, drivers) for analysis.
+        canonical_rows: list[dict[str, object]] = [dict(r) for r in rows]
         visible_transformations: list[str] = []
         if basis != ComparisonBasis.BUDGET:
             visible_transformations.append(comparison_statement(basis, None, "Actual"))
@@ -1407,6 +1412,16 @@ def _process_raw_table(
     curr_idx = roles.get(CanonicalRole.CURRENCY)
     type_idx = roles.get(CanonicalRole.TYPE)
 
+    # Columns without a canonical role (Row Kind, volume/price drivers, ...) pass through
+    # unchanged so analysis still sees them; aliases of mapped roles are left out.
+    mapped = set(roles.values()) | set(ignored_col_indices)
+    passthrough = [
+        (idx, str(header_row[idx]).strip())
+        for idx in range(len(header_row))
+        if idx not in mapped and header_row[idx] is not None and str(header_row[idx]).strip()
+        and normalize_key(str(header_row[idx])) not in _ROLE_ALIAS_KEYS
+    ]
+
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
     blank_budget_items: list[str] = []
@@ -1502,6 +1517,11 @@ def _process_raw_table(
             if tval is not None:
                 row_dict["type"] = str(tval).strip()
 
+        for idx, header in passthrough:
+            value = row[idx] if idx < len(row) else None
+            if value is not None and str(value).strip():
+                row_dict[header] = value
+
         output_rows.append(row_dict)
 
     if dash_count > 0:
@@ -1541,8 +1561,13 @@ def _process_raw_table(
             f"Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
         )
 
-    # 3. Subtotals and totals detection
-    subtotals_det = detect_subtotals_and_totals(output_rows)
+    # 3. Subtotals and totals detection. An explicit Row Kind column already marks totals,
+    # and the analysis reconciles and excludes those rows itself, so they are kept.
+    has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
+    subtotals_det = (
+        SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
+        if has_row_kind else detect_subtotals_and_totals(output_rows)
+    )
     reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
     if reconciled_names:
         output_rows = [r for r in output_rows if str(r.get("line_item", "")).strip() not in set(reconciled_names)]

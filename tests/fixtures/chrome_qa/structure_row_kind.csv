@@ -1,0 +1,8 @@
+Line Item,Type,Row Kind,Budget,Actual
+Subscription Revenue,Revenue,Detail,100000,120000
+Services Revenue,Revenue,Detail,50000,45000
+Total Revenue,Revenue,Total,150000,165000
+Payroll Expense,Expense,Detail,60000,66000
+Marketing Expense,Expense,Detail,20000,20000
+Project Phoenix,,Detail,10000,25000
+Misc Adjustments,,Detail,5000,3000

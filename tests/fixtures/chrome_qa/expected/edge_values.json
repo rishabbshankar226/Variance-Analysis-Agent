@@ -1,0 +1,130 @@
+{
+  "fixture": "edge_values.csv",
+  "thresholds": {
+    "dollar": "10000",
+    "percent": "5"
+  },
+  "lines": [
+    {
+      "line_item": "Base Revenue",
+      "type": "Revenue",
+      "budget": "100000",
+      "actual": "101000.125",
+      "variance": "1000.125",
+      "percent": "1.0",
+      "direction": "F",
+      "material": false
+    },
+    {
+      "line_item": "New Product Revenue",
+      "type": "Revenue",
+      "budget": "0",
+      "actual": "15000",
+      "variance": "15000",
+      "percent": "N/A",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Discontinued Revenue",
+      "type": "Revenue",
+      "budget": "12000",
+      "actual": "0",
+      "variance": "-12000",
+      "percent": "-100.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Refunds Revenue",
+      "type": "Revenue",
+      "budget": "-2000",
+      "actual": "-3500",
+      "variance": "-1500",
+      "percent": "-75.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Unbudgeted Consulting",
+      "type": "Expense",
+      "budget": "0",
+      "actual": "5000",
+      "variance": "5000",
+      "percent": "N/A",
+      "direction": "U",
+      "material": false
+    },
+    {
+      "line_item": "Rebate Expense",
+      "type": "Expense",
+      "budget": "-1000",
+      "actual": "-500",
+      "variance": "500",
+      "percent": "50.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Software Expense",
+      "type": "Expense",
+      "budget": "1234.5678",
+      "actual": "1300.1234",
+      "variance": "65.5556",
+      "percent": "5.3",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Zero Line",
+      "type": "Expense",
+      "budget": "0",
+      "actual": "0",
+      "variance": "0",
+      "percent": "0.0",
+      "direction": "Neutral",
+      "material": false
+    }
+  ],
+  "excluded_summaries": [],
+  "unclassified": [],
+  "totals": {
+    "revenue": {
+      "budget": "110000",
+      "actual": "112500.125",
+      "variance": "2500.125",
+      "percent": "2.3",
+      "direction": "F"
+    },
+    "expenses": {
+      "budget": "234.5678",
+      "actual": "5800.1234",
+      "variance": "5565.5556",
+      "percent": "2372.7",
+      "direction": "U"
+    },
+    "budget_operating_profit": "109765.4322",
+    "actual_operating_profit": "106700.0016",
+    "net_operating_impact": "-3065.4306",
+    "net_direction": "U",
+    "budget_margin_pct": "99.8",
+    "actual_margin_pct": "94.8",
+    "margin_move": "down",
+    "actual_margin_negative": false
+  },
+  "material_count": 5,
+  "material_items": [
+    "New Product Revenue",
+    "Discontinued Revenue",
+    "Refunds Revenue",
+    "Rebate Expense",
+    "Software Expense"
+  ],
+  "top3_by_abs": [
+    "New Product Revenue",
+    "Discontinued Revenue",
+    "Unbudgeted Consulting"
+  ],
+  "largest_favourable": "New Product Revenue",
+  "largest_unfavourable": "Discontinued Revenue"
+}

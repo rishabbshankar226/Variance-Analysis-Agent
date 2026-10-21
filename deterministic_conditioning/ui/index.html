@@ -630,6 +630,35 @@
       });
     }
 
+    // Show the real router decision for whatever is in the prompt box. The DPO comparison
+    // panels below stay as canned examples; only the routing decision and signals are live.
+    async function routeLive(text) {
+      try {
+        const res = await fetch('/api/route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, history: [] }),
+        });
+        if (!res.ok) return;
+        const d = await res.json();
+        const badge = document.getElementById('route-badge');
+        badge.className = `badge-route route-${d.rule_id.toLowerCase()}`;
+        badge.innerText = `Rule ${d.rule_id}: ${d.rule_name}`;
+        document.getElementById('target-pos').innerText = d.required_pos;
+        document.getElementById('allowed-starters').innerText = d.pos_examples.map(w => `"${w}"`).join(', ');
+        const sig = d.signals;
+        document.getElementById('sig-words').innerText = sig.word_count;
+        const sigFrustEl = document.getElementById('sig-frustration');
+        sigFrustEl.innerText = sig.has_frustration ? 'True (HIGH)' : 'False';
+        sigFrustEl.style.color = sig.has_frustration ? 'var(--accent-rose)' : 'var(--accent-emerald)';
+        document.getElementById('sig-question').innerText = sig.has_question ? 'True' : 'False';
+      } catch (err) {
+        // Opened as a static file without the API server: keep the client-side estimate.
+      }
+    }
+
+    let routeTimer = null;
+
     function setPrompt(promptText) {
       document.getElementById('prompt-input').value = promptText;
       updateSignals(promptText);
@@ -657,10 +686,13 @@
       document.getElementById('chosen-text').innerHTML = sc.chosen;
 
       renderBurstiness(sc.sentenceLengths);
+      routeLive(promptText);
     }
 
     document.getElementById('prompt-input').addEventListener('input', (e) => {
       updateSignals(e.target.value);
+      clearTimeout(routeTimer);
+      routeTimer = setTimeout(() => routeLive(e.target.value), 150);
     });
 
     // Initialize with casual

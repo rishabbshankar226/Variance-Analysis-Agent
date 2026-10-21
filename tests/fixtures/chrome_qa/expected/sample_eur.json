@@ -1,0 +1,66 @@
+{
+  "fixture": "sample_eur.csv",
+  "thresholds": {
+    "dollar": "10000",
+    "percent": "5"
+  },
+  "lines": [
+    {
+      "line_item": "Sales Revenue",
+      "type": "Revenue",
+      "budget": "1000",
+      "actual": "1320",
+      "variance": "320",
+      "percent": "32.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Marketing Expense",
+      "type": "Expense",
+      "budget": "500",
+      "actual": "650",
+      "variance": "150",
+      "percent": "30.0",
+      "direction": "U",
+      "material": true
+    }
+  ],
+  "excluded_summaries": [],
+  "unclassified": [],
+  "totals": {
+    "revenue": {
+      "budget": "1000",
+      "actual": "1320",
+      "variance": "320",
+      "percent": "32.0",
+      "direction": "F"
+    },
+    "expenses": {
+      "budget": "500",
+      "actual": "650",
+      "variance": "150",
+      "percent": "30.0",
+      "direction": "U"
+    },
+    "budget_operating_profit": "500",
+    "actual_operating_profit": "670",
+    "net_operating_impact": "170",
+    "net_direction": "F",
+    "budget_margin_pct": "50.0",
+    "actual_margin_pct": "50.8",
+    "margin_move": "up",
+    "actual_margin_negative": false
+  },
+  "material_count": 2,
+  "material_items": [
+    "Sales Revenue",
+    "Marketing Expense"
+  ],
+  "top3_by_abs": [
+    "Sales Revenue",
+    "Marketing Expense"
+  ],
+  "largest_favourable": "Sales Revenue",
+  "largest_unfavourable": "Marketing Expense"
+}

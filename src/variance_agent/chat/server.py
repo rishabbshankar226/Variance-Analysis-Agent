@@ -6,6 +6,7 @@ provides and disables exports to server paths.
 """
 
 import json
+import re
 import urllib.parse
 import webbrowser
 from email.message import Message
@@ -14,6 +15,9 @@ from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import ClassVar
+
+from variance_agent.limits import MAX_INPUT_BYTES, MAX_TEXT_LENGTH
+from variance_agent.xlsx import XLSX_MEDIA_TYPE
 
 from .handlers import handle_message, handle_upload
 from .responses import Response
@@ -24,7 +28,13 @@ _STATIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static"
 _PKG_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 # Staged downloads keyed by filename
-_downloads: dict[str, str] = {}
+_downloads: dict[str, str | bytes] = {}
+
+_DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
+
+# Request bodies beyond these sizes are refused before they are read.
+_MAX_UPLOAD_BODY = MAX_INPUT_BYTES + 1024 * 1024  # file plus multipart framing
+_MAX_MESSAGE_BODY = 2 * MAX_TEXT_LENGTH
 
 
 class _ChatHandler(BaseHTTPRequestHandler):
@@ -32,6 +42,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     session: ClassVar[Session]
     initial_response: ClassVar[Response | None] = None
+    # The server is single-threaded and its session is shared, so a client that stalls
+    # mid-request is dropped after this many seconds instead of blocking everyone.
+    timeout = 15
 
     def log_message(self, format: str, *args: object) -> None:
         """Suppress default request logging to keep the terminal clean."""
@@ -60,10 +73,16 @@ class _ChatHandler(BaseHTTPRequestHandler):
             raw_filename = self.path[len("/download/"):].split("?")[0]
             filename = urllib.parse.unquote(raw_filename)
             if filename in _downloads:
-                content = _downloads[filename].encode("utf-8")
+                staged = _downloads[filename]
+                content = staged if isinstance(staged, bytes) else staged.encode("utf-8")
+                content_type = _DOWNLOAD_TYPES.get(
+                    Path(filename).suffix.lower(), "application/octet-stream"
+                )
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                self.send_header("Content-Type", content_type)
+                # The filename embeds the user's period text; never reflect quotes or ';' into the header.
+                header_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+                self.send_header("Content-Disposition", f'attachment; filename="{header_name}"')
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
@@ -91,8 +110,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
             self._json_error("Expected multipart/form-data.", HTTPStatus.BAD_REQUEST)
             return
 
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
+        body = self._read_body(_MAX_UPLOAD_BODY)
+        if body is None:
+            return
 
         # Parse multipart using email.parser
         header_bytes = f"Content-Type: {content_type}\r\n\r\n".encode("utf-8")
@@ -122,7 +142,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
                     elif 'name="sheet"' in disposition:
                         payload = part.get_payload(decode=True)
                         if isinstance(payload, bytes):
-                            sheet_text = payload.decode("utf-8").strip()
+                            sheet_text = payload.decode("utf-8", errors="replace").strip()
                             if sheet_text:
                                 sheet = sheet_text
 
@@ -138,8 +158,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     def _handle_message(self) -> None:
         """Process a text message through the intent router."""
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
+        body = self._read_body(_MAX_MESSAGE_BODY)
+        if body is None:
+            return
 
         try:
             data = json.loads(body)
@@ -147,7 +168,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
             self._json_error("Invalid JSON.", HTTPStatus.BAD_REQUEST)
             return
 
-        text = data.get("text", "").strip()
+        raw_text = data.get("text", "") if isinstance(data, dict) else None
+        if not isinstance(raw_text, str):
+            self._json_error("Expected a JSON object with a text string.", HTTPStatus.BAD_REQUEST)
+            return
+        text = raw_text.strip()
         if not text:
             self._json_error("Empty message.", HTTPStatus.BAD_REQUEST)
             return
@@ -158,6 +183,20 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     # Response helpers
     # ------------------------------------------------------------------
+
+    def _read_body(self, limit: int) -> bytes | None:
+        """Read a request body of a declared, bounded length; reply 4xx and return None otherwise."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._json_error("Invalid Content-Length.", HTTPStatus.BAD_REQUEST)
+            return None
+        if length > limit:
+            self._json_error("Request body is too large.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            return None
+        return self.rfile.read(length)
 
     def _send_response(self, response: object) -> None:
         """Serialize a Response dataclass to JSON and send it."""
@@ -242,7 +281,7 @@ def run_chat_server(
     if hosted:
         print(f"Variance Analysis Chatbot listening on port {actual_port} (hosted mode)", flush=True)
     else:
-        print(f"Variance Analysis Chatbot running at {url}")
+        print(f"Variance Analysis Chatbot running at {url}", flush=True)
     print("Press Ctrl+C to stop.\n")
 
     if open_browser:
