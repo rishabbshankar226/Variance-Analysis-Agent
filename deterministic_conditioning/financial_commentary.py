@@ -7,6 +7,7 @@ while preserving 100% mathematical fidelity to verified audit numbers.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -141,12 +142,17 @@ STRICT GROUNDING LOCK:
         self,
         audit: FinancialAuditSummary,
         decision: RoutingDecision,
+        money: Callable[[Decimal], str] | None = None,
     ) -> str:
-        """Generate verified commentary; every clause is emitted only when a supplied fact supports it."""
+        """Generate verified commentary; every clause is emitted only when a supplied fact supports it.
+
+        ``money`` formats an absolute amount; callers pass the report formatter so the
+        commentary matches the surrounding report. The default is "<CODE> 1,234.56".
+        """
         curr = audit.currency
 
         def amount(value: Decimal) -> str:
-            return f"{curr} {abs(value):,.2f}"
+            return money(abs(value)) if money is not None else f"{curr} {abs(value):,.2f}"
 
         material = audit.material_item_count
         if material is None:

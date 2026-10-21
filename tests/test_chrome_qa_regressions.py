@@ -579,3 +579,17 @@ def test_benchmark_scores_engine_output_on_fixtures() -> None:
     report = run_benchmark_comparison(fixtures)
     assert "Engine output" in report and f"{engine.truthful}/{engine.total}" in report
     assert "-100% (Clean)" not in report
+
+
+def test_commentary_uses_the_report_money_format() -> None:
+    session = explore("sample_variance")
+    memo = handle_message(session, "memo").text
+    takeaway = re.search(r"\*\*Strategic Takeaway:\*\* (.+)", memo)
+    assert takeaway is not None
+    assert "USD " not in takeaway.group(1)
+    assert "$13,000.00" in takeaway.group(1) and "$8,500.00" in takeaway.group(1)
+
+
+def test_long_unmatched_message_is_not_echoed_in_full() -> None:
+    response = handle_message(explore("sample_variance"), "x" * 5000)
+    assert len(response.text) < 1500

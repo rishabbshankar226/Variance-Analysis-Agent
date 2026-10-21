@@ -17,9 +17,9 @@ _This table scores the hand-written chosen/rejected pairs in the DPO dataset, no
 | Metric | Engine output |
 |---|:---:|
 | **Commentaries with no contradicted claim** | **7/7** |
-| **Burstiness Score** | 5.51 words |
+| **Burstiness Score** | 4.98 words |
 | **Short Punchy Clauses (3–6w)** | 60.0% |
-| **Compound Observations (18–28w)** | 23.3% |
-| **Type-Token Ratio (TTR)** | 0.3253 |
+| **Compound Observations (18–28w)** | 6.7% |
+| **Type-Token Ratio (TTR)** | 0.3447 |
 | **Greedy Attractors Detected** | 0 violations |
-| **Total Evaluated Words** | 249 words |
+| **Total Evaluated Words** | 235 words |

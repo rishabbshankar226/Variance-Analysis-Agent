@@ -3400,7 +3400,7 @@ def _handle_unknown(session: Session, text: str) -> Response:
 
     first_item = session.result.rows[0].line_item if (session.result and session.result.rows) else "Marketing"
     return Response(
-        text=f"I want to make sure I provide the exact figures you need. I couldn't find an account matching \"{safe_inline(text)}\" in your current dataset.\n\n"
+        text=f"I want to make sure I provide the exact figures you need. I couldn't find an account matching \"{safe_inline(text if len(text) <= 80 else text[:80] + '…')}\" in your current dataset.\n\n"
              "Here are a few ways we can explore your numbers:\n"
              f"• **Account Driver Breakdown:** Ask `why [Account Name]` (e.g. `why {safe_inline(first_item)}`)\n"
              "• **Profit Waterfall:** Ask for `waterfall` to reconcile budget to actual operating profit\n"

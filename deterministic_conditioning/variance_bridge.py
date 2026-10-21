@@ -27,6 +27,7 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
     """
     from variance_agent.models import LineType, Status
     from variance_agent.numeric import financial_context, ratio
+    from variance_agent.report import _money, _report_places
 
     material = [row for row in result.material_rows if not row.excluded_from_aggregation]
     favorable = [row for row in material if row.status == Status.FAVORABLE]
@@ -80,6 +81,9 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
 
     conditioner = FinancialCommentaryConditioner()
     decision = conditioner.evaluate_audit_posture(audit_summary)
-    commentary = conditioner.generate_adherent_commentary(audit_summary, decision)
+    places = _report_places(result)
+    commentary = conditioner.generate_adherent_commentary(
+        audit_summary, decision, money=lambda value: _money(value, result.config.currency, places),
+    )
 
     return commentary, audit_summary
