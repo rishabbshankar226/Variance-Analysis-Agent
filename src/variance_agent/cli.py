@@ -13,7 +13,8 @@ from .analysis import analyze_rows
 from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
-from .models import AnalysisConfig, LineType
+from .models import AnalysisConfig, ComparisonBasis, LineType
+from .comparison import parse_compare_to, select_strict_comparison
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
@@ -38,6 +39,7 @@ class Arguments(Protocol):
     commentary: bool
     assisted: bool
     mapping: str | None
+    compare_to: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -128,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--mapping",
         help="Path to saved layout mapping JSON file.",
     )
+    parser.add_argument(
+        "--compare-to",
+        choices=("budget", "forecast", "prior-period"),
+        help="Comparison basis (default: detect from headers or budget).",
+    )
     return parser
 
 
@@ -186,6 +193,8 @@ def _run(args: Arguments) -> int:
     mapping_hash = None
     intake_res = None
 
+    compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
+
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         from .mapping import load_mapping, mapping_sha256
@@ -207,6 +216,7 @@ def _run(args: Arguments) -> int:
             sheet=args.sheet,
             treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
             selected_period=mapping_obj.period_column_selection,
+            compare_to=compare_to_basis,
         )
         if intake_res.has_fatal_errors:
             raise ValueError(intake_res.fatal_error_message or "Could not read input.")
@@ -243,6 +253,8 @@ def _run(args: Arguments) -> int:
 
         parsed_rows = rows
         parsed_worksheet = intake_res.sheet_name
+        comparison_basis = intake_res.comparison_basis
+        comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
         intake_res = read_input_assisted(
@@ -251,17 +263,25 @@ def _run(args: Arguments) -> int:
             filename=input_path.name,
             sheet=args.sheet,
             treat_blank_budgets_as_zero=True,
+            compare_to=compare_to_basis,
         )
         if intake_res.has_fatal_errors:
             raise ValueError(intake_res.fatal_error_message or "Could not read input.")
         parsed_rows = intake_res.rows
         parsed_worksheet = intake_res.sheet_name
+        comparison_basis = intake_res.comparison_basis
+        comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
         parsed_rows = parsed.rows
         parsed_worksheet = parsed.worksheet
+        comparison_basis = ComparisonBasis.BUDGET
+        comparison_label = None
+        if compare_to_basis is not None:
+            parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
+            comparison_basis = compare_to_basis
 
     type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
     config = AnalysisConfig(
@@ -270,6 +290,8 @@ def _run(args: Arguments) -> int:
         percent_threshold=args.percent_threshold / Decimal("100"),
         type_map=type_map_final,
         currency=args.currency,
+        comparison_basis=comparison_basis,
+        comparison_label=comparison_label,
     )
     result = analyze_rows(parsed_rows, config)
     if args.check_only:
