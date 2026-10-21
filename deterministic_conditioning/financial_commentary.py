@@ -197,7 +197,7 @@ STRICT GROUNDING LOCK:
             else:
                 clause = f"Net operating impact finished {amount(net)} ahead of budget for {audit.period}"
             if margin == "up":
-                clause += ", widening operating margins"
+                clause += ", improving operating margin"
             elif margin == "down":
                 clause += ", although operating margin still narrowed"
             sentences.append(clause + ".")

@@ -2301,8 +2301,8 @@ def _handle_waterfall(session: Session) -> Response:
     unclassified = [row for row, _ in bridge_items if row.line_type == LineType.UNCLASSIFIED]
     if unclassified:
         text += (
-            f"\n\n⚠️ {len(unclassified)} unclassified line item{'s' if len(unclassified) != 1 else ''} "
-            "are excluded from operating profit and shown with zero impact until classified."
+            f"\n\n⚠️ {len(unclassified)} unclassified line item{'s are' if len(unclassified) != 1 else ' is'} "
+            "excluded from operating profit and shown with zero impact until classified."
         )
 
     chips = []

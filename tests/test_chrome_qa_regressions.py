@@ -85,14 +85,14 @@ def assert_commentary_truthful(text: str, key: dict[str, Any]) -> None:
     totals = key["totals"]
     lower = text.lower()
     if totals["net_direction"] == "U":
-        for phrase in ("outpaced", "surplus", "widening", "solid cash", "balanced performance", "beat"):
+        for phrase in ("outpaced", "surplus", "widening", "improving", "solid cash", "balanced performance", "beat"):
             assert phrase not in lower, f"{phrase!r} claimed on a net-unfavourable period: {text}"
     if totals["net_direction"] == "F":
         assert "shortfall" not in lower, text
     if not totals["actual_margin_negative"]:
         assert "negative territory" not in lower and "turned negative" not in lower, text
     if totals["margin_move"] != "up":
-        assert "widening" not in lower, text
+        assert "widening" not in lower and "improving operating margin" not in lower, text
     if key["material_count"]:
         assert "no unresolved variances" not in lower, text
     assert "cash" not in lower, f"cash is not an input field: {text}"
@@ -401,3 +401,10 @@ def test_slow_client_cannot_block_the_server(server: HTTPServer, monkeypatch: py
 def test_visualizer_routes_typed_input_through_the_router() -> None:
     html = (ROOT / "deterministic_conditioning" / "ui" / "index.html").read_text(encoding="utf-8")
     assert "fetch('/api/route'" in html
+
+
+def test_table_row_click_sends_the_drill_down_question() -> None:
+    # sendMessage() reads the input box and ignores arguments, so rows must post directly.
+    html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
+    assert "sendMessage(`Why" not in html
+    assert "addUserMessage(question);\n              postMessage(question);" in html

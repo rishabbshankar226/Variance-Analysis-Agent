@@ -939,7 +939,9 @@
             td.title = `Click to drill down: Why ${name}?`;
             td.addEventListener('click', (e) => {
               e.stopPropagation();
-              sendMessage(`Why ${name}?`);
+              const question = `Why ${name}?`;
+              addUserMessage(question);
+              postMessage(question);
             });
           } else if (col.startsWith('Var ') || col.includes('Impact')) {
             const numVal = parseNumericVal(val);
