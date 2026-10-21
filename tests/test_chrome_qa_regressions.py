@@ -264,13 +264,10 @@ def test_failed_reclassification_rolls_back_without_stale_phase() -> None:
 
 
 def test_analysis_failure_keeps_session_phase_in_sync() -> None:
-    session = Session()
-    handle_upload(session, b"Line Item,Type,Actual\nA,Revenue,5\n", "nobudget.csv")
-    response = Response(text="")
-    for step in ("Q3 2026", "$10k or 5%", "USD"):
-        response = handle_message(session, step)
-    assert "Analysis failed" in response.text
+    # Upload succeeds, but the analysis rejects the Period column that conflicts with "Q3 2026".
+    session, response = start_csv(b"Line Item,Type,Period,Budget,Actual\nSales,Revenue,Q2 2026,100,120\n")
     assert response.phase == session.phase == Phase.AWAITING_FILE
+    assert session.result is None
 
 
 # ---------------------------------------------------------------------------
@@ -724,3 +721,33 @@ def test_waterfall_reconciles_on_every_fixture(name: str, steps: tuple[str, ...]
     bars = [row for row in table if row["Type"] in {"Revenue", "Expense", "Unclassified"}]
     total = sum((money(row[impact_col]) for row in bars), Decimal(0))
     assert total == Decimal(key["totals"]["net_operating_impact"])
+
+
+# ---------------------------------------------------------------------------
+# Assisted intake must not drop columns the engine uses (regression from main 5b083ad)
+# ---------------------------------------------------------------------------
+
+def test_chat_upload_keeps_driver_columns() -> None:
+    session = explore("sample_variance")
+    text = handle_message(session, "why subscription revenue").text
+    assert "volume / price decomposition reconciles" in text
+
+
+def test_chat_upload_keeps_row_kind() -> None:
+    csv = (b"Line Item,Type,Row Kind,Budget,Actual\n"
+           b"Sales,Revenue,Detail,100,120\nTotal,Revenue,Total,100,120\nRent,Expense,Detail,50,50\n")
+    session, response = start_csv(csv)
+    assert session.phase == Phase.EXPLORING, response.text
+    assert session.result is not None
+    assert [r.line_item for r in session.result.rows if r.excluded_from_aggregation] == ["Total"]
+
+
+def test_chat_json_upload_keeps_type() -> None:
+    data = (b'[{"Line Item": "Consulting", "Type": "Revenue", "Budget": 100, "Actual": 150},'
+            b' {"Line Item": "Hosting", "Type": "Expense", "Budget": 80, "Actual": 70}]')
+    session = Session()
+    handle_upload(session, data, "rows.json")
+    for step in ("Q3 2026", "$10k or 5%", "USD"):
+        handle_message(session, step)
+    assert session.result is not None
+    assert {r.line_item: str(r.line_type) for r in session.result.rows} == {"Consulting": "Revenue", "Hosting": "Expense"}

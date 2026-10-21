@@ -28,6 +28,7 @@ from .limits import (
     MAX_NUMBER_LENGTH,
 )
 from .numeric import financial_context
+from .parsing import normalize_key
 
 
 class CanonicalRole(StrEnum):
@@ -69,6 +70,12 @@ _IGNORED_COMPUTED_SYNONYMS = {
 }
 
 _PERIOD_SYNONYMS = {"period", "month", "quarter", "year"}
+# Normalized keys the analysis engine reads as line item / budget / actual / type aliases.
+_ROLE_ALIAS_KEYS = frozenset({
+    "line_item", "line", "item", "account", "account_name", "category",
+    "budget", "budget_amount", "plan", "planned", "actual", "actual_amount", "actuals",
+    "type", "line_type", "revenue_expense_type", "classification", "period", "currency",
+})
 _CURRENCY_SYNONYMS = {"currency", "ccy"}
 _TYPE_SYNONYMS = {"type", "line_type", "classification"}
 
@@ -410,14 +417,8 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
     from .parsing import load_json_text
     try:
         rows = load_json_text(data.decode("utf-8"))
-        canonical_rows: list[dict[str, object]] = []
-        for r in rows:
-            line_item = r.get("line_item") or r.get("account") or r.get("item")
-            canonical_rows.append({
-                "line_item": str(line_item or ""),
-                "budget": r.get("budget"),
-                "actual": r.get("actual"),
-            })
+        # JSON rows are already named; keep every field (Type, Row Kind, drivers) for analysis.
+        canonical_rows: list[dict[str, object]] = [dict(r) for r in rows]
         return IntakeResult(
             rows=canonical_rows,
             header_row_number=1,
@@ -586,6 +587,16 @@ def _process_raw_table(
     curr_idx = roles.get(CanonicalRole.CURRENCY)
     type_idx = roles.get(CanonicalRole.TYPE)
 
+    # Columns without a canonical role (Row Kind, volume/price drivers, ...) pass through
+    # unchanged so analysis still sees them; aliases of mapped roles are left out.
+    mapped = set(roles.values()) | set(ignored_col_indices)
+    passthrough = [
+        (idx, str(header_row[idx]).strip())
+        for idx in range(len(header_row))
+        if idx not in mapped and header_row[idx] is not None and str(header_row[idx]).strip()
+        and normalize_key(str(header_row[idx])) not in _ROLE_ALIAS_KEYS
+    ]
+
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
     blank_budget_items: list[str] = []
@@ -680,6 +691,11 @@ def _process_raw_table(
             tval = row[type_idx]
             if tval is not None:
                 row_dict["type"] = str(tval).strip()
+
+        for idx, header in passthrough:
+            value = row[idx] if idx < len(row) else None
+            if value is not None and str(value).strip():
+                row_dict[header] = value
 
         output_rows.append(row_dict)
 
