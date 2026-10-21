@@ -724,8 +724,9 @@ def detect_header_row(
                 if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
                     return row_idx, roles, ignored
 
-        # Check for period-only header columns (e.g. FY2025, FY2024, FY2023 or 2024, 2025)
-        if CanonicalRole.LINE_ITEM in roles:
+        # Check for period-only header columns (e.g. FY2025, FY2024, FY2023 or 2024, 2025).
+        # Wide budget-vs-actual layouts (period pairs) never take this path.
+        if CanonicalRole.LINE_ITEM in roles and not pairs:
             period_cols: list[int] = []
             for col_idx, cell in enumerate(row):
                 cell_s = _header_cell_str(cell)
@@ -884,19 +885,7 @@ def detect_comparison_columns(
                 candidates=tuple(col_names),
                 message=msg,
             )
-        if len(named_candidates) > 1:
-            basis = named_candidates[0][2]
-            noun = basis_noun(basis)
-            col_names = [c[1] for c in named_candidates]
-            msg = f"Found more than one {noun} column ({', '.join(col_names)}); keep one and rerun."
-            return ComparisonDetection(
-                basis=None,
-                label=None,
-                comparison_column=None,
-                actual_column=actual_col,
-                candidates=tuple(col_names),
-                message=msg,
-            )
+        # One distinct basis: the first column wins, as in detect_header_row.
         col_idx, orig_name, basis = named_candidates[0]
         msg = comparison_statement(basis, None, actual_label)
         return ComparisonDetection(
@@ -908,12 +897,14 @@ def detect_comparison_columns(
             message=msg,
         )
 
-    # 2. Period-only columns (used only when step 1 found no candidates)
+    # 2. Period-only columns (used only when step 1 found no candidates and the
+    #    header is not a wide budget-vs-actual layout of period pairs)
     period_candidates: list[tuple[int, str, str]] = []
-    for idx, s in headers:
-        stripped = _ACTUAL_SUFFIX.sub("", s).strip()
-        if parse_period_label(stripped) is not None:
-            period_candidates.append((idx, s, stripped))
+    if not detect_period_pairs([s for _, s in headers]):
+        for idx, s in headers:
+            stripped = _ACTUAL_SUFFIX.sub("", s).strip()
+            if parse_period_label(stripped) is not None:
+                period_candidates.append((idx, s, stripped))
 
     if len(period_candidates) >= 2:
         if compare_to is not None and compare_to != ComparisonBasis.PRIOR_PERIOD:
@@ -1088,7 +1079,11 @@ def _read_json_bytes(
         rows = load_json_text(data.decode("utf-8"))
         basis = compare_to if compare_to is not None else ComparisonBasis.BUDGET
         if basis != ComparisonBasis.BUDGET:
-            rows = select_strict_comparison(rows, basis)
+            try:
+                rows = select_strict_comparison(rows, basis)
+            except ValueError as exc:
+                # The comparison-column error is already user-facing; no read-error prefix.
+                return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
         canonical_rows: list[dict[str, object]] = []
         for r in rows:
             line_item = r.get("line_item") or r.get("account") or r.get("item")
@@ -1114,10 +1109,9 @@ def _read_json_bytes(
             visible_transformations=visible_transformations,
         )
     except Exception as exc:
-        msg = str(exc) if isinstance(exc, ValueError) else f"Could not read JSON data from '{filename}': {exc}"
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=msg,
+            fatal_error_message=f"Could not read JSON data from '{filename}': {exc}",
         )
 
 

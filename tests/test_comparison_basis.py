@@ -18,6 +18,7 @@ from variance_agent.comparison import (
     select_strict_comparison,
     zero_comparison_label,
 )
+from variance_agent import intake
 from variance_agent.models import AnalysisConfig, ComparisonBasis
 
 
@@ -42,10 +43,7 @@ def test_basis_for_header(header: str, basis: ComparisonBasis | None) -> None:
 
 
 def test_budget_synonyms_match_intake() -> None:
-    assert BUDGET_SYNONYMS == {
-        "budget", "budget_amount", "plan", "planned",
-        "budget_ytd", "ytd_budget", "plan_ytd", "bgt", "budget_amt",
-    }
+    assert BUDGET_SYNONYMS is intake._BUDGET_SYNONYMS
 
 
 def test_parse_compare_to() -> None:
