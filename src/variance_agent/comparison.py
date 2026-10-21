@@ -31,6 +31,11 @@ _ZERO_LABELS: dict[ComparisonBasis, str] = {
     ComparisonBasis.FORECAST: "N/A (Not in forecast)",
     ComparisonBasis.PRIOR_PERIOD: "N/A (New this period)",
 }
+_ZERO_PHRASES: dict[ComparisonBasis, str] = {
+    ComparisonBasis.BUDGET: "unbudgeted",
+    ComparisonBasis.FORECAST: "not in forecast",
+    ComparisonBasis.PRIOR_PERIOD: "new this period",
+}
 _CLI_VALUES: dict[str, ComparisonBasis] = {
     "budget": ComparisonBasis.BUDGET,
     "forecast": ComparisonBasis.FORECAST,
@@ -85,6 +90,11 @@ def comparison_heading(basis: ComparisonBasis, label: str | None) -> str:
 
 def zero_comparison_label(basis: ComparisonBasis) -> str:
     return _ZERO_LABELS[basis]
+
+
+def zero_comparison_phrase(basis: ComparisonBasis) -> str:
+    """'unbudgeted', 'not in forecast' or 'new this period', for a zero comparison amount."""
+    return _ZERO_PHRASES[basis]
 
 
 _ACTUAL_SUFFIX = re.compile(r"\s+actuals?$", re.IGNORECASE)

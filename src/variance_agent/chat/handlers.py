@@ -18,7 +18,12 @@ from pathlib import Path
 
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
-from variance_agent.comparison import basis_for_header, basis_noun, comparison_heading
+from variance_agent.comparison import (
+    basis_for_header,
+    basis_noun,
+    comparison_heading,
+    zero_comparison_phrase,
+)
 from variance_agent.currencies import CURRENCY_SYMBOLS, validate_currency
 from variance_agent.limits import display_text
 from variance_agent.models import AnalysisConfig, AnalyzedRow, ComparisonBasis, LineType, Status
@@ -87,6 +92,11 @@ def _heading(cfg: AnalysisConfig) -> str:
 def _planned(cfg: AnalysisConfig) -> str:
     """Label for a comparison amount: 'Budgeted Revenue', 'Forecast Revenue'."""
     return "Budgeted" if _is_budget(cfg) else _heading(cfg)
+
+
+def _action_plan(cfg: AnalysisConfig) -> str:
+    """'the action plan' on Budget runs; elsewhere 'plan' would read as the comparison."""
+    return "the action plan" if _is_budget(cfg) else "the response"
 
 
 @dataclass(frozen=True)
@@ -431,13 +441,18 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
         session.phase = Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
         count = len(intake_res.blank_budget_items)
         sample = intake_res.blank_budget_items[0]
+        basis = intake_res.comparison_basis
+        # Budget keeps its wording; the chips must still match the confirmation reply
+        # handler ("treat" / "0" means yes, "Keep ..." means no).
+        blanks = "blank budgets" if basis is ComparisonBasis.BUDGET else f"blank {basis_noun(basis)} values"
+        treat = f"Treat {blanks} as 0 ({zero_comparison_phrase(basis)})"
         return Response(
             text=(
-                f"Found **{count}** line item{'s' if count != 1 else ''} with blank budgets "
+                f"Found **{count}** line item{'s' if count != 1 else ''} with {blanks} "
                 f"(such as {safe_inline(sample)}).\n\n"
-                "Treat blank budgets as 0 (unbudgeted)?"
+                f"{treat}?"
             ),
-            chips=["Treat blank budgets as 0 (unbudgeted)", "Keep blank budgets", "Upload a different file"],
+            chips=[treat, f"Keep {blanks}", "Upload a different file"],
             phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
         )
 
@@ -1605,7 +1620,7 @@ def _handle_recommendations(session: Session) -> Response:
                 )
             else:
                 lines.append(
-                    f"• **Mitigation:** Focus the action plan for {safe_inline(unfavorable.line_item)} "
+                    f"• **Mitigation:** Focus {_action_plan(cfg)} for {safe_inline(unfavorable.line_item)} "
                     f"on its {safe_inline(largest_component[0].lower())} "
                     f"({format_money(largest_component[1], cfg.currency, places)}), "
                     f"the largest reconciled component."
@@ -1628,7 +1643,7 @@ def _handle_recommendations(session: Session) -> Response:
         if evidence and evidence.reconciles:
             largest_component = max(evidence.components, key=lambda pair: abs(pair[1]))
             lines.append(
-                f"• **Optimization:** Focus the action plan for {safe_inline(favorable.line_item)} "
+                f"• **Optimization:** Focus {_action_plan(cfg)} for {safe_inline(favorable.line_item)} "
                 f"on its {safe_inline(largest_component[0].lower())} "
                 f"({format_money(largest_component[1], cfg.currency, places)}), "
                 f"the largest reconciled component."
@@ -1997,8 +2012,10 @@ def _handle_biggest_risks(session: Session) -> Response:
             text="✅ **No Material Risks Detected**\n\n"
                  "There are zero material unfavorable variances exceeding your thresholds "
                  f"({CURRENCY_SYMBOLS.get(cfg.currency, '$')}{cfg.dollar_threshold:,.2f} or "
-                 f"{cfg.percent_threshold * 100:.1f}%). All revenue targets and expense allocations "
-                 f"performed within {_noun(cfg)} tolerance.",
+                 f"{cfg.percent_threshold * 100:.1f}%). "
+                 + ("All revenue targets and expense allocations " if _is_budget(cfg)
+                    else "All revenue and expense lines ")
+                 + f"performed within {_noun(cfg)} tolerance.",
             chips=["Summary", "Biggest wins", "Show all material"],
             phase=Phase.EXPLORING,
         )
@@ -2109,10 +2126,13 @@ def _handle_revenue_status(session: Session) -> Response:
     beat = rev.actual >= rev.budget
     diff = rev.actual - rev.budget
 
+    pct_text = format_pct(rev.budget, rev.variance_dollars, rev.percent_label)
     if beat:
-        verdict = f"🎯 **Revenue Target Achieved: Beat {_heading(cfg)} by {format_money(diff, cfg.currency, places)} ({format_pct(rev.budget, rev.variance_dollars, rev.percent_label)})**"
+        achieved = "Revenue Target Achieved" if _is_budget(cfg) else f"Revenue Ahead of {_heading(cfg)}"
+        verdict = f"🎯 **{achieved}: Beat {_heading(cfg)} by {format_money(diff, cfg.currency, places)} ({pct_text})**"
     else:
-        verdict = f"⚠️ **Revenue Target Missed: Shortfall of {format_money(abs(diff), cfg.currency, places)} ({format_pct(rev.budget, rev.variance_dollars, rev.percent_label)})**"
+        missed = "Revenue Target Missed" if _is_budget(cfg) else f"Revenue Behind {_heading(cfg)}"
+        verdict = f"⚠️ **{missed}: Shortfall of {format_money(abs(diff), cfg.currency, places)} ({pct_text})**"
 
     lines = [
         verdict + "\n",
@@ -2235,7 +2255,8 @@ def _handle_budget_utilization(session: Session) -> Response:
         achieve = ratio(result.revenue.actual, result.revenue.budget) * Decimal("100")
         diff = result.revenue.actual - result.revenue.budget
         status_text = f"beat by {format_money(diff, cfg.currency, places)}" if diff >= 0 else f"shortfall of {format_money(abs(diff), cfg.currency, places)}"
-        lines.append(f"• **Revenue Target Achievement:** **{achieve:.1f}%** ({status_text})")
+        achievement = "Revenue Target Achievement" if _is_budget(cfg) else f"Revenue vs. {_heading(cfg)}"
+        lines.append(f"• **{achievement}:** **{achieve:.1f}%** ({status_text})")
 
     has_rev = any(r.line_type == LineType.REVENUE and not r.excluded_from_aggregation for r in result.rows)
     has_exp = any(r.line_type == LineType.EXPENSE and not r.excluded_from_aggregation for r in result.rows)
@@ -2653,7 +2674,11 @@ def _handle_revenue_misses(session: Session) -> Response:
 
     if not miss_rows:
         return Response(
-            text="🎯 **No Revenue Misses:** All revenue accounts met or exceeded planned targets.",
+            text=(
+                "🎯 **No Revenue Misses:** All revenue accounts met or exceeded planned targets."
+                if _is_budget(cfg)
+                else f"🎯 **No Revenue Misses:** All revenue accounts met or exceeded the {_noun(cfg)}."
+            ),
             chips=["Summary", "Revenue status", "Biggest wins"],
             phase=Phase.EXPLORING,
         )
@@ -2664,7 +2689,8 @@ def _handle_revenue_misses(session: Session) -> Response:
 
     lines = [
         f"⚠️ **Revenue Shortfall & Misses (Total: {format_money(total_shortfall, cfg.currency, places)})**\n\n"
-        "These revenue lines failed to reach approved baseline targets:\n"
+        + ("These revenue lines failed to reach approved baseline targets:\n" if _is_budget(cfg)
+           else f"These revenue lines fell short of the {_noun(cfg)}:\n")
     ]
 
     for row in miss_rows[:5]:
@@ -3161,16 +3187,16 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
     text = (
         f"🔮 **Scenario Analysis (\"What-If\" Simulation)**\n\n"
         f"**Simulation Parameters:**\n"
-        f"• Target: **{target_label}** ({target_type})\n"
+        f"• {'Target' if _is_budget(cfg) else 'Line'}: **{target_label}** ({target_type})\n"
         f"• Baseline Actual: {format_money(base_val, cur, places)}\n"
         f"• Simulated Change: **{change_desc}**\n"
-        f"• Simulated Target Value: **{format_money(sim_val, cur, places)}**\n\n"
+        f"• Simulated {'Target ' if _is_budget(cfg) else ''}Value: **{format_money(sim_val, cur, places)}**\n\n"
         f"**Projected Operating Profit Impact:**\n"
         f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
         f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
         f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
         f"• **Simulated EBITDA Margin**: **{sim_margin:.1f}%** (vs. {base_margin:.1f}% baseline, {margin_delta:+0.1f} pts)\n"
-        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. planned profit of {format_money(budget_profit, cur, places)})\n"
+        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. {'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
     )
 
     table = [
@@ -3350,15 +3376,16 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
     rr_status = "beat" if rr_var >= 0 else "shortfall"
     le_status = "favorable beat" if le_var >= 0 else "unfavorable shortfall"
 
+    remaining_label = "Remaining Plan" if _is_budget(cfg) else f"Remaining {_heading(cfg)}"
     text = (
         f"📈 **Run-Rate & Full-Year (FY) Projections**\n\n"
         f"**Period Basis:** **{period_label}** ({elapsed} of 12 months elapsed; {remaining} months remaining in fiscal year).\n\n"
         f"• **Annualized Operating Profit (Run-Rate)**: **{format_money(rr_profit, cur, places)}**\n"
         f"  *If current operational velocity continues for the full year, profit is projected at {format_money(rr_profit, cur, places)} "
         f"({format_money(rr_var, cur, places)} {rr_status} vs. annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n"
-        f"• **Corporate Latest Estimate (LE = Actuals + Remaining Plan)**: **{format_money(le_profit, cur, places)}**\n"
+        f"• **Corporate Latest Estimate (LE = Actuals + {remaining_label})**: **{format_money(le_profit, cur, places)}**\n"
         f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at {format_money(le_profit, cur, places)} "
-        f"({format_money(le_var, cur, places)} {le_status} vs. plan).*\n\n"
+        f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n"
         f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (EBITDA Margin: {rr_margin:.1f}%)\n"
         f"• **Annualized Expense Run-Rate**: {format_money(rr_exp, cur, places)}"
     )
@@ -3383,7 +3410,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Status": "F" if rr_var >= 0 else "U",
         },
         {
-            "Projection Model": "Latest Estimate (LE: Actuals + Remaining Plan)",
+            "Projection Model": f"Latest Estimate (LE: Actuals + {remaining_label})",
             "Revenue": format_money(le_rev, cur, places),
             "Expenses": format_money(le_exp, cur, places),
             "Operating Profit": format_money(le_profit, cur, places),
@@ -3520,7 +3547,11 @@ def _handle_executive_memo(session: Session) -> Response:
     if top_rev_beat:
         memo_lines.append(f"2. **Revenue Scaling:** Protect and expand pipeline investments supporting **{safe_inline(top_rev_beat.line_item)}**.")
     else:
-        memo_lines.append("2. **Sales Acceleration:** Formulate commercial recovery plans targeting lagging revenue lines.")
+        memo_lines.append(
+            "2. **Sales Acceleration:** Formulate commercial recovery plans targeting lagging revenue lines."
+            if _is_budget(cfg)
+            else "2. **Sales Acceleration:** Formulate commercial recovery actions for lagging revenue lines."
+        )
 
     missing = [safe_inline(r.line_item) for r in result.material_rows if not (r.driver_evidence and r.driver_evidence.reconciles)]
     if missing:
@@ -3724,7 +3755,7 @@ def _handle_tldr(session: Session) -> Response:
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"
         f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
         f"({impact_pct:+.1f}% vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with EBITDA margin standing at **{margin:.1f}%**. "
-        f"Top-line revenue {rev_word} plan by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
+        f"Top-line revenue {rev_word} {'plan' if _is_budget(cfg) else 'the ' + _noun(cfg)} by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
     )
 
     chips = ["Executive memo", "Waterfall", "Sensitivity", "Summary"]
@@ -3757,7 +3788,7 @@ def _handle_profitability(session: Session) -> Response:
         f"📊 **Profitability Standing: {cfg.period}**\n\n"
         f"Operations are {stance}!\n\n"
         f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (EBITDA margin: **{actual_margin:.1f}%**)\n"
-        f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} (Planned margin: {budget_margin:.1f}%)\n"
+        f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} ({'Planned' if _is_budget(cfg) else _heading(cfg)} margin: {budget_margin:.1f}%)\n"
         f"• **Variance vs. {_heading(cfg)}:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {margin_delta:+.1f} pts)\n\n"
         f"Operating profit reflects gross commercial revenues ({format_money(result.revenue.actual, cur, places)}) "
         f"less total operating expenses ({format_money(result.expenses.actual, cur, places)})."

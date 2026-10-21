@@ -124,8 +124,9 @@ STRICT GROUNDING LOCK:
 
         if comparison_noun == "budget":
             limits, projections = "budget limits", "original budget projections"
+            tracked = "modeled targets"
         else:
-            limits = projections = f"the {comparison_noun}"
+            limits = projections = tracked = f"the {comparison_noun}"
 
         if decision.rule_id == "FIN-R1":
             return (
@@ -147,6 +148,6 @@ STRICT GROUNDING LOCK:
             )
         else:
             return (
-                f"Across {audit.period}, net spending tracked closely with modeled targets. Balanced performance. "
+                f"Across {audit.period}, net spending tracked closely with {tracked}. Balanced performance. "
                 f"Material line items remained within the established tolerance boundaries, leaving no unresolved variances."
             )

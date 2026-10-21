@@ -73,7 +73,12 @@ _DRIVER_MODELS = (
 
 
 def _required_value(
-    row: dict[str, object], candidates: Iterable[str], display_name: str, row_number: int
+    row: dict[str, object],
+    candidates: Iterable[str],
+    display_name: str,
+    row_number: int,
+    *,
+    list_accepted_names: bool = True,
 ) -> object:
     candidates = tuple(candidates)
     present = [key for key in candidates if key in row]
@@ -82,10 +87,8 @@ def _required_value(
                          + ", ".join(present) + ". Supply one column per field.")
     found = first_present(row, candidates)
     if found is None:
-        raise ValueError(
-            f"Row {row_number}: required field '{display_name}' was not found. "
-            f"Accepted names: {', '.join(candidates)}."
-        )
+        accepted = f" Accepted names: {', '.join(candidates)}." if list_accepted_names else ""
+        raise ValueError(f"Row {row_number}: required field '{display_name}' was not found.{accepted}")
     return found[1]
 
 
@@ -477,6 +480,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     warnings: list[str] = []
     normalized_rows = [normalize_row(row) for row in rows]
     has_period_column = any("period" in row for row in normalized_rows)
+    comparison_field = comparison_heading(config.comparison_basis, config.comparison_label)
 
     for index, row in enumerate(normalized_rows, start=2):
         if has_period_column:
@@ -500,9 +504,14 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 raise ValueError(f"{line_item}: row currency {row_currency} conflicts with "
                                  f"reporting currency {config.currency}.")
 
+        # Budget runs keep 'Budget'; other runs name the comparison and do not list the
+        # internal budget column aliases.
         budget = parse_decimal(
-            _required_value(row, _BUDGET_KEYS, "Budget", index),
-            field="Budget",
+            _required_value(
+                row, _BUDGET_KEYS, comparison_field, index,
+                list_accepted_names=config.comparison_basis is ComparisonBasis.BUDGET,
+            ),
+            field=comparison_field,
             line_item=line_item,
             currency=config.currency,
         )

@@ -41,6 +41,7 @@ from .comparison import (
     order_period_labels,
     parse_period_label,
     select_strict_comparison,
+    zero_comparison_phrase,
 )
 
 
@@ -753,8 +754,18 @@ def detect_header_row(
     return None, {}, []
 
 
-def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[SheetScore]:
-    """Score worksheets in a workbook to rank the best candidate for budget-vs-actual analysis."""
+def rank_workbook_sheets(
+    sheets: list[tuple[str, list[list[object]]]],
+    *,
+    basis: ComparisonBasis = ComparisonBasis.BUDGET,
+    label: str | None = None,
+) -> list[SheetScore]:
+    """Score worksheets in a workbook to rank the best candidate for budget-vs-actual analysis.
+
+    ``basis``/``label`` only change the wording of each rationale, never the scores.
+    """
+    heading = comparison_heading(basis, label)
+    noun = basis_noun(basis)
     scores: list[SheetScore] = []
     for name, rows in sheets:
         score = 0
@@ -763,7 +774,7 @@ def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[S
         header_idx, roles, _ = detect_header_row(rows)
         if header_idx is not None:
             score += 20
-            reasons.append("contains Line item, Budget, and Actual columns")
+            reasons.append(f"contains Line item, {heading}, and Actual columns")
         else:
             # Check for partial matches
             matched_roles = set()
@@ -787,7 +798,7 @@ def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[S
 
         if "bva" in lower_name or "variance" in lower_name or "p&l" in lower_name or "pnl" in lower_name:
             score += 10
-            reasons.append("title matches budget-vs-actual or P&L")
+            reasons.append(f"title matches {noun}-vs-actual or P&L")
 
         rationale = "; ".join(reasons) or "general data worksheet"
         scores.append(SheetScore(name=name, score=score, rationale=rationale))
@@ -1269,10 +1280,18 @@ def _read_excel_bytes(
                 selected_period=selected_period,
                 compare_to=compare_to,
             )
+            if result.comparison_basis is not ComparisonBasis.BUDGET:
+                # Same scores; the rationale names the comparison this file was read against.
+                ranked = rank_workbook_sheets(
+                    all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
+                )
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
             if chosen_sheet != sheetnames[0] and ranked:
-                rationale = ranked[0].rationale if ranked[0].name == chosen_sheet else "better matches budget-vs-actual data"
+                rationale = (
+                    ranked[0].rationale if ranked[0].name == chosen_sheet
+                    else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
+                )
                 result.visible_transformations.insert(
                     0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
                 )
@@ -1304,13 +1323,17 @@ def _process_raw_table(
 
     header_idx, roles, ignored_col_indices = detect_header_row(raw_rows, selected_period=selected_period)
     if header_idx is None:
-        return IntakeResult(
-            has_fatal_errors=True,
-            fatal_error_message=(
-                f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}'."
-            ),
-            sheet_name=sheet_name,
-        )
+        if compare_to is None:
+            message = (
+                f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
+                "(a Forecast or Prior Year column can stand in for Budget)."
+            )
+        else:
+            message = (
+                f"Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, "
+                f"and Actual columns in '{filename}'."
+            )
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name)
 
     header_row = raw_rows[header_idx]
     header_row_number = header_idx + 1
@@ -1328,6 +1351,8 @@ def _process_raw_table(
             comparison_choices=list(detection.choices),
             sheet_name=sheet_name,
         )
+
+    comparison_field = comparison_heading(detection.basis, detection.label)
 
     if detection.comparison_column is not None:
         roles[CanonicalRole.BUDGET] = detection.comparison_column
@@ -1410,7 +1435,7 @@ def _process_raw_table(
         try:
             budget_dec, b_note = parse_assisted_decimal(
                 raw_budget,
-                field="Budget",
+                field=comparison_field,
                 line_item=line_item_str,
                 allow_blank=True,
             )
@@ -1424,9 +1449,9 @@ def _process_raw_table(
             problems.append(
                 IntakeProblem(
                     row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.BUDGET, "Budget"),
+                    column=column_mapping.get(CanonicalRole.BUDGET, comparison_field),
                     line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, Budget column: {exc}",
+                    message=f"Row {physical_idx}, {line_item_str}, {comparison_field} column: {exc}",
                 )
             )
 
@@ -1485,9 +1510,15 @@ def _process_raw_table(
         )
 
     if treat_blank_budgets_as_zero and blank_budget_items:
-        visible_transformations.append(
-            f"Treated blank budgets as 0 on {len(blank_budget_items)} unbudgeted line{'s' if len(blank_budget_items) != 1 else ''}"
-        )
+        count = len(blank_budget_items)
+        plural = "s" if count != 1 else ""
+        if detection.basis is ComparisonBasis.BUDGET:
+            visible_transformations.append(f"Treated blank budgets as 0 on {count} unbudgeted line{plural}")
+        else:
+            visible_transformations.append(
+                f"Treated blank {basis_noun(detection.basis)} values as 0 on {count} "
+                f"line{plural} {zero_comparison_phrase(detection.basis)}"
+            )
 
     # 1. Unit scaling check (from title block rows and header row)
     raw_title_text = " ".join(

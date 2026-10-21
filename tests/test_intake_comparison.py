@@ -235,3 +235,61 @@ def test_header_fallback_keeps_named_budget_role() -> None:
     idx, roles, _ = detect_header_row([header])
     assert idx == 0
     assert roles[CanonicalRole.BUDGET] == 2 and roles[CanonicalRole.ACTUAL] == 3
+
+
+# --- Final review I1: intake text names the comparison ---
+
+
+def test_bad_prior_period_cell_problem_names_prior_period() -> None:
+    res = _read_text("Line Item,Type,FY2025,FY2024\nRent Expense,Expense,130,abc\nFees,Expense,1,2\n")
+    assert res.problems and "Prior Period (FY2024) column" in res.problems[0].message
+    assert "budget" not in res.problems[0].message.lower()
+    assert res.problems[0].column == "FY2024"
+
+
+def test_blank_forecast_cells_treated_as_zero_note() -> None:
+    res = read_input_assisted(
+        b"Line Item,Type,Forecast,Actual\nA Revenue,Revenue,,10\nB Revenue,Revenue,,20\n",
+        ".csv", filename="t.csv", treat_blank_budgets_as_zero=True,
+    )
+    assert "Treated blank forecast values as 0 on 2 lines not in forecast" in res.visible_transformations
+
+
+def test_blank_budget_note_unchanged() -> None:
+    res = read_input_assisted(
+        b"Line Item,Type,Budget,Actual\nA Revenue,Revenue,,10\n",
+        ".csv", filename="t.csv", treat_blank_budgets_as_zero=True,
+    )
+    assert "Treated blank budgets as 0 on 1 unbudgeted line" in res.visible_transformations
+
+
+def test_missing_header_row_message_names_requested_basis() -> None:
+    unknown = _read_text("Name,Amount\nRent,1\n")
+    assert unknown.fatal_error_message is not None
+    assert "Could not find a header row with Line Item, Budget, and Actual columns" in unknown.fatal_error_message
+    assert "Forecast" in unknown.fatal_error_message
+
+    forecast = _read_text("Name,Amount\nRent,1\n", compare_to=F)
+    assert forecast.fatal_error_message is not None
+    assert "Line Item, Forecast, and Actual columns" in forecast.fatal_error_message
+    assert "budget" not in forecast.fatal_error_message.lower()
+
+
+def test_worksheet_rationale_names_forecast(tmp_path: Path) -> None:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    cover = wb.active
+    assert cover is not None
+    cover.title = "Cover"
+    cover.append(["Quarterly pack"])
+    data = wb.create_sheet("Data")
+    data.append(["Line Item", "Type", "Forecast", "Actual"])
+    data.append(["Subscription Revenue", "Revenue", 110000, 115500])
+    path = tmp_path / "pack.xlsx"
+    wb.save(path)
+    res = read_input_assisted(path.read_bytes(), ".xlsx", filename="pack.xlsx")
+    assert res.comparison_basis is F
+    note = res.visible_transformations[0]
+    assert note.startswith("Selected worksheet 'Data'") and "Forecast" in note
+    assert "budget" not in note.lower()

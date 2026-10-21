@@ -49,3 +49,16 @@ def test_compare_to_missing_column_exit_2(capsys: pytest.CaptureFixture[str]) ->
         cli.main([str(K), *BASE, "--compare-to", "prior-period", "--check-only"])
     assert exc_info.value.code == 2
     assert "No prior period column found" in capsys.readouterr().err
+
+
+def test_strict_prior_period_blank_cell_names_prior_period(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = tmp_path / "py.csv"
+    src.write_text("Line Item,Type,Prior Year,Actual\nRent Expense,Expense,,130\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main([str(src), *BASE, "--compare-to", "prior-period", "--check-only"])
+    assert exc_info.value.code == 2
+    error_line = capsys.readouterr().err.strip().splitlines()[-1]  # after argparse's usage text
+    assert "'Prior Period' is missing" in error_line
+    assert "budget" not in error_line.lower()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -213,3 +214,121 @@ def test_chat_explains_comparison_types() -> None:
     assert "prior period" in text
     assert "forecast" in text
     assert "--compare-to" in text
+
+
+# --- Final review I1/I2: nothing calls a forecast or prior period a budget, plan or target ---
+
+PLAN_WORDS = re.compile(r"\b(budget\w*|plan|planned|target\w*)\b", re.IGNORECASE)
+
+# Every result prompt a non-Budget session can reach. `help` is excluded: it is the
+# generic command list (it documents the `budget utilization` command by name).
+ALL_RESULT_PROMPTS = [
+    "summary", "top 3", "material", "unfavorable", "favorable", "revenue", "expenses",
+    "totals", "warnings", "recommendations", "memo", "tldr", "profitability", "waterfall",
+    "what if revenue drops 10%", "what if we cut expenses by 5%", "sensitivity", "run rate",
+    "drivers summary", "biggest risks", "biggest wins", "revenue status", "expense status",
+    "burn rate", "highest percent", "metrics", "pareto", "unbudgeted spend", "cost savings",
+    "revenue misses", "did expenses stay in budget?", "compare revenue vs expenses",
+]
+
+FORECAST_BLANK = (
+    b"Line Item,Type,Forecast,Actual\n"
+    b"Subscription Revenue,Revenue,110000,115500\n"
+    b"New Partner Revenue,Revenue,,2500\n"
+    b"Payroll Expense,Expense,65000,68000\n"
+)
+PRIOR_BLANK = (
+    b"Line Item,Type,FY2025,FY2024\n"
+    b"Product Revenue,Revenue,120000,100000\n"
+    b"New Segment Revenue,Revenue,5000,\n"
+    b"Cost of Revenue,Expense,50000,45000\n"
+)
+
+
+def _no_plan_words(text: str, where: str) -> None:
+    found = PLAN_WORDS.findall(text)
+    assert not found, f"{where}: {found}"
+
+
+@pytest.mark.parametrize("fixture_name", ["fixture_k_forecast.csv", "fixture_j_10k_three_years.csv"])
+def test_non_budget_session_never_says_budget_plan_or_target(fixture_name: str) -> None:
+    session = Session()
+    _no_plan_words(_upload_response(fixture_name, session).text, "upload")
+    _configure(session)
+    assert session.result is not None and session.result.config.comparison_basis is not B
+    assert session.result is not None
+    item_prompts = [f"{verb} {row.line_item}" for row in session.result.rows for verb in ("why", "details")]
+    for prompt in ALL_RESULT_PROMPTS + item_prompts:
+        _no_plan_words(_ask(session, prompt).text, prompt)
+
+
+@pytest.mark.parametrize(
+    ("data", "noun", "zero_wording"),
+    [(FORECAST_BLANK, "forecast", "not in forecast"), (PRIOR_BLANK, "prior period", "new this period")],
+    ids=["forecast", "prior_period"],
+)
+def test_blank_comparison_prompt_names_the_basis(data: bytes, noun: str, zero_wording: str) -> None:
+    session = Session()
+    response = handle_upload(session, data, "blank.csv")
+    assert session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
+    assert f"blank {noun} values" in response.text and zero_wording in response.text
+    _no_plan_words(response.text, "blank prompt")
+    for chip in response.chips or []:
+        _no_plan_words(chip, "blank chip")
+
+    confirmed = _ask(session, (response.chips or [""])[0])
+    _no_plan_words(confirmed.text, "blank confirmation")
+    assert f"Treated blank {noun} values as 0" in confirmed.text
+    assert session.parsed_rows is not None
+    assert any(r["budget"] == Decimal("0") for r in session.parsed_rows)
+
+
+def test_keep_blank_forecast_chip_keeps_blanks() -> None:
+    session = Session()
+    response = handle_upload(session, FORECAST_BLANK, "blank.csv")
+    assert response.chips is not None and response.chips[1] == "Keep blank forecast values"
+    confirmed = _ask(session, response.chips[1])
+    assert "Treated blank" not in confirmed.text
+
+
+def test_bad_forecast_cell_problem_names_forecast() -> None:
+    data = b"Line Item,Type,Forecast,Actual\nSubscription Revenue,Revenue,abc,115500\nPayroll Expense,Expense,1,2\n"
+    session = Session()
+    text = handle_upload(session, data, "bad.csv").text
+    assert "Forecast column" in text
+    _no_plan_words(text, "problem")
+
+
+def test_failed_basis_switch_reply_never_says_plan() -> None:
+    session = _upload("fixture_j_10k_three_years.csv")
+    _configure(session)
+    text = _ask(session, "compare to forecast").text
+    assert text.startswith("⚠️")
+    _no_plan_words(text, "error reply")
+
+
+FORECAST_MISSES = (
+    b"Line Item,Type,Forecast,Actual\n"
+    b"Subscription Revenue,Revenue,120000,100000\n"
+    b"Services Revenue,Revenue,30000,31000\n"
+    b"Payroll Expense,Expense,65000,72000\n"
+    b"Rent Expense,Expense,10000,9000\n"
+)
+PRIOR_ON_TRACK = (
+    b"Line Item,Type,FY2025,FY2024\n"
+    b"Product Revenue,Revenue,100010,100000\n"
+    b"Cost of Revenue,Expense,50000,50010\n"
+)
+
+
+@pytest.mark.parametrize(
+    "data", [FORECAST_MISSES, PRIOR_ON_TRACK], ids=["forecast_misses", "prior_period_on_track"]
+)
+def test_miss_and_no_risk_branches_never_say_plan_or_target(data: bytes) -> None:
+    session = Session()
+    _no_plan_words(handle_upload(session, data, "inline.csv").text, "upload")
+    _configure(session)
+    assert session.result is not None
+    item_prompts = [f"{verb} {row.line_item}" for row in session.result.rows for verb in ("why", "details")]
+    for prompt in ALL_RESULT_PROMPTS + item_prompts:
+        _no_plan_words(_ask(session, prompt).text, prompt)
