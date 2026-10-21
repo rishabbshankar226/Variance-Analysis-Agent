@@ -436,3 +436,79 @@ def test_no_match_reply_stays_short_on_large_files() -> None:
     assert "No line item matching" in text
     assert len(text) < 2000
     assert "and 4980 more" in text
+
+
+# ---------------------------------------------------------------------------
+# Deferred follow-ups (M7-M15, L1, L3)
+# ---------------------------------------------------------------------------
+
+def start_csv(csv: bytes, period: str = "Q3 2026", *steps: str) -> tuple[Session, Response]:
+    session = Session()
+    response = handle_upload(session, csv, "inline.csv")
+    for step in (period, "$10k or 5%", "USD", *steps):
+        response = handle_message(session, step)
+    return session, response
+
+
+ZERO_REVENUE_BUDGET = b"Line Item,Type,Budget,Actual\nNew Revenue,Revenue,0,5000\nRent Expense,Expense,1000,1200\n"
+ZERO_REVENUE_ACTUAL = b"Line Item,Type,Budget,Actual\nLost Revenue,Revenue,5000,0\nRent Expense,Expense,1000,1200\n"
+
+
+def _rendered(response: Response) -> str:
+    cells = " ".join(v for row in response.table or [] for v in row.values())
+    return f"{response.text} {cells}"
+
+
+@pytest.mark.parametrize("csv", [ZERO_REVENUE_BUDGET, ZERO_REVENUE_ACTUAL])
+@pytest.mark.parametrize("message", ["memo", "tldr", "profitability", "run rate", "sensitivity",
+                                     "what if expenses drop 5%", "compare revenue vs expenses"])
+def test_zero_baseline_percentages_show_na(csv: bytes, message: str) -> None:
+    session, _ = start_csv(csv)
+    rendered = _rendered(handle_message(session, message))
+    assert not re.search(r"(?<![\d.])[+-]?0\.0(?:%| pts)", rendered), rendered
+
+
+def test_zero_revenue_budget_margin_is_na_in_memo() -> None:
+    session, _ = start_csv(ZERO_REVENUE_BUDGET)
+    memo = handle_message(session, "memo").text
+    assert "EBITDA margin **moved** from N/A to **76.0%** (N/A)" in memo
+
+
+def test_memo_unbudgeted_percent_has_no_plus_sign() -> None:
+    memo = handle_message(explore("edge_values"), "memo").text
+    assert "+N/A" not in memo
+    assert "(N/A (Unbudgeted))" in memo
+
+
+def test_unbudgeted_revenue_is_not_called_spending() -> None:
+    text = handle_message(explore("edge_values"), "unbudgeted spend").text
+    spending, _, revenue = text.partition("Unbudgeted revenue")
+    assert "Unbudgeted Consulting" in spending and "New Product Revenue" not in spending
+    assert "New Product Revenue" in revenue
+
+
+@pytest.mark.parametrize("command", ["summary", "memo", "top 3"])
+def test_period_step_rejects_commands(command: str) -> None:
+    session = Session()
+    path = fixture_path("sample_variance")
+    handle_upload(session, path.read_bytes(), path.name)
+    response = handle_message(session, command)
+    assert session.phase == Phase.AWAITING_PERIOD and session.period is None
+    assert "looks like a command" in response.text
+
+
+@pytest.mark.parametrize("period", ["Q3 2026", "FY2026", "October 2026", "H1 2026", "Q3-2024", "Month 7"])
+def test_period_step_accepts_periods(period: str) -> None:
+    session = Session()
+    path = fixture_path("sample_variance")
+    handle_upload(session, path.read_bytes(), path.name)
+    handle_message(session, period)
+    assert session.period == period
+
+
+def test_run_rate_states_its_assumption() -> None:
+    text = handle_message(explore("sample_variance"), "run rate").text
+    assert "year-to-date" in text
+    session, _ = start_csv(fixture_path("sample_variance").read_bytes(), "Spring sprint")
+    text = handle_message(session, "run rate").text
+    assert "was not recognised" in text

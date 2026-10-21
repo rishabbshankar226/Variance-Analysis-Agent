@@ -166,6 +166,13 @@ def _handle_period(session: Session, text: str) -> Response:
             text="The reporting period cannot be blank. Please enter a period (e.g., Q3 2026).",
             phase=Phase.AWAITING_PERIOD,
         )
+    if parse_intent(text).intent_id != "unknown":
+        return Response(
+            text=f"'{safe_inline(period)}' looks like a command, not a reporting period. "
+                 "Enter the period this file covers first (e.g., Q3 2026, October 2026, FY2026).",
+            chips=["Q3 2026", "FY2026", "October 2026"],
+            phase=Phase.AWAITING_PERIOD,
+        )
 
     session.period = period
     session.phase = Phase.AWAITING_THRESHOLDS
@@ -640,6 +647,15 @@ def _build_analysis_summary(session: Session) -> Response:
 # ---------------------------------------------------------------------------
 # Exploring phase handlers
 # ---------------------------------------------------------------------------
+
+
+def _pct_text(value: Decimal | None, spec: str = ".1f", suffix: str = "%") -> str:
+    """Format a percentage, or N/A when its base was zero (the ratio is undefined)."""
+    return "N/A" if value is None else f"{value:{spec}}{suffix}"
+
+
+def _pct_change(new: Decimal | None, old: Decimal | None) -> Decimal | None:
+    return None if new is None or old is None else new - old
 
 
 def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
@@ -1919,8 +1935,8 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
         with financial_context() as context:
             context.traps[Inexact] = False
             actual_profit = result.revenue.actual - result.expenses.actual
-            margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else Decimal(0)
-            cost_ratio = (ratio(result.expenses.actual, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else Decimal(0)
+            margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
+            cost_ratio = (ratio(result.expenses.actual, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
 
             macro_table = [
                 {
@@ -1928,28 +1944,28 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "Budget": format_money(result.revenue.budget, cfg.currency, places),
                     "Actual": format_money(result.revenue.actual, cfg.currency, places),
                     "Operating Flow": "Top-Line Inflow",
-                    "% of Revenue": "100.0%",
+                    "% of Revenue": "100.0%" if result.revenue.actual != 0 else "N/A",
                 },
                 {
                     "Category": "Total Expenses",
                     "Budget": format_money(result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(result.expenses.actual, cfg.currency, places),
                     "Operating Flow": "Operating Outflow",
-                    "% of Revenue": f"{cost_ratio:.1f}%",
+                    "% of Revenue": _pct_text(cost_ratio),
                 },
                 {
                     "Category": "Operating Profit (EBITDA)",
                     "Budget": format_money(result.revenue.budget - result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(actual_profit, cfg.currency, places),
                     "Operating Flow": "Net Retained Margin",
-                    "% of Revenue": f"{margin:.1f}%",
+                    "% of Revenue": _pct_text(margin),
                 },
             ]
         return Response(
             text=f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
                  f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
                  f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
-                 f"({margin:.1f}% EBITDA margin; cost-to-income ratio of {cost_ratio:.1f}%).",
+                 f"({_pct_text(margin)} EBITDA margin; cost-to-income ratio of {_pct_text(cost_ratio)}).",
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -2097,20 +2113,30 @@ def _handle_unbudgeted(session: Session) -> Response:
             phase=Phase.EXPLORING,
         )
 
-    lines = [
-        f"🚨 **Unbudgeted Spending Detected ({len(unbudgeted)} account{'s' if len(unbudgeted) != 1 else ''})**\n\n"
-        "These line items had zero approved budget ($0.00) but incurred realized expenditures:\n"
-    ]
-
-    for row in unbudgeted:
+    zero = format_money(Decimal(0), cfg.currency, places)
+    spending = [row for row in unbudgeted if row.line_type != LineType.REVENUE]
+    revenue = [row for row in unbudgeted if row.line_type == LineType.REVENUE]
+    lines: list[str] = []
+    if spending:
         lines.append(
-            f"• **{safe_inline(row.line_item)}:** {format_money(row.actual, cfg.currency, places)} realized "
-            f"({status_label(row.status)}, Type: {row.line_type})"
+            f"🚨 **Unbudgeted Spending Detected ({len(spending)} account{'s' if len(spending) != 1 else ''})**\n\n"
+            f"These line items had zero approved budget ({zero}) but incurred realized expenditures:\n"
         )
-
-    lines.append(
-        "\n💡 **Governance Note:** Zero-budget expenditures bypass planned allocations and require VP/CFO authorization."
-    )
+        for row in spending:
+            lines.append(
+                f"• **{safe_inline(row.line_item)}:** {format_money(row.actual, cfg.currency, places)} realized "
+                f"({status_label(row.status)}, Type: {row.line_type})"
+            )
+        lines.append(
+            "\n💡 **Governance Note:** Zero-budget expenditures bypass planned allocations and require VP/CFO authorization."
+        )
+    if revenue:
+        lines.append(
+            f"{chr(10) if spending else ''}📈 **Unbudgeted revenue ({len(revenue)} line{'s' if len(revenue) != 1 else ''}):** "
+            f"earned with a zero plan ({zero}); favorable, but confirm it belongs in this period:\n"
+        )
+        for row in revenue:
+            lines.append(f"• **{safe_inline(row.line_item)}:** {format_money(row.actual, cfg.currency, places)} earned")
 
     chips = [f"Why {unbudgeted[0].line_item}?", "Summary", "Warnings"]
     return Response(text="\n".join(lines), chips=chips, phase=Phase.EXPLORING)
@@ -2609,9 +2635,9 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         profit_delta = sim_profit - base_profit
         sim_vs_budget = sim_profit - budget_profit
 
-        base_margin = (ratio(base_profit, base_rev) * Decimal(100)) if base_rev != 0 else Decimal(0)
-        sim_margin = (ratio(sim_profit, sim_rev) * Decimal(100)) if sim_rev != 0 else Decimal(0)
-        margin_delta = sim_margin - base_margin
+        base_margin = (ratio(base_profit, base_rev) * Decimal(100)) if base_rev != 0 else None
+        sim_margin = (ratio(sim_profit, sim_rev) * Decimal(100)) if sim_rev != 0 else None
+        margin_delta = _pct_change(sim_margin, base_margin)
 
     sign_str = "-" if delta < 0 else "+"
     change_desc = f"{sign_str}{amount_dec:.1f}%" if is_percent else f"{sign_str}{sym}{abs(delta):,.2f}"
@@ -2629,7 +2655,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
         f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
         f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
-        f"• **Simulated EBITDA Margin**: **{sim_margin:.1f}%** (vs. {base_margin:.1f}% baseline, {margin_delta:+0.1f} pts)\n"
+        f"• **Simulated EBITDA Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
         f"• **Simulated vs. Budget**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. planned profit of {format_money(budget_profit, cur, places)})\n"
     )
 
@@ -2705,7 +2731,7 @@ def _handle_sensitivity(session: Session) -> Response:
             s_exp = base_exp * (Decimal(1) + exp_pct)
             s_profit = s_rev - s_exp
             s_var_budget = s_profit - budget_profit
-            s_margin = (ratio(s_profit, s_rev) * Decimal(100)) if s_rev != 0 else Decimal(0)
+            s_margin = (ratio(s_profit, s_rev) * Decimal(100)) if s_rev != 0 else None
             status = "F" if s_var_budget >= 0 else "U"
 
             table_rows.append({
@@ -2714,7 +2740,7 @@ def _handle_sensitivity(session: Session) -> Response:
                 "Expenses": format_money(s_exp, cur, places),
                 "Operating Profit": format_money(s_profit, cur, places),
                 f"Var vs Budget ({sym})": format_money(s_var_budget, cur, places),
-                "EBITDA Margin": f"{s_margin:.1f}%",
+                "EBITDA Margin": _pct_text(s_margin),
                 "Status": status,
             })
 
@@ -2731,6 +2757,9 @@ def _handle_sensitivity(session: Session) -> Response:
 
     chips = ["What if revenue drops 5%?", "What if expenses increase 5%?", "Run rate", "Waterfall"]
     return Response(text=text, table=table_rows, chips=chips, phase=Phase.EXPLORING)
+
+
+_UNRECOGNISED_PERIOD = "Quarterly (3 months assumed)"
 
 
 def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
@@ -2766,7 +2795,7 @@ def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
         m_num = int(m_match.group(1))
         return m_num, f"Month {m_num} ({m_num} month{'s' if m_num != 1 else ''} elapsed)"
 
-    return 3, "Quarterly (3 months assumed)"
+    return 3, _UNRECOGNISED_PERIOD
 
 
 def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
@@ -2799,7 +2828,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         rr_profit = rr_rev - rr_exp
         annual_budget_profit = budget_profit * multiplier
         rr_var = rr_profit - annual_budget_profit
-        rr_margin = (ratio(rr_profit, rr_rev) * Decimal(100)) if rr_rev != 0 else Decimal(0)
+        rr_margin = (ratio(rr_profit, rr_rev) * Decimal(100)) if rr_rev != 0 else None
 
         # 2. Corporate FP&A Latest Estimate (LE = Actuals to Date + Remaining Budget)
         remaining_budget_rev = budget_rev * ratio(Decimal(remaining), Decimal(elapsed))
@@ -2808,21 +2837,26 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         le_exp = actual_exp + remaining_budget_exp
         le_profit = le_rev - le_exp
         le_var = le_profit - annual_budget_profit
-        le_margin = (ratio(le_profit, le_rev) * Decimal(100)) if le_rev != 0 else Decimal(0)
+        le_margin = (ratio(le_profit, le_rev) * Decimal(100)) if le_rev != 0 else None
 
     rr_status = "beat" if rr_var >= 0 else "shortfall"
     le_status = "favorable beat" if le_var >= 0 else "unfavorable shortfall"
 
     text = (
         f"📈 **Run-Rate & Full-Year (FY) Projections**\n\n"
-        f"**Period Basis:** **{period_label}** ({elapsed} of 12 months elapsed; {remaining} months remaining in fiscal year).\n\n"
+        f"**Period Basis:** **{period_label}** ({elapsed} of 12 months elapsed; {remaining} months remaining in fiscal year).\n"
+        f"*Assumption: the figures are year-to-date through this period, so they are annualized over {elapsed} months.*\n"
+        + (f"⚠️ Period '{safe_inline(session.period or '')}' was not recognised, so {elapsed} elapsed months are assumed; "
+           "name it like `Q3 2026`, `H1 2026`, `FY2026` or `October 2026` for an exact basis.\n"
+           if period_label == _UNRECOGNISED_PERIOD else "")
+        + "\n"
         f"• **Annualized Operating Profit (Run-Rate)**: **{format_money(rr_profit, cur, places)}**\n"
         f"  *If current operational velocity continues for the full year, profit is projected at {format_money(rr_profit, cur, places)} "
         f"({format_money(rr_var, cur, places)} {rr_status} vs. annual budget of {format_money(annual_budget_profit, cur, places)}).*\n\n"
         f"• **Corporate Latest Estimate (LE = Actuals + Remaining Plan)**: **{format_money(le_profit, cur, places)}**\n"
         f"  *Assuming remaining {remaining} months perform strictly to budget, full-year profit finishes at {format_money(le_profit, cur, places)} "
         f"({format_money(le_var, cur, places)} {le_status} vs. plan).*\n\n"
-        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (EBITDA Margin: {rr_margin:.1f}%)\n"
+        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (EBITDA Margin: {_pct_text(rr_margin)})\n"
         f"• **Annualized Expense Run-Rate**: {format_money(rr_exp, cur, places)}"
     )
 
@@ -2833,7 +2867,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(actual_exp, cur, places),
             "Operating Profit": format_money(actual_profit, cur, places),
             f"Var vs Budget ({sym})": format_money(actual_profit - budget_profit, cur, places),
-            "EBITDA Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "0.0%",
+            "EBITDA Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
             "Status": "F" if (actual_profit - budget_profit) >= 0 else "U",
         },
         {
@@ -2842,7 +2876,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(rr_exp, cur, places),
             "Operating Profit": format_money(rr_profit, cur, places),
             f"Var vs Budget ({sym})": format_money(rr_var, cur, places),
-            "EBITDA Margin": f"{rr_margin:.1f}%",
+            "EBITDA Margin": _pct_text(rr_margin),
             "Status": "F" if rr_var >= 0 else "U",
         },
         {
@@ -2851,7 +2885,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(le_exp, cur, places),
             "Operating Profit": format_money(le_profit, cur, places),
             f"Var vs Budget ({sym})": format_money(le_var, cur, places),
-            "EBITDA Margin": f"{le_margin:.1f}%",
+            "EBITDA Margin": _pct_text(le_margin),
             "Status": "F" if le_var >= 0 else "U",
         },
         {
@@ -2860,7 +2894,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(budget_exp * multiplier, cur, places),
             "Operating Profit": format_money(annual_budget_profit, cur, places),
             f"Var vs Budget ({sym})": format_money(Decimal(0), cur, places),
-            "EBITDA Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "0.0%",
+            "EBITDA Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
             "Status": "Neutral",
         },
     ]
@@ -2883,21 +2917,21 @@ def _handle_executive_memo(session: Session) -> Response:
         rev_budget = result.revenue.budget
         rev_actual = result.revenue.actual
         rev_var = rev_actual - rev_budget
-        rev_pct = (ratio(rev_var, rev_budget) * Decimal(100)) if rev_budget != 0 else Decimal(0)
+        rev_pct = (ratio(rev_var, rev_budget) * Decimal(100)) if rev_budget != 0 else None
 
         exp_budget = result.expenses.budget
         exp_actual = result.expenses.actual
         exp_var = exp_actual - exp_budget
-        exp_pct = (ratio(exp_var, exp_budget) * Decimal(100)) if exp_budget != 0 else Decimal(0)
+        exp_pct = (ratio(exp_var, exp_budget) * Decimal(100)) if exp_budget != 0 else None
 
         budget_profit = rev_budget - exp_budget
         actual_profit = rev_actual - exp_actual
         net_impact = actual_profit - budget_profit
-        net_pct = (ratio(net_impact, abs(budget_profit)) * Decimal(100)) if budget_profit != 0 else Decimal(0)
+        net_pct = (ratio(net_impact, abs(budget_profit)) * Decimal(100)) if budget_profit != 0 else None
 
-        budget_margin = (ratio(budget_profit, rev_budget) * Decimal(100)) if rev_budget != 0 else Decimal(0)
-        actual_margin = (ratio(actual_profit, rev_actual) * Decimal(100)) if rev_actual != 0 else Decimal(0)
-        margin_delta = actual_margin - budget_margin
+        budget_margin = (ratio(budget_profit, rev_budget) * Decimal(100)) if rev_budget != 0 else None
+        actual_margin = (ratio(actual_profit, rev_actual) * Decimal(100)) if rev_actual != 0 else None
+        margin_delta = _pct_change(actual_margin, budget_margin)
 
     # Find top revenue driver & drag
     rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
@@ -2913,7 +2947,7 @@ def _handle_executive_memo(session: Session) -> Response:
     reconciled_count = sum(1 for r in result.material_rows if r.driver_evidence and r.driver_evidence.reconciles)
 
     status_word = "beat" if net_impact >= 0 else "shortfall"
-    sign_word = "expanded" if margin_delta >= 0 else "contracted"
+    sign_word = "moved" if margin_delta is None else "expanded" if margin_delta >= 0 else "contracted"
 
     # Same fact-gated builder as the CLI --commentary report, so both surfaces agree.
     from deterministic_conditioning.variance_bridge import generate_verified_commentary
@@ -2928,12 +2962,12 @@ def _handle_executive_memo(session: Session) -> Response:
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
         f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
-        f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({net_pct:+.1f}%) "
+        f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) "
         f"against the planned budget of **{format_money(budget_profit, cur, places)}**. "
-        f"EBITDA margin **{sign_word}** from {budget_margin:.1f}% to **{actual_margin:.1f}%** ({margin_delta:+.1f} pts).\n",
+        f"EBITDA margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
         "### 2. Top-Line Performance (Revenue)",
         f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. Budget of **{format_money(rev_budget, cur, places)}** "
-        f"({format_money(rev_var, cur, places)}, {rev_pct:+.1f}%, {'Favorable' if rev_var >= 0 else 'Unfavorable'}).",
+        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'Favorable' if rev_var >= 0 else 'Unfavorable'}).",
     ]
 
     if top_rev_beat:
@@ -2944,11 +2978,11 @@ def _handle_executive_memo(session: Session) -> Response:
     memo_lines.extend([
         "\n### 3. Cost Discipline & Overruns (Expenses)",
         f"Total Operating Expenses ended at **{format_money(exp_actual, cur, places)}** vs. Budget of **{format_money(exp_budget, cur, places)}** "
-        f"({format_money(exp_var, cur, places)}, {exp_pct:+.1f}%, {'Unfavorable' if exp_var > 0 else 'Favorable'}).",
+        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, {'Unfavorable' if exp_var > 0 else 'Favorable'}).",
     ])
 
     if top_exp_over:
-        memo_lines.append(f"• **Primary Cost Risk:** **{safe_inline(top_exp_over.line_item)}** overspent by {format_money(top_exp_over.variance_dollars, cur, places)} (+{format_pct(top_exp_over.budget, top_exp_over.variance_dollars, top_exp_over.percent_label)}).")
+        memo_lines.append(f"• **Primary Cost Risk:** **{safe_inline(top_exp_over.line_item)}** overspent by {format_money(top_exp_over.variance_dollars, cur, places)} ({'+' if top_exp_over.variance_percent is not None else ''}{format_pct(top_exp_over.budget, top_exp_over.variance_dollars, top_exp_over.percent_label)}).")
     if top_exp_save:
         memo_lines.append(f"• **Key Cost Savings:** **{safe_inline(top_exp_save.line_item)}** saved {format_money(abs(top_exp_save.variance_dollars), cur, places)} vs. allocated budget.")
 
@@ -3151,8 +3185,8 @@ def _handle_tldr(session: Session) -> Response:
         actual_profit = result.revenue.actual - result.expenses.actual
         budget_profit = result.revenue.budget - result.expenses.budget
         net_impact = actual_profit - budget_profit
-        impact_pct = (ratio(net_impact, abs(budget_profit)) * Decimal(100)) if budget_profit != 0 else Decimal(0)
-        margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else Decimal(0)
+        impact_pct = (ratio(net_impact, abs(budget_profit)) * Decimal(100)) if budget_profit != 0 else None
+        margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
 
     beat_word = "beat" if net_impact >= 0 else "shortfall"
     rev_word = "outperformed" if rev_var >= 0 else "underperformed"
@@ -3171,7 +3205,7 @@ def _handle_tldr(session: Session) -> Response:
     text = (
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"
         f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
-        f"({impact_pct:+.1f}% vs. planned budget of {format_money(budget_profit, cur, places)}) with EBITDA margin standing at **{margin:.1f}%**. "
+        f"({_pct_text(impact_pct, '+.1f')} vs. planned budget of {format_money(budget_profit, cur, places)}) with EBITDA margin standing at **{_pct_text(margin)}**. "
         f"Top-line revenue {rev_word} plan by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
     )
 
@@ -3193,9 +3227,9 @@ def _handle_profitability(session: Session) -> Response:
         actual_profit = result.revenue.actual - result.expenses.actual
         budget_profit = result.revenue.budget - result.expenses.budget
         net_impact = actual_profit - budget_profit
-        actual_margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else Decimal(0)
-        budget_margin = (ratio(budget_profit, result.revenue.budget) * Decimal(100)) if result.revenue.budget != 0 else Decimal(0)
-        margin_delta = actual_margin - budget_margin
+        actual_margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
+        budget_margin = (ratio(budget_profit, result.revenue.budget) * Decimal(100)) if result.revenue.budget != 0 else None
+        margin_delta = _pct_change(actual_margin, budget_margin)
 
     is_black = actual_profit >= 0
     stance = "firmly **in the black** (profitable)" if is_black else "currently **in the red** (operating loss)"
@@ -3204,9 +3238,9 @@ def _handle_profitability(session: Session) -> Response:
     text = (
         f"📊 **Profitability Standing: {cfg.period}**\n\n"
         f"Operations are {stance}!\n\n"
-        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (EBITDA margin: **{actual_margin:.1f}%**)\n"
-        f"• **Budgeted Operating Profit:** {format_money(budget_profit, cur, places)} (Planned margin: {budget_margin:.1f}%)\n"
-        f"• **Variance vs. Budget:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {margin_delta:+.1f} pts)\n\n"
+        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (EBITDA margin: **{_pct_text(actual_margin)}**)\n"
+        f"• **Budgeted Operating Profit:** {format_money(budget_profit, cur, places)} (Planned margin: {_pct_text(budget_margin)})\n"
+        f"• **Variance vs. Budget:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {_pct_text(margin_delta, '+.1f', ' pts')})\n\n"
         f"Operating profit reflects gross commercial revenues ({format_money(result.revenue.actual, cur, places)}) "
         f"less total operating expenses ({format_money(result.expenses.actual, cur, places)})."
     )
