@@ -256,7 +256,8 @@ def test_unclassified_resolution_always_reaches_exploring(steps: tuple[str, ...]
 
 def test_failed_reclassification_rolls_back_without_stale_phase() -> None:
     # Classifying 'Project Phoenix' as Revenue breaks the 'Total Revenue' subtotal reconciliation.
-    session, response = start("structure", "Revenue", "Skip all")
+    # Row Kind fixture: without Row Kind, assisted intake strips reconciled totals before analysis.
+    session, response = start("structure_row_kind", "Revenue", "Skip all")
     assert response.phase == session.phase == Phase.EXPLORING
     assert "not applied" in response.text
     assert "Project Phoenix" not in session.type_map

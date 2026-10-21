@@ -18,6 +18,12 @@ class Status(StrEnum):
     UNCLASSIFIED = "Unclassified"
 
 
+class ComparisonBasis(StrEnum):
+    BUDGET = "budget"
+    FORECAST = "forecast"
+    PRIOR_PERIOD = "prior_period"
+
+
 @dataclass(frozen=True)
 class AnalysisConfig:
     period: str
@@ -25,6 +31,8 @@ class AnalysisConfig:
     percent_threshold: Decimal
     type_map: dict[str, LineType] = field(default_factory=dict)
     currency: str = "USD"
+    comparison_basis: ComparisonBasis = ComparisonBasis.BUDGET
+    comparison_label: str | None = None
 
 
 @dataclass(frozen=True)

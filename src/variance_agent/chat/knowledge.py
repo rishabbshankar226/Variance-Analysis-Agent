@@ -254,4 +254,14 @@ def explain_variance_bridge() -> str:
     )
 
 
-
+def explain_comparison_types() -> str:
+    return (
+        "**What You Can Compare Actuals Against**\n\n"
+        "Each analysis compares Actual against one basis:\n\n"
+        "• **Budget:** The approved plan for the period (the default).\n"
+        "• **Forecast:** The latest estimate, re-projected during the year.\n"
+        "• **Prior period:** Actual results from an earlier period, such as last year.\n\n"
+        "I detect the basis from your column headers. When a file has more than one, I ask which to use. "
+        "Switch at any time with `compare to budget`, `compare to forecast` or `compare to prior period`. "
+        "On the command line, pass `--compare-to budget`, `--compare-to forecast` or `--compare-to prior-period`."
+    )

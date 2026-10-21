@@ -25,6 +25,7 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
     Net impact and margins come from the category aggregates, which already apply the
     favourable/unfavourable sign convention and exclude subtotals and unclassified rows.
     """
+    from variance_agent.comparison import basis_noun
     from variance_agent.models import LineType, Status
     from variance_agent.numeric import financial_context, ratio
     from variance_agent.report import _money, _report_places
@@ -84,6 +85,7 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
     places = _report_places(result)
     commentary = conditioner.generate_adherent_commentary(
         audit_summary, decision, money=lambda value: _money(value, result.config.currency, places),
+        comparison_noun=basis_noun(result.config.comparison_basis),
     )
 
     return commentary, audit_summary

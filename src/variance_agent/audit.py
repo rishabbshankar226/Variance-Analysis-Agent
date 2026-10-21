@@ -7,16 +7,16 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
+from .models import Aggregate, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
-from .json_types import JSONObject
+from .json_types import JSONObject, JSONValue
 from .limits import validate_text
 from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.4"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4")
+CURRENT_SCHEMA_VERSION = "1.6"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -39,6 +39,29 @@ def payload_sha256(record: Mapping[str, object]) -> str:
 
 def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
+
+
+def _json_value(value: object) -> JSONValue:
+    """Narrow an arbitrary value to JSONValue (unknown types are stringified)."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    return str(value)
+
+
+def _json_list(value: object) -> list[JSONValue]:
+    return [_json_value(item) for item in value] if isinstance(value, (list, tuple)) else []
+
+
+def _json_object(value: object) -> JSONObject:
+    return {str(key): _json_value(item) for key, item in value.items()} if isinstance(value, dict) else {}
+
+
+def _as_int(value: object) -> int:
+    return value if isinstance(value, int) else int(str(value))
 
 
 def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) -> JSONObject:
@@ -148,6 +171,7 @@ def build_audit_record(
     schema_version: str | None = None,
     type_map_sha256: str | None = None,
     source_worksheet: str | None = None,
+    transformations: Mapping[str, object] | None = None,
 ) -> JSONObject:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
@@ -160,6 +184,11 @@ def build_audit_record(
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
+    if schema_version != "1.6" and result.config.comparison_basis != ComparisonBasis.BUDGET:
+        raise ValueError(
+            f"Audit schema {schema_version} records the comparison amount as a budget; "
+            "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
+        )
     if source_name is not None:
         validate_text(source_name, field="source_name")
     if source_sha256 is not None and (not isinstance(source_sha256, str)
@@ -172,7 +201,7 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6"}
 
     row_count = len(result.rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
@@ -250,11 +279,17 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
+    comparison: JSONObject = {
+        "basis": str(result.config.comparison_basis),
+        "label": result.config.comparison_label,
+    }
+    if schema_version == "1.6":
+        record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version == "1.4":
+    if schema_version in {"1.4", "1.5", "1.6"}:
         source["worksheet"] = source_worksheet
-    if schema_version in {"1.2", "1.3", "1.4"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -262,8 +297,10 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version == "1.4":
+        if schema_version in {"1.4", "1.5", "1.6"}:
             config_identity["worksheet"] = source_worksheet
+        if schema_version == "1.6":
+            config_identity["comparison"] = comparison
         record["provenance"] = {
             "tool_version": __version__,
             "numeric_policy": NUMERIC_POLICY_ID,
@@ -279,11 +316,32 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
+    if schema_version in {"1.5", "1.6"}:
+        t_raw = dict(transformations) if transformations is not None else {}
+        zero_reads_raw = t_raw.get("zero_reads")
+        zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
+        zero_reads: JSONObject = {
+            "accounting_dashes": _as_int(zero_reads_map.get("accounting_dashes", 0)),
+            "blank_budgets": _as_int(zero_reads_map.get("blank_budgets", 0)),
+        }
+        record["transformations"] = {
+            "header_row_number": _as_int(t_raw.get("header_row_number", 1)),
+            "column_mapping": _json_object(t_raw.get("column_mapping", {})),
+            "ignored_columns": _json_list(t_raw.get("ignored_columns", [])),
+            "sign_flip": bool(t_raw.get("sign_flip", False)),
+            "flipped_line_items": _json_list(t_raw.get("flipped_line_items", [])),
+            "unit_scale": str(t_raw["unit_scale"]) if t_raw.get("unit_scale") is not None else None,
+            "zero_reads": zero_reads,
+            "excluded_totals": _json_list(t_raw.get("excluded_totals", [])),
+            "period_selection": str(t_raw["period_selection"]) if t_raw.get("period_selection") is not None else None,
+            "classification_rules": _json_value(t_raw.get("classification_rules")),
+            "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
+        }
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
             _row_record(row, include_diagnostics=include_diagnostics) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
         record["payload_sha256"] = payload_sha256(record)
     return record

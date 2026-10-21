@@ -48,7 +48,7 @@ Successful commands exit 0. Expected input or filesystem failures exit 2 with an
 | Field | Requirement |
 |---|---|
 | Line Item | Required nonblank scalar label; aliases include Line, Item, Account, Account Name, Category |
-| Budget | Required finite number; aliases include Budget Amount, Plan, Planned |
+| Budget | Required finite number; aliases include Budget Amount, Plan, Planned. It is the comparison amount: with `--compare-to forecast` or `prior-period` the column named Forecast or Prior Year supplies it |
 | Actual | Required finite number; aliases include Actual Amount, Actuals |
 | Type | Recommended Revenue/Expense classification; ambiguous or unknown values remain Unclassified |
 | Row Kind | Optional Detail, Total, or Subtotal; resolves ambiguous summary labels |
@@ -59,6 +59,8 @@ CSV headers are normalized consistently; collisions, alias ambiguity, misaligned
 
 Numeric strings may contain correctly grouped thousands, scientific notation, currency symbols matching the reporting unit, or accounting parentheses. Missing Budget/Actual, booleans, structured financial values, and nonfinite amounts are rejected. Source JSON numbers and stored numeric Excel XML are converted directly to `Decimal`. Python callers should provide strings or string-initialized `Decimal`; a float already rounded by its producer cannot recover lost digits. The tool likewise cannot recover precision that Excel discarded before saving.
 
+Actual is compared against one amount per run: Budget (default), Forecast, or Prior Period. With `--assisted` (and in chat), intake detects the comparison from headers: Forecast, Fcst, Outlook, Projection, or Projected give a Forecast comparison; Prior Year, PY, Last Year, or Prior Period give a Prior Period comparison; and amount columns labeled only by period (`FY2025`/`FY2024`, `2025`/`2024`, optionally suffixed "Actual") compare the newest as Actual against the next newest as Prior Period. With three or more periods the newest two are compared and intake says so. More than one distinct comparison (including a named comparison beside period-only columns), periods that cannot be ordered, or period columns that also name a comparison stop and ask; rerun with `--compare-to` to choose. Wide Budget/Actual period-pair layouts remain Budget. Strict mode (no `--assisted` or `--mapping`) detects nothing: use `--compare-to {budget,forecast,prior-period}` to name the basis; a basis with no matching column exits 2 naming the columns found. Reports, chat, and audit name the comparison (for example "Prior Period (FY2024)"); files with only Budget and Actual columns produce the same output as before.
+
 Classification precedence is type map, explicit Type, then conservative label inference. Use `--type-map examples/type_map.json` to supply reviewed classifications. Expense amounts follow the positive-cost convention; signed-ledger transformations require explicit preprocessing. Unclassified rows are excluded from category aggregates and make completeness and net operating impact unavailable. Duplicate names produce a warning because dimensional duplicates may be intentional.
 
 ## Financial methodology
@@ -67,7 +69,7 @@ Classification precedence is type map, explicit Type, then conservative label in
 |---|---|
 | Amount variance | Actual − Budget |
 | Percentage variance | Amount variance / signed nonzero Budget |
-| Zero Budget | Zero/zero has zero variance; nonzero Actual is unbudgeted with no defined percentage |
+| Zero Budget | Zero/zero has zero variance; nonzero Actual is unbudgeted with no defined percentage (Forecast: "not in forecast"; Prior Period: "new this period") |
 | Materiality | Absolute amount or absolute percentage strictly exceeds its threshold; zero Budget uses amount only |
 | Favorability | Positive revenue variance is favorable; positive expense variance is unfavorable; zero is neutral |
 | Ordering | Descending absolute variance, preserving input order for ties |
@@ -97,7 +99,7 @@ For the supplied sample and the command above, material variances are Subscripti
 
 The source capture is limited to 32 MiB. Excel permits at most 2,048 archive members, 64 MiB total expanded content, 100,000 physical row positions including the header, 256 columns, and 1,000,000 cells per worksheet. CSV/JSON permit up to 100,000 data rows subject to the column/value limits. Text fields are limited to 128 KiB, numeric text to 4,096 characters, and JSON/XML nesting to 128 containers. Duplicate archive members, XML DTD/entities, invalid or unordered physical coordinates, and malformed structures are rejected before worksheet expansion. Inflated producer dimensions do not override physical content checks.
 
-The current audit schema is 1.4. `--audit-schema-version` retains versions 1.0–1.4; 1.0 is USD-only. Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
+The current audit schema is 1.6. `--audit-schema-version` retains versions 1.0–1.6; 1.0 is USD-only. Schema 1.6 records the comparison (`basis`, `label`) in the record and configuration identity; 1.0–1.5 are refused for Forecast and Prior Period runs. Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
 
 Source labels and periods are untrusted data. Reports escape Markdown/HTML and render terminal/bidirectional controls visibly. Audit JSON retains source text as data and excludes raw row dictionaries. The [commentary prompt](prompt/variance_report_prompt.md) consumes verified audit facts only; it is not a runtime agent or an enforcement boundary. Any separate LLM integration needs strict runtime argument/output schemas, bounded calls and tokens, timeouts, retry limits, and environment-loaded credentials. Those integrations are outside this CLI and are not implicitly supplied by a prompt.
 

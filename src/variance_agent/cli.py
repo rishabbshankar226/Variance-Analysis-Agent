@@ -6,20 +6,52 @@ import os
 import sys
 from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
 from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
-from .models import AnalysisConfig, LineType
+from .models import AnalysisConfig, ComparisonBasis, LineType
+from .comparison import (
+    FORECAST_SYNONYMS,
+    PRIOR_PERIOD_SYNONYMS,
+    order_period_labels,
+    parse_compare_to,
+    parse_period_label,
+    select_strict_comparison,
+)
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
 from .xlsx import render_xlsx
 from .limits import display_text
+
+if TYPE_CHECKING:
+    from .intake import IntakeResult
+
+
+COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
+
+
+def _year_columns_hint(rows: list[dict[str, object]]) -> str | None:
+    """Point strict-mode users at assisted intake when the comparison lives in year-only columns."""
+    labels = {key.replace("_", " ").upper() for row in rows for key in row}
+    ordered = order_period_labels([label for label in labels if parse_period_label(label) is not None])
+    if ordered is None or len(ordered) < 2:
+        return None
+    return (f"This file has year columns ({', '.join(ordered)}); rerun with --assisted to compare "
+            "the newest year against the one before it (add --compare-to prior-period to require that).")
+
+
+def _intake_error(intake_res: IntakeResult) -> str:
+    message = intake_res.fatal_error_message or "Could not read input."
+    if intake_res.comparison_choices:
+        # Chat offers chips for this choice; the CLI names the flag that makes it.
+        message = f"{message} {COMPARE_TO_HINT}"
+    return message
 
 
 class Arguments(Protocol):
@@ -40,6 +72,8 @@ class Arguments(Protocol):
     no_browser: bool
     commentary: bool
     assisted: bool
+    mapping: str | None
+    compare_to: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -132,6 +166,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable assisted file intake (detect header rows, map column synonyms, and convert accounting dashes).",
     )
+    parser.add_argument(
+        "--mapping",
+        help="Path to saved layout mapping JSON file.",
+    )
+    parser.add_argument(
+        "--compare-to",
+        choices=("budget", "forecast", "prior-period"),
+        help="Comparison basis (default: detect from headers or budget).",
+    )
     return parser
 
 
@@ -146,6 +189,9 @@ def _validate_output_paths(args: Arguments) -> None:
     inputs = [Path(args.input)]
     if args.type_map:
         inputs.append(Path(args.type_map))
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        inputs.append(Path(mapping_arg))
     outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx) if value]
     for index, output in enumerate(outputs):
         if any(_same_path(output, other) for other in inputs + outputs[:index]):
@@ -188,7 +234,75 @@ def _run(args: Arguments) -> int:
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
 
-    if getattr(args, "assisted", False):
+    mapping_obj = None
+    mapping_hash = None
+    intake_res = None
+
+    compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
+    strict_without_basis = False
+
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        from .mapping import load_mapping, mapping_sha256
+        from .intake import (
+            GLRangeRule,
+            apply_classification_rules,
+            flip_ledger_signs,
+            read_input_assisted,
+            scale_rows_by_unit,
+        )
+        mapping_path = Path(mapping_arg)
+        mapping_obj = load_mapping(mapping_path.read_text(encoding="utf-8"))
+        mapping_hash = mapping_sha256(mapping_obj)
+
+        intake_res = read_input_assisted(
+            source_bytes,
+            input_path.suffix,
+            filename=input_path.name,
+            sheet=args.sheet,
+            treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
+            selected_period=mapping_obj.period_column_selection,
+            # An explicit --compare-to wins over the basis saved in the mapping.
+            compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
+        )
+        if intake_res.has_fatal_errors:
+            raise ValueError(_intake_error(intake_res))
+        rows = list(intake_res.rows)
+        if mapping_obj.exclude_totals:
+            to_exclude = set(mapping_obj.exclude_totals)
+            rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+        if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
+            rows = scale_rows_by_unit(rows, Decimal(mapping_obj.unit_scale))
+        if mapping_obj.flip_signs:
+            items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
+            rows, _ = flip_ledger_signs(rows, items)
+
+        type_map: dict[str, LineType] = {}
+        if type_map_bytes is not None:
+            type_map = _parse_type_map(type_map_bytes)
+        elif mapping_obj.classification_rules:
+            gl_rules_data = cast(list[dict[str, object]], mapping_obj.classification_rules.get("gl_ranges", []))
+            gl_rules = [
+                GLRangeRule(
+                    min_account=int(str(r["min"])),
+                    max_account=int(str(r["max"])),
+                    line_type=LineType[str(r["type"]).upper()],
+                    match_count=0,
+                )
+                for r in gl_rules_data
+            ]
+            keywords_data = cast(dict[str, str], mapping_obj.classification_rules.get("keywords", {}))
+            keywords = {kw: LineType[t.upper()] for kw, t in keywords_data.items()}
+            bulk_def_str = mapping_obj.classification_rules.get("bulk_default")
+            bulk_def = LineType[str(bulk_def_str).upper()] if bulk_def_str else None
+            items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
+            type_map = apply_classification_rules(items, gl_rules, keywords=keywords, bulk_default=bulk_def)
+
+        parsed_rows = rows
+        parsed_worksheet = intake_res.sheet_name
+        comparison_basis = intake_res.comparison_basis
+        comparison_label = intake_res.comparison_label
+    elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
         intake_res = read_input_assisted(
             source_bytes,
@@ -196,26 +310,54 @@ def _run(args: Arguments) -> int:
             filename=input_path.name,
             sheet=args.sheet,
             treat_blank_budgets_as_zero=True,
+            compare_to=compare_to_basis,
         )
         if intake_res.has_fatal_errors:
-            raise ValueError(intake_res.fatal_error_message or "Could not read input.")
+            raise ValueError(_intake_error(intake_res))
         parsed_rows = intake_res.rows
         parsed_worksheet = intake_res.sheet_name
+        comparison_basis = intake_res.comparison_basis
+        comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
         parsed_rows = parsed.rows
         parsed_worksheet = parsed.worksheet
+        comparison_basis = ComparisonBasis.BUDGET
+        comparison_label = None
+        strict_without_basis = compare_to_basis is None
+        if compare_to_basis is not None:
+            try:
+                parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
+            except ValueError as exc:
+                year_hint = _year_columns_hint(parsed_rows)
+                if compare_to_basis is ComparisonBasis.PRIOR_PERIOD and year_hint is not None:
+                    raise ValueError(f"{exc} {year_hint}") from exc
+                raise
+            comparison_basis = compare_to_basis
 
+    type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
         percent_threshold=args.percent_threshold / Decimal("100"),
-        type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
+        type_map=type_map_final,
         currency=args.currency,
+        comparison_basis=comparison_basis,
+        comparison_label=comparison_label,
     )
-    result = analyze_rows(parsed_rows, config)
+    try:
+        result = analyze_rows(parsed_rows, config)
+    except ValueError as exc:
+        if strict_without_basis and "required field 'Budget' was not found" in str(exc):
+            other_bases = FORECAST_SYNONYMS | PRIOR_PERIOD_SYNONYMS
+            if any(key in other_bases for row in parsed_rows for key in row):
+                raise ValueError(f"{exc} {COMPARE_TO_HINT}") from exc
+            year_hint = _year_columns_hint(parsed_rows)
+            if year_hint is not None:
+                raise ValueError(f"{exc} {year_hint}") from exc
+        raise
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
         print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "
@@ -233,11 +375,48 @@ def _run(args: Arguments) -> int:
     if args.xlsx:
         outputs[Path(args.xlsx)] = render_xlsx(result)
     if args.audit_json:
+        transformations: dict[str, object] | None = None
+        if mapping_obj is not None and intake_res is not None:
+            transformations = {
+                "header_row_number": mapping_obj.header_row_number,
+                "column_mapping": mapping_obj.column_mapping,
+                "ignored_columns": intake_res.ignored_columns,
+                "sign_flip": mapping_obj.flip_signs,
+                "flipped_line_items": intake_res.negative_revenue_items if mapping_obj.flip_signs else [],
+                "unit_scale": mapping_obj.unit_scale if mapping_obj.unit_scale != "1" else None,
+                "zero_reads": {
+                    "accounting_dashes": 0,
+                    "blank_budgets": len(intake_res.blank_budget_items) if mapping_obj.treat_blank_budgets_as_zero else 0,
+                },
+                "excluded_totals": mapping_obj.exclude_totals,
+                "period_selection": mapping_obj.period_column_selection,
+                "classification_rules": mapping_obj.classification_rules,
+                "mapping_file_sha256": mapping_hash,
+            }
+        elif getattr(args, "assisted", False) and intake_res is not None:
+            col_map = {role.value: name for role, name in intake_res.column_mapping.items()}
+            transformations = {
+                "header_row_number": intake_res.header_row_number,
+                "column_mapping": col_map,
+                "ignored_columns": intake_res.ignored_columns,
+                "sign_flip": intake_res.detected_signed_ledger,
+                "flipped_line_items": intake_res.negative_revenue_items if intake_res.detected_signed_ledger else [],
+                "unit_scale": str(intake_res.detected_unit_multiplier) if intake_res.detected_unit_multiplier != Decimal("1") else None,
+                "zero_reads": {
+                    "accounting_dashes": 0,
+                    "blank_budgets": len(intake_res.blank_budget_items),
+                },
+                "excluded_totals": intake_res.detected_totals,
+                "period_selection": None,
+                "classification_rules": None,
+                "mapping_file_sha256": None,
+            }
         record = build_audit_record(
             result, source_name=input_path.name, source_sha256=source_hash,
             schema_version=args.audit_schema_version,
             type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
             source_worksheet=parsed_worksheet,
+            transformations=transformations,
         )
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     write_text_outputs(outputs)

@@ -7,6 +7,8 @@ from .numeric import financial_context
 from .currencies import CURRENCY_SYMBOLS
 from .analysis import verify_result
 from .limits import display_text
+from .comparison import basis_noun, comparison_heading
+from .models import ComparisonBasis
 
 
 def _safe_inline(value: object) -> str:
@@ -158,7 +160,7 @@ def _bottom_line(
         sentence_one = (
             f"Revenue and expense variances imply a net operating variance of "
             f"{_money(impact, result.config.currency, places)}, "
-            f"{direction} budget on this simplified revenue-less-expense basis."
+            f"{direction} {basis_noun(result.config.comparison_basis)} on this simplified revenue-less-expense basis."
         )
 
     if top is None:
@@ -173,7 +175,12 @@ def _bottom_line(
 
 
 def _driver_sentence(
-    row: AnalyzedRow, currency: str = "USD", places: int = 2, *, plain: bool = False
+    row: AnalyzedRow,
+    currency: str = "USD",
+    places: int = 2,
+    heading: str = "Budget",
+    *,
+    plain: bool = False,
 ) -> str:
     line_item = _inline(row.line_item, plain)
     strong = "" if plain else "**"
@@ -200,7 +207,7 @@ def _driver_sentence(
     if evidence and not evidence.reconciles:
         return (
             f"{strong}{line_item} (Hypothesis):{strong} No causal claim is supported because the supplied "
-            f"{_inline(evidence.label, plain)} fields do not reconcile to Budget/Actual. "
+            f"{_inline(evidence.label, plain)} fields do not reconcile to {heading}/Actual. "
             "Validate the driver data first."
         )
     return (
@@ -261,6 +268,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         raise ValueError("top_root_causes must be a positive integer.")
     cfg = result.config
     places = _report_places(result)
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
     classification_incomplete = any(
         row.line_type == LineType.UNCLASSIFIED for row in result.rows
     )
@@ -300,6 +308,8 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         "",
         "## Executive Summary",
         f"- Reporting Currency: {cfg.currency}",
+        *([] if cfg.comparison_basis is ComparisonBasis.BUDGET
+          else [f"- Compared Against: {heading}"]),
         revenue_line,
         expense_line,
         f"- Bottom Line Impact: {bottom_line}",
@@ -322,7 +332,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
             f"{_threshold_number(cfg.percent_threshold, 1, scale=2)}%"
         ),
         "",
-        f"| Line Item | Type | Budget | Actual | Var ({CURRENCY_SYMBOLS[cfg.currency]}) "
+        f"| Line Item | Type | {heading} | Actual | Var ({CURRENCY_SYMBOLS[cfg.currency]}) "
         "| Var (%) | Status |",
         "|---|---|---:|---:|---:|---:|---|",
     ]
@@ -350,7 +360,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     lines += ["", "## Root Cause Analysis"]
     top_rows = result.material_rows[:top_root_causes]
     if top_rows:
-        lines.extend(f"- {_driver_sentence(row, cfg.currency, places)}" for row in top_rows)
+        lines.extend(f"- {_driver_sentence(row, cfg.currency, places, heading)}" for row in top_rows)
     else:
         lines.append("- No material variance requires root-cause analysis.")
 

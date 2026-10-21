@@ -143,13 +143,18 @@ STRICT GROUNDING LOCK:
         audit: FinancialAuditSummary,
         decision: RoutingDecision,
         money: Callable[[Decimal], str] | None = None,
+        comparison_noun: str = "budget",
     ) -> str:
         """Generate verified commentary; every clause is emitted only when a supplied fact supports it.
 
         ``money`` formats an absolute amount; callers pass the report formatter so the
         commentary matches the surrounding report. The default is "<CODE> 1,234.56".
+        ``comparison_noun`` names what Actual was compared against ("budget", "forecast",
+        "prior period"); Budget keeps the original wording.
         """
         curr = audit.currency
+        on_budget = comparison_noun == "budget"
+        against = "budget" if on_budget else f"the {comparison_noun}"
 
         def amount(value: Decimal) -> str:
             return money(abs(value)) if money is not None else f"{curr} {abs(value):,.2f}"
@@ -196,12 +201,12 @@ STRICT GROUNDING LOCK:
             if variance is None and audit.top_favorable_item is None:
                 variance = audit.top_material_variance
             revenue_up = audit.revenue_variance_dollars is not None and audit.revenue_variance_dollars > 0
-            sentences = ["Revenue outpaced expectations cleanly." if revenue_up else "Results beat budget."]
+            sentences = ["Revenue outpaced expectations cleanly." if revenue_up else f"Results beat {against}."]
             if name and variance is not None:
                 clause = (f"Favorable variance across {name} contributed {amount(variance)} "
-                          f"over original budget projections for {audit.period}")
+                          f"over {'original budget projections' if on_budget else against} for {audit.period}")
             else:
-                clause = f"Net operating impact finished {amount(net)} ahead of budget for {audit.period}"
+                clause = f"Net operating impact finished {amount(net)} ahead of {against} for {audit.period}"
             if margin == "up":
                 clause += ", improving operating margin"
             elif margin == "down":
@@ -210,11 +215,11 @@ STRICT GROUNDING LOCK:
             sentences.append(f"Net operating beat: {amount(net)}.")
         else:
             if net > 0:
-                position = f"{amount(net)} ahead of budget"
+                position = f"{amount(net)} ahead of {against}"
             elif net < 0:
-                position = f"{amount(net)} behind budget"
+                position = f"{amount(net)} behind {against}"
             else:
-                position = "exactly on budget"
+                position = "exactly on budget" if on_budget else f"exactly in line with {against}"
             sentences = [f"Across {audit.period}, net operating impact finished {position}."]
             if material == 0:
                 sentences += [

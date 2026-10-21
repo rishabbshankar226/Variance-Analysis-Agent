@@ -15,9 +15,10 @@ from decimal import Context, Decimal
 from xml.sax.saxutils import escape
 
 from .analysis import verify_result
+from .comparison import basis_noun, comparison_heading
 from .currencies import CURRENCY_SYMBOLS
 from .limits import display_text
-from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
+from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType, Status
 from .numeric import financial_context, ratio
 from .report import (
     _bottom_line,
@@ -329,6 +330,17 @@ def _status_cell(status: Status) -> _Cell:
     return _Cell(_STATUS_WORD[status], _STATUS_STYLE[status])
 
 
+def _heading(cfg: AnalysisConfig) -> str:
+    """Column name for the comparison amount: 'Budget', 'Forecast' or 'Prior Period (FY2024)'."""
+    return display_text(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+
+
+def _against(cfg: AnalysisConfig) -> str:
+    """'budget' on Budget runs, else 'the forecast' / 'the prior period'."""
+    noun = basis_noun(cfg.comparison_basis)
+    return noun if cfg.comparison_basis is ComparisonBasis.BUDGET else f"the {noun}"
+
+
 def _evidence_label(row: AnalyzedRow) -> str:
     if row.driver_evidence is None:
         return "No driver data"
@@ -371,8 +383,10 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
     sheet.add(_Cell("Reporting Currency", S_LABEL), _Cell(cfg.currency))
     sheet.add(_Cell("Materiality Thresholds", S_LABEL), _Cell(
         f"{symbol}{_threshold_number(cfg.dollar_threshold, 2)} or "
-        f"{_threshold_number(cfg.percent_threshold, 1, scale=2)}% of budget"
+        f"{_threshold_number(cfg.percent_threshold, 1, scale=2)}% of {_against(cfg)}"
     ))
+    if cfg.comparison_basis is not ComparisonBasis.BUDGET:
+        sheet.add(_Cell("Compared Against", S_LABEL), _Cell(_heading(cfg)))
     sheet.add(_Cell("Rows Analysed", S_LABEL), _Cell(Decimal(len(result.rows)), S_VALUE_LEFT))
     sheet.add(_Cell("Material Variances", S_LABEL),
               _Cell(Decimal(len(result.material_rows)), S_VALUE_LEFT))
@@ -383,7 +397,7 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
     sheet.blank()
 
     sheet.add(
-        _Cell("Metric", S_HEADER), _Cell(f"Budget ({cfg.currency})", S_HEADER_NUM),
+        _Cell("Metric", S_HEADER), _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_NUM),
         _Cell(f"Actual ({cfg.currency})", S_HEADER_NUM),
         _Cell(f"Variance ({cfg.currency})", S_HEADER_NUM), _Cell("Var %", S_HEADER_NUM),
         _Cell("Status", S_HEADER_CENTER), height=20,
@@ -437,8 +451,8 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
     precision = (f" {places} decimal places preserve fractional amounts and exact "
                  "detail-to-total reconciliation." if places > 2 else "")
     sheet.add_paragraph(
-        f"Amounts are in {cfg.currency}. Var % is variance divided by the absolute budget. "
-        "Favorable means revenue above budget or expenses below budget." + precision
+        f"Amounts are in {cfg.currency}. Var % is variance divided by the absolute {basis_noun(cfg.comparison_basis)}. "
+        f"Favorable means revenue above {_against(cfg)} or expenses below {_against(cfg)}." + precision
         + " Excel stores numbers in double precision; use the CSV or audit JSON export "
         "when exact decimal values are required.",
         S_NOTE, span,
@@ -458,11 +472,12 @@ def _materiality_text(row: AnalyzedRow, result: AnalysisResult) -> str:
 
 def _material_sheet(result: AnalysisResult) -> _Sheet:
     currency = result.config.currency
+    heading = _heading(result.config)
     sheet = _Sheet("Material Variances", (34, 13, 19, 19, 19, 12, 14, 26, 34),
                    freeze_header=True, autofilter=True)
     sheet.add(
         _Cell("Line Item", S_HEADER), _Cell("Type", S_HEADER),
-        _Cell(f"Budget ({currency})", S_HEADER_CENTER), _Cell(f"Actual ({currency})", S_HEADER_CENTER),
+        _Cell(f"{heading} ({currency})", S_HEADER_CENTER), _Cell(f"Actual ({currency})", S_HEADER_CENTER),
         _Cell(f"Variance ({currency})", S_HEADER_CENTER), _Cell("Var %", S_HEADER_CENTER),
         _Cell("Status", S_HEADER_CENTER), _Cell("Driver Evidence", S_HEADER),
         _Cell("Why Material", S_HEADER), height=20,
@@ -491,7 +506,7 @@ def _actions_sheet(result: AnalysisResult, places: int, top_root_causes: int) ->
         sheet.add(_Cell("—", S_TEXT_CENTER), _Cell("", S_TEXT), _Cell("", S_TEXT),
                   _Cell("No material variance requires root-cause analysis.", S_WRAP))
     for rank, row in enumerate(top_rows, start=1):
-        sentence = _driver_sentence(row, cfg.currency, places, plain=True)
+        sentence = _driver_sentence(row, cfg.currency, places, _heading(cfg), plain=True)
         prefix = display_text(row.line_item)
         for tag in (" (Supported driver): ", " (Hypothesis): "):
             sentence = sentence.removeprefix(prefix + tag)
@@ -527,7 +542,7 @@ def _all_rows_sheet(result: AnalysisResult, places: int) -> _Sheet:
                    freeze_header=True, autofilter=True)
     sheet.add(
         _Cell("Line Item", S_HEADER), _Cell("Type", S_HEADER),
-        _Cell(f"Budget ({cfg.currency})", S_HEADER_CENTER),
+        _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_CENTER),
         _Cell(f"Actual ({cfg.currency})", S_HEADER_CENTER),
         _Cell(f"Variance ({cfg.currency})", S_HEADER_CENTER), _Cell("Var %", S_HEADER_CENTER),
         _Cell("Status", S_HEADER_CENTER), _Cell("Material", S_HEADER),

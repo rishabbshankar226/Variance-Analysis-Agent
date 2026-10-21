@@ -37,6 +37,7 @@ KNOWLEDGE_INTENTS: frozenset[str] = frozenset({
     "concept_budgeting_methods",
     "concept_ebitda_margin",
     "concept_bridge",
+    "comparison_types",
 })
 
 # Ordered list of (compiled_regex, intent_id).
@@ -111,7 +112,17 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.IGNORECASE,
     ), "summary"),
 
+    (re.compile(
+        r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period))\??$",
+        re.IGNORECASE,
+    ), "set_comparison"),
+
     # ── Financial Knowledge & Concepts ──────────────────────────────
+    (re.compile(
+        r"^(?:what\s+(?:can\s+i\s+compare\s+(?:against|to)|are\s+the\s+comparison\s+(?:types|bases|options))|comparison\s+types)\??$",
+        re.IGNORECASE,
+    ), "comparison_types"),
+
     (re.compile(
         r"^(?:what\s+is\s+)?(?:variance\s+analysis|budget\s+(?:vs\.?|versus)\s+actual|bva|what\s+does\s+this\s+(?:agent|tool)\s+do)\??$",
         re.IGNORECASE,

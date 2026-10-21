@@ -27,7 +27,22 @@ from .limits import (
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
 )
+from .models import ComparisonBasis, LineType
 from .numeric import financial_context
+from .comparison import (
+    _ACTUAL_SUFFIX,
+    BUDGET_SYNONYMS,
+    COMPARISON_WORDS,
+    basis_for_header,
+    bases_named_in,
+    basis_noun,
+    comparison_heading,
+    comparison_statement,
+    order_period_labels,
+    parse_period_label,
+    select_strict_comparison,
+    zero_comparison_phrase,
+)
 from .parsing import normalize_key
 
 
@@ -43,6 +58,65 @@ class CanonicalRole(StrEnum):
     UNKNOWN = "unknown"
 
 
+@dataclass(frozen=True)
+class ReconciledTotal:
+    line_item: str
+    budget: Decimal
+    actual: Decimal
+    row_index: int
+    formula_description: str
+
+
+@dataclass(frozen=True)
+class UnreconciledTotal:
+    line_item: str
+    budget: Decimal
+    actual: Decimal
+    row_index: int
+    sum_budget: Decimal | None = None
+    sum_actual: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class SubtotalDetectionResult:
+    reconciled_totals: list[ReconciledTotal]
+    unreconciled_totals: list[UnreconciledTotal]
+
+
+@dataclass(frozen=True)
+class SignedLedgerDetection:
+    is_signed_ledger: bool
+    negative_revenue_count: int
+    negative_revenue_items: list[str]
+
+
+@dataclass(frozen=True)
+class PeriodColumnPair:
+    period: str
+    budget_column: str
+    actual_column: str
+
+
+@dataclass(frozen=True)
+class ComparisonDetection:
+    basis: ComparisonBasis | None
+    label: str | None
+    comparison_column: int | None
+    actual_column: int | None
+    candidates: tuple[str, ...]
+    message: str
+    # Bases that --compare-to (or a chat "Compare to ..." reply) can choose to resolve a stop.
+    choices: tuple[ComparisonBasis, ...] = ()
+
+
+@dataclass(frozen=True)
+class GLRangeRule:
+    min_account: int
+    max_account: int
+    line_type: LineType
+    match_count: int
+
+
 _LINE_ITEM_SYNONYMS = {
     "line_item", "line", "item", "account", "account_name", "category",
     "account_description", "description", "gl_account_name", "account_title",
@@ -54,10 +128,7 @@ _ACCOUNT_ID_SYNONYMS = {
     "acct_num", "acct", "account_id", "acct_id", "gl",
 }
 
-_BUDGET_SYNONYMS = {
-    "budget", "budget_amount", "plan", "planned",
-    "budget_ytd", "ytd_budget", "plan_ytd", "bgt", "budget_amt",
-}
+_BUDGET_SYNONYMS = BUDGET_SYNONYMS
 
 _ACTUAL_SYNONYMS = {
     "actual", "actual_amount", "actuals",
@@ -123,10 +194,25 @@ class IntakeResult:
     available_sheets: list[str] = field(default_factory=list)
     has_fatal_errors: bool = False
     fatal_error_message: str | None = None
+    detected_totals: list[str] = field(default_factory=list)
+    unreconciled_totals: list[UnreconciledTotal] = field(default_factory=list)
+    detected_unit_multiplier: Decimal = field(default=Decimal("1"))
+    detected_signed_ledger: bool = False
+    negative_revenue_items: list[str] = field(default_factory=list)
+    detected_period_pairs: list[PeriodColumnPair] = field(default_factory=list)
+    detected_single_periods: list[str] = field(default_factory=list)
+    raw_headers: list[str] = field(default_factory=list)
+    raw_title_text: str = ""
+    comparison_basis: ComparisonBasis = ComparisonBasis.BUDGET
+    comparison_label: str | None = None
+    comparison_candidates: list[str] = field(default_factory=list)
+    comparison_choices: list[ComparisonBasis] = field(default_factory=list)
 
     @property
     def has_transformations(self) -> bool:
         """Return True if any heuristic adjustment or transformation was made that warrants confirmation."""
+        if self.comparison_basis != ComparisonBasis.BUDGET:
+            return True
         if self.header_row_number > 1:
             return True
         if self.rows_skipped_count > 0:
@@ -136,6 +222,16 @@ class IntakeResult:
         if self.ignored_columns:
             return True
         if self.blank_budget_items:
+            return True
+        if self.detected_totals:
+            return True
+        if self.detected_signed_ledger:
+            return True
+        if self.detected_unit_multiplier != Decimal("1"):
+            return True
+        if self.detected_period_pairs:
+            return True
+        if len(self.detected_single_periods) > 1:
             return True
         if self.candidate_sheets and len(self.candidate_sheets) > 1:
             # If the selected sheet is not the active/first sheet, it was a transformation
@@ -174,17 +270,11 @@ def normalize_header(raw: str) -> str:
 def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
     """Map a raw header name to its canonical role and an optional transformation note."""
     norm = normalize_header(header)
-    if not norm:
-        return CanonicalRole.UNKNOWN, None
-
-    if norm == "forecast":
-        return CanonicalRole.BUDGET, "Forecast is being used as the plan"
-
     if norm in _LINE_ITEM_SYNONYMS:
         return CanonicalRole.LINE_ITEM, None
     if norm in _ACCOUNT_ID_SYNONYMS:
         return CanonicalRole.ACCOUNT_ID, None
-    if norm in _BUDGET_SYNONYMS:
+    if basis_for_header(norm) is not None:
         return CanonicalRole.BUDGET, None
     if norm in _ACTUAL_SYNONYMS:
         return CanonicalRole.ACTUAL, None
@@ -276,8 +366,325 @@ def parse_assisted_decimal(
     return number, None
 
 
+_PERIOD_RE = re.compile(
+    r"\b((?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-_ ]?\d{2,4})|"
+    r"(?:Q[1-4](?:[-_ ]?\d{2,4})?)|"
+    r"(?:FY\s*\d{2,4})|"
+    r"(?:YTD|MTD)|"
+    r"(?:\d{4}[-_]\d{2}))\b",
+    re.IGNORECASE,
+)
+
+_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\$000s?|\b000s\b)", re.IGNORECASE)
+_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\$m\b|in\s+m\b)", re.IGNORECASE)
+_REVENUE_KEYWORDS = re.compile(r"\b(revenue|sales|income|rev)\b", re.IGNORECASE)
+_EXPENSE_KEYWORDS = re.compile(r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b", re.IGNORECASE)
+_TOTAL_KEYWORD_RE = re.compile(
+    r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
+    re.IGNORECASE,
+)
+_ACCOUNT_NUM_RE = re.compile(r"\b([1-9]\d{3,4})\b")
+
+
+def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
+    """Scan column headers to detect paired Budget and Actual columns by period."""
+    budget_cols: dict[str, str] = {}
+    actual_cols: dict[str, str] = {}
+    period_order: list[str] = []
+
+    for h in headers:
+        m = _PERIOD_RE.search(h)
+        if not m:
+            continue
+        p = m.group(1).strip()
+        h_lower = h.lower()
+        is_budget_word = "budget" in h_lower or "plan" in h_lower
+        if is_budget_word or ComparisonBasis.BUDGET in bases_named_in(normalize_header(h)):
+            budget_cols[p] = h
+            if p not in period_order:
+                period_order.append(p)
+        elif "actual" in h_lower or "act" in h_lower:
+            actual_cols[p] = h
+            if p not in period_order:
+                period_order.append(p)
+
+    pairs: list[PeriodColumnPair] = []
+    for p in period_order:
+        if p in budget_cols and p in actual_cols:
+            pairs.append(PeriodColumnPair(period=p, budget_column=budget_cols[p], actual_column=actual_cols[p]))
+    return pairs
+
+
+def detect_single_period_column_values(rows: list[dict[str, object]]) -> list[str]:
+    """Return distinct non-empty period values if a single period column is present."""
+    seen: set[str] = set()
+    periods: list[str] = []
+    for r in rows:
+        pval = r.get("period")
+        if pval is not None:
+            pstr = str(pval).strip()
+            if pstr and pstr not in seen:
+                seen.add(pstr)
+                periods.append(pstr)
+    return periods
+
+
+def detect_unit_scale(text: str) -> Decimal:
+    """Detect whether numbers are in thousands, millions, or base dollars."""
+    if _MILLIONS_RE.search(text):
+        return Decimal("1000000")
+    if _THOUSANDS_RE.search(text):
+        return Decimal("1000")
+    return Decimal("1")
+
+
+def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> list[dict[str, object]]:
+    """Scale budget and actual amounts by exact Decimal multiplication."""
+    if multiplier == Decimal("1"):
+        return rows
+    scaled: list[dict[str, object]] = []
+    for r in rows:
+        rc = dict(r)
+        if "budget" in rc and isinstance(rc["budget"], Decimal):
+            rc["budget"] = rc["budget"] * multiplier
+        if "actual" in rc and isinstance(rc["actual"], Decimal):
+            rc["actual"] = rc["actual"] * multiplier
+        scaled.append(rc)
+    return scaled
+
+
+def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection:
+    """Detect if ledger stores revenue as negative credits and expenses as positive debits."""
+    rev_items: list[tuple[str, bool]] = []
+    exp_positive_count = 0
+    exp_total = 0
+
+    for r in rows:
+        name = str(r.get("line_item", "")).strip()
+        b = r.get("budget")
+        a = r.get("actual")
+        b_dec = Decimal(str(b)) if b is not None else Decimal("0")
+        a_dec = Decimal(str(a)) if a is not None else Decimal("0")
+
+        is_rev = bool(_REVENUE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "revenue"
+        is_exp = bool(_EXPENSE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "expense"
+
+        if is_rev and not is_exp:
+            is_neg = (b_dec < 0 or a_dec < 0)
+            rev_items.append((name, is_neg))
+        elif is_exp and not is_rev:
+            exp_total += 1
+            if b_dec >= 0 and a_dec >= 0:
+                exp_positive_count += 1
+
+    neg_rev_count = sum(1 for _, is_neg in rev_items if is_neg)
+    is_signed = False
+    if rev_items and neg_rev_count > len(rev_items) / 2:
+        is_signed = True
+
+    return SignedLedgerDetection(
+        is_signed_ledger=is_signed,
+        negative_revenue_count=neg_rev_count,
+        negative_revenue_items=[name for name, is_neg in rev_items if is_neg],
+    )
+
+
+def flip_ledger_signs(
+    rows: list[dict[str, object]], items_to_flip: list[str]
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Flip signs of affected rows using exact Decimal copy_negate()."""
+    to_flip = set(items_to_flip)
+    affected: list[str] = []
+    flipped: list[dict[str, object]] = []
+    for r in rows:
+        rc = dict(r)
+        name = str(r.get("line_item", "")).strip()
+        if name in to_flip:
+            affected.append(name)
+            if "budget" in rc and isinstance(rc["budget"], Decimal):
+                rc["budget"] = rc["budget"].copy_negate()
+            if "actual" in rc and isinstance(rc["actual"], Decimal):
+                rc["actual"] = rc["actual"].copy_negate()
+        flipped.append(rc)
+    return flipped, affected
+
+
+def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetectionResult:
+    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance."""
+    tolerance = Decimal("0.01")
+    reconciled_totals: list[ReconciledTotal] = []
+    unreconciled_totals: list[UnreconciledTotal] = []
+    detail_indices: list[int] = []
+    # (budget, actual) of each detail row, parsed once and aligned with detail_indices.
+    detail_values: list[tuple[Decimal, Decimal]] = []
+
+    for i, row in enumerate(rows):
+        name = str(row.get("line_item", "")).strip()
+        b_raw = row.get("budget")
+        a_raw = row.get("actual")
+        b = Decimal(str(b_raw)) if b_raw is not None else Decimal("0")
+        a = Decimal(str(a_raw)) if a_raw is not None else Decimal("0")
+        is_total_kw = bool(_TOTAL_KEYWORD_RE.search(name))
+
+        # 1. Contiguous block check over prior detail rows
+        # Blocks grow backwards from the latest detail row, so keep running sums
+        # instead of re-summing every block (large ledgers have thousands of rows).
+        found_block = False
+        sum_b = Decimal("0")
+        sum_a = Decimal("0")
+        for j in range(len(detail_indices) - 1, -1, -1):
+            block_len = len(detail_indices) - j
+            det_b, det_a = detail_values[j]
+            sum_b += det_b
+            sum_a += det_a
+            if abs(b - sum_b) <= tolerance and abs(a - sum_a) <= tolerance:
+                if block_len >= 2 or is_total_kw:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"sum of {block_len} detail rows",
+                        )
+                    )
+                    found_block = True
+                    break
+        if found_block:
+            continue
+
+        # 2. Nested formula check (diff between prior totals or detail)
+        found_formula = False
+        prior_totals = list(reconciled_totals)
+        for prev in prior_totals:
+            for d_idx, (det_b, det_a) in zip(detail_indices, detail_values):
+                if abs((prev.budget - det_b) - b) <= tolerance and abs((prev.actual - det_a) - a) <= tolerance:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"{prev.line_item} - {rows[d_idx].get('line_item')}",
+                        )
+                    )
+                    found_formula = True
+                    break
+            if found_formula:
+                break
+            for prev2 in prior_totals:
+                if prev2.row_index == prev.row_index:
+                    continue
+                if abs((prev.budget - prev2.budget) - b) <= tolerance and abs((prev.actual - prev2.actual) - a) <= tolerance:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"{prev.line_item} - {prev2.line_item}",
+                        )
+                    )
+                    found_formula = True
+                    break
+            if found_formula:
+                break
+
+        if found_formula:
+            continue
+
+        if is_total_kw:
+            sum_prior_b = sum((v[0] for v in detail_values), Decimal("0")) if detail_indices else None
+            sum_prior_a = sum((v[1] for v in detail_values), Decimal("0")) if detail_indices else None
+            unreconciled_totals.append(
+                UnreconciledTotal(
+                    line_item=name,
+                    budget=b,
+                    actual=a,
+                    row_index=i,
+                    sum_budget=sum_prior_b,
+                    sum_actual=sum_prior_a,
+                )
+            )
+        else:
+            detail_indices.append(i)
+            detail_values.append((b, a))
+
+    return SubtotalDetectionResult(
+        reconciled_totals=reconciled_totals,
+        unreconciled_totals=unreconciled_totals,
+    )
+
+
+def infer_gl_range_rules(items: list[str]) -> list[GLRangeRule]:
+    """Infer standard FP&A GL account range rules (4000-4999 Revenue, 5000-8999 Expense)."""
+    rev_count = 0
+    exp_count = 0
+
+    for item in items:
+        m = _ACCOUNT_NUM_RE.search(item)
+        if not m:
+            continue
+        val = int(m.group(1))
+        if 4000 <= val <= 4999:
+            rev_count += 1
+        elif 5000 <= val <= 8999:
+            exp_count += 1
+
+    rules: list[GLRangeRule] = []
+    if rev_count > 0:
+        rules.append(
+            GLRangeRule(
+                min_account=4000,
+                max_account=4999,
+                line_type=LineType.REVENUE,
+                match_count=rev_count,
+            )
+        )
+    if exp_count > 0:
+        rules.append(
+            GLRangeRule(
+                min_account=5000,
+                max_account=8999,
+                line_type=LineType.EXPENSE,
+                match_count=exp_count,
+            )
+        )
+    return rules
+
+
+def apply_classification_rules(
+    items: list[str],
+    rules: list[GLRangeRule],
+    keywords: dict[str, LineType] | None = None,
+    bulk_default: LineType | None = None,
+) -> dict[str, LineType]:
+    """Apply GL range rules, keyword rules, and optional default to classify line items."""
+    type_map: dict[str, LineType] = {}
+    for item in items:
+        m = _ACCOUNT_NUM_RE.search(item)
+        classified = False
+        if m:
+            val = int(m.group(1))
+            for rule in rules:
+                if rule.min_account <= val <= rule.max_account:
+                    type_map[item] = rule.line_type
+                    classified = True
+                    break
+        if not classified and keywords:
+            for kw, l_type in keywords.items():
+                if kw.lower() in item.lower():
+                    type_map[item] = l_type
+                    classified = True
+                    break
+        if not classified and bulk_default is not None:
+            type_map[item] = bulk_default
+
+    return type_map
+
+
 def detect_header_row(
-    raw_rows: list[list[object]], max_scan: int = 25
+    raw_rows: list[list[object]], max_scan: int = 25, selected_period: str | None = None
 ) -> tuple[int | None, dict[CanonicalRole, int], list[int]]:
     """Scan the first candidate rows to find the header row containing Line Item, Budget, and Actual."""
     for row_idx, row in enumerate(raw_rows[:max_scan]):
@@ -308,11 +715,68 @@ def detect_header_row(
         ):
             return row_idx, roles, ignored
 
+        # Check for wide monthly / multi-period header row
+        cell_strs = [str(c).strip() for c in row if c is not None]
+        pairs = detect_period_pairs(cell_strs)
+        if pairs:
+            # Look for line item role if not already found
+            if CanonicalRole.LINE_ITEM not in roles:
+                for col_idx, cell in enumerate(row):
+                    if cell is not None and str(cell).strip():
+                        r, _ = match_column_synonym(str(cell).strip())
+                        if r == CanonicalRole.LINE_ITEM:
+                            roles[CanonicalRole.LINE_ITEM] = col_idx
+                            break
+            if CanonicalRole.LINE_ITEM in roles:
+                chosen_pair = None
+                if selected_period is not None:
+                    chosen_pair = next((p for p in pairs if p.period.lower() == selected_period.lower()), None)
+                if chosen_pair is None:
+                    chosen_pair = pairs[-1]
+                for col_idx, cell in enumerate(row):
+                    if cell is not None and str(cell).strip():
+                        cs = str(cell).strip()
+                        if cs == chosen_pair.budget_column:
+                            roles[CanonicalRole.BUDGET] = col_idx
+                        elif cs == chosen_pair.actual_column:
+                            roles[CanonicalRole.ACTUAL] = col_idx
+                if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
+                    return row_idx, roles, ignored
+
+        # Check for period-only header columns (e.g. FY2025, FY2024, FY2023 or 2024, 2025).
+        # Wide budget-vs-actual layouts (period pairs) never take this path.
+        if CanonicalRole.LINE_ITEM in roles and not pairs:
+            period_cols: list[int] = []
+            for col_idx, cell in enumerate(row):
+                cell_s = _header_cell_str(cell)
+                if cell_s:
+                    stripped = _ACTUAL_SUFFIX.sub("", cell_s).strip()
+                    if parse_period_label(stripped) is not None:
+                        period_cols.append(col_idx)
+            if len(period_cols) >= 2:
+                # Fill only the roles a named column has not already taken.
+                free = [c for c in period_cols if c not in roles.values()]
+                for role in (CanonicalRole.ACTUAL, CanonicalRole.BUDGET):
+                    if role not in roles and free:
+                        roles[role] = free.pop(0)
+                if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
+                    return row_idx, roles, ignored
+
     return None, {}, []
 
 
-def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[SheetScore]:
-    """Score worksheets in a workbook to rank the best candidate for budget-vs-actual analysis."""
+def rank_workbook_sheets(
+    sheets: list[tuple[str, list[list[object]]]],
+    *,
+    basis: ComparisonBasis = ComparisonBasis.BUDGET,
+    label: str | None = None,
+) -> list[SheetScore]:
+    """Score worksheets in a workbook to rank the best candidate for budget-vs-actual analysis.
+
+    ``basis``/``label`` only change the wording of each rationale, never the scores.
+    """
+    heading = comparison_heading(basis, label)
+    noun = basis_noun(basis)
     scores: list[SheetScore] = []
     for name, rows in sheets:
         score = 0
@@ -321,7 +785,7 @@ def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[S
         header_idx, roles, _ = detect_header_row(rows)
         if header_idx is not None:
             score += 20
-            reasons.append("contains Line item, Budget, and Actual columns")
+            reasons.append(f"contains Line item, {heading}, and Actual columns")
         else:
             # Check for partial matches
             matched_roles = set()
@@ -345,7 +809,7 @@ def rank_workbook_sheets(sheets: list[tuple[str, list[list[object]]]]) -> list[S
 
         if "bva" in lower_name or "variance" in lower_name or "p&l" in lower_name or "pnl" in lower_name:
             score += 10
-            reasons.append("title matches budget-vs-actual or P&L")
+            reasons.append(f"title matches {noun}-vs-actual or P&L")
 
         rationale = "; ".join(reasons) or "general data worksheet"
         scores.append(SheetScore(name=name, score=score, rationale=rationale))
@@ -364,6 +828,248 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))
 
 
+def _header_cell_str(cell: object) -> str:
+    if cell is None:
+        return ""
+    if isinstance(cell, (int, float, Decimal)):
+        try:
+            if cell == int(cell):
+                return str(int(cell))
+        except (ValueError, OverflowError, InvalidOperation):
+            pass
+    return str(cell).strip()
+
+
+def _stop(
+    message: str,
+    *,
+    actual_column: int | None = None,
+    candidates: list[str] | tuple[str, ...] = (),
+    choices: list[ComparisonBasis] | tuple[ComparisonBasis, ...] = (),
+) -> ComparisonDetection:
+    """A detection that stops intake and asks, naming the candidates."""
+    return ComparisonDetection(
+        basis=None,
+        label=None,
+        comparison_column=None,
+        actual_column=actual_column,
+        candidates=tuple(candidates),
+        message=message,
+        choices=tuple(choices),
+    )
+
+
+def _ask_which(candidates: list[str]) -> str:
+    return (
+        f"This file has more than one column to compare against ({', '.join(candidates)}). "
+        "Which should Actual be compared against?"
+    )
+
+
+def _carries_period(header: str) -> bool:
+    """True when a header names a period, even alongside words such as 'Forecast'."""
+    if _PERIOD_RE.search(header):
+        return True
+    words = [
+        w for w in normalize_header(header).split("_")
+        if w and w not in COMPARISON_WORDS and w not in _ACTUAL_SYNONYMS
+    ]
+    return bool(words) and parse_period_label(" ".join(words)) is not None
+
+
+@dataclass(frozen=True)
+class _PeriodColumns:
+    """Period-only amount columns (FY2025, 2024 ...) and what blocks reading them."""
+
+    columns: list[tuple[int, str, str]]  # (column index, header, period label)
+    ordered: list[str] | None  # labels newest first, or None when unorderable
+    blockers: list[tuple[int, str]]  # period headers that also name a comparison ('FY2025 Forecast')
+    has_explicit_actual: bool  # an undated Actual column sits beside the period columns
+
+    @property
+    def ambiguous(self) -> bool:
+        return bool(self.blockers) or self.has_explicit_actual
+
+    @property
+    def usable(self) -> bool:
+        return bool(self.columns) and not self.ambiguous and self.ordered is not None
+
+    def candidate_headers(self) -> list[tuple[int, str]]:
+        """Columns Actual could be compared against: the newest is Actual unless one is named."""
+        cols = [(idx, header) for idx, header, _ in self.columns]
+        if self.ordered is not None and not self.has_explicit_actual:
+            newest = self.ordered[0]
+            cols = [(idx, header) for idx, header, label in self.columns if label != newest]
+        return sorted(cols + self.blockers)
+
+
+def _period_columns(headers: list[tuple[int, str]]) -> _PeriodColumns:
+    columns: list[tuple[int, str, str]] = []
+    # Wide budget-vs-actual layouts (period pairs) never take the period-only path.
+    if not detect_period_pairs([s for _, s in headers]):
+        for idx, s in headers:
+            stripped = _ACTUAL_SUFFIX.sub("", s).strip()
+            if parse_period_label(stripped) is not None:
+                columns.append((idx, s, stripped))
+    if len(columns) < 2:
+        return _PeriodColumns([], None, [], False)
+    period_idx = {idx for idx, _, _ in columns}
+    blockers: list[tuple[int, str]] = []
+    has_explicit_actual = False
+    for idx, s in headers:
+        norm = normalize_header(s)
+        if idx in period_idx or basis_for_header(norm) is not None:
+            continue
+        if norm in _ACTUAL_SYNONYMS:
+            has_explicit_actual = True
+        elif bases_named_in(norm) and _carries_period(s):
+            blockers.append((idx, s))
+    ordered = order_period_labels([label for _, _, label in columns])
+    return _PeriodColumns(columns, ordered, blockers, has_explicit_actual)
+
+
+def _period_detection(periods: _PeriodColumns) -> ComparisonDetection:
+    """Read period-only columns as newest = Actual, next newest = Prior Period, or ask."""
+    if periods.ambiguous:
+        names = [h for _, h in periods.candidate_headers()]
+        return _stop(_ask_which(names), candidates=names)
+    labels = [label for _, _, label in periods.columns]
+    if periods.ordered is None:
+        return _stop(
+            f"Could not determine period order for {', '.join(labels)}.",
+            candidates=labels,
+        )
+    label_to_col = {label: idx for idx, _, label in periods.columns}
+    newest, second = periods.ordered[0], periods.ordered[1]
+    return ComparisonDetection(
+        basis=ComparisonBasis.PRIOR_PERIOD,
+        label=second,
+        comparison_column=label_to_col[second],
+        actual_column=label_to_col[newest],
+        candidates=(),
+        message=comparison_statement(
+            ComparisonBasis.PRIOR_PERIOD,
+            label=second,
+            actual_label=newest,
+            all_periods=periods.ordered,
+        ),
+    )
+
+
+def detect_comparison_columns(
+    header_cells: list[object],
+    compare_to: ComparisonBasis | None = None,
+) -> ComparisonDetection:
+    """Identify comparison and actual columns according to vocabulary and period ordering."""
+    headers: list[tuple[int, str]] = []
+    for idx, cell in enumerate(header_cells):
+        s = _header_cell_str(cell)
+        if s:
+            headers.append((idx, s))
+
+    all_headers_display = ", ".join(s for _, s in headers)
+
+    actual_col: int | None = None
+    actual_label: str | None = None
+    for idx, s in headers:
+        norm = normalize_header(s)
+        if norm in _ACTUAL_SYNONYMS:
+            actual_col = idx
+            actual_label = s
+            break
+
+    named: list[tuple[int, str, ComparisonBasis]] = []
+    for idx, s in headers:
+        b = basis_for_header(normalize_header(s))
+        if b is not None:
+            named.append((idx, s, b))
+    periods = _period_columns(headers)
+
+    def choose_named(col_idx: int, basis: ComparisonBasis) -> ComparisonDetection:
+        act_col, act_label = actual_col, actual_label
+        if act_col is None and periods.usable and periods.ordered is not None:
+            # No Actual column: the newest period column is the Actual.
+            act_label = periods.ordered[0]
+            act_col = next(idx for idx, _, label in periods.columns if label == act_label)
+        return ComparisonDetection(
+            basis=basis,
+            label=None,
+            comparison_column=col_idx,
+            actual_column=act_col,
+            candidates=(),
+            message=comparison_statement(basis, None, act_label),
+        )
+
+    def not_found(basis: ComparisonBasis) -> ComparisonDetection:
+        return _stop(
+            f"No {basis_noun(basis)} column found. Columns found: {all_headers_display}.",
+            actual_column=actual_col,
+        )
+
+    if compare_to is not None:
+        matched = [c for c in named if c[2] == compare_to]
+        if len(matched) > 1:
+            col_names = [c[1] for c in matched]
+            return _stop(
+                f"Found more than one {basis_noun(compare_to)} column ({', '.join(col_names)}); "
+                "keep one and rerun.",
+                actual_column=actual_col,
+                candidates=col_names,
+            )
+        if matched:
+            return choose_named(matched[0][0], compare_to)
+        if compare_to is ComparisonBasis.PRIOR_PERIOD and periods.columns:
+            return _period_detection(periods)
+        if named or periods.columns or compare_to is not ComparisonBasis.BUDGET:
+            return not_found(compare_to)
+        return ComparisonDetection(
+            basis=ComparisonBasis.BUDGET,
+            label=None,
+            comparison_column=None,
+            actual_column=actual_col,
+            candidates=(),
+            message="",
+        )
+
+    named_bases: list[ComparisonBasis] = []
+    for _, _, b in named:
+        if b not in named_bases:
+            named_bases.append(b)
+
+    # 1. Named columns and period-only columns together: ask, never guess.
+    if named and periods.columns:
+        choices = list(named_bases)
+        if periods.usable and ComparisonBasis.PRIOR_PERIOD not in choices:
+            choices.append(ComparisonBasis.PRIOR_PERIOD)
+        cols = sorted([(idx, s) for idx, s, _ in named] + periods.candidate_headers())
+        names = [s for _, s in cols]
+        return _stop(_ask_which(names), actual_column=actual_col, candidates=names, choices=choices)
+
+    # 2. Named columns only.
+    if named:
+        if len(named_bases) > 1:
+            col_names = [c[1] for c in named]
+            return _stop(
+                _ask_which(col_names), actual_column=actual_col, candidates=col_names, choices=named_bases,
+            )
+        # One distinct basis: the first column wins, as in detect_header_row.
+        return choose_named(named[0][0], named[0][2])
+
+    # 3. Period-only columns.
+    if periods.columns:
+        return _period_detection(periods)
+
+    # 4. Fallback
+    return ComparisonDetection(
+        basis=ComparisonBasis.BUDGET,
+        label=None,
+        comparison_column=None,
+        actual_column=actual_col,
+        candidates=(),
+        message="",
+    )
+
+
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -371,6 +1077,8 @@ def read_input_assisted(
     filename: str = "input",
     sheet: str | None = None,
     treat_blank_budgets_as_zero: bool = False,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling."""
     if len(data) > MAX_INPUT_BYTES:
@@ -381,13 +1089,32 @@ def read_input_assisted(
 
     norm_suffix = suffix.lower()
     if norm_suffix in {".tsv", ".txt"}:
-        return _read_tsv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero)
+        return _read_tsv_text(
+            data.decode("utf-8-sig", errors="replace"),
+            filename,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix == ".csv":
-        return _read_csv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero)
+        return _read_csv_text(
+            data.decode("utf-8-sig", errors="replace"),
+            filename,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix in {".xlsx", ".xlsm"}:
-        return _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero)
+        return _read_excel_bytes(
+            data,
+            filename,
+            sheet,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix == ".json":
-        return _read_json_bytes(data, filename)
+        return _read_json_bytes(data, filename, compare_to=compare_to)
 
     return IntakeResult(
         has_fatal_errors=True,
@@ -395,30 +1122,70 @@ def read_input_assisted(
     )
 
 
-def _read_tsv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool) -> IntakeResult:
+def _read_tsv_text(
+    text: str,
+    filename: str,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines, delimiter="\t")
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    res = _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero)
+    res = _process_raw_table(
+        raw_rows,
+        filename,
+        sheet_name=None,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+    )
     if "pasted" in filename.lower() or filename == "pasted_data.tsv":
         res.visible_transformations.insert(0, "Read data from pasted tab-separated text")
     return res
 
 
-def _read_csv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool) -> IntakeResult:
+def _read_csv_text(
+    text: str,
+    filename: str,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines)
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    return _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero)
+    return _process_raw_table(
+        raw_rows,
+        filename,
+        sheet_name=None,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+    )
 
 
-def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
+def _read_json_bytes(
+    data: bytes,
+    filename: str,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     # Delegate to parsing.load_json_text and wrap into IntakeResult
     from .parsing import load_json_text
     try:
         rows = load_json_text(data.decode("utf-8"))
+        basis = compare_to if compare_to is not None else ComparisonBasis.BUDGET
+        if basis != ComparisonBasis.BUDGET:
+            try:
+                rows = select_strict_comparison(rows, basis)
+            except ValueError as exc:
+                # The comparison-column error is already user-facing; no read-error prefix.
+                return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
         # JSON rows are already named; keep every field (Type, Row Kind, drivers) for analysis.
         canonical_rows: list[dict[str, object]] = [dict(r) for r in rows]
+        visible_transformations: list[str] = []
+        if basis != ComparisonBasis.BUDGET:
+            visible_transformations.append(comparison_statement(basis, None, "Actual"))
         return IntakeResult(
             rows=canonical_rows,
             header_row_number=1,
@@ -428,6 +1195,9 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
                 CanonicalRole.BUDGET: "budget",
                 CanonicalRole.ACTUAL: "actual",
             },
+            comparison_basis=basis,
+            comparison_label=None,
+            visible_transformations=visible_transformations,
         )
     except Exception as exc:
         return IntakeResult(
@@ -437,7 +1207,12 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
 
 
 def _read_excel_bytes(
-    data: bytes, filename: str, sheet: str | None, treat_blank_budgets_as_zero: bool
+    data: bytes,
+    filename: str,
+    sheet: str | None,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     try:
         stored_numbers = inspect_archive(data)
@@ -507,11 +1282,21 @@ def _read_excel_bytes(
                 filename,
                 sheet_name=chosen_sheet,
                 treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                selected_period=selected_period,
+                compare_to=compare_to,
             )
+            if result.comparison_basis is not ComparisonBasis.BUDGET:
+                # Same scores; the rationale names the comparison this file was read against.
+                ranked = rank_workbook_sheets(
+                    all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
+                )
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
             if chosen_sheet != sheetnames[0] and ranked:
-                rationale = ranked[0].rationale if ranked[0].name == chosen_sheet else "better matches budget-vs-actual data"
+                rationale = (
+                    ranked[0].rationale if ranked[0].name == chosen_sheet
+                    else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
+                )
                 result.visible_transformations.insert(
                     0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
                 )
@@ -531,6 +1316,8 @@ def _process_raw_table(
     filename: str,
     sheet_name: str | None,
     treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     if not raw_rows:
         return IntakeResult(
@@ -539,15 +1326,19 @@ def _process_raw_table(
             sheet_name=sheet_name,
         )
 
-    header_idx, roles, ignored_col_indices = detect_header_row(raw_rows)
+    header_idx, roles, ignored_col_indices = detect_header_row(raw_rows, selected_period=selected_period)
     if header_idx is None:
-        return IntakeResult(
-            has_fatal_errors=True,
-            fatal_error_message=(
-                f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}'."
-            ),
-            sheet_name=sheet_name,
-        )
+        if compare_to is None:
+            message = (
+                f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
+                "(a Forecast or Prior Year column can stand in for Budget)."
+            )
+        else:
+            message = (
+                f"Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, "
+                f"and Actual columns in '{filename}'."
+            )
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name)
 
     header_row = raw_rows[header_idx]
     header_row_number = header_idx + 1
@@ -555,6 +1346,26 @@ def _process_raw_table(
     skip_reasons = []
     if skipped_count > 0:
         skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
+
+    detection = detect_comparison_columns(header_row, compare_to=compare_to)
+    if detection.basis is None:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=detection.message,
+            comparison_candidates=list(detection.candidates),
+            comparison_choices=list(detection.choices),
+            sheet_name=sheet_name,
+        )
+
+    comparison_field = comparison_heading(detection.basis, detection.label)
+
+    if detection.comparison_column is not None:
+        roles[CanonicalRole.BUDGET] = detection.comparison_column
+    if detection.actual_column is not None:
+        roles[CanonicalRole.ACTUAL] = detection.actual_column
+
+    header_str_row = [str(c).strip() for c in header_row if c is not None]
+    period_pairs = detect_period_pairs(header_str_row)
 
     column_mapping: dict[CanonicalRole, str] = {}
     for role, col_idx in roles.items():
@@ -568,6 +1379,20 @@ def _process_raw_table(
     ]
 
     visible_transformations: list[str] = []
+
+    if detection.basis != ComparisonBasis.BUDGET and detection.message:
+        visible_transformations.append(detection.message)
+
+    if period_pairs:
+        chosen_pair = None
+        if selected_period is not None:
+            chosen_pair = next((p for p in period_pairs if p.period.lower() == selected_period.lower()), None)
+        if chosen_pair is None:
+            chosen_pair = period_pairs[-1]
+        visible_transformations.append(
+            f"Analyzed period: {chosen_pair.period} (Budget from '{chosen_pair.budget_column}', Actual from '{chosen_pair.actual_column}')"
+        )
+
     if ignored_columns:
         visible_transformations.append(f"Ignored computed columns: {', '.join(ignored_columns)}")
 
@@ -625,7 +1450,7 @@ def _process_raw_table(
         try:
             budget_dec, b_note = parse_assisted_decimal(
                 raw_budget,
-                field="Budget",
+                field=comparison_field,
                 line_item=line_item_str,
                 allow_blank=True,
             )
@@ -639,9 +1464,9 @@ def _process_raw_table(
             problems.append(
                 IntakeProblem(
                     row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.BUDGET, "Budget"),
+                    column=column_mapping.get(CanonicalRole.BUDGET, comparison_field),
                     line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, Budget column: {exc}",
+                    message=f"Row {physical_idx}, {line_item_str}, {comparison_field} column: {exc}",
                 )
             )
 
@@ -705,9 +1530,52 @@ def _process_raw_table(
         )
 
     if treat_blank_budgets_as_zero and blank_budget_items:
+        count = len(blank_budget_items)
+        plural = "s" if count != 1 else ""
+        if detection.basis is ComparisonBasis.BUDGET:
+            visible_transformations.append(f"Treated blank budgets as 0 on {count} unbudgeted line{plural}")
+        else:
+            visible_transformations.append(
+                f"Treated blank {basis_noun(detection.basis)} values as 0 on {count} "
+                f"line{plural} {zero_comparison_phrase(detection.basis)}"
+            )
+
+    # 1. Unit scaling check (from title block rows and header row)
+    raw_title_text = " ".join(
+        str(c).strip() for r in raw_rows[:header_idx] for c in r if c is not None and str(c).strip()
+    )
+    detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(header_str_row))
+    if detected_mult != Decimal("1"):
+        output_rows = scale_rows_by_unit(output_rows, detected_mult)
+        unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
         visible_transformations.append(
-            f"Treated blank budgets as 0 on {len(blank_budget_items)} unbudgeted line{'s' if len(blank_budget_items) != 1 else ''}"
+            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit ($)."
         )
+
+    # 2. Signed ledger check
+    signed_det = detect_signed_ledger(output_rows)
+    flipped_items: list[str] = []
+    if signed_det.is_signed_ledger:
+        output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
+        visible_transformations.append(
+            f"Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
+        )
+
+    # 3. Subtotals and totals detection. An explicit Row Kind column already marks totals,
+    # and the analysis reconciles and excludes those rows itself, so they are kept.
+    has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
+    subtotals_det = (
+        SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
+        if has_row_kind else detect_subtotals_and_totals(output_rows)
+    )
+    reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
+    if reconciled_names:
+        output_rows = [r for r in output_rows if str(r.get("line_item", "")).strip() not in set(reconciled_names)]
+        visible_transformations.append(
+            f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. Excluded from line items to avoid double-counting."
+        )
+
+    single_periods = detect_single_period_column_values(output_rows)
 
     return IntakeResult(
         rows=output_rows,
@@ -721,6 +1589,18 @@ def _process_raw_table(
         visible_transformations=visible_transformations,
         problems=problems,
         blank_budget_items=blank_budget_items,
+        detected_totals=reconciled_names,
+        unreconciled_totals=subtotals_det.unreconciled_totals,
+        detected_unit_multiplier=detected_mult,
+        detected_signed_ledger=signed_det.is_signed_ledger,
+        negative_revenue_items=flipped_items,
+        detected_period_pairs=period_pairs,
+        detected_single_periods=single_periods,
+        raw_headers=header_str_row,
+        raw_title_text=raw_title_text,
+        comparison_basis=detection.basis,
+        comparison_label=detection.label,
+        comparison_candidates=list(detection.candidates),
     )
 
 
@@ -731,6 +1611,12 @@ def format_intake_summary(result: IntakeResult) -> str:
     if result.sheet_name:
         lines.append(f"- **Worksheet:** {result.sheet_name}")
 
+    for t in result.visible_transformations:
+        if t.startswith("Analyzed period:"):
+            period_name = t.split(":")[1].split("(")[0].strip()
+            lines.append(f"- **Analyzed period:** {period_name}")
+            break
+
     lines.append(f"- **Header row:** Row {result.header_row_number}")
 
     col_details = []
@@ -739,7 +1625,8 @@ def format_intake_summary(result: IntakeResult) -> str:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         col_details.append(f"Account ID from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'")
     if CanonicalRole.BUDGET in result.column_mapping:
-        col_details.append(f"Budget from '{result.column_mapping[CanonicalRole.BUDGET]}'")
+        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        col_details.append(f"{heading} from '{result.column_mapping[CanonicalRole.BUDGET]}'")
     if CanonicalRole.ACTUAL in result.column_mapping:
         col_details.append(f"Actual from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
     lines.append(f"- **Columns mapped:** {', '.join(col_details)}")
@@ -749,10 +1636,17 @@ def format_intake_summary(result: IntakeResult) -> str:
         read_text += f" ({result.rows_skipped_count} row{'s' if result.rows_skipped_count != 1 else ''} skipped: {', '.join(result.skip_reasons)})"
     lines.append(read_text)
 
+    if result.detected_totals:
+        lines.append(
+            f"- **Detected {len(result.detected_totals)} subtotal/total rows:** "
+            f"{', '.join(result.detected_totals)} (excluded from line items so they are not double-counted)"
+        )
+
     if result.visible_transformations:
         lines.append("\n**Visible adjustments:**")
         for transform in result.visible_transformations:
-            lines.append(f"- {transform}")
+            if not transform.startswith("Analyzed period:"):
+                lines.append(f"- {transform}")
 
     if result.problems:
         lines.append("\n⚠️ **Items needing attention:**")
