@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from variance_agent.intake import GLRangeRule, IntakeResult, PeriodColumnPair
     from variance_agent.mapping import LayoutMapping
-    from variance_agent.models import AnalysisResult, LineType
+    from variance_agent.models import AnalysisResult, ComparisonBasis, LineType
 
 
 class Phase(StrEnum):
@@ -58,6 +58,7 @@ class Session:
     currency: str = "USD"
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
+    compare_to: ComparisonBasis | None = None
 
     # Unclassified items pending resolution
     unclassified_queue: list[str] = field(default_factory=list)
@@ -93,6 +94,7 @@ class Session:
         self.currency = "USD"
         self.type_map = {}
         self.sheet = None
+        self.compare_to = None
         self.unclassified_queue = []
         self.pending_gl_rules = []
         self.layout_mapping = None

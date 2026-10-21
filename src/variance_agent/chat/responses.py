@@ -46,13 +46,16 @@ def report_places(result: AnalysisResult) -> int:
 
 
 def row_to_table_dict(
-    row: AnalyzedRow, currency: str = "USD", places: int = 2,
+    row: AnalyzedRow, currency: str = "USD", places: int = 2, comparison: str = "Budget",
 ) -> dict[str, str]:
-    """Convert an AnalyzedRow to a display-ready table row dict."""
+    """Convert an AnalyzedRow to a display-ready table row dict.
+
+    ``comparison`` names the column Actual is compared against, e.g. "Forecast".
+    """
     return {
         "Line Item": safe_inline(row.line_item),
         "Type": str(row.line_type),
-        "Budget": format_money(row.budget, currency, places),
+        comparison: format_money(row.budget, currency, places),
         "Actual": format_money(row.actual, currency, places),
         f"Var ({CURRENCY_SYMBOLS.get(currency, '$')})": format_money(
             row.variance_dollars, currency, places,
