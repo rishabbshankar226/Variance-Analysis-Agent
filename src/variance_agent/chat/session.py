@@ -13,7 +13,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from variance_agent.intake import IntakeResult
+    from variance_agent.intake import GLRangeRule, IntakeResult, PeriodColumnPair
+    from variance_agent.mapping import LayoutMapping
     from variance_agent.models import AnalysisResult, LineType
 
 
@@ -24,6 +25,7 @@ class Phase(StrEnum):
     AWAITING_SHEET_CHOICE = "awaiting_sheet_choice"
     AWAITING_HEADER_CHOICE = "awaiting_header_choice"
     AWAITING_BLANK_BUDGET_CONFIRMATION = "awaiting_blank_budget_confirmation"
+    AWAITING_PERIOD_CHOICE = "awaiting_period_choice"
     AWAITING_INTAKE_CONFIRMATION = "awaiting_intake_confirmation"
     AWAITING_PERIOD = "awaiting_period"
     AWAITING_THRESHOLDS = "awaiting_thresholds"
@@ -47,6 +49,7 @@ class Session:
     available_sheets: list[str] = field(default_factory=list)
     intake_result: IntakeResult | None = None
     last_technical_detail: str | None = None
+    detected_period_pairs: list[PeriodColumnPair] = field(default_factory=list)
 
     # Populated during configuration
     period: str | None = None
@@ -58,6 +61,10 @@ class Session:
 
     # Unclassified items pending resolution
     unclassified_queue: list[str] = field(default_factory=list)
+    pending_gl_rules: list[GLRangeRule] = field(default_factory=list)
+
+    # Saved layout mapping
+    layout_mapping: LayoutMapping | None = None
 
     # Populated after analysis
     result: AnalysisResult | None = None
@@ -77,6 +84,9 @@ class Session:
         self.parsed_rows = None
         self.worksheet = None
         self.available_sheets = []
+        self.intake_result = None
+        self.last_technical_detail = None
+        self.detected_period_pairs = []
         self.period = None
         self.dollar_threshold = None
         self.percent_threshold = None
@@ -84,6 +94,8 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.unclassified_queue = []
+        self.pending_gl_rules = []
+        self.layout_mapping = None
         self.result = None
         self.last_focused_item = None
         self.last_table_items = []

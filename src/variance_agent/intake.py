@@ -27,6 +27,7 @@ from .limits import (
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
 )
+from .models import LineType
 from .numeric import financial_context
 
 
@@ -40,6 +41,53 @@ class CanonicalRole(StrEnum):
     CURRENCY = "currency"
     TYPE = "type"
     UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class ReconciledTotal:
+    line_item: str
+    budget: Decimal
+    actual: Decimal
+    row_index: int
+    formula_description: str
+
+
+@dataclass(frozen=True)
+class UnreconciledTotal:
+    line_item: str
+    budget: Decimal
+    actual: Decimal
+    row_index: int
+    sum_budget: Decimal | None = None
+    sum_actual: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class SubtotalDetectionResult:
+    reconciled_totals: list[ReconciledTotal]
+    unreconciled_totals: list[UnreconciledTotal]
+
+
+@dataclass(frozen=True)
+class SignedLedgerDetection:
+    is_signed_ledger: bool
+    negative_revenue_count: int
+    negative_revenue_items: list[str]
+
+
+@dataclass(frozen=True)
+class PeriodColumnPair:
+    period: str
+    budget_column: str
+    actual_column: str
+
+
+@dataclass(frozen=True)
+class GLRangeRule:
+    min_account: int
+    max_account: int
+    line_type: LineType
+    match_count: int
 
 
 _LINE_ITEM_SYNONYMS = {
@@ -116,6 +164,15 @@ class IntakeResult:
     available_sheets: list[str] = field(default_factory=list)
     has_fatal_errors: bool = False
     fatal_error_message: str | None = None
+    detected_totals: list[str] = field(default_factory=list)
+    unreconciled_totals: list[UnreconciledTotal] = field(default_factory=list)
+    detected_unit_multiplier: Decimal = field(default=Decimal("1"))
+    detected_signed_ledger: bool = False
+    negative_revenue_items: list[str] = field(default_factory=list)
+    detected_period_pairs: list[PeriodColumnPair] = field(default_factory=list)
+    detected_single_periods: list[str] = field(default_factory=list)
+    raw_headers: list[str] = field(default_factory=list)
+    raw_title_text: str = ""
 
     @property
     def has_transformations(self) -> bool:
@@ -129,6 +186,16 @@ class IntakeResult:
         if self.ignored_columns:
             return True
         if self.blank_budget_items:
+            return True
+        if self.detected_totals:
+            return True
+        if self.detected_signed_ledger:
+            return True
+        if self.detected_unit_multiplier != Decimal("1"):
+            return True
+        if self.detected_period_pairs:
+            return True
+        if len(self.detected_single_periods) > 1:
             return True
         if self.candidate_sheets and len(self.candidate_sheets) > 1:
             # If the selected sheet is not the active/first sheet, it was a transformation
@@ -269,8 +336,320 @@ def parse_assisted_decimal(
     return number, None
 
 
+_PERIOD_RE = re.compile(
+    r"\b((?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-_ ]?\d{2,4})|"
+    r"(?:Q[1-4](?:[-_ ]?\d{2,4})?)|"
+    r"(?:FY\s*\d{2,4})|"
+    r"(?:YTD|MTD)|"
+    r"(?:\d{4}[-_]\d{2}))\b",
+    re.IGNORECASE,
+)
+
+_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\$000s?|\b000s\b)", re.IGNORECASE)
+_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\$m\b|in\s+m\b)", re.IGNORECASE)
+_REVENUE_KEYWORDS = re.compile(r"\b(revenue|sales|income|rev)\b", re.IGNORECASE)
+_EXPENSE_KEYWORDS = re.compile(r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b", re.IGNORECASE)
+_TOTAL_KEYWORD_RE = re.compile(
+    r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
+    re.IGNORECASE,
+)
+_ACCOUNT_NUM_RE = re.compile(r"\b([1-9]\d{3,4})\b")
+
+
+def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
+    """Scan column headers to detect paired Budget and Actual columns by period."""
+    budget_cols: dict[str, str] = {}
+    actual_cols: dict[str, str] = {}
+    period_order: list[str] = []
+
+    for h in headers:
+        m = _PERIOD_RE.search(h)
+        if not m:
+            continue
+        p = m.group(1).strip()
+        h_lower = h.lower()
+        if "budget" in h_lower or "plan" in h_lower:
+            budget_cols[p] = h
+            if p not in period_order:
+                period_order.append(p)
+        elif "actual" in h_lower or "act" in h_lower:
+            actual_cols[p] = h
+            if p not in period_order:
+                period_order.append(p)
+
+    pairs: list[PeriodColumnPair] = []
+    for p in period_order:
+        if p in budget_cols and p in actual_cols:
+            pairs.append(PeriodColumnPair(period=p, budget_column=budget_cols[p], actual_column=actual_cols[p]))
+    return pairs
+
+
+def detect_single_period_column_values(rows: list[dict[str, object]]) -> list[str]:
+    """Return distinct non-empty period values if a single period column is present."""
+    seen: set[str] = set()
+    periods: list[str] = []
+    for r in rows:
+        pval = r.get("period")
+        if pval is not None:
+            pstr = str(pval).strip()
+            if pstr and pstr not in seen:
+                seen.add(pstr)
+                periods.append(pstr)
+    return periods
+
+
+def detect_unit_scale(text: str) -> Decimal:
+    """Detect whether numbers are in thousands, millions, or base dollars."""
+    if _MILLIONS_RE.search(text):
+        return Decimal("1000000")
+    if _THOUSANDS_RE.search(text):
+        return Decimal("1000")
+    return Decimal("1")
+
+
+def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> list[dict[str, object]]:
+    """Scale budget and actual amounts by exact Decimal multiplication."""
+    if multiplier == Decimal("1"):
+        return rows
+    scaled: list[dict[str, object]] = []
+    for r in rows:
+        rc = dict(r)
+        if "budget" in rc and isinstance(rc["budget"], Decimal):
+            rc["budget"] = rc["budget"] * multiplier
+        if "actual" in rc and isinstance(rc["actual"], Decimal):
+            rc["actual"] = rc["actual"] * multiplier
+        scaled.append(rc)
+    return scaled
+
+
+def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection:
+    """Detect if ledger stores revenue as negative credits and expenses as positive debits."""
+    rev_items: list[tuple[str, bool]] = []
+    exp_positive_count = 0
+    exp_total = 0
+
+    for r in rows:
+        name = str(r.get("line_item", "")).strip()
+        b = r.get("budget")
+        a = r.get("actual")
+        b_dec = Decimal(str(b)) if b is not None else Decimal("0")
+        a_dec = Decimal(str(a)) if a is not None else Decimal("0")
+
+        is_rev = bool(_REVENUE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "revenue"
+        is_exp = bool(_EXPENSE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "expense"
+
+        if is_rev and not is_exp:
+            is_neg = (b_dec < 0 or a_dec < 0)
+            rev_items.append((name, is_neg))
+        elif is_exp and not is_rev:
+            exp_total += 1
+            if b_dec >= 0 and a_dec >= 0:
+                exp_positive_count += 1
+
+    neg_rev_count = sum(1 for _, is_neg in rev_items if is_neg)
+    is_signed = False
+    if rev_items and neg_rev_count > len(rev_items) / 2:
+        is_signed = True
+
+    return SignedLedgerDetection(
+        is_signed_ledger=is_signed,
+        negative_revenue_count=neg_rev_count,
+        negative_revenue_items=[name for name, is_neg in rev_items if is_neg],
+    )
+
+
+def flip_ledger_signs(
+    rows: list[dict[str, object]], items_to_flip: list[str]
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Flip signs of affected rows using exact Decimal copy_negate()."""
+    to_flip = set(items_to_flip)
+    affected: list[str] = []
+    flipped: list[dict[str, object]] = []
+    for r in rows:
+        rc = dict(r)
+        name = str(r.get("line_item", "")).strip()
+        if name in to_flip:
+            affected.append(name)
+            if "budget" in rc and isinstance(rc["budget"], Decimal):
+                rc["budget"] = rc["budget"].copy_negate()
+            if "actual" in rc and isinstance(rc["actual"], Decimal):
+                rc["actual"] = rc["actual"].copy_negate()
+        flipped.append(rc)
+    return flipped, affected
+
+
+def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetectionResult:
+    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance."""
+    tolerance = Decimal("0.01")
+    reconciled_totals: list[ReconciledTotal] = []
+    unreconciled_totals: list[UnreconciledTotal] = []
+    detail_indices: list[int] = []
+
+    for i, row in enumerate(rows):
+        name = str(row.get("line_item", "")).strip()
+        b_raw = row.get("budget")
+        a_raw = row.get("actual")
+        b = Decimal(str(b_raw)) if b_raw is not None else Decimal("0")
+        a = Decimal(str(a_raw)) if a_raw is not None else Decimal("0")
+        is_total_kw = bool(_TOTAL_KEYWORD_RE.search(name))
+
+        # 1. Contiguous block check over prior detail rows
+        found_block = False
+        for j in range(len(detail_indices) - 1, -1, -1):
+            block_idx = detail_indices[j:]
+            if len(block_idx) < 1:
+                continue
+            sum_b = sum(Decimal(str(rows[k]["budget"])) for k in block_idx)
+            sum_a = sum(Decimal(str(rows[k]["actual"])) for k in block_idx)
+            if abs(b - sum_b) <= tolerance and abs(a - sum_a) <= tolerance:
+                if len(block_idx) >= 2 or is_total_kw:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"sum of {len(block_idx)} detail rows",
+                        )
+                    )
+                    found_block = True
+                    break
+        if found_block:
+            continue
+
+        # 2. Nested formula check (diff between prior totals or detail)
+        found_formula = False
+        prior_totals = list(reconciled_totals)
+        for prev in prior_totals:
+            for d_idx in detail_indices:
+                det_b = Decimal(str(rows[d_idx]["budget"]))
+                det_a = Decimal(str(rows[d_idx]["actual"]))
+                if abs((prev.budget - det_b) - b) <= tolerance and abs((prev.actual - det_a) - a) <= tolerance:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"{prev.line_item} - {rows[d_idx].get('line_item')}",
+                        )
+                    )
+                    found_formula = True
+                    break
+            if found_formula:
+                break
+            for prev2 in prior_totals:
+                if prev2.row_index == prev.row_index:
+                    continue
+                if abs((prev.budget - prev2.budget) - b) <= tolerance and abs((prev.actual - prev2.actual) - a) <= tolerance:
+                    reconciled_totals.append(
+                        ReconciledTotal(
+                            line_item=name,
+                            budget=b,
+                            actual=a,
+                            row_index=i,
+                            formula_description=f"{prev.line_item} - {prev2.line_item}",
+                        )
+                    )
+                    found_formula = True
+                    break
+            if found_formula:
+                break
+
+        if found_formula:
+            continue
+
+        if is_total_kw:
+            sum_prior_b = sum((Decimal(str(rows[k]["budget"])) for k in detail_indices), Decimal("0")) if detail_indices else None
+            sum_prior_a = sum((Decimal(str(rows[k]["actual"])) for k in detail_indices), Decimal("0")) if detail_indices else None
+            unreconciled_totals.append(
+                UnreconciledTotal(
+                    line_item=name,
+                    budget=b,
+                    actual=a,
+                    row_index=i,
+                    sum_budget=sum_prior_b,
+                    sum_actual=sum_prior_a,
+                )
+            )
+        else:
+            detail_indices.append(i)
+
+    return SubtotalDetectionResult(
+        reconciled_totals=reconciled_totals,
+        unreconciled_totals=unreconciled_totals,
+    )
+
+
+def infer_gl_range_rules(items: list[str]) -> list[GLRangeRule]:
+    """Infer standard FP&A GL account range rules (4000-4999 Revenue, 5000-8999 Expense)."""
+    rev_count = 0
+    exp_count = 0
+
+    for item in items:
+        m = _ACCOUNT_NUM_RE.search(item)
+        if not m:
+            continue
+        val = int(m.group(1))
+        if 4000 <= val <= 4999:
+            rev_count += 1
+        elif 5000 <= val <= 8999:
+            exp_count += 1
+
+    rules: list[GLRangeRule] = []
+    if rev_count > 0:
+        rules.append(
+            GLRangeRule(
+                min_account=4000,
+                max_account=4999,
+                line_type=LineType.REVENUE,
+                match_count=rev_count,
+            )
+        )
+    if exp_count > 0:
+        rules.append(
+            GLRangeRule(
+                min_account=5000,
+                max_account=8999,
+                line_type=LineType.EXPENSE,
+                match_count=exp_count,
+            )
+        )
+    return rules
+
+
+def apply_classification_rules(
+    items: list[str],
+    rules: list[GLRangeRule],
+    keywords: dict[str, LineType] | None = None,
+    bulk_default: LineType | None = None,
+) -> dict[str, LineType]:
+    """Apply GL range rules, keyword rules, and optional default to classify line items."""
+    type_map: dict[str, LineType] = {}
+    for item in items:
+        m = _ACCOUNT_NUM_RE.search(item)
+        classified = False
+        if m:
+            val = int(m.group(1))
+            for rule in rules:
+                if rule.min_account <= val <= rule.max_account:
+                    type_map[item] = rule.line_type
+                    classified = True
+                    break
+        if not classified and keywords:
+            for kw, l_type in keywords.items():
+                if kw.lower() in item.lower():
+                    type_map[item] = l_type
+                    classified = True
+                    break
+        if not classified and bulk_default is not None:
+            type_map[item] = bulk_default
+
+    return type_map
+
+
 def detect_header_row(
-    raw_rows: list[list[object]], max_scan: int = 25
+    raw_rows: list[list[object]], max_scan: int = 25, selected_period: str | None = None
 ) -> tuple[int | None, dict[CanonicalRole, int], list[int]]:
     """Scan the first candidate rows to find the header row containing Line Item, Budget, and Actual."""
     for row_idx, row in enumerate(raw_rows[:max_scan]):
@@ -300,6 +679,34 @@ def detect_header_row(
             and CanonicalRole.ACTUAL in roles
         ):
             return row_idx, roles, ignored
+
+        # Check for wide monthly / multi-period header row
+        cell_strs = [str(c).strip() for c in row if c is not None]
+        pairs = detect_period_pairs(cell_strs)
+        if pairs:
+            # Look for line item role if not already found
+            if CanonicalRole.LINE_ITEM not in roles:
+                for col_idx, cell in enumerate(row):
+                    if cell is not None and str(cell).strip():
+                        r, _ = match_column_synonym(str(cell).strip())
+                        if r == CanonicalRole.LINE_ITEM:
+                            roles[CanonicalRole.LINE_ITEM] = col_idx
+                            break
+            if CanonicalRole.LINE_ITEM in roles:
+                chosen_pair = None
+                if selected_period is not None:
+                    chosen_pair = next((p for p in pairs if p.period.lower() == selected_period.lower()), None)
+                if chosen_pair is None:
+                    chosen_pair = pairs[-1]
+                for col_idx, cell in enumerate(row):
+                    if cell is not None and str(cell).strip():
+                        cs = str(cell).strip()
+                        if cs == chosen_pair.budget_column:
+                            roles[CanonicalRole.BUDGET] = col_idx
+                        elif cs == chosen_pair.actual_column:
+                            roles[CanonicalRole.ACTUAL] = col_idx
+                if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
+                    return row_idx, roles, ignored
 
     return None, {}, []
 
@@ -364,6 +771,7 @@ def read_input_assisted(
     filename: str = "input",
     sheet: str | None = None,
     treat_blank_budgets_as_zero: bool = False,
+    selected_period: str | None = None,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling."""
     if len(data) > MAX_INPUT_BYTES:
@@ -374,11 +782,11 @@ def read_input_assisted(
 
     norm_suffix = suffix.lower()
     if norm_suffix in {".tsv", ".txt"}:
-        return _read_tsv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero)
+        return _read_tsv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero, selected_period)
     if norm_suffix == ".csv":
-        return _read_csv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero)
+        return _read_csv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero, selected_period)
     if norm_suffix in {".xlsx", ".xlsm"}:
-        return _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero)
+        return _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero, selected_period)
     if norm_suffix == ".json":
         return _read_json_bytes(data, filename)
 
@@ -388,21 +796,21 @@ def read_input_assisted(
     )
 
 
-def _read_tsv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool) -> IntakeResult:
+def _read_tsv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool, selected_period: str | None = None) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines, delimiter="\t")
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    res = _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero)
+    res = _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period)
     if "pasted" in filename.lower() or filename == "pasted_data.tsv":
         res.visible_transformations.insert(0, "Read data from pasted tab-separated text")
     return res
 
 
-def _read_csv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool) -> IntakeResult:
+def _read_csv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool, selected_period: str | None = None) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines)
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    return _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero)
+    return _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period)
 
 
 def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
@@ -436,7 +844,7 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
 
 
 def _read_excel_bytes(
-    data: bytes, filename: str, sheet: str | None, treat_blank_budgets_as_zero: bool
+    data: bytes, filename: str, sheet: str | None, treat_blank_budgets_as_zero: bool, selected_period: str | None = None
 ) -> IntakeResult:
     try:
         stored_numbers = inspect_archive(data)
@@ -506,6 +914,7 @@ def _read_excel_bytes(
                 filename,
                 sheet_name=chosen_sheet,
                 treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                selected_period=selected_period,
             )
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
@@ -530,6 +939,7 @@ def _process_raw_table(
     filename: str,
     sheet_name: str | None,
     treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
 ) -> IntakeResult:
     if not raw_rows:
         return IntakeResult(
@@ -538,7 +948,7 @@ def _process_raw_table(
             sheet_name=sheet_name,
         )
 
-    header_idx, roles, ignored_col_indices = detect_header_row(raw_rows)
+    header_idx, roles, ignored_col_indices = detect_header_row(raw_rows, selected_period=selected_period)
     if header_idx is None:
         return IntakeResult(
             has_fatal_errors=True,
@@ -555,6 +965,9 @@ def _process_raw_table(
     if skipped_count > 0:
         skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
 
+    header_str_row = [str(c).strip() for c in header_row if c is not None]
+    period_pairs = detect_period_pairs(header_str_row)
+
     column_mapping: dict[CanonicalRole, str] = {}
     for role, col_idx in roles.items():
         if col_idx < len(header_row):
@@ -567,6 +980,17 @@ def _process_raw_table(
     ]
 
     visible_transformations: list[str] = []
+
+    if period_pairs:
+        chosen_pair = None
+        if selected_period is not None:
+            chosen_pair = next((p for p in period_pairs if p.period.lower() == selected_period.lower()), None)
+        if chosen_pair is None:
+            chosen_pair = period_pairs[-1]
+        visible_transformations.append(
+            f"Analyzed period: {chosen_pair.period} (Budget from '{chosen_pair.budget_column}', Actual from '{chosen_pair.actual_column}')"
+        )
+
     if ignored_columns:
         visible_transformations.append(f"Ignored computed columns: {', '.join(ignored_columns)}")
 
@@ -693,6 +1117,38 @@ def _process_raw_table(
             f"Treated blank budgets as 0 on {len(blank_budget_items)} unbudgeted line{'s' if len(blank_budget_items) != 1 else ''}"
         )
 
+    # 1. Unit scaling check (from title block rows and header row)
+    raw_title_text = " ".join(
+        str(c).strip() for r in raw_rows[:header_idx] for c in r if c is not None and str(c).strip()
+    )
+    detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(header_str_row))
+    if detected_mult != Decimal("1"):
+        output_rows = scale_rows_by_unit(output_rows, detected_mult)
+        unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
+        visible_transformations.append(
+            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit ($)."
+        )
+
+    # 2. Signed ledger check
+    signed_det = detect_signed_ledger(output_rows)
+    flipped_items: list[str] = []
+    if signed_det.is_signed_ledger:
+        output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
+        visible_transformations.append(
+            f"Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
+        )
+
+    # 3. Subtotals and totals detection
+    subtotals_det = detect_subtotals_and_totals(output_rows)
+    reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
+    if reconciled_names:
+        output_rows = [r for r in output_rows if str(r.get("line_item", "")).strip() not in set(reconciled_names)]
+        visible_transformations.append(
+            f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. Excluded from line items to avoid double-counting."
+        )
+
+    single_periods = detect_single_period_column_values(output_rows)
+
     return IntakeResult(
         rows=output_rows,
         sheet_name=sheet_name,
@@ -705,6 +1161,15 @@ def _process_raw_table(
         visible_transformations=visible_transformations,
         problems=problems,
         blank_budget_items=blank_budget_items,
+        detected_totals=reconciled_names,
+        unreconciled_totals=subtotals_det.unreconciled_totals,
+        detected_unit_multiplier=detected_mult,
+        detected_signed_ledger=signed_det.is_signed_ledger,
+        negative_revenue_items=flipped_items,
+        detected_period_pairs=period_pairs,
+        detected_single_periods=single_periods,
+        raw_headers=header_str_row,
+        raw_title_text=raw_title_text,
     )
 
 
@@ -714,6 +1179,12 @@ def format_intake_summary(result: IntakeResult) -> str:
 
     if result.sheet_name:
         lines.append(f"- **Worksheet:** {result.sheet_name}")
+
+    for t in result.visible_transformations:
+        if t.startswith("Analyzed period:"):
+            period_name = t.split(":")[1].split("(")[0].strip()
+            lines.append(f"- **Analyzed period:** {period_name}")
+            break
 
     lines.append(f"- **Header row:** Row {result.header_row_number}")
 
@@ -733,10 +1204,17 @@ def format_intake_summary(result: IntakeResult) -> str:
         read_text += f" ({result.rows_skipped_count} row{'s' if result.rows_skipped_count != 1 else ''} skipped: {', '.join(result.skip_reasons)})"
     lines.append(read_text)
 
+    if result.detected_totals:
+        lines.append(
+            f"- **Detected {len(result.detected_totals)} subtotal/total rows:** "
+            f"{', '.join(result.detected_totals)} (excluded from line items so they are not double-counted)"
+        )
+
     if result.visible_transformations:
         lines.append("\n**Visible adjustments:**")
         for transform in result.visible_transformations:
-            lines.append(f"- {transform}")
+            if not transform.startswith("Analyzed period:"):
+                lines.append(f"- {transform}")
 
     if result.problems:
         lines.append("\n⚠️ **Items needing attention:**")

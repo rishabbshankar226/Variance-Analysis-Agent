@@ -48,40 +48,49 @@ def test_fixture_a_erp_title_block_intake() -> None:
 def test_fixture_b_departmental_subtotals_baseline() -> None:
     """Fixture b: Departmental P&L with nested subtotals.
     
-    Phase 1 outcome: Plain language error message without jargon ('Row Kind').
+    Phase 2 outcome: Subtotals detected and proposed for exclusion.
+    Reaches EXPLORING with clean analysis.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_b_departmental_subtotals.csv"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
-    assert resp_upload.phase == Phase.AWAITING_PERIOD
+    assert resp_upload.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Detected 4 subtotal/total rows" in resp_upload.text
+    assert "Looks right" in (resp_upload.chips or [])
     
+    handle_message(session, "Looks right")
     handle_message(session, "Q3 2026")
     handle_message(session, "$10,000 or 5%")
     resp_curr = handle_message(session, "USD")
+    if session.phase == Phase.RESOLVE_UNCLASSIFIED:
+        resp_curr = handle_message(session, "Expense")
     
-    assert session.phase == Phase.AWAITING_FILE
-    assert "Some subtotal or total rows could not be distinguished from detail rows" in resp_curr.text
-    assert "Upload a different file" in (resp_curr.chips or [])
-    assert "Show technical details" in (resp_curr.chips or [])
+    assert session.phase == Phase.EXPLORING
+    assert session.result is not None
+    assert "Analysis Complete" in resp_curr.text
 
 
 def test_fixture_c_signed_ledger_baseline() -> None:
     """Fixture c: Signed ledger export (revenue negative credit, expense positive debit).
     
-    Phase 1 baseline measurement: Reaches analysis, signs inverted (Phase 2 scope).
+    Phase 2 outcome: Detects negative revenue credits, proposes sign flip.
+    Reaches EXPLORING with positive revenue.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_c_signed_ledger.csv"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
-    assert resp_upload.phase == Phase.AWAITING_PERIOD
+    assert resp_upload.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "positive-cost convention" in resp_upload.text
+    assert "Looks right" in (resp_upload.chips or [])
     
+    handle_message(session, "Looks right")
     handle_message(session, "Q3 2026")
     handle_message(session, "$10,000 or 5%")
     resp_curr = handle_message(session, "USD")
     assert "Analysis Complete" in resp_curr.text
     assert session.phase == Phase.EXPLORING
     assert session.result is not None
-    assert session.result.revenue.actual < 0
+    assert session.result.revenue.actual > 0
 
 
 def test_fixture_d_thousands_dashes_blanks_intake() -> None:
@@ -118,14 +127,19 @@ def test_fixture_d_thousands_dashes_blanks_intake() -> None:
 def test_fixture_e_wide_monthly_baseline() -> None:
     """Fixture e: Wide monthly layout ('Jul-26 Budget', 'Jul-26 Actual', etc.).
     
-    Phase 1 baseline measurement: Plain language missing columns error without dead end.
+    Phase 2 outcome: Detects multi-period columns and prompts for period selection.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_e_wide_monthly.xlsx"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
-    assert session.phase == Phase.AWAITING_FILE
-    assert "Could not find a header row with Line Item, Budget, and Actual columns" in resp_upload.text
-    assert "Upload a different file" in (resp_upload.chips or [])
+    assert session.phase == Phase.AWAITING_PERIOD_CHOICE
+    assert "Found data for multiple periods in your file" in resp_upload.text
+    assert "Q3" in (resp_upload.chips or [])
+    
+    resp_q3 = handle_message(session, "Q3")
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Analyzed period:** Q3" in resp_q3.text
+    assert "Looks right" in (resp_q3.chips or [])
 
 
 def test_fixture_f_budget_actuals_separate_baseline() -> None:
@@ -170,38 +184,30 @@ def test_fixture_g_cover_page_active_intake() -> None:
 
 def test_fixture_h_120_line_gl_unclassified_friction() -> None:
     """Fixture h: 120-line GL export with account numbers and no Type column.
-    
-    Phase 1 improvements:
-    1. Zero jargon: replaced 'Unclassified' with 'not yet labeled revenue or expense'.
-    2. Fixed the Skip All loop bug: clicking 'Skip all' after a partial classification
-       no longer traps Maya in an infinite loop.
+
+    Phase 2 outcome: Inferred GL range rules classify 120 lines in 1 click!
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_h_120_line_gl.csv"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
     assert resp_upload.phase == Phase.AWAITING_PERIOD
-    
+
     handle_message(session, "Q3 2026")
     handle_message(session, "$10,000 or 5%")
     resp_curr = handle_message(session, "USD")
-    
-    assert session.phase == Phase.RESOLVE_UNCLASSIFIED
-    assert len(session.unclassified_queue) == 120
-    assert "Analysis complete, but **120** line items are not yet labeled revenue or expense." in resp_curr.text
-    assert "**'Account 4001 Stream 1'** is not yet labeled revenue or expense." in resp_curr.text
-    assert resp_curr.chips == ["Revenue", "Expense", "Skip", "Skip all"]
-    
-    # Classify 1 item
-    resp_step1 = handle_message(session, "Revenue")
-    assert len(session.unclassified_queue) == 119
-    assert "Got it. 119 remaining." in resp_step1.text
-    assert "not yet labeled revenue or expense" in resp_step1.text
 
-    # Skip all remaining items -> BUG IS FIXED, successfully transitions to EXPLORING!
-    resp_step2 = handle_message(session, "Skip all")
+    assert session.phase == Phase.RESOLVE_UNCLASSIFIED
+    assert "Found account numbers. Proposed classification rules:" in resp_curr.text
+    assert "Accounts 4000–4999: Revenue (40 lines)" in resp_curr.text
+    assert "Accounts 5000–8999: Expense (80 lines)" in resp_curr.text
+    assert "Looks right" in (resp_curr.chips or [])
+
+    # Confirm rules in 1 click -> all 120 lines classified!
+    resp_confirm = handle_message(session, "Looks right")
     assert session.phase == Phase.EXPLORING
     assert session.result is not None
-    assert "Analysis Complete" in resp_step2.text
+    assert "Analysis Complete" in resp_confirm.text
+    assert len(session.type_map) == 120
 
 
 def test_fixture_i_pasted_tsv_intake() -> None:

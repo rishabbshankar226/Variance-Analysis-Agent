@@ -27,9 +27,16 @@ from variance_agent.parsing import (
     parse_decimal,
 )
 from variance_agent.intake import (
+    apply_classification_rules,
     format_intake_summary,
+    infer_gl_range_rules,
     plain_analysis_error,
     read_input_assisted,
+)
+from variance_agent.mapping import (
+    LayoutMapping,
+    compute_layout_fingerprint,
+    save_mapping,
 )
 from variance_agent.report import render_markdown
 
@@ -107,6 +114,9 @@ def handle_message(session: Session, text: str) -> Response:
 
     if session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION:
         return _handle_blank_budget_confirmation(session, text)
+
+    if session.phase == Phase.AWAITING_PERIOD_CHOICE:
+        return _handle_period_choice(session, text)
 
     if session.phase == Phase.AWAITING_INTAKE_CONFIRMATION:
         return _handle_intake_confirmation(session, text)
@@ -205,6 +215,16 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
         session.available_sheets = intake_res.available_sheets
         session.intake_result = intake_res
 
+        if intake_res.detected_period_pairs and len(intake_res.detected_period_pairs) > 1 and session.period is None:
+            session.phase = Phase.AWAITING_PERIOD_CHOICE
+            session.detected_period_pairs = intake_res.detected_period_pairs
+            period_chips = [p.period for p in intake_res.detected_period_pairs]
+            return Response(
+                text="Found data for multiple periods in your file.\n\nWhich period would you like to analyze?",
+                chips=period_chips,
+                phase=Phase.AWAITING_PERIOD_CHOICE,
+            )
+
         if not intake_res.has_transformations:
             session.phase = Phase.AWAITING_PERIOD
             row_count = len(intake_res.rows)
@@ -233,6 +253,45 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
         text="Please upload a file using the drop zone above.",
         chips=["Upload a different file"],
         phase=Phase.AWAITING_FILE,
+    )
+
+
+def _handle_period_choice(session: Session, text: str) -> Response:
+    """Handle user selection of which period to analyze from multi-period columns."""
+    chosen_period = _clean_period_input(text)
+    if not chosen_period:
+        chips = [p.period for p in session.detected_period_pairs] if session.detected_period_pairs else []
+        return Response(
+            text="Please choose which period you would like to analyze.",
+            chips=chips,
+            phase=Phase.AWAITING_PERIOD_CHOICE,
+        )
+
+    session.period = chosen_period
+    assert session.source_bytes is not None
+    assert session.source_suffix is not None
+
+    intake_res = read_input_assisted(
+        session.source_bytes,
+        session.source_suffix,
+        filename=session.source_name or "input",
+        sheet=session.worksheet,
+        treat_blank_budgets_as_zero=False,
+        selected_period=chosen_period,
+    )
+    session.parsed_rows = intake_res.rows
+    session.worksheet = intake_res.sheet_name
+    session.available_sheets = intake_res.available_sheets
+    session.intake_result = intake_res
+
+    session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
+    summary_text = format_intake_summary(intake_res)
+    summary_text += "\n\nDoes this look right?"
+    chips = ["Looks right", "Change something"]
+    return Response(
+        text=summary_text,
+        chips=chips,
+        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
     )
 
 
@@ -290,6 +349,20 @@ def handle_upload(
             ),
             chips=["Treat blank budgets as 0 (unbudgeted)", "Keep blank budgets", "Upload a different file"],
             phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
+        )
+
+    # Check for multi-period columns
+    if intake_res.detected_period_pairs and len(intake_res.detected_period_pairs) > 1 and session.period is None:
+        session.intake_result = intake_res
+        session.available_sheets = intake_res.available_sheets
+        session.worksheet = intake_res.sheet_name
+        session.detected_period_pairs = intake_res.detected_period_pairs
+        session.phase = Phase.AWAITING_PERIOD_CHOICE
+        period_chips = [p.period for p in intake_res.detected_period_pairs]
+        return Response(
+            text="Found data for multiple periods in your file.\n\nWhich period would you like to analyze?",
+            chips=period_chips,
+            phase=Phase.AWAITING_PERIOD_CHOICE,
         )
 
     session.parsed_rows = intake_res.rows
@@ -648,12 +721,31 @@ def _run_analysis(session: Session) -> Response:
     if unclassified:
         session.unclassified_queue = list(unclassified)
         session.phase = Phase.RESOLVE_UNCLASSIFIED
+
+        gl_rules = infer_gl_range_rules(unclassified)
+        if gl_rules:
+            session.pending_gl_rules = gl_rules
+            lines = ["Found account numbers. Proposed classification rules:\n"]
+            for r in gl_rules:
+                lbl = "Revenue" if r.line_type == LineType.REVENUE else "Expense"
+                lines.append(f"- Accounts {r.min_account}–{r.max_account}: {lbl} ({r.match_count} lines)")
+            lines.append("\nDoes this look right?")
+            return Response(
+                text="\n".join(lines),
+                chips=["Looks right", "Label all as Expense", "Label all as Revenue", "Skip all"],
+                phase=Phase.RESOLVE_UNCLASSIFIED,
+            )
+
         item = safe_inline(session.unclassified_queue[0])
         remaining = len(session.unclassified_queue)
+        chips = ["Revenue", "Expense"]
+        if remaining > 1:
+            chips.extend(["Label all as Expense", "Label all as Revenue"])
+        chips.extend(["Skip", "Skip all"])
         return Response(
             text=f"Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or expense.\n\n"
                  f"**'{item}'** is not yet labeled revenue or expense. Should it be:",
-            chips=["Revenue", "Expense", "Skip", "Skip all"],
+            chips=chips,
             phase=Phase.RESOLVE_UNCLASSIFIED,
         )
 
@@ -669,10 +761,50 @@ def _handle_classify(session: Session, text: str) -> Response:
         for itm in session.unclassified_queue:
             session.type_map[itm] = LineType.UNCLASSIFIED
         session.unclassified_queue.clear()
+        session.pending_gl_rules = []
         session.phase = Phase.EXPLORING
         return _build_analysis_summary(session)
 
+    if session.pending_gl_rules and text_lower in (
+        "looks right", "yes", "confirm", "looks good", "correct", "proceed", "looks_right", "1"
+    ):
+        applied = apply_classification_rules(session.unclassified_queue, session.pending_gl_rules)
+        session.type_map.update(applied)
+        session.pending_gl_rules = []
+        session.unclassified_queue = [
+            itm for itm in session.unclassified_queue if itm not in applied
+        ]
+        if not session.unclassified_queue:
+            return _run_analysis(session)
+        item = safe_inline(session.unclassified_queue[0])
+        remaining = len(session.unclassified_queue)
+        chips = ["Revenue", "Expense"]
+        if remaining > 1:
+            chips.extend(["Label all as Expense", "Label all as Revenue"])
+        chips.extend(["Skip", "Skip all"])
+        return Response(
+            text=f"Rules applied! **{remaining}** item{'s' if remaining != 1 else ''} remaining.\n\n"
+                 f"**'{item}'** is not yet labeled revenue or expense. Should it be:",
+            chips=chips,
+            phase=Phase.RESOLVE_UNCLASSIFIED,
+        )
+
+    if text_lower in ("label all as expense", "all expense", "all expenses", "everything expense"):
+        for itm in session.unclassified_queue:
+            session.type_map[itm] = LineType.EXPENSE
+        session.unclassified_queue.clear()
+        session.pending_gl_rules = []
+        return _run_analysis(session)
+
+    if text_lower in ("label all as revenue", "all revenue", "everything revenue"):
+        for itm in session.unclassified_queue:
+            session.type_map[itm] = LineType.REVENUE
+        session.unclassified_queue.clear()
+        session.pending_gl_rules = []
+        return _run_analysis(session)
+
     if not session.unclassified_queue:
+        session.pending_gl_rules = []
         session.phase = Phase.EXPLORING
         return _build_analysis_summary(session)
 
@@ -688,19 +820,27 @@ def _handle_classify(session: Session, text: str) -> Response:
         session.type_map[current_item] = LineType.UNCLASSIFIED
         session.unclassified_queue.pop(0)
     else:
+        chips = ["Revenue", "Expense"]
+        if len(session.unclassified_queue) > 1:
+            chips.extend(["Label all as Expense", "Label all as Revenue"])
+        chips.extend(["Skip", "Skip all"])
         return Response(
             text=f"Please choose Revenue, Expense, or Skip for '{safe_inline(current_item)}'.",
-            chips=["Revenue", "Expense", "Skip", "Skip all"],
+            chips=chips,
             phase=Phase.RESOLVE_UNCLASSIFIED,
         )
 
     if session.unclassified_queue:
         next_item = safe_inline(session.unclassified_queue[0])
         remaining = len(session.unclassified_queue)
+        chips = ["Revenue", "Expense"]
+        if remaining > 1:
+            chips.extend(["Label all as Expense", "Label all as Revenue"])
+        chips.extend(["Skip", "Skip all"])
         return Response(
             text=f"Got it. {remaining} remaining.\n\n"
                  f"**'{next_item}'** is not yet labeled revenue or expense. Should it be:",
-            chips=["Revenue", "Expense", "Skip", "Skip all"],
+            chips=chips,
             phase=Phase.RESOLVE_UNCLASSIFIED,
         )
 
@@ -798,7 +938,7 @@ def _build_analysis_summary(session: Session) -> Response:
     if result.material_rows:
         first_item = result.material_rows[0].line_item
         chips.append(f"Why {first_item}?")
-    chips.extend(["Show unfavorable", "Summary", "Export report"])
+    chips.extend(["Show unfavorable", "Summary", "Export report", "Save layout mapping"])
     if result.warnings:
         chips.append("Warnings")
 
@@ -810,8 +950,63 @@ def _build_analysis_summary(session: Session) -> Response:
 # ---------------------------------------------------------------------------
 
 
+def _handle_save_mapping(session: Session) -> Response:
+    """Export confirmed layout choices as a JSON mapping file."""
+    intake_res = session.intake_result
+    col_mapping: dict[str, str] = {}
+    header_row = 1
+    unit_scale = None
+    flip_signs = False
+    excluded_totals: list[str] = []
+    fingerprint = ""
+
+    if intake_res is not None:
+        header_row = intake_res.header_row_number
+        col_mapping = {role.value: name for role, name in intake_res.column_mapping.items()}
+        if intake_res.detected_unit_multiplier != Decimal("1"):
+            unit_scale = str(intake_res.detected_unit_multiplier)
+        flip_signs = intake_res.detected_signed_ledger
+        excluded_totals = list(intake_res.detected_totals)
+        if intake_res.raw_headers:
+            fingerprint = compute_layout_fingerprint(intake_res.raw_headers)
+
+    classification_rules = None
+    if session.type_map:
+        classification_rules = {
+            "keywords": {k: v.value.capitalize() for k, v in session.type_map.items()}
+        }
+
+    mapping = LayoutMapping(
+        mapping_version="1.5",
+        layout_fingerprint=fingerprint,
+        header_row_number=header_row,
+        sheet_name=session.worksheet,
+        column_mapping=col_mapping,
+        unit_scale=unit_scale,
+        flip_signs=flip_signs,
+        treat_blank_budgets_as_zero=True,
+        exclude_totals=excluded_totals,
+        period_column_selection=session.period,
+        classification_rules=classification_rules,
+    )
+    session.layout_mapping = mapping
+    mapping_json = save_mapping(mapping)
+    return Response(
+        text=(
+            "✅ **Layout Mapping Saved**\n\n"
+            "Here are your confirmed layout settings. You can reuse this mapping in future months with `--mapping <file>`:\n\n"
+            f"```json\n{mapping_json}\n```"
+        ),
+        chips=["Summary", "Export report", "Show unfavorable"],
+        phase=Phase.EXPLORING,
+    )
+
+
 def _handle_exploring(session: Session, text: str) -> Response:
     """Route a message through the intent parser during the EXPLORING phase."""
+    if "save layout mapping" in text.lower() or "save mapping" in text.lower():
+        return _handle_save_mapping(session)
+
     intent = parse_intent(text)
     result = session.result
     assert result is not None
