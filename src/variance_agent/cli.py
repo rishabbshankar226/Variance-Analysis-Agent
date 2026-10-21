@@ -235,7 +235,6 @@ def _run(args: Arguments) -> int:
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
 
     mapping_obj = None
-    mapping_hash = None
     intake_res = None
 
     compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
@@ -243,7 +242,7 @@ def _run(args: Arguments) -> int:
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
-        from .mapping import load_mapping, mapping_sha256
+        from .mapping import load_mapping
         from .intake import (
             GLRangeRule,
             apply_classification_rules,
@@ -253,7 +252,6 @@ def _run(args: Arguments) -> int:
         )
         mapping_path = Path(mapping_arg)
         mapping_obj = load_mapping(mapping_path.read_text(encoding="utf-8"))
-        mapping_hash = mapping_sha256(mapping_obj)
 
         intake_res = read_input_assisted(
             source_bytes,
@@ -376,41 +374,9 @@ def _run(args: Arguments) -> int:
         outputs[Path(args.xlsx)] = render_xlsx(result)
     if args.audit_json:
         transformations: dict[str, object] | None = None
-        if mapping_obj is not None and intake_res is not None:
-            transformations = {
-                "header_row_number": mapping_obj.header_row_number,
-                "column_mapping": mapping_obj.column_mapping,
-                "ignored_columns": intake_res.ignored_columns,
-                "sign_flip": mapping_obj.flip_signs,
-                "flipped_line_items": intake_res.negative_revenue_items if mapping_obj.flip_signs else [],
-                "unit_scale": mapping_obj.unit_scale if mapping_obj.unit_scale != "1" else None,
-                "zero_reads": {
-                    "accounting_dashes": 0,
-                    "blank_budgets": len(intake_res.blank_budget_items) if mapping_obj.treat_blank_budgets_as_zero else 0,
-                },
-                "excluded_totals": mapping_obj.exclude_totals,
-                "period_selection": mapping_obj.period_column_selection,
-                "classification_rules": mapping_obj.classification_rules,
-                "mapping_file_sha256": mapping_hash,
-            }
-        elif getattr(args, "assisted", False) and intake_res is not None:
-            col_map = {role.value: name for role, name in intake_res.column_mapping.items()}
-            transformations = {
-                "header_row_number": intake_res.header_row_number,
-                "column_mapping": col_map,
-                "ignored_columns": intake_res.ignored_columns,
-                "sign_flip": intake_res.detected_signed_ledger,
-                "flipped_line_items": intake_res.negative_revenue_items if intake_res.detected_signed_ledger else [],
-                "unit_scale": str(intake_res.detected_unit_multiplier) if intake_res.detected_unit_multiplier != Decimal("1") else None,
-                "zero_reads": {
-                    "accounting_dashes": 0,
-                    "blank_budgets": len(intake_res.blank_budget_items),
-                },
-                "excluded_totals": intake_res.detected_totals,
-                "period_selection": None,
-                "classification_rules": None,
-                "mapping_file_sha256": None,
-            }
+        if intake_res is not None:
+            from .intake import audit_transformations
+            transformations = audit_transformations(intake_res, mapping_obj)
         record = build_audit_record(
             result, source_name=input_path.name, source_sha256=source_hash,
             schema_version=args.audit_schema_version,

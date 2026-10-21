@@ -36,6 +36,7 @@ from variance_agent.parsing import (
 from variance_agent.intake import (
     IntakeResult,
     apply_classification_rules,
+    audit_transformations,
     format_intake_summary,
     infer_gl_range_rules,
     plain_analysis_error,
@@ -1202,8 +1203,8 @@ def _saved_comparison_basis(session: Session) -> ComparisonBasis | None:
     return None
 
 
-def _handle_save_mapping(session: Session) -> Response:
-    """Export confirmed layout choices as a JSON mapping file."""
+def _layout_mapping_for(session: Session) -> LayoutMapping:
+    """The layout mapping that replays the session's confirmed layout choices."""
     intake_res = session.intake_result
     col_mapping: dict[str, str] = {}
     header_row = 1
@@ -1228,7 +1229,7 @@ def _handle_save_mapping(session: Session) -> Response:
             "keywords": {k: v.value.capitalize() for k, v in session.type_map.items()}
         }
 
-    mapping = LayoutMapping(
+    return LayoutMapping(
         mapping_version="1.5",
         layout_fingerprint=fingerprint,
         header_row_number=header_row,
@@ -1242,6 +1243,11 @@ def _handle_save_mapping(session: Session) -> Response:
         classification_rules=classification_rules,
         comparison_basis=_saved_comparison_basis(session),
     )
+
+
+def _handle_save_mapping(session: Session) -> Response:
+    """Export confirmed layout choices as a JSON mapping file."""
+    mapping = _layout_mapping_for(session)
     session.layout_mapping = mapping
     mapping_json = save_mapping(mapping)
     return Response(
@@ -1961,11 +1967,18 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
     assert result is not None
 
     source_hash = sha256_bytes(session.source_bytes) if session.source_bytes else None
+    transformations: dict[str, object] | None = None
+    if session.intake_result is not None:
+        # A mapping saved for an earlier file, sheet or comparison no longer describes this audit.
+        saved = session.layout_mapping
+        mapping = saved if saved is not None and saved == _layout_mapping_for(session) else None
+        transformations = audit_transformations(session.intake_result, mapping)
     record = build_audit_record(
         result,
         source_name=session.source_name,
         source_sha256=source_hash,
         source_worksheet=session.worksheet,
+        transformations=transformations,
     )
     audit_json = serialize_audit_json(record)
     period_slug = result.config.period.replace(" ", "_").lower()
