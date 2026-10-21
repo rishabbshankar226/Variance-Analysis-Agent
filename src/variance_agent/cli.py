@@ -54,6 +54,14 @@ def _intake_error(intake_res: IntakeResult) -> str:
     return message
 
 
+def _unit_name(scale: Decimal) -> str:
+    if scale == Decimal("1000"):
+        return "thousands"
+    if scale == Decimal("1000000"):
+        return "millions"
+    return f"units of {scale}"
+
+
 class Arguments(Protocol):
     input: str | None
     period: str | None
@@ -247,6 +255,7 @@ def _run(args: Arguments) -> int:
         from .intake import (
             GLRangeRule,
             apply_classification_rules,
+            detect_signed_ledger,
             flip_ledger_signs,
             read_input_assisted,
             scale_rows_by_unit,
@@ -271,11 +280,21 @@ def _run(args: Arguments) -> int:
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
             rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+        # Intake already applied any unit scale and revenue sign flip it detected (as the chat
+        # does), so the mapping only adds what the file itself did not say.
         if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
-            rows = scale_rows_by_unit(rows, Decimal(mapping_obj.unit_scale))
-        if mapping_obj.flip_signs:
-            items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
-            rows, _ = flip_ledger_signs(rows, items)
+            target_scale = Decimal(mapping_obj.unit_scale)
+            detected_scale = intake_res.detected_unit_multiplier
+            if detected_scale == Decimal("1"):
+                rows = scale_rows_by_unit(rows, target_scale)
+            elif detected_scale != target_scale:
+                raise ValueError(
+                    f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
+                    f"mapping says {_unit_name(target_scale)}. Check the file, or update unit_scale "
+                    "in the mapping."
+                )
+        if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
+            rows, _ = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
 
         type_map: dict[str, LineType] = {}
         if type_map_bytes is not None:
