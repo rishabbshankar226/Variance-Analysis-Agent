@@ -147,8 +147,12 @@ def _comparison_chips(choices: list[ComparisonBasis]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def handle_message(session: Session, text: str) -> Response:
-    """Top-level router: dispatch based on conversation phase and domain intents."""
+def handle_message(session: Session, text: str, *, first_visit: bool | None = None) -> Response:
+    """Top-level router: dispatch based on conversation phase and domain intents.
+
+    ``first_visit`` is the page saying whether its visitor has seen the intro yet;
+    see ``_with_first_upload_intro``.
+    """
     text = text.strip()
     if not text:
         return Response(text="Please type a message or upload a file.")
@@ -200,7 +204,7 @@ def handle_message(session: Session, text: str) -> Response:
                     text=summary_text,
                     chips=["Looks right", "Change something"],
                     phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-                ), intake_res.comparison_basis)
+                ), intake_res.comparison_basis, first_visit)
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
             phase=session.phase,
@@ -393,6 +397,7 @@ def _handle_period_choice(session: Session, text: str) -> Response:
 
 def handle_upload(
     session: Session, file_bytes: bytes, filename: str, sheet: str | None = None,
+    *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
     suffix = Path(filename).suffix.lower()
@@ -413,7 +418,7 @@ def handle_upload(
         compare_to=session.compare_to,
     )
     return _with_first_upload_intro(
-        session, _intake_response(session, intake_res, filename), intake_res.comparison_basis,
+        session, _intake_response(session, intake_res, filename), intake_res.comparison_basis, first_visit,
     )
 
 
@@ -444,11 +449,20 @@ def _first_upload_intro(basis: ComparisonBasis) -> str:
     )
 
 
-def _with_first_upload_intro(session: Session, response: Response, basis: ComparisonBasis) -> Response:
-    """Open the session's first successfully read file with what the chatbot is for."""
-    if session.intro_shown or response.phase == Phase.AWAITING_FILE:
+def _with_first_upload_intro(
+    session: Session, response: Response, basis: ComparisonBasis, first_visit: bool | None,
+) -> Response:
+    """Open a visitor's first successfully read file with what the chatbot is for.
+
+    Hosted visitors share one session, so the page says whether its visitor has seen
+    the intro (``first_visit``). Callers that don't say get it once per session.
+    """
+    if response.phase == Phase.AWAITING_FILE:
         return response
+    show = not session.intro_shown if first_visit is None else first_visit
     session.intro_shown = True
+    if not show:
+        return response
     return replace(response, text=_first_upload_intro(basis) + response.text)
 
 
