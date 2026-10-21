@@ -76,3 +76,25 @@ header and 256 columns, with 1,000,000 cells per worksheet. Inflated dimension
 metadata does not expand these limits. Duplicate archive paths, DTD/entities,
 duplicate or unordered coordinates, and invalid physical positions are rejected
 before the workbook library expands a worksheet.
+
+## Assisted intake (--assisted)
+
+By default, the CLI enforces strict canonical column headers (`Line Item`, `Budget`, `Actual`),
+expects headers on row 1 of the active worksheet, and rejects accounting dashes or blank budgets.
+This guarantees 100% byte-identical backwards compatibility with existing automated pipelines.
+
+Passing `--assisted` enables intelligent intake for real-world files:
+- **Header detection**: Skips title blocks, blank rows, and metadata lines above the header row, picking the first candidate row containing line-item, budget, and actual columns.
+- **Synonym matching**: Maps common ERP and planning column names:
+  - Line item: `Account Description`, `Description`, `GL Account Name`, `Account Title`, `Line Item Name`, `GL Description`.
+  - Account ID: `GL Account`, `GL Account Number`, `Account Number`, `Acct #` (stored as line metadata).
+  - Budget: `Budget YTD`, `YTD Budget`, `Plan YTD`, `Forecast` (treated as the plan), `Bgt`, `Budget Amt`.
+  - Actual: `Actual YTD`, `YTD Actual`, `Act`, `Actual Amt`.
+  - Ignored computed columns: `Var $`, `Var %`, `Variance`, `% of Budget` (ignored with visible provenance).
+- **Number normalization**: Reads accounting dashes (`"-"`, `"–"`, `"—"`) as zero and treats blank budgets as 0 (unbudgeted).
+- **Provenance**: In `--assisted` mode, all inferred adjustments are printed to stderr so report and audit stdout streams remain clean.
+
+```sh
+variance-agent exports/raw_erp_dump.xlsx --assisted --period 'Q3 2026' \
+  --dollar-threshold 10000 --percent-threshold 5
+```

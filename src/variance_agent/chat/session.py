@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from variance_agent.intake import IntakeResult
     from variance_agent.models import AnalysisResult, LineType
 
 
@@ -20,6 +21,10 @@ class Phase(StrEnum):
     """Conversation phases in the guided intake flow."""
 
     AWAITING_FILE = "awaiting_file"
+    AWAITING_SHEET_CHOICE = "awaiting_sheet_choice"
+    AWAITING_HEADER_CHOICE = "awaiting_header_choice"
+    AWAITING_BLANK_BUDGET_CONFIRMATION = "awaiting_blank_budget_confirmation"
+    AWAITING_INTAKE_CONFIRMATION = "awaiting_intake_confirmation"
     AWAITING_PERIOD = "awaiting_period"
     AWAITING_THRESHOLDS = "awaiting_thresholds"
     AWAITING_CURRENCY = "awaiting_currency"
@@ -40,6 +45,8 @@ class Session:
     parsed_rows: list[dict[str, object]] | None = None
     worksheet: str | None = None
     available_sheets: list[str] = field(default_factory=list)
+    intake_result: IntakeResult | None = None
+    last_technical_detail: str | None = None
 
     # Populated during configuration
     period: str | None = None

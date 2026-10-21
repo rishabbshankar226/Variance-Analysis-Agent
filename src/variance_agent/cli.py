@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+import sys
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import Protocol, cast
@@ -36,6 +37,7 @@ class Arguments(Protocol):
     hosted: bool
     no_browser: bool
     commentary: bool
+    assisted: bool
 
 
 def _decimal(text: str) -> Decimal:
@@ -122,6 +124,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include verified deterministic executive commentary in the Markdown report.",
     )
+    parser.add_argument(
+        "--assisted",
+        action="store_true",
+        help="Enable assisted file intake (detect header rows, map column synonyms, and convert accounting dashes).",
+    )
     return parser
 
 
@@ -173,7 +180,27 @@ def _run(args: Arguments) -> int:
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
-    parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
+
+    if getattr(args, "assisted", False):
+        from .intake import read_input_assisted
+        intake_res = read_input_assisted(
+            source_bytes,
+            input_path.suffix,
+            filename=input_path.name,
+            sheet=args.sheet,
+            treat_blank_budgets_as_zero=True,
+        )
+        if intake_res.has_fatal_errors:
+            raise ValueError(intake_res.fatal_error_message or "Could not read input.")
+        parsed_rows = intake_res.rows
+        parsed_worksheet = intake_res.sheet_name
+        for transform in intake_res.visible_transformations:
+            print(f"[assisted intake] {transform}", file=sys.stderr)
+    else:
+        parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
+        parsed_rows = parsed.rows
+        parsed_worksheet = parsed.worksheet
+
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -181,7 +208,7 @@ def _run(args: Arguments) -> int:
         type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
         currency=args.currency,
     )
-    result = analyze_rows(parsed.rows, config)
+    result = analyze_rows(parsed_rows, config)
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
         print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "
@@ -201,7 +228,7 @@ def _run(args: Arguments) -> int:
             result, source_name=input_path.name, source_sha256=source_hash,
             schema_version=args.audit_schema_version,
             type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
-            source_worksheet=parsed.worksheet,
+            source_worksheet=parsed_worksheet,
         )
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     write_text_outputs(outputs)

@@ -1424,5 +1424,14 @@ def test_conversational_inverted_what_if() -> None:
     assert "+5.0%" in inc_sim.text
 
 
+def test_chat_html_copies_identical() -> None:
+    """Ensure root static/chat.html and package src/variance_agent/static/chat.html remain byte-identical."""
+    root_static = Path(__file__).resolve().parent.parent / "static" / "chat.html"
+    pkg_static = Path(__file__).resolve().parent.parent / "src" / "variance_agent" / "static" / "chat.html"
+    assert root_static.exists(), f"Missing root static file: {root_static}"
+    assert pkg_static.exists(), f"Missing package static file: {pkg_static}"
+    assert root_static.read_bytes() == pkg_static.read_bytes(), "static/chat.html and src/variance_agent/static/chat.html must be identical."
+
+
 
 

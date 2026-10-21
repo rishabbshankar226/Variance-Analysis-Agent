@@ -1,0 +1,6 @@
+Account	Budget	Actual	Fictional Note
+Subscription Revenue	100000	115000	Fictional
+Services Revenue	50000	47000	Fictional
+Payroll Expense	60000	68000	Fictional
+Marketing Expense	20000	23000	Fictional
+Rent Expense	15000	15000	Fictional

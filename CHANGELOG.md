@@ -2,6 +2,19 @@
 
 ## 0.3.0 — Unreleased
 
+- Measure baseline intake friction for FP&A analysts: add 9 synthetic real-world
+  fixtures, baseline chat tests, and a message inventory documenting intake errors,
+  jargon rates, and dead ends.
+- Add intelligent assisted data intake (`src/variance_agent/intake.py`) with header-row
+  detection, multi-sheet budget-vs-actual scoring, column synonym mapping, accounting
+  dash parsing, and single-pass issue collection.
+- Introduce plain-language conversational summaries ("Here's how I read your file")
+  and blank budget confirmations ("Treat blank budgets as 0?"), eliminating intake dead
+  ends for ERP title blocks, multi-sheet workbooks, accounting dashes, and pasted TSV data.
+- Add `--assisted` opt-in CLI flag for non-standard file intake while guaranteeing
+  100% byte-identical contract fixture compatibility for default CLI runs.
+- Eliminate developer jargon (`!r` quoting, `Unclassified`, exception names, CLI flags)
+  from all analyst-facing responses and resolve the Skip All classification loop bug.
 - Reject mixed reporting currencies; support explicit USD/EUR/GBP without FX
   conversion. Reports name the reporting currency throughout all sections.
 - Reject currency-decorated CLI thresholds instead of discarding their symbols.
