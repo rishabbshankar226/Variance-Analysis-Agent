@@ -300,3 +300,32 @@ def test_shaped_signs_are_not_flipped_again_as_a_signed_ledger(tmp_path: Path) -
     pension = next(r for r in result.rows if r["line_item"] == "Pension benefit liabilities")
     assert (pension["type"], pension["actual"], pension["budget"]) == (
         "Revenue", Decimal("22000000"), Decimal("-23000000"))
+
+
+def test_shaped_lines_are_not_mistaken_for_sums(tmp_path: Path) -> None:
+    """A line that happens to equal the sum of the two above it stays a line."""
+    from tests.fixtures.realworld.minipdf import Page, write_pdf
+
+    page = Page()
+    page.text(72, 40, "FICTIONAL SYNTHETIC DATA - NORTHWIND FICTIONAL HOLDINGS, INC.")
+    page.text(72, 60, "Consolidated Statements of Operations", size=10)
+    page.text(72, 78, "(In millions)")
+    page.right(460, 78, "2025")
+    page.right(540, 78, "2024")
+    for i, (label, now, before) in enumerate([
+        ("Net sales", "1,000", "900"),
+        ("Rent expense", "10", "20"),
+        ("Freight expense", "15", "25"),
+        ("Insurance expense", "25", "45"),
+        ("Operating income", "950", "810"),
+    ]):
+        page.text(72, 96 + i * 13, label)
+        page.right(460, 96 + i * 13, now)
+        page.right(540, 96 + i * 13, before)
+    path = tmp_path / "sums.pdf"
+    write_pdf(path, [page])
+
+    result = _read(path)
+    assert [r["line_item"] for r in result.rows] == [
+        "Net sales", "Rent expense", "Freight expense", "Insurance expense"]
+    assert result.detected_totals == ["Operating income"]

@@ -1438,8 +1438,9 @@ def _process_raw_table(
     compare_to: ComparisonBasis | None = None,
     signs_resolved: bool = False,
 ) -> IntakeResult:
-    """Map, parse and check one table of rows. ``signs_resolved`` skips the signed-ledger
-    flip for rows whose signs a shaped financial statement has already settled."""
+    """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
+    financial statement: their signs are settled and their subtotals already removed, so the
+    signed-ledger flip and sum-based subtotal detection are skipped."""
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
@@ -1688,7 +1689,7 @@ def _process_raw_table(
     has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
     subtotals_det = (
         SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
-        if has_row_kind else detect_subtotals_and_totals(output_rows)
+        if has_row_kind or signs_resolved else detect_subtotals_and_totals(output_rows)
     )
     reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
     if reconciled_names:
