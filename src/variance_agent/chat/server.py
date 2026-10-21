@@ -15,6 +15,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import ClassVar
 
+from variance_agent.xlsx import XLSX_MEDIA_TYPE
+
 from .handlers import handle_message, handle_upload
 from .responses import Response
 from .session import Session
@@ -24,7 +26,9 @@ _STATIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static"
 _PKG_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 # Staged downloads keyed by filename
-_downloads: dict[str, str] = {}
+_downloads: dict[str, str | bytes] = {}
+
+_DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
 
 
 class _ChatHandler(BaseHTTPRequestHandler):
@@ -60,9 +64,13 @@ class _ChatHandler(BaseHTTPRequestHandler):
             raw_filename = self.path[len("/download/"):].split("?")[0]
             filename = urllib.parse.unquote(raw_filename)
             if filename in _downloads:
-                content = _downloads[filename].encode("utf-8")
+                staged = _downloads[filename]
+                content = staged if isinstance(staged, bytes) else staged.encode("utf-8")
+                content_type = _DOWNLOAD_TYPES.get(
+                    Path(filename).suffix.lower(), "application/octet-stream"
+                )
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Type", content_type)
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()

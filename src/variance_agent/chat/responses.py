@@ -21,7 +21,7 @@ class Response:
     text: str
     table: list[dict[str, str]] | None = None
     chips: list[str] | None = None
-    download: dict[str, str] | None = None
+    download: dict[str, str | bytes] | None = None
     phase: str | None = None
 
 

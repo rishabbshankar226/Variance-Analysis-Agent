@@ -1,4 +1,4 @@
-"""Stage text outputs before atomically replacing each destination file."""
+"""Stage text or binary outputs before atomically replacing each destination file."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Mapping
 
 
-def write_text_outputs(outputs: Mapping[Path, str]) -> None:
+def write_text_outputs(outputs: Mapping[Path, str | bytes]) -> None:
     targets = [(Path(path).resolve(), text) for path, text in outputs.items()]
     paths = [path for path, _ in targets]
     for index, path in enumerate(paths):
@@ -27,19 +27,33 @@ def write_text_outputs(outputs: Mapping[Path, str]) -> None:
     try:
         for path, text in targets:
             path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                prefix=f".{path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-                staged.append((temporary, path))
-                handle.write(text)
-                handle.flush()
-                os.fsync(handle.fileno())
+            if isinstance(text, bytes):
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=path.parent,
+                    prefix=f".{path.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as binary_handle:
+                    temporary = Path(binary_handle.name)
+                    staged.append((temporary, path))
+                    binary_handle.write(text)
+                    binary_handle.flush()
+                    os.fsync(binary_handle.fileno())
+            else:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=path.parent,
+                    prefix=f".{path.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as handle:
+                    temporary = Path(handle.name)
+                    staged.append((temporary, path))
+                    handle.write(text)
+                    handle.flush()
+                    os.fsync(handle.fileno())
             if path.exists():
                 temporary.chmod(path.stat().st_mode & 0o777)
             else:
