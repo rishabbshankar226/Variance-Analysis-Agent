@@ -410,7 +410,7 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
     if intake_res.has_fatal_errors or not intake_res.rows:
         technical = intake_res.fatal_error_message or (
             f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
-            "Please upload a file with at least one row of budget and actual data."
+            f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
         )
         session.last_technical_detail = technical
         chips = _comparison_chips(intake_res.comparison_choices)

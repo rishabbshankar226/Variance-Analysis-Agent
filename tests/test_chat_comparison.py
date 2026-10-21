@@ -363,3 +363,11 @@ def test_mixed_named_and_year_columns_offer_both_chips() -> None:
     _ask(session, "compare to prior period")
     assert session.intake_result is not None
     assert session.intake_result.comparison_basis is P
+
+
+def test_empty_forecast_file_error_never_says_budget() -> None:
+    session = Session()
+    response = handle_upload(session, b"Line Item,Type,Forecast,Actual\n", "empty.csv")
+    assert response.text.startswith("⚠️")
+    _no_plan_words(response.text, "empty file")
+    _no_plan_words(session.last_technical_detail or "", "technical detail")
