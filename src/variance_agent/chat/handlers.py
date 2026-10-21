@@ -1237,6 +1237,19 @@ def _handle_full_report(session: Session) -> Response:
     )
 
 
+def _path_export_disabled(path: str, intent: ParsedIntent) -> Response:
+    """Refuse a server-side write on hosted deployments and point to the download."""
+    chip = {"export_audit": "Export audit", "export_csv": "Export csv"}.get(
+        intent.intent_id, "Export report"
+    )
+    return Response(
+        text=(f"⚠️ Saving to `{safe_inline(path)}` is turned off on this hosted version. "
+              f"Use **{chip}** to download the file instead."),
+        chips=[chip],
+        phase=Phase.EXPLORING,
+    )
+
+
 def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     """Generate the Markdown report for download."""
     result = session.result
@@ -1247,6 +1260,8 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     filename = f"variance_report_{period_slug}.md"
 
     path = intent.captures.get("path")
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
     if path:
         try:
             write_text_outputs({Path(path): report})
@@ -1287,6 +1302,8 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
     filename = f"variance_audit_{period_slug}.json"
 
     path = intent.captures.get("path")
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
     if path:
         try:
             write_text_outputs({Path(path): audit_json})
@@ -1362,6 +1379,8 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
     filename = f"variance_data_{period_slug}.csv"
 
     path = intent.captures.get("path")
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
     if path:
         try:
             write_text_outputs({Path(path): csv_text})

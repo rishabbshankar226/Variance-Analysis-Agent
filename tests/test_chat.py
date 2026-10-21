@@ -667,8 +667,11 @@ def test_cli_chat_flag_invokes_server(monkeypatch: pytest.MonkeyPatch) -> None:
         initial_input: str | None = None,
         initial_sheet: str | None = None,
         open_browser: bool = True,
+        hosted: bool = False,
     ) -> int:
         invoked["host"] = host
+        invoked["open_browser"] = open_browser
+        invoked["hosted"] = hosted
         invoked["port"] = port
         invoked["initial_input"] = initial_input
         invoked["initial_sheet"] = initial_sheet
@@ -686,6 +689,30 @@ def test_cli_chat_flag_invokes_server(monkeypatch: pytest.MonkeyPatch) -> None:
     rc2 = cli.main(["examples/sample_variance.csv", "--chat"])
     assert rc2 == 0
     assert invoked["initial_input"] == "examples/sample_variance.csv"
+
+
+def test_cli_chat_hosted_binds_platform_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    invoked: dict[str, Any] = {}
+
+    def mock_run_chat_server(**kwargs: Any) -> int:
+        invoked.update(kwargs)
+        return 0
+
+    import variance_agent.chat.server as srv
+    monkeypatch.setattr(srv, "run_chat_server", mock_run_chat_server)
+    monkeypatch.setenv("PORT", "8123")
+
+    assert cli.main(["--chat", "--hosted"]) == 0
+    assert invoked["host"] == "0.0.0.0"
+    assert invoked["port"] == 8123
+    assert invoked["open_browser"] is False
+    assert invoked["hosted"] is True
+
+
+def test_cli_hosted_requires_chat() -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--hosted"])
+    assert exc.value.code == 2
 
 
 def test_cli_chat_rejects_conflicting_output_flags() -> None:
@@ -727,6 +754,28 @@ def test_export_csv_download() -> None:
     assert "Line Item,Type,Budget (USD),Actual (USD),Variance (USD),Variance (%),Status,Material" in csv_text
     assert "Product Sales" in csv_text
     assert "Marketing" in csv_text
+
+
+@pytest.mark.parametrize("command", [
+    "export report to {path}", "export audit to {path}", "export csv to {path}",
+])
+def test_hosted_session_refuses_path_exports(tmp_path: Path, command: str) -> None:
+    session = Session(path_exports_enabled=False)
+    handle_upload(session, SAMPLE_CSV, "test.csv")
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$5,000 or 5%")
+    handle_message(session, "USD")
+    handle_message(session, "Expense")
+    assert session.phase == Phase.EXPLORING
+
+    target = tmp_path / "out.txt"
+    resp = handle_message(session, command.format(path=target))
+    assert "turned off" in resp.text
+    assert resp.download is None
+    assert not target.exists()
+
+    session.reset()
+    assert session.path_exports_enabled is False
 
 
 def test_partial_threshold_adjustments() -> None:

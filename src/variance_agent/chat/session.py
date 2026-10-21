@@ -59,6 +59,9 @@ class Session:
     last_focused_item: str | None = None
     last_table_items: list[str] = field(default_factory=list)
 
+    # Deployment policy; survives reset(). False on hosted servers.
+    path_exports_enabled: bool = True
+
     def reset(self) -> None:
         self.phase = Phase.AWAITING_FILE
         self.source_bytes = None

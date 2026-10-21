@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import Protocol, cast
@@ -32,6 +33,7 @@ class Arguments(Protocol):
     output: str | None
     audit_json: str | None
     chat: bool
+    hosted: bool
 
 
 def _decimal(text: str) -> Decimal:
@@ -102,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Launch the interactive chatbot UI in your browser.",
     )
+    parser.add_argument(
+        "--hosted",
+        action="store_true",
+        help="With --chat: serve on 0.0.0.0:$PORT for a hosting platform, without "
+             "opening a browser or writing exports to server paths.",
+    )
     return parser
 
 
@@ -128,6 +136,12 @@ def _run(args: Arguments) -> int:
         if args.check_only or args.output or args.audit_json:
             raise ValueError("--chat cannot be combined with --check-only, --output, or --audit-json.")
         from .chat.server import run_chat_server
+        if args.hosted:
+            return run_chat_server(
+                host="0.0.0.0", port=int(os.environ.get("PORT", "10000")),
+                initial_input=args.input, initial_sheet=args.sheet,
+                open_browser=False, hosted=True,
+            )
         return run_chat_server(initial_input=args.input, initial_sheet=args.sheet)
 
     assert args.input is not None
@@ -181,6 +195,8 @@ def _run(args: Arguments) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = cast(Arguments, parser.parse_args(argv))
+    if args.hosted and not args.chat:
+        parser.error("--hosted requires --chat.")
     if not args.chat:
         missing: list[str] = []
         if not args.input:

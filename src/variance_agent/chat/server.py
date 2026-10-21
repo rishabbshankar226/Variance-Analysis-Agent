@@ -1,7 +1,8 @@
 """Local HTTP server for the deterministic chatbot.
 
 Uses only the Python standard library (http.server, json, email.parser).
-Binds to 127.0.0.1 only -- not accessible from the network.
+Binds to 127.0.0.1 by default; hosted mode binds the address the platform
+provides and disables exports to server paths.
 """
 
 import json
@@ -211,13 +212,15 @@ def run_chat_server(
     initial_input: str | None = None,
     initial_sheet: str | None = None,
     open_browser: bool = True,
+    hosted: bool = False,
 ) -> int:
     """Start the chatbot server and open the browser.
 
     Port 0 lets the OS assign an available port automatically.
+    Hosted mode refuses chat commands that write to server-side paths.
     Returns 0 on clean shutdown.
     """
-    session = Session()
+    session = Session(path_exports_enabled=not hosted)
     _ChatHandler.session = session
     _ChatHandler.initial_response = None
 
@@ -233,7 +236,10 @@ def run_chat_server(
     actual_port = server.server_address[1]
     url = f"http://{host}:{actual_port}"
 
-    print(f"Variance Analysis Chatbot running at {url}")
+    if hosted:
+        print(f"Variance Analysis Chatbot listening on port {actual_port} (hosted mode)", flush=True)
+    else:
+        print(f"Variance Analysis Chatbot running at {url}")
     print("Press Ctrl+C to stop.\n")
 
     if open_browser:

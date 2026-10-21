@@ -86,6 +86,10 @@ For quantity Q and rate P, the effects are `(Actual Q − Budget Q) × Budget P`
 
 For the supplied sample and the command above, material variances are Subscription Revenue +15,500, Marketing Expense +13,000, Payroll Expense +8,000, and Services Revenue −3,000. Subscription Revenue's +15,500 decomposes into +5,000 volume and +10,500 price.
 
+## Hosting the chatbot
+
+`variance-agent --chat` opens the chatbot locally. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
+
 ## Architecture and trust boundary
 
 `parsing.py` captures and validates source data; `excel.py` bounds OOXML expansion and preserves stored decimals. `analysis.py` computes and verifies rows, aggregates, classification, and driver evidence. `numeric.py` isolates arithmetic policy. `report.py` formats verified facts; `audit.py` records versioned facts and provenance. `output.py` stages filesystem writes. `cli.py` coordinates these modules without performing independent financial analysis.
