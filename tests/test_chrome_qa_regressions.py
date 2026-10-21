@@ -551,3 +551,31 @@ def test_typo_gets_a_did_you_mean(message: str) -> None:
     response = handle_message(explore("sample_variance"), message)
     assert "Did you mean" in response.text
     assert response.chips and response.chips[0].startswith(("Why ", "Detail "))
+
+
+# ---------------------------------------------------------------------------
+# Benchmark scores real engine output (M13)
+# ---------------------------------------------------------------------------
+
+def test_benchmark_flags_the_old_contradictory_commentary() -> None:
+    from deterministic_conditioning.benchmark import commentary_contradictions
+
+    result = explore("sample_variance").result
+    assert result is not None
+    old = ("Revenue outpaced expectations cleanly. Favorable expansion across Subscription Revenue contributed "
+           "USD 15,500.00 in surplus over original budget projections for Q3 2026, widening operating margins. "
+           "Solid cash posture.")
+    assert commentary_contradictions(old, result)
+    assert commentary_contradictions(generate_verified_commentary(result)[0], result) == []
+
+
+def test_benchmark_scores_engine_output_on_fixtures() -> None:
+    from deterministic_conditioning.benchmark import run_benchmark_comparison, run_engine_benchmark
+
+    fixtures = [fixture_path(name) for name, _ in COMMENTARY_CASES]
+    engine = run_engine_benchmark(fixtures)
+    assert engine.truthful == engine.total == len(fixtures)
+    assert engine.metrics.word_count > 0
+    report = run_benchmark_comparison(fixtures)
+    assert "Engine output" in report and f"{engine.truthful}/{engine.total}" in report
+    assert "-100% (Clean)" not in report
