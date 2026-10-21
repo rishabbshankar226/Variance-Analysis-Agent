@@ -638,3 +638,89 @@ def test_local_chat_server_flushes_its_url(monkeypatch: pytest.MonkeyPatch) -> N
     assert srv.run_chat_server(port=0, open_browser=False) == 0
     monkeypatch.setattr("builtins.print", real_print)
     assert flushed == [True]
+
+
+# ---------------------------------------------------------------------------
+# Oracle checks beyond the takeaway: summary, memo body, tldr, profitability, waterfall
+# ---------------------------------------------------------------------------
+
+ORACLE_CASES = COMMENTARY_CASES + [("sample_eur", ())]
+
+
+def _places(key: dict[str, Any]) -> int:
+    digits = [len(v.split(".")[1]) for line in key["lines"] for v in (line["budget"], line["actual"]) if "." in v]
+    return max([2, *digits])
+
+
+def _fmt(value: str, key: dict[str, Any], symbol: str = "$") -> str:
+    amount = Decimal(value)
+    text = f"{symbol}{abs(amount):,.{_places(key)}f}"
+    return f"-{text}" if amount < 0 else text
+
+
+def _symbol(name: str) -> str:
+    return "€" if name == "sample_eur" else "$"
+
+
+def _explore_any(name: str, steps: tuple[str, ...]) -> Session:
+    if name != "sample_eur":
+        return explore(name, *steps)
+    session = Session()
+    path = fixture_path(name)
+    handle_upload(session, path.read_bytes(), path.name)
+    for step in ("Q3 2026", "$10k or 5%", "EUR", *steps):
+        handle_message(session, step)
+    assert session.phase == Phase.EXPLORING
+    return session
+
+
+@pytest.mark.parametrize(("name", "steps"), ORACLE_CASES)
+def test_memo_body_matches_oracle(name: str, steps: tuple[str, ...]) -> None:
+    key, sym = oracle(name), _symbol(name)
+    totals = key["totals"]
+    memo = handle_message(_explore_any(name, steps), "memo").text
+    assert f"Operating Profit finished at **{_fmt(totals['actual_operating_profit'], key, sym)}**" in memo
+    word = "beat" if totals["net_direction"] != "U" else "shortfall"
+    assert f"**{_fmt(str(abs(Decimal(totals['net_operating_impact']))), key, sym)} {word}**" in memo
+    assert f"planned budget of **{_fmt(totals['budget_operating_profit'], key, sym)}**" in memo
+    assert f"to **{totals['actual_margin_pct']}%**" in memo
+    revenue, expenses = totals["revenue"], totals["expenses"]
+    assert f"Total Revenue concluded at **{_fmt(revenue['actual'], key, sym)}**" in memo
+    assert f"Total Operating Expenses ended at **{_fmt(expenses['actual'], key, sym)}**" in memo
+    lines = {line["line_item"]: line for line in key["lines"]}
+    beats = [n for n, ln in lines.items() if ln["type"] == "Revenue" and Decimal(ln["variance"]) > 0]
+    overruns = [n for n, ln in lines.items() if ln["type"] == "Expense" and Decimal(ln["variance"]) > 0]
+    if beats:
+        top = max(beats, key=lambda n: Decimal(lines[n]["variance"]))
+        assert f"**Key Outperformer:** **{safe_inline(top)}**" in memo
+    if overruns:
+        top = max(overruns, key=lambda n: Decimal(lines[n]["variance"]))
+        assert f"**Primary Cost Risk:** **{safe_inline(top)}**" in memo
+
+
+@pytest.mark.parametrize(("name", "steps"), ORACLE_CASES)
+def test_summary_tldr_and_profitability_match_oracle(name: str, steps: tuple[str, ...]) -> None:
+    key, sym = oracle(name), _symbol(name)
+    totals = key["totals"]
+    session = _explore_any(name, steps)
+    tldr = handle_message(session, "tldr").text
+    assert f"Operating Profit finished at **{_fmt(totals['actual_operating_profit'], key, sym)}**" in tldr
+    assert f"EBITDA margin standing at **{totals['actual_margin_pct']}%**" in tldr
+    profit = handle_message(session, "profitability").text
+    in_black = Decimal(totals["actual_operating_profit"]) >= 0
+    assert ("in the black" in profit) == in_black and ("in the red" in profit) == (not in_black)
+    if not key["unclassified"]:
+        summary = handle_message(session, "summary").text
+        net = _fmt(totals["net_operating_impact"], key, sym)
+        assert f"**Net Operating Impact:** {net}" in summary
+        assert f"**Total Revenue:** {_fmt(totals['revenue']['actual'], key, sym)} vs. {_fmt(totals['revenue']['budget'], key, sym)}" in summary
+
+
+@pytest.mark.parametrize(("name", "steps"), ORACLE_CASES)
+def test_waterfall_reconciles_on_every_fixture(name: str, steps: tuple[str, ...]) -> None:
+    key = oracle(name)
+    table = handle_message(_explore_any(name, steps), "waterfall").table or []
+    impact_col = next(col for col in table[0] if col.startswith("Profit Impact"))
+    bars = [row for row in table if row["Type"] in {"Revenue", "Expense", "Unclassified"}]
+    total = sum((money(row[impact_col]) for row in bars), Decimal(0))
+    assert total == Decimal(key["totals"]["net_operating_impact"])
