@@ -970,7 +970,7 @@ def _handle_save_mapping(session: Session) -> Response:
         if intake_res.raw_headers:
             fingerprint = compute_layout_fingerprint(intake_res.raw_headers)
 
-    classification_rules = None
+    classification_rules: dict[str, object] | None = None
     if session.type_map:
         classification_rules = {
             "keywords": {k: v.value.capitalize() for k, v in session.type_map.items()}

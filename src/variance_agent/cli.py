@@ -142,8 +142,9 @@ def _validate_output_paths(args: Arguments) -> None:
     inputs = [Path(args.input)]
     if args.type_map:
         inputs.append(Path(args.type_map))
-    if getattr(args, "mapping", None):
-        inputs.append(Path(args.mapping))
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        inputs.append(Path(mapping_arg))
     outputs = [Path(value) for value in (args.output, args.audit_json) if value]
     for index, output in enumerate(outputs):
         if any(_same_path(output, other) for other in inputs + outputs[:index]):
@@ -185,7 +186,8 @@ def _run(args: Arguments) -> int:
     mapping_hash = None
     intake_res = None
 
-    if getattr(args, "mapping", None):
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
         from .mapping import load_mapping, mapping_sha256
         from .intake import (
             GLRangeRule,
@@ -194,7 +196,7 @@ def _run(args: Arguments) -> int:
             read_input_assisted,
             scale_rows_by_unit,
         )
-        mapping_path = Path(args.mapping)
+        mapping_path = Path(mapping_arg)
         mapping_obj = load_mapping(mapping_path.read_text(encoding="utf-8"))
         mapping_hash = mapping_sha256(mapping_obj)
 
@@ -213,7 +215,7 @@ def _run(args: Arguments) -> int:
             to_exclude = set(mapping_obj.exclude_totals)
             rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
         if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
-            rows, _ = scale_rows_by_unit(rows, Decimal(mapping_obj.unit_scale))
+            rows = scale_rows_by_unit(rows, Decimal(mapping_obj.unit_scale))
         if mapping_obj.flip_signs:
             items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
             rows, _ = flip_ledger_signs(rows, items)

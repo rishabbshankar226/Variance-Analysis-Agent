@@ -11,7 +11,7 @@ from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
-from .json_types import JSONObject
+from .json_types import JSONObject, JSONValue
 from .limits import validate_text
 from .version import __version__
 
@@ -39,6 +39,29 @@ def payload_sha256(record: Mapping[str, object]) -> str:
 
 def _decimal(value: Decimal | None) -> str | None:
     return None if value is None else format(value, "f")
+
+
+def _json_value(value: object) -> JSONValue:
+    """Narrow an arbitrary value to JSONValue (unknown types are stringified)."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    return str(value)
+
+
+def _json_list(value: object) -> list[JSONValue]:
+    return [_json_value(item) for item in value] if isinstance(value, (list, tuple)) else []
+
+
+def _json_object(value: object) -> JSONObject:
+    return {str(key): _json_value(item) for key, item in value.items()} if isinstance(value, dict) else {}
+
+
+def _as_int(value: object) -> int:
+    return value if isinstance(value, int) else int(str(value))
 
 
 def _aggregate_record(aggregate: Aggregate, *, present: bool, complete: bool) -> JSONObject:
@@ -283,22 +306,23 @@ def build_audit_record(
     if schema_version == "1.5":
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
+        zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
         zero_reads: JSONObject = {
-            "accounting_dashes": int(zero_reads_raw.get("accounting_dashes", 0)) if isinstance(zero_reads_raw, dict) else 0,
-            "blank_budgets": int(zero_reads_raw.get("blank_budgets", 0)) if isinstance(zero_reads_raw, dict) else 0,
+            "accounting_dashes": _as_int(zero_reads_map.get("accounting_dashes", 0)),
+            "blank_budgets": _as_int(zero_reads_map.get("blank_budgets", 0)),
         }
         record["transformations"] = {
-            "header_row_number": int(t_raw.get("header_row_number", 1)),
-            "column_mapping": dict(t_raw.get("column_mapping", {})),
-            "ignored_columns": list(t_raw.get("ignored_columns", [])),
+            "header_row_number": _as_int(t_raw.get("header_row_number", 1)),
+            "column_mapping": _json_object(t_raw.get("column_mapping", {})),
+            "ignored_columns": _json_list(t_raw.get("ignored_columns", [])),
             "sign_flip": bool(t_raw.get("sign_flip", False)),
-            "flipped_line_items": list(t_raw.get("flipped_line_items", [])),
+            "flipped_line_items": _json_list(t_raw.get("flipped_line_items", [])),
             "unit_scale": str(t_raw["unit_scale"]) if t_raw.get("unit_scale") is not None else None,
             "zero_reads": zero_reads,
-            "excluded_totals": list(t_raw.get("excluded_totals", [])),
+            "excluded_totals": _json_list(t_raw.get("excluded_totals", [])),
             "period_selection": str(t_raw["period_selection"]) if t_raw.get("period_selection") is not None else None,
-            "classification_rules": t_raw.get("classification_rules"),
-            "mapping_file_sha256": t_raw.get("mapping_file_sha256"),
+            "classification_rules": _json_value(t_raw.get("classification_rules")),
+            "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
         }
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [

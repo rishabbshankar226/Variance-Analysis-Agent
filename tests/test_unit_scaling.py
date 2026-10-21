@@ -54,7 +54,7 @@ def test_fixture_d_chat_flow_unit_scaling() -> None:
     """Fixture d in chat: detects ($000s), handles blank budgets, scales by 1,000, evaluates threshold in dollars."""
     session = Session()
     path = FIXTURES_DIR / "fixture_d_thousands_dashes_blanks.xlsx"
-    resp_upload = handle_upload(session, path.read_bytes(), path.name)
+    handle_upload(session, path.read_bytes(), path.name)
 
     # Step 1: Blank budget prompt
     assert session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
