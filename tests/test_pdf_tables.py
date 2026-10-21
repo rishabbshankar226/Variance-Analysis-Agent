@@ -132,6 +132,17 @@ def test_damaged_pdf_gets_a_plain_message() -> None:
 
 
 @needs_pdfplumber
+def test_page_that_breaks_the_reader_gets_a_plain_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("pdfminer internals")
+
+    monkeypatch.setattr("pdfplumber.page.Page.extract_words", broken)
+    with pytest.raises(PdfReadError, match="couldn't open") as caught:
+        _read(TEN_K, max_seconds=19.5)  # a key the cache has not seen
+    assert "pdfminer" not in str(caught.value)
+
+
+@needs_pdfplumber
 def test_pdf_without_statements_gets_a_plain_message(tmp_path: Path) -> None:
     from tests.fixtures.realworld.minipdf import Page, write_pdf
 

@@ -254,6 +254,10 @@ def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float) -> 
                 try:
                     words = [_word(w) for w in page.extract_words()]
                     page_number = page.page_number
+                except PdfReadError:
+                    raise
+                except Exception as exc:
+                    raise _cannot_open(filename) from exc
                 finally:
                     page.close()
                 table = _page_table(_lines(words), page_number)
