@@ -16,6 +16,8 @@ The record's trust flags describe intended use; they do not authenticate data or
 
 ## Output
 
+Read `comparison.basis` (`budget`, `forecast`, or `prior_period`) and `comparison.label` and name that comparison in the commentary. The `budget` fields in the record hold the comparison amount whatever the basis. Never describe a forecast or prior period as a budget, and call a zero comparison amount unbudgeted only when the basis is `budget`. Records older than schema 1.6 carry no `comparison` object and always compare against a budget.
+
 Write concise commentary grounded in material_variances, totals, data_quality, and driver evidence. State incomplete classifications or missing categories before interpreting net operating impact. Reference only totals marked available. Separate reconciled components, unexplained residuals, and unsupported hypotheses. Preserve the reporting period and currency as quoted source labels.
 
 Do not reproduce raw source rows. Do not expose private reasoning. If a required fact is absent, state the missing deterministic result instead of estimating it.

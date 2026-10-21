@@ -35,6 +35,16 @@
   selection; record the actual worksheet in audit schema 1.4.
 - Keep older audit versions selectable; schema 1.0 remains USD-only. See
   [migration details](docs/input-contract.md) and [audit versions](docs/audit-contract.md).
+- Add a comparison basis: compare Actual against Budget (default), Forecast, or Prior Period, one per run.
+  Assisted intake and chat detect Forecast/Fcst/Outlook/Projection and Prior Year/PY/Last Year columns and
+  period-only year columns (newest = Actual, next newest = Prior Period); ambiguous or unorderable
+  comparisons stop and ask. Add `--compare-to {budget,forecast,prior-period}` (required in strict mode to use
+  such columns), basis-specific zero-comparison labels, comparison naming in reports and chat, and
+  "compare to forecast / prior year / budget" in chat. Budget output is unchanged.
+- Publish audit schema 1.6 (current), adding `comparison: {basis, label}` to the record and configuration
+  identity. Schemas 1.0-1.5 are refused for Forecast and Prior Period runs. The commentary prompt now reads
+  `comparison.basis` and `comparison.label`.
+- Fix `--mapping` with `unit_scale` crashing.
 - Add Python 3.11-3.14, Windows output, minimal-install, and distribution CI gates;
   use one package-version source and include the declared MIT license.
 

@@ -88,7 +88,9 @@ Passing `--assisted` enables intelligent intake for real-world files:
 - **Synonym matching**: Maps common ERP and planning column names:
   - Line item: `Account Description`, `Description`, `GL Account Name`, `Account Title`, `Line Item Name`, `GL Description`.
   - Account ID: `GL Account`, `GL Account Number`, `Account Number`, `Acct #` (stored as line metadata).
-  - Budget: `Budget YTD`, `YTD Budget`, `Plan YTD`, `Forecast` (treated as the plan), `Bgt`, `Budget Amt`.
+  - Budget: `Budget YTD`, `YTD Budget`, `Plan YTD`, `Bgt`, `Budget Amt`.
+  - Forecast comparison: `Forecast`, `Fcst`, `Outlook`, `Projection`, `Projected`.
+  - Prior Period comparison: `Prior Year`, `PY`, `Last Year`, `Prior Period`.
   - Actual: `Actual YTD`, `YTD Actual`, `Act`, `Actual Amt`.
   - Ignored computed columns: `Var $`, `Var %`, `Variance`, `% of Budget` (ignored with visible provenance).
 - **Number normalization**: Reads accounting dashes (`"-"`, `"–"`, `"—"`) as zero and treats blank budgets as 0 (unbudgeted).
@@ -96,5 +98,23 @@ Passing `--assisted` enables intelligent intake for real-world files:
 
 ```sh
 variance-agent exports/raw_erp_dump.xlsx --assisted --period 'Q3 2026' \
+  --dollar-threshold 10000 --percent-threshold 5
+```
+
+## Comparison basis
+
+Each run compares Actual against exactly one amount: Budget (default), Forecast, or Prior Period. Internally and in audit JSON the comparison amount keeps the `budget` field name.
+
+- **Detection (assisted intake and chat).** Forecast and Prior Period headers are listed above. Amount columns labeled only by period (`FY2025`/`FY2024`, `2025`/`2024`, optionally suffixed "Actual") make the newest period Actual and the next newest the Prior Period comparison. With three or more periods the newest two are compared and intake says so.
+- **Stops and asks.** More than one distinct comparison (for example Budget and Forecast both present) or periods that cannot be ordered (for example `FY2025` with `Q3 2024`). Intake never chooses between candidates of different bases.
+- **Unchanged.** Wide Budget/Actual period-pair layouts remain Budget.
+- **Strict mode.** Without `--assisted` or `--mapping`, nothing is detected. Pass `--compare-to {budget,forecast,prior-period}` to use a forecast or prior-period column; a basis with no matching column is an input error (exit 2) naming the columns found.
+- **Chat.** "compare to forecast", "compare to prior year", or "compare to budget" switches the basis and re-reads the file; "what can I compare against?" explains the options.
+- **Naming.** The comparison label comes from the comparison column's period (for example `FY2024`) or the basis name. Reports and chat show it as "Prior Period (FY2024)" or "Compared Against: …" and never call a forecast or prior period a budget.
+
+```sh
+variance-agent exports/10k_extract.csv --assisted --period 'FY2025' \
+  --dollar-threshold 10000 --percent-threshold 5
+variance-agent plan.csv --period 'Q3 2026' --compare-to forecast \
   --dollar-threshold 10000 --percent-threshold 5
 ```

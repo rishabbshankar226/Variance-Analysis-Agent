@@ -9,9 +9,11 @@ recurring ratios alone permit Inexact. Python callers must initialize Decimal
 thresholds from strings. Exact subnormals are accepted within the context's
 representable range; absent drivers do not perform unused tolerance arithmetic.
 
-Variance amount = Actual - Budget. Variance percent divides by the absolute nonzero
+Variance amount = Actual - comparison amount. "Budget" below is the comparison amount: Budget by default, or the Forecast or Prior Period amount when that basis is selected. Favorability, materiality, and arithmetic are identical for all three bases.
+
+Variance percent divides by the absolute nonzero
 Budget. A zero Budget/nonzero Actual is unbudgeted with a null percentage; a
-zero/zero row has zero variance. Materiality is strict absolute amount OR absolute
+zero/zero row has zero variance. The zero-comparison label depends on the basis: `N/A (Unbudgeted)` for Budget, `N/A (Not in forecast)` for Forecast, and `N/A (New this period)` for Prior Period. Materiality is strict absolute amount OR absolute
 percentage greater than the threshold. Equality is not material. For zero Budget,
 only the amount comparison applies. Sorting uses absolute amount, stably.
 

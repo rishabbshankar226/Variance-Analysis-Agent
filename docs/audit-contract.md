@@ -8,7 +8,7 @@ The trust flags declare intended use; they do not enforce model behavior.
 Draft 2020-12. Consumers must select a schema using `schema_version` and reject
 unknown versions. Financial values are finite fixed-point decimal strings, not
 JSON floats. A zero budget with nonzero actual has a null percentage and an
-explicit unbudgeted label. Schema validation checks structure; deterministic
+explicit unbudgeted label (Forecast and Prior Period runs use "not in forecast" and "new this period"). Schema validation checks structure; deterministic
 Python remains responsible for reconciliation and arithmetic.
 Report and audit builders reverify financial row, aggregate, materiality, and
 supported-component identities, including manually constructed Python results.
@@ -19,8 +19,11 @@ Version 1.1 adds the explicit reporting `currency` (USD, EUR, or GBP).
 Version 1.2 adds policy/configuration provenance and a recomputable `payload_sha256`.
 Version 1.3 adds classification/materiality decision sources,
 summary verification, driver reconciliation diagnostics, and completeness basis.
-Version 1.4 is the default and records the selected worksheet in `source.worksheet`
+Version 1.4 records the selected worksheet in `source.worksheet`
 (null for CSV/JSON or Python callers without that metadata).
+Version 1.5 adds `transformations` (assisted-intake header row, column mapping, ignored columns, sign flips, unit scale, zero reads, excluded totals, period selection, classification rules, mapping-file digest).
+Version 1.6 is the default and adds `comparison: {basis, label}` (`basis` is `budget`, `forecast`, or `prior_period`; `label` is the display text or null), included in the configuration identity and therefore the analysis fingerprint. The `budget` keys keep their names and hold the comparison amount.
+Schemas 1.0-1.5 record that amount as a budget, so they are refused for Forecast and Prior Period runs: "Audit schema {version} records the comparison amount as a budget; use --audit-schema-version 1.6 for forecast or prior-period comparisons." Budget runs may still select any version.
 See [financial rules](financial-rules.md). Use `--audit-schema-version 1.0` or the Python `schema_version="1.0"`
 keyword for a legacy USD consumer. Version 1.0 cannot represent another currency
 and rejects non-USD runs. Its archived records and fingerprint recipe are retained.
