@@ -18,8 +18,10 @@ import re
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
 
+from variance_agent import cli
 from variance_agent.chat.handlers import handle_message, handle_upload
 from variance_agent.chat.session import Session
 from variance_agent.intake import IntakeResult, audit_transformations, read_input_assisted
@@ -27,6 +29,8 @@ from variance_agent.mapping import LayoutMapping, load_mapping, mapping_sha256
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = ROOT / "tests" / "fixtures" / "realworld"
+CONTRACTS_DIR = ROOT / "tests" / "fixtures" / "contracts"
+CONTRACT_CASES = ("complete", "incomplete", "zero_budget", "no_material", "summary")
 
 # Fictional ERP export: title block, amounts in thousands, two subtotals, one unbudgeted line.
 TITLE_BLOCK_CSV = (
@@ -211,3 +215,25 @@ def test_helper_matches_cli_mapping_dict() -> None:
             )
             assert not intake_res.has_fatal_errors, name
             assert audit_transformations(intake_res, mapping) == _old_cli_mapping(mapping, intake_res), name
+
+
+@pytest.mark.parametrize("name", CONTRACT_CASES)
+def test_cli_default_audit_and_report_match_contract_fixtures(name: str, tmp_path: Path) -> None:
+    source = CONTRACTS_DIR / f"{name}.input.json"
+    config = json.loads(source.read_text("utf-8"))["config"]
+    audit, report = tmp_path / "audit.json", tmp_path / "report.md"
+
+    assert cli.main([
+        str(source),
+        "--period", config["period"],
+        "--dollar-threshold", config["dollar_threshold"],
+        # The fixture stores a fraction; the flag takes a percentage.
+        "--percent-threshold", str(Decimal(config["percent_threshold"]) * 100),
+        "--audit-schema-version", "1.0",
+        "--audit-json", str(audit),
+        "--output", str(report),
+    ]) == 0
+
+    # Text mode writes the platform's line endings; every other byte must match.
+    assert audit.read_text("utf-8") == (CONTRACTS_DIR / f"{name}.audit.json").read_text("utf-8")
+    assert report.read_text("utf-8") == (CONTRACTS_DIR / f"{name}.report.md").read_text("utf-8")
