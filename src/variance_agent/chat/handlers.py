@@ -13,7 +13,7 @@ import difflib
 import io
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, Inexact, InvalidOperation
 from pathlib import Path
 
@@ -196,11 +196,11 @@ def handle_message(session: Session, text: str) -> Response:
                 session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
                 summary_text = format_intake_summary(intake_res)
                 summary_text += "\n\nDoes this look right?"
-                return Response(
+                return _with_first_upload_intro(session, Response(
                     text=summary_text,
                     chips=["Looks right", "Change something"],
                     phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-                )
+                ), intake_res.comparison_basis)
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
             phase=session.phase,
@@ -412,7 +412,44 @@ def handle_upload(
         treat_blank_budgets_as_zero=False,
         compare_to=session.compare_to,
     )
-    return _intake_response(session, intake_res, filename)
+    return _with_first_upload_intro(
+        session, _intake_response(session, intake_res, filename), intake_res.comparison_basis,
+    )
+
+
+def _first_upload_intro(basis: ComparisonBasis) -> str:
+    """What the chatbot is for, worded for the file's comparison basis.
+
+    Forecast and prior-period sessions never say budget, plan or target.
+    """
+    noun = basis_noun(basis)
+    return (
+        "👋 **Welcome to the Variance Analysis Agent.**\n\n"
+        "**What it's for:** explaining why your financial results moved. I compare each line's "
+        f"Actual against your {noun}, flag the gaps big enough to matter, and tell you whether each "
+        "one helped or hurt profit. Every number comes from exact, repeatable calculations, never "
+        "estimates.\n\n"
+        "**Who it's for:** FP&A analysts, controllers, and anyone preparing a month-end or "
+        "quarter-end variance review.\n\n"
+        "**What you can do once your file is set up:**\n"
+        "• See a summary of the material variances, favorable and unfavorable\n"
+        "• Ask `why [line item]` to split a variance into quantity and rate effects, such as volume "
+        "and price (when your file has those columns)\n"
+        f"• Walk from {noun} to actual profit with a `waterfall`, or test a scenario with "
+        "`what if revenue drops 5%`\n"
+        "• Get an executive `memo`, `run rate` projections, and the `biggest risks`\n"
+        "• Export the report, an Excel workbook, a CSV, or an audit file\n\n"
+        "Type `help` anytime for the full list. First, let's set up your file:\n\n"
+        "---\n\n"
+    )
+
+
+def _with_first_upload_intro(session: Session, response: Response, basis: ComparisonBasis) -> Response:
+    """Open the session's first successfully read file with what the chatbot is for."""
+    if session.intro_shown or response.phase == Phase.AWAITING_FILE:
+        return response
+    session.intro_shown = True
+    return replace(response, text=_first_upload_intro(basis) + response.text)
 
 
 def _intake_response(session: Session, intake_res: IntakeResult, filename: str) -> Response:
