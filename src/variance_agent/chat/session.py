@@ -78,6 +78,9 @@ class Session:
     # Deployment policy; survives reset(). False on hosted servers.
     path_exports_enabled: bool = True
 
+    # The first file read in this session opened with the welcome intro; survives reset().
+    intro_shown: bool = False
+
     def reset(self) -> None:
         self.phase = Phase.AWAITING_FILE
         self.source_bytes = None

@@ -325,6 +325,39 @@ def test_handle_invalid_file_upload() -> None:
     assert "⚠️" in resp2.text
 
 
+def test_first_upload_opens_with_purpose_and_capabilities() -> None:
+    session = Session()
+    resp = handle_upload(session, SAMPLE_CSV, "test.csv")
+    assert "Welcome to the Variance Analysis Agent" in resp.text
+    assert "What it's for" in resp.text
+    assert "What you can do" in resp.text
+    assert "Actual against your budget" in resp.text
+    # The intake step still follows the intro.
+    assert resp.text.index("Welcome") < resp.text.index("test.csv")
+
+    # Later uploads, including after starting over, go straight to the file.
+    again = handle_upload(session, SAMPLE_CSV, "again.csv")
+    assert "Welcome to the Variance Analysis Agent" not in again.text
+    handle_message(session, "new")
+    after_reset = handle_upload(session, SAMPLE_CSV, "after.csv")
+    assert "Welcome to the Variance Analysis Agent" not in after_reset.text
+
+
+def test_failed_first_upload_saves_intro_for_the_first_good_file() -> None:
+    session = Session()
+    bad = handle_upload(session, b"dummy", "invalid.pdf")
+    assert "Welcome to the Variance Analysis Agent" not in bad.text
+    good = handle_upload(session, SAMPLE_CSV, "test.csv")
+    assert "Welcome to the Variance Analysis Agent" in good.text
+
+
+def test_first_pasted_table_opens_with_intro() -> None:
+    session = Session()
+    resp = handle_message(session, "Line Item\tBudget\tActual\nRent\t100\t120\n")
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Welcome to the Variance Analysis Agent" in resp.text
+
+
 def test_handle_blank_period() -> None:
     session = Session()
     session.phase = Phase.AWAITING_PERIOD
