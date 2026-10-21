@@ -29,6 +29,19 @@ def _safe_inline(value: object) -> str:
     return text
 
 
+_STATUS_WORDS = {
+    Status.FAVORABLE: "Favorable",
+    Status.UNFAVORABLE: "Unfavorable",
+    Status.NEUTRAL: "Neutral",
+    Status.UNCLASSIFIED: "Unclassified",
+}
+
+
+def _status_text(status: Status, plain: bool) -> str:
+    """Status code (F/U) for Markdown, the full word for plain-text outputs."""
+    return _STATUS_WORDS[status] if plain else status.value
+
+
 def _inline(value: object, plain: bool) -> str:
     """Escape for Markdown, or only neutralize controls for plain-text outputs."""
     return display_text(str(value)) if plain else _safe_inline(value)
@@ -153,7 +166,8 @@ def _bottom_line(
     else:
         sentence_two = (
             f"The largest material variance is {_inline(top.line_item, plain)} at "
-            f"{_money(top.variance_dollars, result.config.currency, places)} ({top.status})."
+            f"{_money(top.variance_dollars, result.config.currency, places)} "
+            f"({_status_text(top.status, plain)})."
         )
     return f"{sentence_one} {sentence_two}"
 
@@ -199,8 +213,9 @@ def _recommendation(
     result: AnalysisResult, status: Status, kind: str, places: int = 2, *, plain: bool = False
 ) -> str:
     row = _largest_by_status(result.material_rows, status)
+    label = _status_text(status, plain).lower() if plain else status.value
     if row is None:
-        return f"- {kind}: No material {status.value} variance is available for a data-backed action."
+        return f"- {kind}: No material {label} variance is available for a data-backed action."
 
     line_item = _inline(row.line_item, plain)
     evidence = row.driver_evidence
@@ -217,7 +232,7 @@ def _recommendation(
         )
 
     return (
-        f"- {kind}: {line_item} is the largest material {status.value} variance, but the dataset "
+        f"- {kind}: {line_item} is the largest material {label} variance, but the dataset "
         "does not support a causal corrective action; obtain the missing operating driver data before "
         "assigning a cause-specific intervention."
     )

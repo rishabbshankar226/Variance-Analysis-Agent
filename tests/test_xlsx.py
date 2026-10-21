@@ -143,3 +143,19 @@ def test_cli_rejects_workbook_with_incompatible_modes(tmp_path, extra, capsys):
     assert error.value.code == 2
     assert "--xlsx" in capsys.readouterr().err
     assert not (tmp_path / "out.xlsx").exists()
+
+
+def test_workbook_sentences_spell_out_status_words():
+    with zipfile.ZipFile(io.BytesIO(render_xlsx(fixture_result("complete")))) as archive:
+        summary = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        actions = archive.read("xl/worksheets/sheet3.xml").decode("utf-8")
+    assert "at $320.00 (Favorable)." in summary
+    assert "largest material unfavorable variance" in actions
+    assert " U variance" not in actions and "(F)" not in summary
+
+
+def test_markdown_keeps_status_codes():
+    from variance_agent.report import render_markdown
+    report = render_markdown(fixture_result("complete"))
+    assert "at $320.00 (F)." in report
+    assert "largest material U variance" in report
