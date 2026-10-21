@@ -309,9 +309,10 @@ class TestVarianceBridge:
             line_type=LineType.EXPENSE,
             budget=Decimal("5000.00"),
             actual=Decimal("7500.00"),
-            variance_dollars=Decimal("-2500.00"),
-            variance_percent=Decimal("-0.50"),
-            percent_label="-50.0%",
+            # Actual - Budget: an expense $2,500 over budget is +2,500 (and unfavourable).
+            variance_dollars=Decimal("2500.00"),
+            variance_percent=Decimal("0.50"),
+            percent_label="50.0%",
             status=Status.UNFAVORABLE,
             material=True,
             excluded_from_aggregation=False,
@@ -319,7 +320,7 @@ class TestVarianceBridge:
             raw={},
         )
         agg_empty = Aggregate(Decimal("0"), Decimal("0"), Decimal("0"), None, None, Status.NEUTRAL)
-        agg_exp = Aggregate(Decimal("5000"), Decimal("7500"), Decimal("-2500"), Decimal("-0.50"), "-50.0%", Status.UNFAVORABLE)
+        agg_exp = Aggregate(Decimal("5000"), Decimal("7500"), Decimal("2500"), Decimal("0.50"), "50.0%", Status.UNFAVORABLE)
 
         result = AnalysisResult(
             config=config,

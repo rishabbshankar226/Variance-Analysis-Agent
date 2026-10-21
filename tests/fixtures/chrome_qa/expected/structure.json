@@ -1,0 +1,115 @@
+{
+  "fixture": "structure.csv",
+  "thresholds": {
+    "dollar": "10000",
+    "percent": "5"
+  },
+  "lines": [
+    {
+      "line_item": "Subscription Revenue",
+      "type": "Revenue",
+      "budget": "100000",
+      "actual": "120000",
+      "variance": "20000",
+      "percent": "20.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Services Revenue",
+      "type": "Revenue",
+      "budget": "50000",
+      "actual": "45000",
+      "variance": "-5000",
+      "percent": "-10.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Payroll Expense",
+      "type": "Expense",
+      "budget": "60000",
+      "actual": "66000",
+      "variance": "6000",
+      "percent": "10.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Marketing Expense",
+      "type": "Expense",
+      "budget": "20000",
+      "actual": "20000",
+      "variance": "0",
+      "percent": "0.0",
+      "direction": "Neutral",
+      "material": false
+    },
+    {
+      "line_item": "Project Phoenix",
+      "type": "Unclassified",
+      "budget": "10000",
+      "actual": "25000",
+      "variance": "15000",
+      "percent": "150.0",
+      "direction": "Unclassified",
+      "material": true
+    },
+    {
+      "line_item": "Misc Adjustments",
+      "type": "Unclassified",
+      "budget": "5000",
+      "actual": "3000",
+      "variance": "-2000",
+      "percent": "-40.0",
+      "direction": "Unclassified",
+      "material": true
+    }
+  ],
+  "excluded_summaries": [
+    "Total Revenue"
+  ],
+  "unclassified": [
+    "Project Phoenix",
+    "Misc Adjustments"
+  ],
+  "totals": {
+    "revenue": {
+      "budget": "150000",
+      "actual": "165000",
+      "variance": "15000",
+      "percent": "10.0",
+      "direction": "F"
+    },
+    "expenses": {
+      "budget": "80000",
+      "actual": "86000",
+      "variance": "6000",
+      "percent": "7.5",
+      "direction": "U"
+    },
+    "budget_operating_profit": "70000",
+    "actual_operating_profit": "79000",
+    "net_operating_impact": "9000",
+    "net_direction": "F",
+    "budget_margin_pct": "46.7",
+    "actual_margin_pct": "47.9",
+    "margin_move": "up",
+    "actual_margin_negative": false
+  },
+  "material_count": 5,
+  "material_items": [
+    "Subscription Revenue",
+    "Project Phoenix",
+    "Payroll Expense",
+    "Services Revenue",
+    "Misc Adjustments"
+  ],
+  "top3_by_abs": [
+    "Subscription Revenue",
+    "Project Phoenix",
+    "Payroll Expense"
+  ],
+  "largest_favourable": "Subscription Revenue",
+  "largest_unfavourable": "Payroll Expense"
+}

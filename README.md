@@ -89,7 +89,7 @@ For the supplied sample and the command above, material variances are Subscripti
 
 ## Hosting the chatbot
 
-`variance-agent --chat` opens the chatbot locally. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
+`variance-agent --chat` opens the chatbot locally; add `--no-browser` to print the local URL without opening a browser. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
 
 ## Architecture and trust boundary
 

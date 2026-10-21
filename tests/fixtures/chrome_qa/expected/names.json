@@ -1,0 +1,121 @@
+{
+  "fixture": "names.csv",
+  "thresholds": {
+    "dollar": "10000",
+    "percent": "5"
+  },
+  "lines": [
+    {
+      "line_item": "R&D_Costs",
+      "type": "Expense",
+      "budget": "50000",
+      "actual": "62000",
+      "variance": "12000",
+      "percent": "24.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Sales & Marketing",
+      "type": "Expense",
+      "budget": "30000",
+      "actual": "28000",
+      "variance": "-2000",
+      "percent": "-6.7",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "<b>Bold</b>",
+      "type": "Revenue",
+      "budget": "10000",
+      "actual": "25000",
+      "variance": "15000",
+      "percent": "150.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Café Revenue",
+      "type": "Revenue",
+      "budget": "40000",
+      "actual": "41000",
+      "variance": "1000",
+      "percent": "2.5",
+      "direction": "F",
+      "material": false
+    },
+    {
+      "line_item": "Duplicate Item",
+      "type": "Expense",
+      "budget": "5000",
+      "actual": "9000",
+      "variance": "4000",
+      "percent": "80.0",
+      "direction": "U",
+      "material": true
+    },
+    {
+      "line_item": "Duplicate Item",
+      "type": "Expense",
+      "budget": "5000",
+      "actual": "4000",
+      "variance": "-1000",
+      "percent": "-20.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "🚀 Launch Revenue",
+      "type": "Revenue",
+      "budget": "20000",
+      "actual": "30000",
+      "variance": "10000",
+      "percent": "50.0",
+      "direction": "F",
+      "material": true
+    }
+  ],
+  "excluded_summaries": [],
+  "unclassified": [],
+  "totals": {
+    "revenue": {
+      "budget": "70000",
+      "actual": "96000",
+      "variance": "26000",
+      "percent": "37.1",
+      "direction": "F"
+    },
+    "expenses": {
+      "budget": "90000",
+      "actual": "103000",
+      "variance": "13000",
+      "percent": "14.4",
+      "direction": "U"
+    },
+    "budget_operating_profit": "-20000",
+    "actual_operating_profit": "-7000",
+    "net_operating_impact": "13000",
+    "net_direction": "F",
+    "budget_margin_pct": "-28.6",
+    "actual_margin_pct": "-7.3",
+    "margin_move": "up",
+    "actual_margin_negative": true
+  },
+  "material_count": 6,
+  "material_items": [
+    "<b>Bold</b>",
+    "R&D_Costs",
+    "🚀 Launch Revenue",
+    "Duplicate Item",
+    "Sales & Marketing",
+    "Duplicate Item"
+  ],
+  "top3_by_abs": [
+    "<b>Bold</b>",
+    "R&D_Costs",
+    "🚀 Launch Revenue"
+  ],
+  "largest_favourable": "<b>Bold</b>",
+  "largest_unfavourable": "R&D_Costs"
+}

@@ -56,8 +56,9 @@ class Session:
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
 
-    # Unclassified items pending resolution
+    # Unclassified items pending resolution, and items the user chose to leave unclassified
     unclassified_queue: list[str] = field(default_factory=list)
+    skipped_items: set[str] = field(default_factory=set)
 
     # Populated after analysis
     result: AnalysisResult | None = None
@@ -84,6 +85,7 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.unclassified_queue = []
+        self.skipped_items = set()
         self.result = None
         self.last_focused_item = None
         self.last_table_items = []

@@ -1,0 +1,9 @@
+Line Item,Type,Budget,Actual
+Base Revenue,Revenue,100000,101000.125
+New Product Revenue,Revenue,0,15000
+Discontinued Revenue,Revenue,12000,0
+Refunds Revenue,Revenue,-2000,-3500
+Unbudgeted Consulting,Expense,0,5000
+Rebate Expense,Expense,-1000,-500
+Software Expense,Expense,1234.5678,1300.1234
+Zero Line,Expense,0,0

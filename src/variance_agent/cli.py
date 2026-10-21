@@ -17,7 +17,7 @@ from .models import AnalysisConfig, LineType
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
-from .report import render_markdown
+from .report import _safe_inline, render_markdown
 from .xlsx import render_xlsx
 from .limits import display_text
 
@@ -37,6 +37,7 @@ class Arguments(Protocol):
     xlsx: str | None
     chat: bool
     hosted: bool
+    no_browser: bool
     commentary: bool
     assisted: bool
 
@@ -117,6 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
              "opening a browser or writing exports to server paths.",
     )
     parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="With --chat: print the local URL instead of opening the system browser.",
+    )
+    parser.add_argument(
         "--commentary",
         action="store_true",
         help="Include verified deterministic executive commentary in the Markdown report.",
@@ -163,7 +169,8 @@ def _run(args: Arguments) -> int:
                 initial_input=args.input, initial_sheet=args.sheet,
                 open_browser=False, hosted=True,
             )
-        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet)
+        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet,
+                               open_browser=not args.no_browser)
 
     assert args.input is not None
     assert args.period is not None
@@ -219,7 +226,7 @@ def _run(args: Arguments) -> int:
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)
-        report = f"# Executive Commentary\n\n{commentary_text}\n\n---\n\n" + report
+        report = f"# Executive Commentary\n\n{_safe_inline(commentary_text)}\n\n---\n\n" + report
     outputs: dict[Path, str | bytes] = {}
     if args.output:
         outputs[Path(args.output)] = report
@@ -244,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     args = cast(Arguments, parser.parse_args(argv))
     if args.hosted and not args.chat:
         parser.error("--hosted requires --chat.")
+    if args.no_browser and not args.chat:
+        parser.error("--no-browser requires --chat.")
     if not args.chat:
         missing: list[str] = []
         if not args.input:

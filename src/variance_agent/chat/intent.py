@@ -142,13 +142,15 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "concept_materiality"),
 
     (re.compile(
-        r"^(?:what\s+is|how\s+is\s+calculated|explain)\s+"
+        r"^(?:(?:what\s+is|how\s+is\s+calculated|explain)\s+)?"
         r"(?:the\s+)?net\s+(?:operating\s+)?impact(?:\s+calculated)?\??$",
         re.IGNORECASE,
     ), "concept_net_impact"),
 
     (re.compile(
-        r"^(?:(?:what\s+(?:is|are)|explain)\s+)?(?:causal\s+)?(?:driver\s+decomposition|drivers?|price\s+volume(?:\s+mix)?|rate\s+volume)\??$",
+        # Bare "drivers" is the data-backed driver summary, so the concept needs a question prefix.
+        r"^(?:(?:what\s+(?:is|are)|explain)\s+(?:causal\s+)?(?:driver\s+decomposition|drivers?|price\s+volume(?:\s+mix)?|rate\s+volume)"
+        r"|(?:causal\s+)?(?:driver\s+decomposition|price\s+volume(?:\s+mix)?|rate\s+volume))\??$",
         re.IGNORECASE,
     ), "concept_drivers"),
 
@@ -163,13 +165,13 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "concept_audit"),
 
     (re.compile(
-        r"^(?:how\s+to\s+handle|what\s+actions?\s+to\s+take|playbook\s+for|how\s+to\s+mitigate)\s+"
-        r"unfavorable(?:\s+variances?)?\??$",
+        r"^(?:(?:how\s+to\s+handle|what\s+actions?\s+to\s+take|playbook\s+for|how\s+to\s+mitigate)\s+"
+        r"unfavorable(?:\s+variances?)?|(?:action\s+)?playbook)\??$",
         re.IGNORECASE,
     ), "concept_actions"),
 
     (re.compile(
-        r"^(?:what\s+file\s+formats?|what\s+formats?|supported\s+formats?|file\s+requirements?|what\s+columns?|schema)\??$",
+        r"^(?:what\s+file\s+formats?|what\s+formats?|supported\s+(?:file\s+)?formats?|file\s+formats?|file\s+requirements?|what\s+columns?|schema)\??$",
         re.IGNORECASE,
     ), "concept_formats"),
 
@@ -224,11 +226,11 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
     (re.compile(
         r"^(?:show\s+)?(?:all\s+)?(?:causal\s+)?(?:driver\s+models?|driver\s+summary|drivers\s+overview|drivers\s+table)\??$"
-        r"|^drivers\s+summary\??$",
+        r"|^(?:drivers\s+summary|drivers?)\??$",
         re.IGNORECASE,
     ), "driver_summary"),
     (re.compile(
-        r"^(?:(?:what\s+(?:is|are)\s+(?:our\s+)?|show\s+)?"
+        r"^(?:(?:what\s+(?:is|are)\s+(?:our\s+)?|show\s+(?:me\s+)?(?:the\s+|our\s+)?)?"
         r"(?:biggest\s+risks?|top\s+concerns?|what\s+should\s+i\s+worry\s+about|what\s+went\s+wrong|worst\s+variances?|biggest\s+(?:cost\s+)?overruns?|key\s+risks?)"
         r"|where\s+are\s+we\s+bleeding(?:\s+money|\s+cash)?|bleeding\s+(?:money|cash)|cash\s+bleed"
         r"|where\s+are\s+we\s+losing\s+money|what\s+hurts\s+the\s+most|where\s+is\s+the\s+leak)\??$",
@@ -236,7 +238,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "biggest_risks"),
 
     (re.compile(
-        r"^(?:(?:what\s+(?:is|are)\s+(?:our\s+)?|show\s+)?"
+        r"^(?:(?:what\s+(?:is|are)\s+(?:our\s+)?|show\s+(?:me\s+)?(?:the\s+|our\s+)?)?"
         r"(?:biggest\s+wins?|what\s+went\s+well|what\s+went\s+right|where\s+did\s+we\s+beat(?:\s+budget)?|top\s+(?:positive|favorable)\s+variances?|best\s+performers?)"
         r"|where\s+are\s+we\s+winning|where\s+did\s+we\s+outperform)\??$",
         re.IGNORECASE,
@@ -317,7 +319,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"^(?:what\s+if(?:\s+we)?|simulate|model)\s+"
         r"(?P<target>.+?)\s+"
         r"(?:is\s+|are\s+|goes\s+|moves\s+)?"
-        r"(?P<direction>increases?|increased?|rises?|drops?|dropped?|decreases?|decreased?|falls?|grows?|growth|grow|climbs?|jumps?|higher|lower|up|down|cuts?|cut|\+|\-)?\s*"
+        r"(?P<direction>increases?|increased?|rises?|drop(?:s|ped)?|decreases?|decreased?|falls?|grows?|growth|grow|climbs?|jumps?|higher|lower|up|down|cuts?|cut|\+|\-)?\s*"
         r"(?:by\s+)?"
         r"(?P<amount>[$€£]?[0-9,_.]+\s*(?:%|[kKmMbB])?)\s*"
         r"(?P<suffix>higher|lower|up|down|more|less)?\s*\??$",
@@ -387,7 +389,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "filter_type_unc"),
 
     (re.compile(
-        r"^(?:show\s+)?top\s+(?P<count>\d+)(?:\s+(?:variances?|items?|rows?))?$", re.IGNORECASE,
+        r"^(?:show\s+)?top\s+(?P<count>\d+)(?:\s+(?:variances?|items?|rows?))?"
+        r"(?:\s+by\s+(?:dollars?|amount|value|\$))?$", re.IGNORECASE,
     ), "top_n"),
 
     (re.compile(
@@ -429,9 +432,28 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+_TRAILING_FILLER = re.compile(r"(?:[\s,]+(?:please|pls|plz|thanks|thank\s+you))+[\s.!?]*$", re.IGNORECASE)
+_TRAILING_PUNCTUATION = re.compile(r"(?<=[\w%])[.!?]+$")
+
+
 def parse_intent(text: str) -> ParsedIntent:
-    """Match user text against ordered patterns and return the first hit."""
-    text = text.strip()
+    """Match user text against ordered patterns and return the first hit.
+
+    Trailing filler ("please", "thanks") is always ignored; unmatched text is retried
+    once without trailing punctuation, so "summary please" and "Summary?!" resolve.
+    """
+    text = _TRAILING_FILLER.sub("", text.strip()).strip() or text.strip()
+    parsed = _match_intent(text)
+    if parsed.intent_id == "unknown":
+        relaxed = _TRAILING_PUNCTUATION.sub("", text).strip()
+        if relaxed and relaxed != text:
+            retry = _match_intent(relaxed)
+            if retry.intent_id != "unknown":
+                return retry
+    return parsed
+
+
+def _match_intent(text: str) -> ParsedIntent:
     for pattern, intent_id in _INTENT_PATTERNS:
         match = pattern.match(text)
         if match is not None:
@@ -454,7 +476,7 @@ def find_line_item(
     Strips surrounding quotes, brackets, and trailing question marks.
     Returns a list of matches (empty if none, multiple if ambiguous).
     """
-    query_cleaned = query.strip().rstrip("?").strip("'\"`[]").strip()
+    query_cleaned = query.strip().rstrip("?.!").strip("'\"`[]").strip()
     if not query_cleaned:
         return []
 

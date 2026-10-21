@@ -1092,8 +1092,10 @@ def test_what_if_scenario_simulation() -> None:
     assert "Total Revenue" in resp_rev.text
     assert "-5.0%" in resp_rev.text
     assert resp_rev.table is not None
-    assert len(resp_rev.table) == 4
+    # Aggregate targets no longer repeat the Total Revenue row (Chrome QA 2026-10-21).
+    assert len(resp_rev.table) == 3
     metrics = [r["Metric"] for r in resp_rev.table]
+    assert len(metrics) == len(set(metrics))
     assert "Total Revenue" in metrics
     assert "Total Expenses" in metrics
     assert "Operating Profit" in metrics
