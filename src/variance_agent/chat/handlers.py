@@ -148,8 +148,12 @@ def _comparison_chips(choices: list[ComparisonBasis]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def handle_message(session: Session, text: str) -> Response:
-    """Top-level router: dispatch based on conversation phase and domain intents."""
+def handle_message(session: Session, text: str, *, first_visit: bool | None = None) -> Response:
+    """Top-level router: dispatch based on conversation phase and domain intents.
+
+    ``first_visit`` is the page saying whether its visitor has seen the intro yet;
+    see ``_with_first_upload_intro``.
+    """
     text = text.strip()
     if not text:
         return Response(text="Please type a message or upload a file.")
@@ -201,7 +205,7 @@ def handle_message(session: Session, text: str) -> Response:
                     text=summary_text,
                     chips=["Looks right", "Change something"],
                     phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-                ), intake_res.comparison_basis)
+                ), intake_res.comparison_basis, first_visit)
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
             phase=session.phase,
@@ -257,18 +261,20 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
     if lower in ("change something", "no", "edit", "change", "2"):
         chips = []
         if session.available_sheets and len(session.available_sheets) > 1:
-            for s in session.available_sheets[:4]:
-                chips.append(f"Sheet {s}")
+            for s in _choosable(session, session.available_sheets)[:4]:
+                chips.append(_sheet_chip(session, s))
         chips.append("Upload a different file")
         return Response(
-            text="What would you like to change? You can choose a different worksheet or upload a different file.",
+            text=f"What would you like to change? You can choose a different {_sheet_word(session)} "
+                 "or upload a different file.",
             chips=chips,
             phase=Phase.AWAITING_INTAKE_CONFIRMATION,
         )
 
     # Check for direct sheet switch requests
-    if lower.startswith("sheet ") or (session.available_sheets and text in session.available_sheets):
-        sheet_target = text.split(" ", 1)[1] if lower.startswith("sheet ") else text
+    if lower.startswith(("sheet ", "statement ")) or (
+            session.available_sheets and text in session.available_sheets):
+        sheet_target = text.split(" ", 1)[1] if lower.startswith(("sheet ", "statement ")) else text
         return _handle_switch_sheet(session, ParsedIntent("switch_sheet", captures={"sheet": sheet_target}))
 
     # If Maya directly typed the period instead of clicking 'Looks right'
@@ -392,8 +398,33 @@ def _handle_period_choice(session: Session, text: str) -> Response:
     )
 
 
+_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf"}
+
+
+def _is_pdf(session: Session) -> bool:
+    return (session.source_suffix or "").lower() == ".pdf"
+
+
+def _sheet_word(session: Session) -> str:
+    """A PDF holds statements where a workbook holds worksheets."""
+    return "statement" if _is_pdf(session) else "worksheet"
+
+
+def _choosable(session: Session, names: list[str]) -> list[str]:
+    """Sheets worth offering as chips: in a PDF, only statements that can be compared."""
+    result = session.intake_result
+    if _is_pdf(session) and result is not None and result.comparable_sheets:
+        return [name for name in names if name in result.comparable_sheets]
+    return names
+
+
+def _sheet_chip(session: Session, name: str) -> str:
+    return f"{'Statement' if _is_pdf(session) else 'Sheet'} {name}"
+
+
 def handle_upload(
     session: Session, file_bytes: bytes, filename: str, sheet: str | None = None,
+    *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
     suffix = Path(filename).suffix.lower()
@@ -414,7 +445,7 @@ def handle_upload(
         compare_to=session.compare_to,
     )
     return _with_first_upload_intro(
-        session, _intake_response(session, intake_res, filename), intake_res.comparison_basis,
+        session, _intake_response(session, intake_res, filename), intake_res.comparison_basis, first_visit,
     )
 
 
@@ -445,11 +476,20 @@ def _first_upload_intro(basis: ComparisonBasis) -> str:
     )
 
 
-def _with_first_upload_intro(session: Session, response: Response, basis: ComparisonBasis) -> Response:
-    """Open the session's first successfully read file with what the chatbot is for."""
-    if session.intro_shown or response.phase == Phase.AWAITING_FILE:
+def _with_first_upload_intro(
+    session: Session, response: Response, basis: ComparisonBasis, first_visit: bool | None,
+) -> Response:
+    """Open a visitor's first successfully read file with what the chatbot is for.
+
+    Hosted visitors share one session, so the page says whether its visitor has seen
+    the intro (``first_visit``). Callers that don't say get it once per session.
+    """
+    if response.phase == Phase.AWAITING_FILE:
         return response
+    show = not session.intro_shown if first_visit is None else first_visit
     session.intro_shown = True
+    if not show:
+        return response
     return replace(response, text=_first_upload_intro(basis) + response.text)
 
 
@@ -464,7 +504,7 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
         chips = _comparison_chips(intake_res.comparison_choices)
         if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
             for s in intake_res.available_sheets[:3]:
-                chips.append(f"Sheet {s}")
+                chips.append(_sheet_chip(session, s))
         chips.append("Upload a different file")
         if session.last_technical_detail:
             chips.append("Show technical details")
@@ -540,9 +580,10 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
     summary_text += "\n\nDoes this look right?"
     chips = ["Looks right", "Change something"]
     if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
-        other_sheets = [s for s in intake_res.available_sheets if s != intake_res.sheet_name]
+        other_sheets = [s for s in _choosable(session, intake_res.available_sheets)
+                        if s != intake_res.sheet_name]
         if other_sheets:
-            chips.insert(1, f"Sheet {other_sheets[0]}")
+            chips.insert(1, _sheet_chip(session, other_sheets[0]))
 
     return Response(
         text=summary_text,
@@ -914,9 +955,9 @@ def _run_analysis(session: Session) -> Response:
         plain_err = plain_analysis_error(technical)
         chips = ["Upload a different file"]
         if session.available_sheets and len(session.available_sheets) > 1:
-            for s in session.available_sheets[:2]:
+            for s in _choosable(session, session.available_sheets)[:2]:
                 if s != session.worksheet:
-                    chips.append(f"Sheet {s}")
+                    chips.append(_sheet_chip(session, s))
         chips.append("Show technical details")
         return Response(
             text=f"⚠️ {plain_err}",
@@ -1369,7 +1410,7 @@ def _handle_help(session: Session) -> Response:
         "• `revenue misses` — Revenue lines that fell short of plan\n"
         "• `highest percent` — Line items with largest relative percentage swings\n"
         "• `compare [item1] vs [item2]` — Side-by-side line comparison or macro (actual vs budget, rev vs exp)\n"
-        "• `sheets` / `sheet <name>` — View and switch between Excel worksheets\n"
+        "• `sheets` / `sheet <name>` — View and switch between Excel worksheets or PDF statements\n"
         "• `metrics` — Total accounts, materiality rate, and portfolio breakdown\n\n"
         "**Financial Concepts & Education (Ask Anytime):**\n"
         "• `what is materiality?` — Dual-threshold noise reduction logic\n"
@@ -1979,6 +2020,8 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
         source_sha256=source_hash,
         source_worksheet=session.worksheet,
         transformations=transformations,
+        source_document=(session.intake_result.source_document()
+                         if session.intake_result is not None else None),
     )
     audit_json = serialize_audit_json(record)
     period_slug = result.config.period.replace(" ", "_").lower()
@@ -2174,7 +2217,8 @@ def _handle_knowledge(session: Session, intent_id: str) -> Response:
     if session.phase == Phase.AWAITING_FILE:
         text += (
             "\n\n---\n"
-            "📁 **Next Step:** Upload your financial file (CSV, JSON, XLSX, or XLSM) using the drop zone above to begin."
+            "📁 **Next Step:** Upload your financial file (CSV, JSON, XLSX, XLSM, or a PDF filing) "
+            "using the drop zone above to begin."
         )
         chips = ["Supported file formats", "What is materiality?"]
     elif session.phase == Phase.AWAITING_PERIOD:
@@ -3043,16 +3087,17 @@ def _handle_waterfall(session: Session) -> Response:
 
 
 def _handle_list_sheets(session: Session) -> Response:
-    """List available worksheets in the uploaded workbook."""
+    """List the worksheets in an uploaded workbook, or the statements in a PDF."""
     if not session.source_bytes or not session.source_name:
         return Response(
-            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) first.",
+            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) "
+                 "or a PDF filing first.",
             phase=session.phase,
             chips=["Help"],
         )
 
     suffix = (session.source_suffix or "").lower()
-    if suffix not in {".xlsx", ".xlsm"}:
+    if suffix not in _MULTI_TABLE_SUFFIXES:
         return Response(
             text=f"The uploaded file **'{safe_inline(session.source_name)}'** is a "
                  f"{suffix.upper().lstrip('.')} file, which contains a single dataset rather than multiple worksheets.",
@@ -3065,9 +3110,10 @@ def _handle_list_sheets(session: Session) -> Response:
         sheets = get_workbook_sheets(session.source_bytes, suffix)
         session.available_sheets = list(sheets)
 
+    word = _sheet_word(session)
     if not sheets:
         return Response(
-            text=f"No readable worksheets found in '{safe_inline(session.source_name)}'.",
+            text=f"No readable {word}s found in '{safe_inline(session.source_name)}'.",
             phase=session.phase,
         )
 
@@ -3079,15 +3125,16 @@ def _handle_list_sheets(session: Session) -> Response:
         sheet_list_md.append(f"{idx}. **{safe_inline(s)}**{marker}")
 
     text = (
-        f"📑 **Worksheets in '{safe_inline(session.source_name)}' ({len(sheets)} total):**\n\n"
+        f"📑 **{word.capitalize()}s in '{safe_inline(session.source_name)}' ({len(sheets)} total):**\n\n"
         + "\n".join(sheet_list_md)
-        + "\n\nTo switch worksheets, type `sheet <name>` (e.g., `sheet "
-        + safe_inline(sheets[1] if len(sheets) > 1 else sheets[0])
+        + f"\n\nTo switch {word}s, type `{_sheet_chip(session, '<name>').lower()}` (e.g., `"
+        + _sheet_chip(session, safe_inline(sheets[1] if len(sheets) > 1 else sheets[0])).replace(
+            "Statement ", "statement ", 1).replace("Sheet ", "sheet ", 1)
         + "`)."
     )
 
-    other_sheets = [s for s in sheets if s != current]
-    chips = [f"sheet {s}" for s in other_sheets[:3]]
+    other_sheets = [s for s in _choosable(session, sheets) if s != current]
+    chips = [_sheet_chip(session, s) for s in other_sheets[:3]]
     if session.phase == Phase.EXPLORING:
         chips.append("Summary")
 
@@ -3095,15 +3142,16 @@ def _handle_list_sheets(session: Session) -> Response:
 
 
 def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
-    """Switch the active worksheet and re-analyze or re-intake data."""
+    """Switch the active worksheet (or PDF statement) and re-analyze or re-intake data."""
     if not session.source_bytes or not session.source_name:
         return Response(
-            text="No file has been uploaded yet. Please upload an Excel workbook first.",
+            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) "
+                 "or a PDF filing first.",
             phase=session.phase,
         )
 
     suffix = (session.source_suffix or "").lower()
-    if suffix not in {".xlsx", ".xlsm"}:
+    if suffix not in _MULTI_TABLE_SUFFIXES:
         return Response(
             text=f"The uploaded file **'{safe_inline(session.source_name)}'** is a "
                  f"{suffix.upper().lstrip('.')} file, which does not have multiple worksheets.",
@@ -3134,18 +3182,19 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         if len(candidates) == 1:
             matched_sheet = candidates[0]
 
+    word = _sheet_word(session)
     if matched_sheet is None:
         available_str = ", ".join(f"'{safe_inline(s)}'" for s in sheets)
         return Response(
-            text=f"⚠️ Worksheet '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'.\n\n"
-                 f"Available worksheets: {available_str}.",
-            chips=[f"sheet {s}" for s in sheets[:3]],
+            text=f"⚠️ {word.capitalize()} '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'.\n\n"
+                 f"Available {word}s: {available_str}.",
+            chips=[_sheet_chip(session, s) for s in sheets[:3]],
             phase=session.phase,
         )
 
     if matched_sheet == session.worksheet and session.result is not None:
         return Response(
-            text=f"Worksheet **'{safe_inline(matched_sheet)}'** is already active.",
+            text=f"{word.capitalize()} **'{safe_inline(matched_sheet)}'** is already active.",
             chips=["Summary", "Waterfall", "Material"],
             phase=session.phase,
         )
@@ -3162,11 +3211,17 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         technical = intake_res.fatal_error_message or "No data rows found"
         session.last_technical_detail = technical
         plain_err = plain_analysis_error(technical)
+        if _is_pdf(session):
+            # The PDF messages already name the statement; offer the ones that can be read.
+            chips = [_sheet_chip(session, s) for s in intake_res.available_sheets
+                     if s != session.worksheet][:3]
+            return Response(text=f"⚠️ {plain_err}", chips=[*chips, "Show statements"],
+                            phase=session.phase)
         chips = ["Show sheets"]
         if session.last_technical_detail:
             chips.append("Show technical details")
         return Response(
-            text=f"⚠️ Failed to load worksheet '{safe_inline(matched_sheet)}': {plain_err}",
+            text=f"⚠️ Failed to load {word} '{safe_inline(matched_sheet)}': {plain_err}",
             chips=chips,
             phase=session.phase,
         )
@@ -3186,7 +3241,7 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         and session.percent_threshold is not None
     ):
         resp = _run_analysis(session)
-        prefix = f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'** ({len(intake_res.rows)} rows).\n\n"
+        prefix = f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'** ({len(intake_res.rows)} rows).\n\n"
         return Response(
             text=prefix + resp.text,
             table=resp.table,
@@ -3200,18 +3255,19 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         summary_text += "\n\nDoes this look right?"
         chips = ["Looks right", "Change something"]
         if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
-            other_sheets = [s for s in intake_res.available_sheets if s != matched_sheet]
+            other_sheets = [s for s in _choosable(session, intake_res.available_sheets)
+                            if s != matched_sheet]
             if other_sheets:
-                chips.insert(1, f"Sheet {other_sheets[0]}")
+                chips.insert(1, _sheet_chip(session, other_sheets[0]))
         return Response(
-            text=f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'**.\n\n" + summary_text,
+            text=f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'**.\n\n" + summary_text,
             chips=chips,
             phase=Phase.AWAITING_INTAKE_CONFIRMATION,
         )
 
     row_count = len(intake_res.rows)
     return Response(
-        text=f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}).\n\n"
+        text=f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}).\n\n"
              f"Current reporting period: **{safe_inline(session.period or 'Not set')}**.",
         phase=session.phase,
     )

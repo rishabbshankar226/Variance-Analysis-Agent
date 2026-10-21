@@ -121,6 +121,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
         file_bytes: bytes | None = None
         filename: str | None = None
         sheet: str | None = None
+        first_visit: bool | None = None
 
         if msg.is_multipart():
             parts = msg.get_payload()
@@ -145,15 +146,19 @@ class _ChatHandler(BaseHTTPRequestHandler):
                             sheet_text = payload.decode("utf-8", errors="replace").strip()
                             if sheet_text:
                                 sheet = sheet_text
+                    elif 'name="first_visit"' in disposition:
+                        payload = part.get_payload(decode=True)
+                        if isinstance(payload, bytes):
+                            first_visit = payload.strip() == b"1"
 
         if file_bytes is None or filename is None:
             self._json_error(
-                "No file found in the upload. Please select a CSV, JSON, XLSX, or XLSM file.",
+                "No file found in the upload. Please select a CSV, JSON, XLSX, XLSM, or PDF file.",
                 HTTPStatus.BAD_REQUEST,
             )
             return
 
-        response = handle_upload(self.session, file_bytes, filename, sheet)
+        response = handle_upload(self.session, file_bytes, filename, sheet, first_visit=first_visit)
         self._send_response(response)
 
     def _handle_message(self) -> None:
@@ -177,7 +182,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
             self._json_error("Empty message.", HTTPStatus.BAD_REQUEST)
             return
 
-        response = handle_message(self.session, text)
+        raw_first_visit = data.get("first_visit")
+        first_visit = raw_first_visit if isinstance(raw_first_visit, bool) else None
+        response = handle_message(self.session, text, first_visit=first_visit)
         self._send_response(response)
 
     # ------------------------------------------------------------------

@@ -185,6 +185,22 @@ Per the definitions in [`.agents/rules/variance-intake.md`](file:///Users/rishab
 
 ---
 
+### F. PDF Filings (`pdf_tables.py`, `intake.py`, `parsing.py`), added with PDF intake
+
+These messages postdate the audited commit and are not in the counts above.
+
+| Source | Message Text | Jargon? | Offers Fix? | Notes |
+|---|---|---|---|---|
+| `pdf_tables.py` | `PDF files require the optional PDF tools. Please install with: pip install 'variance-analysis-agent[pdf]'` | No | Yes | Install command (CLI and hosted setup) |
+| `pdf_tables.py` | `We couldn't open '{filename}' as a PDF. It may be damaged or password-protected. Try saving it again without a password, or export the statement to Excel or CSV.` | No | Yes | |
+| `pdf_tables.py` | `'{filename}' has {n} pages, more than the {max} we can read at once. Save just the financial statement pages as a new PDF and upload that.` | No | Yes | |
+| `pdf_tables.py` | `Reading '{filename}' took too long. Save just the financial statement pages as a new PDF and upload that.` | No | Yes | |
+| `pdf_tables.py` | `'{filename}' looks like a scanned image, so there is no text to read. Export the statement to Excel or CSV, or use a PDF saved from the filing itself, not a scan.` | No | Yes | |
+| `pdf_tables.py` | `We couldn't find an income statement, balance sheet or cash flow statement in '{filename}'. Export the statement to Excel or CSV and upload that instead.` | No | Yes | |
+| `intake.py` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {names}.` | No | Yes | Lists the statements; chat offers chips |
+| `intake.py` | `'{statement}' lists assets, liabilities and equity, which can't be compared as revenue and expense yet. Choose an income statement instead: {names}.` | No | Yes | Also "cash coming in and going out" for cash flows; chat offers chips |
+| `parsing.py` | `PDF files are read with --assisted, which finds the financial statements in the filing and lists every adjustment it makes.` | No | Yes | CLI only; the flag is the fix |
+
 ## 3. Key Findings & Friction Patterns
 
 1. **The Exception Pass-Through Leak**:

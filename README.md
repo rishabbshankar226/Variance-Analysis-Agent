@@ -1,8 +1,8 @@
 # Variance Analysis Agent
 
-A Python command-line application for descriptive budget-versus-actual analysis. It reads CSV, JSON, XLSX, or XLSM, validates financial inputs, and produces a Markdown report and optional versioned audit JSON.
+A Python command-line application for descriptive budget-versus-actual analysis. It reads CSV, JSON, XLSX, or XLSM, or the income statement in a 10-K or 10-Q PDF (with `--assisted`), validates financial inputs, and produces a Markdown report and optional versioned audit JSON.
 
-All financial arithmetic runs in deterministic code. The application makes no model or network calls, requires no credentials, and has no third-party runtime dependencies for CSV or JSON. Excel support is optional. Python 3.11 or later is required; CI covers Python 3.11–3.14 and Windows output contracts.
+All financial arithmetic runs in deterministic code. The application makes no model or network calls, requires no credentials, and has no third-party runtime dependencies for CSV or JSON. Excel and PDF support are optional. Python 3.11 or later is required; CI covers Python 3.11–3.14 and Windows output contracts.
 
 ## Installation
 
@@ -17,6 +17,8 @@ On Windows, activate with `.venv\Scripts\activate`. Install Excel support with:
 ```sh
 python -m pip install -e '.[excel]'
 ```
+
+Install PDF support (10-K and 10-Q filings) with `python -m pip install -e '.[pdf]'`. See [PDF filings](docs/input-contract.md#pdf-filings---assisted).
 
 Direct dependencies and the build backend are pinned in `pyproject.toml`; `requirements-typecheck.txt` pins the development checker and its supporting packages. Other transitive dependencies are resolved by pip for the selected Python version and platform; these pins are not a complete cross-platform environment lock.
 
@@ -99,7 +101,7 @@ For the supplied sample and the command above, material variances are Subscripti
 
 The source capture is limited to 32 MiB. Excel permits at most 2,048 archive members, 64 MiB total expanded content, 100,000 physical row positions including the header, 256 columns, and 1,000,000 cells per worksheet. CSV/JSON permit up to 100,000 data rows subject to the column/value limits. Text fields are limited to 128 KiB, numeric text to 4,096 characters, and JSON/XML nesting to 128 containers. Duplicate archive members, XML DTD/entities, invalid or unordered physical coordinates, and malformed structures are rejected before worksheet expansion. Inflated producer dimensions do not override physical content checks.
 
-The current audit schema is 1.6. `--audit-schema-version` retains versions 1.0–1.6; 1.0 is USD-only. Schema 1.6 records the comparison (`basis`, `label`) in the record and configuration identity; 1.0–1.5 are refused for Forecast and Prior Period runs. Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
+The current audit schema is 1.7. `--audit-schema-version` retains versions 1.0–1.7; 1.0 is USD-only. Schema 1.6 records the comparison (`basis`, `label`) in the record and configuration identity; 1.0–1.5 are refused for Forecast and Prior Period runs. Schema 1.7 adds `source.document`, which records how a PDF statement was read; 1.0–1.6 are refused for PDF input. Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
 
 Source labels and periods are untrusted data. Reports escape Markdown/HTML and render terminal/bidirectional controls visibly. Audit JSON retains source text as data and excludes raw row dictionaries. The [commentary prompt](prompt/variance_report_prompt.md) consumes verified audit facts only; it is not a runtime agent or an enforcement boundary. Any separate LLM integration needs strict runtime argument/output schemas, bounded calls and tokens, timeouts, retry limits, and environment-loaded credentials. Those integrations are outside this CLI and are not implicitly supplied by a prompt.
 

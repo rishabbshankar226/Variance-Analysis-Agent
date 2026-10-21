@@ -54,6 +54,14 @@ def _intake_error(intake_res: IntakeResult) -> str:
     return message
 
 
+def _unit_name(scale: Decimal) -> str:
+    if scale == Decimal("1000"):
+        return "thousands"
+    if scale == Decimal("1000000"):
+        return "millions"
+    return f"units of {scale}"
+
+
 class Arguments(Protocol):
     input: str | None
     period: str | None
@@ -114,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="variance-agent",
         description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
     )
-    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file.")
+    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
     parser.add_argument("--period", help="Reporting period shown in the report.")
     parser.add_argument(
         "--dollar-threshold",
@@ -129,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     parser.add_argument("--check-only", action="store_true",
                         help="Validate/analyze input and print a summary without writing outputs.")
-    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet).")
+    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
@@ -226,9 +234,10 @@ def _run(args: Arguments) -> int:
         raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
     _validate_output_paths(args)
     input_path = Path(args.input)
-    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+    is_pdf = input_path.suffix.lower() == ".pdf"
+    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
-    validate_input_format(input_path.suffix)
+    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)))
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
@@ -246,6 +255,7 @@ def _run(args: Arguments) -> int:
         from .intake import (
             GLRangeRule,
             apply_classification_rules,
+            detect_signed_ledger,
             flip_ledger_signs,
             read_input_assisted,
             scale_rows_by_unit,
@@ -269,11 +279,21 @@ def _run(args: Arguments) -> int:
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
             rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+        # Intake already applied any unit scale and revenue sign flip it detected (as the chat
+        # does), so the mapping only adds what the file itself did not say.
         if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
-            rows = scale_rows_by_unit(rows, Decimal(mapping_obj.unit_scale))
-        if mapping_obj.flip_signs:
-            items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
-            rows, _ = flip_ledger_signs(rows, items)
+            target_scale = Decimal(mapping_obj.unit_scale)
+            detected_scale = intake_res.detected_unit_multiplier
+            if detected_scale == Decimal("1"):
+                rows = scale_rows_by_unit(rows, target_scale)
+            elif detected_scale != target_scale:
+                raise ValueError(
+                    f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
+                    f"mapping says {_unit_name(target_scale)}. Check the file, or update unit_scale "
+                    "in the mapping."
+                )
+        if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
+            rows, _ = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
 
         type_map: dict[str, LineType] = {}
         if type_map_bytes is not None:
@@ -383,6 +403,7 @@ def _run(args: Arguments) -> int:
             type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
             source_worksheet=parsed_worksheet,
             transformations=transformations,
+            source_document=intake_res.source_document() if intake_res is not None else None,
         )
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     write_text_outputs(outputs)

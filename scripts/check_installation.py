@@ -17,6 +17,7 @@ import variance_agent
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--without-excel", action="store_true")
+    parser.add_argument("--without-pdf", action="store_true")
     args = parser.parse_args()
     assert importlib.metadata.version("variance-analysis-agent") == variance_agent.__version__
     root = Path(__file__).resolve().parents[1]
@@ -28,6 +29,8 @@ def main() -> None:
     assert command.is_file(), "Installed console entry point is missing"
     if args.without_excel:
         assert importlib.util.find_spec("openpyxl") is None
+    if args.without_pdf:
+        assert importlib.util.find_spec("pdfplumber") is None
     with tempfile.TemporaryDirectory() as folder:
         work = Path(folder)
         help_run = subprocess.run([str(command), "--help"], cwd=work, capture_output=True,
@@ -59,6 +62,14 @@ def main() -> None:
                                  cwd=work, capture_output=True, text=True)
             assert run.returncode == 2
             assert "optional dependency" in run.stderr
+        if args.without_pdf:
+            source = work / "filing.pdf"
+            source.write_bytes(b"%PDF-1.4 not read without the PDF tools")
+            run = subprocess.run([str(command), str(source), "--assisted", "--period", "FY2025",
+                                  "--dollar-threshold", "1", "--percent-threshold", "5"],
+                                 cwd=work, capture_output=True, text=True)
+            assert run.returncode == 2
+            assert "pip install 'variance-analysis-agent[pdf]'" in run.stderr
     print(f"Installed {variance_agent.__version__}: console, CSV/JSON, audit provenance verified")
 
 

@@ -127,3 +127,21 @@ variance-agent exports/10k_extract.csv --assisted --period 'FY2025' \
 variance-agent plan.csv --period 'Q3 2026' --compare-to forecast \
   --dollar-threshold 10000 --percent-threshold 5
 ```
+
+## PDF filings (--assisted)
+
+With the optional `[pdf]` extra (`pip install 'variance-analysis-agent[pdf]'`), assisted intake and the chat read the financial statements in a 10-K or 10-Q PDF. Nothing is sent anywhere: the PDF is read on this machine with fixed rules.
+
+- **Finding statements.** Pages whose top lines carry a statement title (income statement, comprehensive income, balance sheet, cash flows, including "Statements of Consolidated …" and "Condensed …" forms) are read for tables. Index pages, MD&A tables, equity statements, footers and page numbers are skipped. A statement continued on the next page is joined.
+- **Columns and periods.** Columns are rebuilt from where the amounts sit on the page. Headers become period labels: `Year Ended December 31, 2025` reads as `FY2025`; `Three Months Ended September 30, 2026` and a date such as `September 30, 2026` read as `Sep 2026`. A 10-Q's three- and six/nine-month columns become separate statements. The newest period is Actual and the next newest the Prior Period comparison (see [Comparison basis](#comparison-basis)).
+- **Choosing a statement.** Each statement acts like a worksheet: the income statement is chosen first; chat lists the others with `statements` and switches with `statement <name>`; the CLI takes `--sheet "<statement name>"`. When a filing covers a parent and a subsidiary, each name starts with the company.
+- **Income statements only.** Balance sheets and cash flow statements are listed but not compared, because their lines are not revenue and expense: "'{statement}' lists assets, liabilities and equity, which can't be compared as revenue and expense yet. Choose an income statement instead: …".
+- **Shaping the statement.** Subtotals (Total …, Gross profit, Operating income, Income/Earnings before …, Net income, Comprehensive income) are checked against the lines above them, allowing for each printed figure's rounding, and left out of the analysis. That arithmetic shows whether each line adds to income (labeled revenue) or reduces it (labeled expense). A line printed with the opposite sign, such as interest expense printed (343) in a block the statement adds, is flipped and listed. Lines the arithmetic cannot settle are left for the user to label, including every line of a block of more than 16 lines that has no "Total" row before the next subtotal. Signed-ledger flipping and sum-based subtotal detection are not applied to these rows.
+- **Left out and renamed.** Per-share and share-count rows are left out. A label that repeats is named by its section or by the subtotal it rolls into, for example `Other (current liabilities)`. A unit caption such as `(In millions)` or `(millions, except per share data)` scales amounts exactly.
+- **Shown and recorded.** Every adjustment is listed in the "Here's how I read your file" summary (chat) or on stderr (CLI), and recorded in audit schema 1.7 under `source.document`.
+- **Limits and errors.** At most 400 pages and 20 seconds per file, beside the 32 MiB file limit. Scanned (image-only), damaged or password-protected PDFs, files without statements, and missing PDF tools each stop with a plain message. Strict mode (no `--assisted`) refuses PDFs and points to `--assisted`.
+
+```sh
+variance-agent filings/10-K-2025.pdf --assisted --period 'FY2025' \
+  --dollar-threshold 100000 --percent-threshold 5 --audit-json audit.json
+```

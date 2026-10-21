@@ -250,8 +250,15 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))
 
 
-def validate_input_format(suffix: str) -> None:
+def validate_input_format(suffix: str, *, assisted: bool = False) -> None:
     suffix = suffix.lower()
+    if suffix == ".pdf":
+        if not assisted:
+            raise ValueError(
+                "PDF files are read with --assisted, which finds the financial statements in the "
+                "filing and lists every adjustment it makes."
+            )
+        return
     if suffix not in {".csv", ".json", ".xlsx", ".xlsm"}:
         raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
     if suffix in {".xlsx", ".xlsm"}:

@@ -268,9 +268,24 @@ def build_fixture_s() -> None:
         end = _statement(page, 133, cols, [
             ("Operating revenue:", None, 0),
             ("Passenger revenue", revenue, 10),
-            ("Total operating expense", ("1,576", "1,391", "2,912", "2,705"), 10),
-            ("Operating income", ("1,096", "1,325", "1,830", "1,980"), 0),
-        ], dollar_rows=frozenset({"Passenger revenue"}))
+            ("Cargo revenue", ("527", "430", "949", "859"), 10),
+            ("Total operating revenue", ("16,627", "14,266", "30,216", "26,555"), 10),
+            ("Operating expense:", None, 0),
+            ("Salaries and related costs", ("4,686", "4,413", "9,100", "8,700"), 10),
+            ("Aircraft fuel", ("5,110", "2,775", "9,000", "5,500"), 10),
+            ("Special charges (credits)", ("(145)", "447", "(100)", "500"), 10),
+            ("Other operating expenses", ("5,880", "5,306", "10,416", "10,000"), 10),
+            ("Total operating expense", ("15,531", "12,941", "28,416", "24,700"), 10),
+            ("Operating income", ("1,096", "1,325", "1,800", "1,855"), 0),
+            ("Nonoperating income (expense):", None, 0),
+            ("Interest expense", ("(343)", "(361)", "(690)", "(720)"), 10),
+            ("Interest income", ("148", "167", "300", "330"), 10),
+            ("Total nonoperating expense, net", ("(195)", "(194)", "(390)", "(390)"), 10),
+            # 1,096 - 195 = 901; filings round each figure on its own, so print 900.
+            ("Income before income taxes", ("900", "1,131", "1,410", "1,465"), 0),
+            ("Income tax expense", ("200", "250", "310", "320"), 0),
+            ("Net income", ("700", "881", "1,100", "1,145"), 0),
+        ], dollar_rows=frozenset({"Passenger revenue", "Net income"}))
         page.text(LABEL_X, end + 10, end_note, size=7)
         page.center(306, 760, "3")
         return page

@@ -608,6 +608,16 @@
   // ── State ──────────────────────────────────────────────────
   let currentPhase = 'awaiting_file';
 
+  // Visitors share one hosted session, so this browser remembers whether its
+  // visitor has seen the welcome intro that opens the first file.
+  const INTRO_SEEN_KEY = 'variance-agent:intro-seen';
+  let introSeen = false;
+  try { introSeen = localStorage.getItem(INTRO_SEEN_KEY) === '1'; } catch (_) {}
+  function markIntroSeen() {
+    introSeen = true;
+    try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch (_) {}
+  }
+
   const messagesEl = document.getElementById('messages');
   const inputEl    = document.getElementById('input');
   const sendBtn    = document.getElementById('send-btn');
@@ -662,6 +672,7 @@
       if (data && data.phase && data.phase !== 'awaiting_file') {
         updatePhase(data.phase);
         if (data.initial_response) {
+          markIntroSeen();
           addAgentMessage(
             data.initial_response.text,
             data.initial_response.table,
@@ -675,7 +686,7 @@
 
     addAgentMessage(
       'Welcome! Upload your financial data to get started.\n\n' +
-      'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**.\n\n' +
+      'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**, and **PDF** 10-K / 10-Q filings.\n\n' +
       'You can also ask financial domain questions anytime (e.g., *What is materiality?* or *Budget vs Forecast*).',
       null, ['Supported file formats', 'What is materiality?', 'Budget vs forecast'], true
     );
@@ -993,11 +1004,11 @@
     zone.innerHTML =
       '<div class="drop-zone-icon">📁</div>' +
       '<div class="drop-zone-title">Drop file here or click to browse</div>' +
-      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm</div>';
+      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)</div>';
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.csv,.json,.xlsx,.xlsm';
+    fileInput.accept = '.csv,.json,.xlsx,.xlsm,.pdf';
     zone.appendChild(fileInput);
 
     zone.addEventListener('click', () => fileInput.click());
@@ -1052,11 +1063,11 @@
 
   // ── File Upload ────────────────────────────────────────────
   async function uploadFile(file) {
-    const validExts = ['.csv', '.json', '.xlsx', '.xlsm'];
+    const validExts = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!validExts.includes(ext)) {
       addAgentMessage(
-        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, or XLSM file.',
+        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
         null, null, true
       );
       return;
@@ -1069,6 +1080,7 @@
 
     const formData = new FormData();
     formData.append('file', file, file.name);
+    formData.append('first_visit', introSeen ? '0' : '1');
 
     showTypingIndicator();
     try {
@@ -1082,6 +1094,7 @@
       }
 
       if (data.phase) updatePhase(data.phase);
+      if (data.phase && data.phase !== 'awaiting_file') markIntroSeen();
       addAgentMessage(data.text, data.table, data.chips, false);
 
       if (data.download_url) {
@@ -1111,11 +1124,13 @@
       const resp = await fetch('/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, first_visit: !introSeen }),
       });
       const data = await resp.json();
       removeTypingIndicator();
 
+      // A table pasted while waiting for a file is this visitor's first file.
+      if (currentPhase === 'awaiting_file' && data.phase && data.phase !== 'awaiting_file') markIntroSeen();
       if (data.phase) updatePhase(data.phase);
 
       const showDrop = (data.phase === 'awaiting_file');

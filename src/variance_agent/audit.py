@@ -15,8 +15,8 @@ from .json_types import JSONObject, JSONValue
 from .limits import validate_text
 from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.6"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6")
+CURRENT_SCHEMA_VERSION = "1.7"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -163,6 +163,28 @@ def write_audit_json(path: str | Path, record: Mapping[str, object]) -> None:
 
 
 @financial_context()
+def _document_record(document: Mapping[str, object] | None) -> JSONObject | None:
+    """Validate how a PDF statement was read: its name, pages and the reader's notes."""
+    if document is None:
+        return None
+    kind, statement = document.get("kind"), document.get("statement")
+    pages, notes = document.get("pages"), document.get("reader_notes")
+    if kind != "pdf":
+        raise ValueError("source_document kind must be 'pdf'.")
+    validate_text(statement, field="source_document statement", nonblank=True)
+    if not isinstance(pages, (list, tuple)) or not pages or not all(
+            isinstance(page, int) and not isinstance(page, bool) and page > 0 for page in pages):
+        raise ValueError("source_document pages must be a nonempty list of page numbers.")
+    if not isinstance(notes, (list, tuple)):
+        raise ValueError("source_document reader_notes must be a list of text.")
+    return {
+        "kind": "pdf",
+        "statement": str(statement),
+        "pages": [int(page) for page in pages],
+        "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+    }
+
+
 def build_audit_record(
     result: AnalysisResult,
     *,
@@ -172,6 +194,7 @@ def build_audit_record(
     type_map_sha256: str | None = None,
     source_worksheet: str | None = None,
     transformations: Mapping[str, object] | None = None,
+    source_document: Mapping[str, object] | None = None,
 ) -> JSONObject:
     """Build a JSON-safe, versioned record of deterministic analysis facts.
 
@@ -184,7 +207,12 @@ def build_audit_record(
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
-    if schema_version != "1.6" and result.config.comparison_basis != ComparisonBasis.BUDGET:
+    if source_document is not None and schema_version != "1.7":
+        raise ValueError(
+            f"Audit schema {schema_version} cannot record how a PDF statement was read; "
+            "use --audit-schema-version 1.7 for PDF input."
+        )
+    if schema_version not in {"1.6", "1.7"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
         raise ValueError(
             f"Audit schema {schema_version} records the comparison amount as a budget; "
             "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
@@ -201,7 +229,7 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7"}
 
     row_count = len(result.rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
@@ -283,13 +311,15 @@ def build_audit_record(
         "basis": str(result.config.comparison_basis),
         "label": result.config.comparison_label,
     }
-    if schema_version == "1.6":
+    if schema_version in {"1.6", "1.7"}:
         record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.4", "1.5", "1.6"}:
+    if schema_version in {"1.4", "1.5", "1.6", "1.7"}:
         source["worksheet"] = source_worksheet
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
+    if schema_version == "1.7":
+        source["document"] = _document_record(source_document)
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -297,9 +327,9 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version in {"1.4", "1.5", "1.6"}:
+        if schema_version in {"1.4", "1.5", "1.6", "1.7"}:
             config_identity["worksheet"] = source_worksheet
-        if schema_version == "1.6":
+        if schema_version in {"1.6", "1.7"}:
             config_identity["comparison"] = comparison
         record["provenance"] = {
             "tool_version": __version__,
@@ -316,7 +346,7 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
-    if schema_version in {"1.5", "1.6"}:
+    if schema_version in {"1.5", "1.6", "1.7"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
         zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
@@ -342,6 +372,6 @@ def build_audit_record(
             _row_record(row, include_diagnostics=include_diagnostics) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7"}:
         record["payload_sha256"] = payload_sha256(record)
     return record

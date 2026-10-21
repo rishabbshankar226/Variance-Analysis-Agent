@@ -11,7 +11,6 @@ from jsonschema import Draft202012Validator, ValidationError
 from tests.comparison_helpers import ROWS, B, F, P, cfg
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import (
-    CURRENT_SCHEMA_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
     build_audit_record,
 )
@@ -27,7 +26,7 @@ def _validator(version: str) -> Draft202012Validator:
 
 
 def test_16_is_current() -> None:
-    assert CURRENT_SCHEMA_VERSION == "1.6"
+    assert "1.6" in SUPPORTED_SCHEMA_VERSIONS
     assert "1.5" in SUPPORTED_SCHEMA_VERSIONS
 
 

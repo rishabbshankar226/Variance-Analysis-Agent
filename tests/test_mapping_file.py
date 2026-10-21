@@ -147,3 +147,148 @@ def test_cli_mapping_applies_unit_scale_with_more_than_two_rows(tmp_path: Path) 
     assert rows["Sales"]["budget"] == "10000"
     assert rows["Sales"]["actual"] == "12000"
     assert audit["transformations"]["unit_scale"] == "1000"
+
+
+# --- A chat-saved mapping replays to the chat's own amounts ---
+# Assisted intake already applies the detected unit scale and revenue sign flip, so the
+# CLI must not apply the mapping's copy of those choices a second time.
+
+# Fictional data: "Fictional Co" is a made-up company.
+FICTIONAL_THOUSANDS_SIGNED_CSV = (
+    "Fictional Co (in thousands)\n"
+    "Line Item,Budget,Actual\n"
+    "Product Revenue,-500,-520\n"
+    "Service Revenue,-200,-180\n"
+    "Total Revenue,-700,-700\n"
+    "Payroll Expense,300,320\n"
+)
+
+
+def _run_cli_mapping(tmp_path: Path, source: Path, mapping_json: str) -> dict[str, object]:
+    mapping_file = tmp_path / "replay.mapping.json"
+    mapping_file.write_text(mapping_json, encoding="utf-8")
+    audit_out = tmp_path / "replay_audit.json"
+    args = build_parser().parse_args([
+        str(source),
+        "--period", "Q3 2026",
+        "--dollar-threshold", "1",
+        "--percent-threshold", "1",
+        "--currency", "USD",
+        "--mapping", str(mapping_file),
+        "--audit-json", str(audit_out),
+        "--audit-schema-version", "1.5",
+    ])
+    assert _run(args) == 0
+    audit: dict[str, object] = json.loads(audit_out.read_text(encoding="utf-8"))
+    return audit
+
+
+def _amounts(audit: dict[str, object]) -> dict[str, tuple[str, str]]:
+    rows = audit["material_variances"]
+    assert isinstance(rows, list)
+    return {row["line_item"]: (row["budget"], row["actual"]) for row in rows}
+
+
+def test_chat_saved_mapping_replays_to_chat_amounts(tmp_path: Path) -> None:
+    from variance_agent.chat.session import Phase
+
+    source = tmp_path / "fictional_thousands_signed.csv"
+    source.write_text(FICTIONAL_THOUSANDS_SIGNED_CSV, encoding="utf-8")
+
+    session = Session()
+    handle_upload(session, source.read_bytes(), source.name)
+    answers = {
+        Phase.AWAITING_INTAKE_CONFIRMATION: "Looks right",
+        Phase.AWAITING_PERIOD: "Q3 2026",
+        Phase.AWAITING_THRESHOLDS: "$1 or 1%",
+        Phase.AWAITING_CURRENCY: "USD",
+    }
+    while session.phase in answers:
+        handle_message(session, answers[session.phase])
+    assert session.phase == Phase.EXPLORING
+    assert session.result is not None
+    handle_message(session, "Save layout mapping")
+    assert session.layout_mapping is not None
+    # The chat recorded every transformation it applied.
+    assert session.layout_mapping.unit_scale == "1000"
+    assert session.layout_mapping.flip_signs is True
+    assert session.layout_mapping.exclude_totals == ["Total Revenue"]
+
+    chat_audit = build_audit_record(session.result, schema_version="1.5")
+    cli_audit = _run_cli_mapping(tmp_path, source, save_mapping(session.layout_mapping))
+
+    # Scaled once, revenue flipped once, expenses untouched, total excluded.
+    expected = {
+        "Product Revenue": ("500000", "520000"),
+        "Service Revenue": ("200000", "180000"),
+        "Payroll Expense": ("300000", "320000"),
+    }
+    assert _amounts(chat_audit) == expected
+    assert _amounts(cli_audit) == expected
+    assert cli_audit["totals"] == chat_audit["totals"]
+    for cli_row, chat_row in zip(cli_audit["material_variances"], chat_audit["material_variances"]):
+        assert cli_row["variance_dollars"] == chat_row["variance_dollars"]
+        assert cli_row["status"] == chat_row["status"]
+
+
+def test_cli_mapping_does_not_rescale_a_detected_thousands_title(tmp_path: Path) -> None:
+    """Fictional data: the title already says thousands, so the mapping's "1000" is the same scale."""
+    source = tmp_path / "fictional_thousands.csv"
+    source.write_text(
+        "Fictional Co (in thousands)\n"
+        "Line Item,Budget,Actual\n"
+        "Product Revenue,500,520\n"
+        "Payroll Expense,300,320\n",
+        encoding="utf-8",
+    )
+    mapping = json.dumps({"header_row_number": 2, "unit_scale": "1000"})
+    audit = _run_cli_mapping(tmp_path, source, mapping)
+    assert _amounts(audit) == {
+        "Product Revenue": ("500000", "520000"),
+        "Payroll Expense": ("300000", "320000"),
+    }
+
+
+def test_cli_mapping_rejects_a_scale_that_conflicts_with_the_title(tmp_path: Path) -> None:
+    """Fictional data: the title says millions but the mapping says thousands."""
+    import pytest
+
+    source = tmp_path / "fictional_millions.csv"
+    source.write_text(
+        "Fictional Co (in millions)\n"
+        "Line Item,Budget,Actual\n"
+        "Product Revenue,5,6\n"
+        "Payroll Expense,3,4\n",
+        encoding="utf-8",
+    )
+    mapping_file = tmp_path / "conflict.mapping.json"
+    mapping_file.write_text(json.dumps({"header_row_number": 2, "unit_scale": "1000"}), encoding="utf-8")
+    args = build_parser().parse_args([
+        str(source), "--period", "Q3 2026", "--dollar-threshold", "1", "--percent-threshold", "1",
+        "--mapping", str(mapping_file),
+    ])
+    with pytest.raises(ValueError, match="millions"):
+        _run(args)
+
+
+def test_cli_mapping_flip_signs_flips_only_negative_revenue(tmp_path: Path) -> None:
+    """Fictional data: too few negative revenue lines for intake to flip on its own.
+
+    The mapping's flip_signs then flips only the revenue lines stored as credits;
+    expenses and positive revenue keep their signs.
+    """
+    source = tmp_path / "fictional_mixed_signs.csv"
+    source.write_text(
+        "Line Item,Budget,Actual\n"
+        "Product Revenue,-500,-520\n"
+        "Service Revenue,200,180\n"
+        "Payroll Expense,300,320\n",
+        encoding="utf-8",
+    )
+    mapping = json.dumps({"header_row_number": 1, "flip_signs": True})
+    audit = _run_cli_mapping(tmp_path, source, mapping)
+    assert _amounts(audit) == {
+        "Product Revenue": ("500", "520"),
+        "Service Revenue": ("200", "180"),
+        "Payroll Expense": ("300", "320"),
+    }
