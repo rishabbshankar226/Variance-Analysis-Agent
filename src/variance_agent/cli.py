@@ -34,6 +34,7 @@ class Arguments(Protocol):
     audit_json: str | None
     chat: bool
     hosted: bool
+    no_browser: bool
     commentary: bool
 
 
@@ -112,6 +113,11 @@ def build_parser() -> argparse.ArgumentParser:
              "opening a browser or writing exports to server paths.",
     )
     parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="With --chat: print the local URL instead of opening the system browser.",
+    )
+    parser.add_argument(
         "--commentary",
         action="store_true",
         help="Include verified deterministic executive commentary in the Markdown report.",
@@ -149,7 +155,8 @@ def _run(args: Arguments) -> int:
                 initial_input=args.input, initial_sheet=args.sheet,
                 open_browser=False, hosted=True,
             )
-        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet)
+        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet,
+                               open_browser=not args.no_browser)
 
     assert args.input is not None
     assert args.period is not None
@@ -208,6 +215,8 @@ def main(argv: list[str] | None = None) -> int:
     args = cast(Arguments, parser.parse_args(argv))
     if args.hosted and not args.chat:
         parser.error("--hosted requires --chat.")
+    if args.no_browser and not args.chat:
+        parser.error("--no-browser requires --chat.")
     if not args.chat:
         missing: list[str] = []
         if not args.input:

@@ -593,3 +593,29 @@ def test_commentary_uses_the_report_money_format() -> None:
 def test_long_unmatched_message_is_not_echoed_in_full() -> None:
     response = handle_message(explore("sample_variance"), "x" * 5000)
     assert len(response.text) < 1500
+
+
+# ---------------------------------------------------------------------------
+# L2: --chat --no-browser
+# ---------------------------------------------------------------------------
+
+def test_cli_chat_no_browser(monkeypatch: pytest.MonkeyPatch) -> None:
+    invoked: dict[str, Any] = {}
+
+    def fake_server(**kwargs: Any) -> int:
+        invoked.update(kwargs)
+        return 0
+
+    import variance_agent.chat.server as srv
+    monkeypatch.setattr(srv, "run_chat_server", fake_server)
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
+    assert cli.main(["--chat", "--no-browser"]) == 0
+    assert invoked["open_browser"] is False
+    assert invoked.get("hosted", False) is False
+
+
+def test_cli_no_browser_requires_chat() -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--no-browser"])
+    assert exc.value.code == 2
