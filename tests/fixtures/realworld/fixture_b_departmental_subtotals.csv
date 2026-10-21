@@ -1,0 +1,11 @@
+Line Item,Budget,Actual,Notes
+Product Revenue,500000,520000,Fictional detail
+Service Revenue,200000,190000,Fictional detail
+Total Revenue,700000,710000,Fictional subtotal
+Cost of Goods Sold,300000,310000,Fictional detail
+Gross Profit,400000,400000,Fictional subtotal
+R&D Expense,120000,125000,Fictional detail
+Sales & Marketing Expense,100000,115000,Fictional detail
+G&A Expense,80000,75000,Fictional detail
+Total Operating Expenses,300000,315000,Fictional subtotal
+Net Income,100000,85000,Fictional subtotal

@@ -2,6 +2,9 @@
 
 ## 0.3.0 — Unreleased
 
+- Measure baseline intake friction for FP&A analysts: add 9 synthetic real-world
+  fixtures, baseline chat tests, and a message inventory documenting intake errors,
+  jargon rates, and dead ends.
 - Reject mixed reporting currencies; support explicit USD/EUR/GBP without FX
   conversion. Reports name the reporting currency throughout all sections.
 - Reject currency-decorated CLI thresholds instead of discarding their symbols.
