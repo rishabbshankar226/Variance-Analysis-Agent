@@ -3467,7 +3467,9 @@ def _handle_executive_memo(session: Session) -> Response:
     )
     commentary_conditioner = FinancialCommentaryConditioner()
     posture_decision = commentary_conditioner.evaluate_audit_posture(audit_summary)
-    narrative_takeaway = commentary_conditioner.generate_adherent_commentary(audit_summary, posture_decision)
+    narrative_takeaway = commentary_conditioner.generate_adherent_commentary(
+        audit_summary, posture_decision, _noun(cfg),
+    )
 
     memo_lines = [
         "# 📑 Executive Management Briefing & Variance Commentary",

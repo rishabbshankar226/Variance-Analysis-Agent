@@ -18,6 +18,7 @@ from variance_agent.models import ComparisonBasis
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "realworld"
 RESULT_PROMPTS = [
     "summary", "top variances", "did expenses stay in budget?", "unbudgeted spend", "warnings",
+    "memo", "tldr",
 ]
 
 
@@ -67,6 +68,25 @@ def test_chat_prior_period_session_never_says_budget() -> None:
     assert session.result.config.comparison_basis is P
     for prompt in RESULT_PROMPTS:
         assert "budget" not in _ask(session, prompt).text.lower(), prompt
+
+
+def test_chat_forecast_upload_summary_never_says_budget() -> None:
+    text = _upload_response("fixture_k_forecast.csv").text
+    assert "Forecast from 'Forecast'" in text
+    assert "budget" not in text.lower()
+
+
+def test_chat_choosing_forecast_reply_never_says_budget() -> None:
+    session = _upload("fixture_l_budget_and_forecast.csv")
+    text = _ask(session, "Compare to forecast").text
+    assert "Forecast from 'Forecast'" in text
+    assert "budget" not in text.lower()
+
+
+def test_chat_prior_period_upload_summary_names_prior_period() -> None:
+    text = _upload_response("fixture_j_10k_three_years.csv").text
+    assert "Prior Period (FY2024) from 'FY2024'" in text
+    assert "budget" not in text.lower()
 
 
 def test_chat_result_tables_name_the_comparison() -> None:

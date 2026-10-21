@@ -34,6 +34,7 @@ from .comparison import (
     BUDGET_SYNONYMS,
     basis_for_header,
     basis_noun,
+    comparison_heading,
     comparison_statement,
     order_period_labels,
     parse_period_label,
@@ -1493,7 +1494,8 @@ def format_intake_summary(result: IntakeResult) -> str:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         col_details.append(f"Account ID from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'")
     if CanonicalRole.BUDGET in result.column_mapping:
-        col_details.append(f"Budget from '{result.column_mapping[CanonicalRole.BUDGET]}'")
+        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        col_details.append(f"{heading} from '{result.column_mapping[CanonicalRole.BUDGET]}'")
     if CanonicalRole.ACTUAL in result.column_mapping:
         col_details.append(f"Actual from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
     lines.append(f"- **Columns mapped:** {', '.join(col_details)}")
