@@ -29,6 +29,11 @@ def _safe_inline(value: object) -> str:
     return text
 
 
+def _inline(value: object, plain: bool) -> str:
+    """Escape for Markdown, or only neutralize controls for plain-text outputs."""
+    return display_text(str(value)) if plain else _safe_inline(value)
+
+
 def _money(value: Decimal, currency: str = "USD", places: int = 2) -> str:
     with financial_context() as context:
         context.prec = max(context.prec, value.adjusted() + places + 2)
@@ -115,6 +120,7 @@ def _bottom_line(
     has_revenue: bool,
     has_expenses: bool,
     places: int = 2,
+    plain: bool = False,
 ) -> str:
     top = result.material_rows[0] if result.material_rows else None
     if classification_incomplete:
@@ -146,22 +152,25 @@ def _bottom_line(
         sentence_two = "No line item exceeded either configured materiality threshold."
     else:
         sentence_two = (
-            f"The largest material variance is {_safe_inline(top.line_item)} at "
+            f"The largest material variance is {_inline(top.line_item, plain)} at "
             f"{_money(top.variance_dollars, result.config.currency, places)} ({top.status})."
         )
     return f"{sentence_one} {sentence_two}"
 
 
-def _driver_sentence(row: AnalyzedRow, currency: str = "USD", places: int = 2) -> str:
-    line_item = _safe_inline(row.line_item)
+def _driver_sentence(
+    row: AnalyzedRow, currency: str = "USD", places: int = 2, *, plain: bool = False
+) -> str:
+    line_item = _inline(row.line_item, plain)
+    strong = "" if plain else "**"
     evidence = row.driver_evidence
     if evidence and evidence.reconciles:
         components = "; ".join(
-            f"{_safe_inline(name)}: {_money(value, currency, places)}"
+            f"{_inline(name, plain)}: {_money(value, currency, places)}"
             for name, value in evidence.components
         )
         return (
-            f"**{line_item} (Supported driver):** {_safe_inline(evidence.label)} "
+            f"{strong}{line_item} (Supported driver):{strong} {_inline(evidence.label, plain)} "
             "decomposition reconciles; "
             f"{components}."
         )
@@ -176,22 +185,24 @@ def _driver_sentence(row: AnalyzedRow, currency: str = "USD", places: int = 2) -
 
     if evidence and not evidence.reconciles:
         return (
-            f"**{line_item} (Hypothesis):** No causal claim is supported because the supplied "
-            f"{_safe_inline(evidence.label)} fields do not reconcile to Budget/Actual. "
+            f"{strong}{line_item} (Hypothesis):{strong} No causal claim is supported because the supplied "
+            f"{_inline(evidence.label, plain)} fields do not reconcile to Budget/Actual. "
             "Validate the driver data first."
         )
     return (
-        f"**{line_item} (Hypothesis):** No causal driver is asserted from the supplied data. "
+        f"{strong}{line_item} (Hypothesis):{strong} No causal driver is asserted from the supplied data. "
         f"To validate a cause, provide {likely_metrics}."
     )
 
 
-def _recommendation(result: AnalysisResult, status: Status, kind: str, places: int = 2) -> str:
+def _recommendation(
+    result: AnalysisResult, status: Status, kind: str, places: int = 2, *, plain: bool = False
+) -> str:
     row = _largest_by_status(result.material_rows, status)
     if row is None:
         return f"- {kind}: No material {status.value} variance is available for a data-backed action."
 
-    line_item = _safe_inline(row.line_item)
+    line_item = _inline(row.line_item, plain)
     evidence = row.driver_evidence
     if evidence and evidence.reconciles:
         largest_component = max(evidence.components, key=lambda pair: abs(pair[1]))
@@ -200,7 +211,7 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str, places: i
                     "assigning a cause-specific action.")
         return (
             f"- {kind}: Focus the action plan for {line_item} on its "
-            f"{_safe_inline(largest_component[0].lower())} "
+            f"{_inline(largest_component[0].lower(), plain)} "
             f"({_money(largest_component[1], result.config.currency, places)}), "
             "the largest reconciled component of the variance."
         )
@@ -210,6 +221,22 @@ def _recommendation(result: AnalysisResult, status: Status, kind: str, places: i
         "does not support a causal corrective action; obtain the missing operating driver data before "
         "assigning a cause-specific intervention."
     )
+
+
+def _data_request(top_rows: tuple[AnalyzedRow, ...], *, plain: bool = False) -> str:
+    missing_metrics = [
+        _inline(row.line_item, plain)
+        for row in top_rows
+        if not (row.driver_evidence and row.driver_evidence.reconciles)
+        or any(name == "Unexplained residual" for name, _ in row.driver_evidence.components)
+    ]
+    if missing_metrics:
+        return (
+            "Provide reconciled operating driver metrics for: "
+            + ", ".join(missing_metrics)
+            + "."
+        )
+    return "No additional driver data is required for the analyzed top material variances."
 
 
 @financial_context()
@@ -312,22 +339,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     else:
         lines.append("- No material variance requires root-cause analysis.")
 
-    missing_metrics = [
-        _safe_inline(row.line_item)
-        for row in top_rows
-        if not (row.driver_evidence and row.driver_evidence.reconciles)
-        or any(name == "Unexplained residual" for name, _ in row.driver_evidence.components)
-    ]
-    if missing_metrics:
-        data_request = (
-            "Provide reconciled operating driver metrics for: "
-            + ", ".join(missing_metrics)
-            + "."
-        )
-    else:
-        data_request = (
-            "No additional driver data is required for the analyzed top material variances."
-        )
+    data_request = _data_request(top_rows)
 
     lines += [
         "",
