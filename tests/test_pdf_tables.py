@@ -110,6 +110,29 @@ def test_10q_splits_three_and_nine_month_columns() -> None:
 
 
 @needs_pdfplumber
+def test_html_printed_10k_layout() -> None:
+    """Layout seen in a real 10-K printed from EDGAR HTML, rebuilt with fictional data."""
+    income, position = _read(FIXTURES_DIR / "fixture_r_html_printed_10k.pdf")
+    assert income.name == "Consolidated Statements of Operations (p. 2)"
+    assert income.raw_rows == [
+        ["(millions, except per share data)"],
+        ["Line Item", "FY2025", "FY2024", "FY2023"],
+        ["Net sales", "6,566", "6,412", "6,120"],
+        ["Cost of sales", "4,502", "4,828", "4,306"],
+        ["Operating income", "2,064", "1,584", "1,814"],
+        ["Net earnings", "1,610", "1,250", "1,402"],
+    ]
+    assert any(n.startswith("Left out 'Antidilutive shares'") for n in income.notes)
+    assert position.raw_rows[:3] == [
+        ["(millions, except footnotes)"],
+        ["Line Item", "Jan 2026", "Feb 2025"],
+        ["Cash and cash equivalents", "4,762", "3,805"],
+    ]
+    assert [row[0] for row in position.raw_rows[2:]] == [
+        "Cash and cash equivalents", "Inventory", "Total assets"]
+
+
+@needs_pdfplumber
 def test_repeat_reads_are_cached_and_isolated() -> None:
     first = _read(TEN_K)
     first[0].raw_rows.clear()

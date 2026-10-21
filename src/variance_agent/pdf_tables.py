@@ -106,9 +106,12 @@ _YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 
 _PER_SHARE_RE = re.compile(
     r"per\s+(?:common\s+|basic\s+|diluted\s+)?share|shares\s+outstanding|shares\s+used"
-    r"|weighted[-\s]average\s+(?:number\s+of\s+)?(?:common\s+)?shares|number\s+of\s+shares",
+    r"|weighted[-\s]average\s+(?:number\s+of\s+)?(?:common\s+)?shares|number\s+of\s+shares"
+    r"|anti-?dilutive",
     re.IGNORECASE,
 )
+_STATEMENT_END_RE = re.compile(r"^(?:see\s+)?(?:the\s+)?accompanying\s+notes\b", re.IGNORECASE)
+_FOOTER_RE = re.compile(r"\bform\s+10-?[kq]\b", re.IGNORECASE)
 _SHARE_SUBROW_RE = re.compile(r"^(?:basic|diluted)\b", re.IGNORECASE)
 _PER_SHARE_NOTE = "(per-share and share counts are not money totals)"
 
@@ -387,16 +390,19 @@ def _page_table(lines: list[_Line], page_number: int) -> _PageTable | None:
         return None
 
     caption_parts: list[str] = []
-    header_lines: list[_Line] = []
     for line in body_lines[:data_start]:
         if _PARENTHETICAL_RE.match(line.text):
             caption_parts.append(line.text)
-        else:
-            header_lines.append(line)
-    for line in header_lines:
+            continue
+        # A unit caption can share the year header line, left of the amount columns.
+        left_edge = _left_edge(columns)
+        caption_parts.extend(p.text for p in _phrases(line)
+                             if p.x1 < left_edge and _PARENTHETICAL_RE.match(p.text))
         _attach_header(line, columns)
 
-    return _PageTable(title, page_number, " ".join(caption_parts), columns, assigned[data_start:])
+    body = assigned[data_start:]
+    end = next((i for i, (label, _) in enumerate(body) if _STATEMENT_END_RE.match(label)), None)
+    return _PageTable(title, page_number, " ".join(caption_parts), columns, body[:end])
 
 
 def _phrases(line: _Line) -> list[_Word]:
@@ -410,9 +416,13 @@ def _phrases(line: _Line) -> list[_Word]:
     return phrases
 
 
+def _left_edge(columns: list[_Column]) -> float:
+    return min(c.x0 for c in columns) - 30
+
+
 def _attach_header(line: _Line, columns: list[_Column]) -> None:
     """Add one printed header line to the columns it sits over."""
-    left_edge = min(c.x0 for c in columns) - 30
+    left_edge = _left_edge(columns)
     phrases = [p for p in _phrases(line) if p.x1 >= left_edge]
     if not phrases:
         return
@@ -488,7 +498,8 @@ def _statement_tables(group: list[_PageTable]) -> list[StatementTable]:
     where = f"(p. {pages[0]})" if len(pages) == 1 else f"(pp. {pages[0]}-{pages[-1]})"
     tables = []
     for duration, indexes in splits:
-        if len(indexes) < 2:
+        # A statement compares periods; an index of note and page numbers names none.
+        if sum(periods[i][0] is not None for i in indexes) < 2:
             continue
         name = f"{first.title}, {duration} {where}" if duration else f"{first.title} {where}"
         tables.append(_statement_table(group, name, pages, indexes, periods))
@@ -537,7 +548,7 @@ def _statement_table(
             elif pending:
                 section = pending
             pending = ""
-            if not label:
+            if not label or _FOOTER_RE.search(label):
                 continue
             if _PER_SHARE_RE.search(label) or (
                     _SHARE_SUBROW_RE.match(label) and _PER_SHARE_RE.search(section)):

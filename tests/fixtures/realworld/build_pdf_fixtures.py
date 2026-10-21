@@ -174,11 +174,77 @@ def build_fixture_q() -> None:
     write_pdf(FIXTURES_DIR / "fixture_q_scanned_no_text.pdf", [page])
 
 
+def build_fixture_r() -> None:
+    """Fixture r: layout printed from an EDGAR HTML filing.
+
+    The index lists note numbers and page numbers in two aligned columns, the unit
+    caption shares the year header line, and a "Form 10-K" footer carries the page
+    number in the last amount column.
+    """
+    def chrome(page: Page, number: str) -> None:
+        page.center(306, 30, FICTIONAL, size=7)
+        page.text(480, 44, "Index to Financial Statements", size=7)
+        page.text(210, 770, f"NORTHWIND FICTIONAL 2025 Form 10-K {number}", size=7)
+
+    index = Page()
+    chrome(index, "38")
+    index.text(LABEL_X, 70, "INDEX TO CONSOLIDATED FINANCIAL STATEMENTS", size=10)
+    for i, (note, name, page_no) in enumerate([
+        ("", "Consolidated Statements of Operations", "42"),
+        ("", "Consolidated Statements of Financial Position", "43"),
+        ("1", "Summary of Accounting Policies", "44"),
+        ("2", "Net Sales", "45"),
+        ("3", "Leases", "47"),
+    ]):
+        if note:
+            index.text(LABEL_X, 90 + i * ROW, "Note")
+            index.right(130, 90 + i * ROW, note)
+            index.text(170, 90 + i * ROW, name)
+        else:
+            index.text(LABEL_X, 90 + i * ROW, name)
+        index.right(560, 90 + i * ROW, page_no)
+
+    cols = [432, 495, 557]
+    income = Page()
+    chrome(income, "42")
+    income.text(LABEL_X, 70, "Consolidated Statements of Operations", size=10)
+    income.text(LABEL_X, 88, "(millions, except per share data)")
+    for x_right, year in zip(cols, ["2025", "2024", "2023"]):
+        income.right(x_right - 18, 88, year)
+    end = _statement(income, 104, cols, [
+        ("Net sales", ("6,566", "6,412", "6,120"), 0),
+        ("Cost of sales", ("4,502", "4,828", "4,306"), 0),
+        ("Operating income", ("2,064", "1,584", "1,814"), 0),
+        ("Net earnings", ("1,610", "1,250", "1,402"), 0),
+        ("Basic earnings per share", ("3.22", "2.50", "2.80"), 0),
+        ("Antidilutive shares", ("0.5", "2.1", "1.1"), 0),
+    ], dollar_rows=frozenset({"Net sales", "Basic earnings per share"}))
+    income.text(LABEL_X, end + 10, "See accompanying Notes to Consolidated Financial Statements.")
+    income.right(557, end + 30, "7")  # a stray footnote marker after the statement
+
+    position = Page()
+    chrome(position, "43")
+    position.text(LABEL_X, 70, "Consolidated Statements of Financial Position", size=10)
+    position.right(481, 86, "January 31,")
+    position.right(549, 86, "February 1,")
+    position.text(LABEL_X, 99, "(millions, except footnotes)")
+    position.right(468, 99, "2026")
+    position.right(536, 99, "2025")
+    _statement(position, 116, [488, 557], [
+        ("Cash and cash equivalents", ("4,762", "3,805"), 0),
+        ("Inventory", ("12,740", "11,886"), 0),
+        ("Total assets", ("17,502", "15,691"), 0),
+    ], dollar_rows=frozenset({"Cash and cash equivalents"}))
+
+    write_pdf(FIXTURES_DIR / "fixture_r_html_printed_10k.pdf", [index, income, position])
+
+
 def main() -> None:
     build_fixture_o()
     build_fixture_p()
     build_fixture_q()
-    print("Built fictional PDF fixtures o, p and q in tests/fixtures/realworld/")
+    build_fixture_r()
+    print("Built fictional PDF fixtures o, p, q and r in tests/fixtures/realworld/")
 
 
 if __name__ == "__main__":
