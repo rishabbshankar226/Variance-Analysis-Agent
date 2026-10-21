@@ -27,8 +27,18 @@ from .limits import (
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
 )
-from .models import LineType
+from .models import ComparisonBasis, LineType
 from .numeric import financial_context
+from .comparison import (
+    _ACTUAL_SUFFIX,
+    BUDGET_SYNONYMS,
+    basis_for_header,
+    basis_noun,
+    comparison_statement,
+    order_period_labels,
+    parse_period_label,
+    select_strict_comparison,
+)
 
 
 class CanonicalRole(StrEnum):
@@ -83,6 +93,16 @@ class PeriodColumnPair:
 
 
 @dataclass(frozen=True)
+class ComparisonDetection:
+    basis: ComparisonBasis | None
+    label: str | None
+    comparison_column: int | None
+    actual_column: int | None
+    candidates: tuple[str, ...]
+    message: str
+
+
+@dataclass(frozen=True)
 class GLRangeRule:
     min_account: int
     max_account: int
@@ -101,10 +121,7 @@ _ACCOUNT_ID_SYNONYMS = {
     "acct_num", "acct", "account_id", "acct_id", "gl",
 }
 
-_BUDGET_SYNONYMS = {
-    "budget", "budget_amount", "plan", "planned",
-    "budget_ytd", "ytd_budget", "plan_ytd", "bgt", "budget_amt",
-}
+_BUDGET_SYNONYMS = BUDGET_SYNONYMS
 
 _ACTUAL_SYNONYMS = {
     "actual", "actual_amount", "actuals",
@@ -173,10 +190,15 @@ class IntakeResult:
     detected_single_periods: list[str] = field(default_factory=list)
     raw_headers: list[str] = field(default_factory=list)
     raw_title_text: str = ""
+    comparison_basis: ComparisonBasis = ComparisonBasis.BUDGET
+    comparison_label: str | None = None
+    comparison_candidates: list[str] = field(default_factory=list)
 
     @property
     def has_transformations(self) -> bool:
         """Return True if any heuristic adjustment or transformation was made that warrants confirmation."""
+        if self.comparison_basis != ComparisonBasis.BUDGET:
+            return True
         if self.header_row_number > 1:
             return True
         if self.rows_skipped_count > 0:
@@ -234,17 +256,11 @@ def normalize_header(raw: str) -> str:
 def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
     """Map a raw header name to its canonical role and an optional transformation note."""
     norm = normalize_header(header)
-    if not norm:
-        return CanonicalRole.UNKNOWN, None
-
-    if norm == "forecast":
-        return CanonicalRole.BUDGET, "Forecast is being used as the plan"
-
     if norm in _LINE_ITEM_SYNONYMS:
         return CanonicalRole.LINE_ITEM, None
     if norm in _ACCOUNT_ID_SYNONYMS:
         return CanonicalRole.ACCOUNT_ID, None
-    if norm in _BUDGET_SYNONYMS:
+    if basis_for_header(norm) is not None:
         return CanonicalRole.BUDGET, None
     if norm in _ACTUAL_SYNONYMS:
         return CanonicalRole.ACTUAL, None
@@ -708,6 +724,20 @@ def detect_header_row(
                 if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
                     return row_idx, roles, ignored
 
+        # Check for period-only header columns (e.g. FY2025, FY2024, FY2023 or 2024, 2025)
+        if CanonicalRole.LINE_ITEM in roles:
+            period_cols: list[int] = []
+            for col_idx, cell in enumerate(row):
+                cell_s = _header_cell_str(cell)
+                if cell_s:
+                    stripped = _ACTUAL_SUFFIX.sub("", cell_s).strip()
+                    if parse_period_label(stripped) is not None:
+                        period_cols.append(col_idx)
+            if len(period_cols) >= 2:
+                roles[CanonicalRole.ACTUAL] = period_cols[0]
+                roles[CanonicalRole.BUDGET] = period_cols[1]
+                return row_idx, roles, ignored
+
     return None, {}, []
 
 
@@ -764,6 +794,194 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))
 
 
+def _header_cell_str(cell: object) -> str:
+    if cell is None:
+        return ""
+    if isinstance(cell, (int, float, Decimal)):
+        try:
+            if cell == int(cell):
+                return str(int(cell))
+        except (ValueError, OverflowError, InvalidOperation):
+            pass
+    return str(cell).strip()
+
+
+def detect_comparison_columns(
+    header_cells: list[object],
+    compare_to: ComparisonBasis | None = None,
+) -> ComparisonDetection:
+    """Identify comparison and actual columns according to vocabulary and period ordering."""
+    headers: list[tuple[int, str]] = []
+    for idx, cell in enumerate(header_cells):
+        s = _header_cell_str(cell)
+        if s:
+            headers.append((idx, s))
+
+    all_headers_display = ", ".join(s for _, s in headers)
+
+    actual_col: int | None = None
+    actual_label: str | None = None
+    for idx, s in headers:
+        norm = normalize_header(s)
+        if norm in _ACTUAL_SYNONYMS:
+            actual_col = idx
+            actual_label = s
+            break
+
+    # 1. Named candidates
+    named_candidates: list[tuple[int, str, ComparisonBasis]] = []
+    for idx, s in headers:
+        norm = normalize_header(s)
+        b = basis_for_header(norm)
+        if b is not None:
+            named_candidates.append((idx, s, b))
+
+    if named_candidates:
+        if compare_to is not None:
+            matched = [c for c in named_candidates if c[2] == compare_to]
+            noun = basis_noun(compare_to)
+            if not matched:
+                msg = f"No {noun} column found. Columns found: {all_headers_display}."
+                return ComparisonDetection(
+                    basis=None,
+                    label=None,
+                    comparison_column=None,
+                    actual_column=actual_col,
+                    candidates=(),
+                    message=msg,
+                )
+            if len(matched) > 1:
+                col_names = [c[1] for c in matched]
+                msg = f"Found more than one {noun} column ({', '.join(col_names)}); keep one and rerun."
+                return ComparisonDetection(
+                    basis=None,
+                    label=None,
+                    comparison_column=None,
+                    actual_column=actual_col,
+                    candidates=tuple(col_names),
+                    message=msg,
+                )
+            col_idx, orig_name, basis = matched[0]
+            msg = comparison_statement(basis, None, actual_label)
+            return ComparisonDetection(
+                basis=basis,
+                label=None,
+                comparison_column=col_idx,
+                actual_column=actual_col,
+                candidates=(),
+                message=msg,
+            )
+
+        distinct_bases = {c[2] for c in named_candidates}
+        if len(distinct_bases) > 1:
+            col_names = [c[1] for c in named_candidates]
+            msg = f"This file has more than one column to compare against ({', '.join(col_names)}). Which should Actual be compared against?"
+            return ComparisonDetection(
+                basis=None,
+                label=None,
+                comparison_column=None,
+                actual_column=actual_col,
+                candidates=tuple(col_names),
+                message=msg,
+            )
+        if len(named_candidates) > 1:
+            basis = named_candidates[0][2]
+            noun = basis_noun(basis)
+            col_names = [c[1] for c in named_candidates]
+            msg = f"Found more than one {noun} column ({', '.join(col_names)}); keep one and rerun."
+            return ComparisonDetection(
+                basis=None,
+                label=None,
+                comparison_column=None,
+                actual_column=actual_col,
+                candidates=tuple(col_names),
+                message=msg,
+            )
+        col_idx, orig_name, basis = named_candidates[0]
+        msg = comparison_statement(basis, None, actual_label)
+        return ComparisonDetection(
+            basis=basis,
+            label=None,
+            comparison_column=col_idx,
+            actual_column=actual_col,
+            candidates=(),
+            message=msg,
+        )
+
+    # 2. Period-only columns (used only when step 1 found no candidates)
+    period_candidates: list[tuple[int, str, str]] = []
+    for idx, s in headers:
+        stripped = _ACTUAL_SUFFIX.sub("", s).strip()
+        if parse_period_label(stripped) is not None:
+            period_candidates.append((idx, s, stripped))
+
+    if len(period_candidates) >= 2:
+        if compare_to is not None and compare_to != ComparisonBasis.PRIOR_PERIOD:
+            noun = basis_noun(compare_to)
+            msg = f"No {noun} column found. Columns found: {all_headers_display}."
+            return ComparisonDetection(
+                basis=None,
+                label=None,
+                comparison_column=None,
+                actual_column=None,
+                candidates=(),
+                message=msg,
+            )
+        labels = [p[2] for p in period_candidates]
+        ordered = order_period_labels(labels)
+        if ordered is None:
+            msg = f"Could not determine period order for {', '.join(labels)}."
+            return ComparisonDetection(
+                basis=None,
+                label=None,
+                comparison_column=None,
+                actual_column=None,
+                candidates=tuple(labels),
+                message=msg,
+            )
+        label_to_col: dict[str, tuple[int, str]] = {p[2]: (p[0], p[1]) for p in period_candidates}
+        newest_label = ordered[0]
+        second_newest_label = ordered[1]
+        act_col, act_orig = label_to_col[newest_label]
+        comp_col, comp_orig = label_to_col[second_newest_label]
+        msg = comparison_statement(
+            ComparisonBasis.PRIOR_PERIOD,
+            label=second_newest_label,
+            actual_label=newest_label,
+            all_periods=ordered,
+        )
+        return ComparisonDetection(
+            basis=ComparisonBasis.PRIOR_PERIOD,
+            label=second_newest_label,
+            comparison_column=comp_col,
+            actual_column=act_col,
+            candidates=(),
+            message=msg,
+        )
+
+    # 3. Fallback
+    if compare_to is not None and compare_to != ComparisonBasis.BUDGET:
+        noun = basis_noun(compare_to)
+        msg = f"No {noun} column found. Columns found: {all_headers_display}."
+        return ComparisonDetection(
+            basis=None,
+            label=None,
+            comparison_column=None,
+            actual_column=actual_col,
+            candidates=(),
+            message=msg,
+        )
+
+    return ComparisonDetection(
+        basis=ComparisonBasis.BUDGET,
+        label=None,
+        comparison_column=None,
+        actual_column=actual_col,
+        candidates=(),
+        message="",
+    )
+
+
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -772,6 +990,7 @@ def read_input_assisted(
     sheet: str | None = None,
     treat_blank_budgets_as_zero: bool = False,
     selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling."""
     if len(data) > MAX_INPUT_BYTES:
@@ -782,13 +1001,32 @@ def read_input_assisted(
 
     norm_suffix = suffix.lower()
     if norm_suffix in {".tsv", ".txt"}:
-        return _read_tsv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero, selected_period)
+        return _read_tsv_text(
+            data.decode("utf-8-sig", errors="replace"),
+            filename,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix == ".csv":
-        return _read_csv_text(data.decode("utf-8-sig", errors="replace"), filename, treat_blank_budgets_as_zero, selected_period)
+        return _read_csv_text(
+            data.decode("utf-8-sig", errors="replace"),
+            filename,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix in {".xlsx", ".xlsm"}:
-        return _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero, selected_period)
+        return _read_excel_bytes(
+            data,
+            filename,
+            sheet,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
     if norm_suffix == ".json":
-        return _read_json_bytes(data, filename)
+        return _read_json_bytes(data, filename, compare_to=compare_to)
 
     return IntakeResult(
         has_fatal_errors=True,
@@ -796,28 +1034,61 @@ def read_input_assisted(
     )
 
 
-def _read_tsv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool, selected_period: str | None = None) -> IntakeResult:
+def _read_tsv_text(
+    text: str,
+    filename: str,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines, delimiter="\t")
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    res = _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period)
+    res = _process_raw_table(
+        raw_rows,
+        filename,
+        sheet_name=None,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+    )
     if "pasted" in filename.lower() or filename == "pasted_data.tsv":
         res.visible_transformations.insert(0, "Read data from pasted tab-separated text")
     return res
 
 
-def _read_csv_text(text: str, filename: str, treat_blank_budgets_as_zero: bool, selected_period: str | None = None) -> IntakeResult:
+def _read_csv_text(
+    text: str,
+    filename: str,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     lines = [line for line in text.splitlines() if line.strip()]
     reader = csv.reader(lines)
     raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
-    return _process_raw_table(raw_rows, filename, sheet_name=None, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period)
+    return _process_raw_table(
+        raw_rows,
+        filename,
+        sheet_name=None,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+    )
 
 
-def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
+def _read_json_bytes(
+    data: bytes,
+    filename: str,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
     # Delegate to parsing.load_json_text and wrap into IntakeResult
     from .parsing import load_json_text
     try:
         rows = load_json_text(data.decode("utf-8"))
+        basis = compare_to if compare_to is not None else ComparisonBasis.BUDGET
+        if basis != ComparisonBasis.BUDGET:
+            rows = select_strict_comparison(rows, basis)
         canonical_rows: list[dict[str, object]] = []
         for r in rows:
             line_item = r.get("line_item") or r.get("account") or r.get("item")
@@ -826,6 +1097,9 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
                 "budget": r.get("budget"),
                 "actual": r.get("actual"),
             })
+        visible_transformations: list[str] = []
+        if basis != ComparisonBasis.BUDGET:
+            visible_transformations.append(comparison_statement(basis, None, "Actual"))
         return IntakeResult(
             rows=canonical_rows,
             header_row_number=1,
@@ -835,16 +1109,25 @@ def _read_json_bytes(data: bytes, filename: str) -> IntakeResult:
                 CanonicalRole.BUDGET: "budget",
                 CanonicalRole.ACTUAL: "actual",
             },
+            comparison_basis=basis,
+            comparison_label=None,
+            visible_transformations=visible_transformations,
         )
     except Exception as exc:
+        msg = str(exc) if isinstance(exc, ValueError) else f"Could not read JSON data from '{filename}': {exc}"
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"Could not read JSON data from '{filename}': {exc}",
+            fatal_error_message=msg,
         )
 
 
 def _read_excel_bytes(
-    data: bytes, filename: str, sheet: str | None, treat_blank_budgets_as_zero: bool, selected_period: str | None = None
+    data: bytes,
+    filename: str,
+    sheet: str | None,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     try:
         stored_numbers = inspect_archive(data)
@@ -915,6 +1198,7 @@ def _read_excel_bytes(
                 sheet_name=chosen_sheet,
                 treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
                 selected_period=selected_period,
+                compare_to=compare_to,
             )
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
@@ -940,6 +1224,7 @@ def _process_raw_table(
     sheet_name: str | None,
     treat_blank_budgets_as_zero: bool,
     selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     if not raw_rows:
         return IntakeResult(
@@ -965,6 +1250,20 @@ def _process_raw_table(
     if skipped_count > 0:
         skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
 
+    detection = detect_comparison_columns(header_row, compare_to=compare_to)
+    if detection.basis is None:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=detection.message,
+            comparison_candidates=list(detection.candidates),
+            sheet_name=sheet_name,
+        )
+
+    if detection.comparison_column is not None:
+        roles[CanonicalRole.BUDGET] = detection.comparison_column
+    if detection.actual_column is not None:
+        roles[CanonicalRole.ACTUAL] = detection.actual_column
+
     header_str_row = [str(c).strip() for c in header_row if c is not None]
     period_pairs = detect_period_pairs(header_str_row)
 
@@ -980,6 +1279,9 @@ def _process_raw_table(
     ]
 
     visible_transformations: list[str] = []
+
+    if detection.basis != ComparisonBasis.BUDGET and detection.message:
+        visible_transformations.append(detection.message)
 
     if period_pairs:
         chosen_pair = None
@@ -1170,6 +1472,9 @@ def _process_raw_table(
         detected_single_periods=single_periods,
         raw_headers=header_str_row,
         raw_title_text=raw_title_text,
+        comparison_basis=detection.basis,
+        comparison_label=detection.label,
+        comparison_candidates=list(detection.candidates),
     )
 
 

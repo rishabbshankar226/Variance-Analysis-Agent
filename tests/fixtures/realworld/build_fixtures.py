@@ -233,6 +233,60 @@ def build_fixture_i() -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def build_fixture_j() -> None:
+    """Fixture j: 10-K three-year comparison table."""
+    path = FIXTURES_DIR / "fixture_j_10k_three_years.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Line Item", "Type", "FY2025", "FY2024", "FY2023"])
+        writer.writerow(["Product Revenue", "Revenue", "120000", "100000", "90000"])
+        writer.writerow(["Cost of Revenue", "Expense", "50000", "45000", "40000"])
+        writer.writerow(["Operating Expenses", "Expense", "30000", "32000", "28000"])
+        writer.writerow(["New Segment Revenue", "Revenue", "5000", "0", "0"])
+
+
+def build_fixture_k() -> None:
+    """Fixture k: Forecast comparison."""
+    path = FIXTURES_DIR / "fixture_k_forecast.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Line Item", "Type", "Forecast", "Actual"])
+        writer.writerow(["Subscription Revenue", "Revenue", "110000", "115500"])
+        writer.writerow(["Payroll Expense", "Expense", "65000", "68000"])
+
+
+def build_fixture_l() -> None:
+    """Fixture l: Both budget and forecast columns."""
+    path = FIXTURES_DIR / "fixture_l_budget_and_forecast.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Line Item", "Type", "Budget", "Forecast", "Actual"])
+        writer.writerow(["Subscription Revenue", "Revenue", "100000", "110000", "115500"])
+        writer.writerow(["Payroll Expense", "Expense", "60000", "65000", "68000"])
+
+
+def build_fixture_m() -> None:
+    """Fixture m: Two years in reverse order (2024, 2025)."""
+    path = FIXTURES_DIR / "fixture_m_years_reversed.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Line Item", "Type", "2024", "2025"])
+        writer.writerow(["Product Revenue", "Revenue", "100000", "120000"])
+        writer.writerow(["Cost of Revenue", "Expense", "45000", "50000"])
+
+
+def build_fixture_n() -> None:
+    """Fixture n: Numeric years (integers) in Excel headers."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(["Line Item", "Type", 2025, 2024])
+    ws.append(["Product Revenue", "Revenue", 120000, 100000])
+    ws.append(["Cost of Revenue", "Expense", 50000, 45000])
+    wb.save(FIXTURES_DIR / "fixture_n_numeric_years.xlsx")
+    wb.close()
+
+
 def main() -> None:
     build_fixture_a()
     build_fixture_b()
@@ -243,7 +297,12 @@ def main() -> None:
     build_fixture_g()
     build_fixture_h()
     build_fixture_i()
-    print("Successfully built all 9 real-world fixtures in tests/fixtures/realworld/")
+    build_fixture_j()
+    build_fixture_k()
+    build_fixture_l()
+    build_fixture_m()
+    build_fixture_n()
+    print("Successfully built all 14 real-world fixtures in tests/fixtures/realworld/")
 
 
 if __name__ == "__main__":

@@ -48,9 +48,7 @@ def test_match_column_synonym() -> None:
     assert match_column_synonym("Plan YTD") == (CanonicalRole.BUDGET, None)
     assert match_column_synonym("Bgt") == (CanonicalRole.BUDGET, None)
     assert match_column_synonym("Budget Amt") == (CanonicalRole.BUDGET, None)
-    role, note = match_column_synonym("Forecast")
-    assert role == CanonicalRole.BUDGET
-    assert note == "Forecast is being used as the plan"
+    assert match_column_synonym("Forecast") == (CanonicalRole.BUDGET, None)
 
     # Actual
     assert match_column_synonym("Actual YTD") == (CanonicalRole.ACTUAL, None)
