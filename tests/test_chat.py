@@ -358,6 +358,41 @@ def test_first_pasted_table_opens_with_intro() -> None:
     assert "Welcome to the Variance Analysis Agent" in resp.text
 
 
+def test_page_decides_intro_for_each_visitor_on_a_shared_session() -> None:
+    session = Session()
+    first = handle_upload(session, SAMPLE_CSV, "a.csv", first_visit=True)
+    assert "Welcome to the Variance Analysis Agent" in first.text
+    # Same visitor again: the page says it has already shown the intro.
+    repeat = handle_upload(session, SAMPLE_CSV, "b.csv", first_visit=False)
+    assert "Welcome to the Variance Analysis Agent" not in repeat.text
+    # A new visitor on the same shared session still gets it.
+    newcomer = handle_upload(session, SAMPLE_CSV, "c.csv", first_visit=True)
+    assert "Welcome to the Variance Analysis Agent" in newcomer.text
+
+
+def test_returning_visitor_skips_intro_even_on_a_fresh_session() -> None:
+    session = Session()
+    resp = handle_upload(session, SAMPLE_CSV, "a.csv", first_visit=False)
+    assert "Welcome to the Variance Analysis Agent" not in resp.text
+
+
+def test_failed_upload_with_first_visit_shows_no_intro() -> None:
+    session = Session()
+    resp = handle_upload(session, b"dummy", "invalid.pdf", first_visit=True)
+    assert "Welcome to the Variance Analysis Agent" not in resp.text
+
+
+def test_pasted_table_follows_the_first_visit_flag() -> None:
+    table = "Line Item\tBudget\tActual\nRent\t100\t120\n"
+    session = Session()
+    session.intro_shown = True
+    shown = handle_message(session, table, first_visit=True)
+    assert "Welcome to the Variance Analysis Agent" in shown.text
+    handle_message(session, "new")
+    skipped = handle_message(Session(), table, first_visit=False)
+    assert "Welcome to the Variance Analysis Agent" not in skipped.text
+
+
 def test_handle_blank_period() -> None:
     session = Session()
     session.phase = Phase.AWAITING_PERIOD
@@ -689,6 +724,57 @@ def test_http_server_upload_strips_windows_path(chat_server_url: str) -> None:
     assert "Users" not in data["text"]
     assert "C:\\" not in data["text"]
     conn.close()
+
+
+def _post_upload(url: str, first_visit: str | None) -> dict[str, Any]:
+    boundary = "----IntroBoundary"
+    parts = [
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="sample.csv"\r\n'
+        f"Content-Type: text/csv\r\n\r\n{SAMPLE_CSV.decode('utf-8')}\r\n"
+    ]
+    if first_visit is not None:
+        parts.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="first_visit"\r\n\r\n{first_visit}\r\n'
+        )
+    body = ("".join(parts) + f"--{boundary}--\r\n").encode("utf-8")
+    conn = HTTPConnection(url)
+    conn.request("POST", "/upload", body=body, headers={
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    })
+    res = conn.getresponse()
+    assert res.status == HTTPStatus.OK
+    data: dict[str, Any] = json.loads(res.read().decode("utf-8"))
+    conn.close()
+    return data
+
+
+def test_http_upload_first_visit_field_controls_intro(chat_server_url: str) -> None:
+    assert "Welcome to the Variance Analysis Agent" in _post_upload(chat_server_url, "1")["text"]
+    assert "Welcome to the Variance Analysis Agent" not in _post_upload(chat_server_url, "0")["text"]
+    # A second visitor on the same server still sees it.
+    assert "Welcome to the Variance Analysis Agent" in _post_upload(chat_server_url, "1")["text"]
+
+
+def test_http_message_first_visit_controls_pasted_table_intro(chat_server_url: str) -> None:
+    body = json.dumps(
+        {"text": "Line Item\tBudget\tActual\nRent\t100\t120\n", "first_visit": True}
+    ).encode("utf-8")
+    conn = HTTPConnection(chat_server_url)
+    conn.request("POST", "/message", body=body, headers={
+        "Content-Type": "application/json", "Content-Length": str(len(body)),
+    })
+    data = json.loads(conn.getresponse().read().decode("utf-8"))
+    conn.close()
+    assert "Welcome to the Variance Analysis Agent" in data["text"]
+
+
+def test_chat_page_sends_first_visit_with_uploads_and_messages() -> None:
+    page = (Path(__file__).resolve().parents[1] / "src/variance_agent/static/chat.html").read_text("utf-8")
+    assert "formData.append('first_visit'" in page
+    assert "first_visit: !introSeen" in page
 
 
 # ===========================================================================
