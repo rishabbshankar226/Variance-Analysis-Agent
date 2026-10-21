@@ -22,6 +22,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from variance_agent import cli
+from variance_agent.audit import CURRENT_SCHEMA_VERSION
 from variance_agent.chat.handlers import handle_message, handle_upload
 from variance_agent.chat.session import Session
 from variance_agent.intake import IntakeResult, audit_transformations, read_input_assisted
@@ -72,7 +73,8 @@ def test_chat_audit_records_confirmed_assisted_intake_transformations() -> None:
 
     record = _export_audit(session)
 
-    assert record["schema_version"] == "1.6"
+    # The chat exports the current schema; transformations exist from 1.5 on.
+    assert record["schema_version"] == CURRENT_SCHEMA_VERSION
     assert record["transformations"] == {
         "header_row_number": 3,
         "column_mapping": {"line_item": "Line Item", "budget": "Budget", "actual": "Actual"},
@@ -86,7 +88,7 @@ def test_chat_audit_records_confirmed_assisted_intake_transformations() -> None:
         "classification_rules": None,
         "mapping_file_sha256": None,
     }
-    _validator("1.6").validate(record)
+    _validator(CURRENT_SCHEMA_VERSION).validate(record)
 
 
 def test_chat_audit_records_kept_blank_budgets_as_no_zero_reads() -> None:
@@ -118,7 +120,7 @@ def test_chat_audit_records_saved_layout_mapping_digest() -> None:
     assert transformations["unit_scale"] == "1000"
     assert transformations["excluded_totals"] == ["Total Revenue", "Total Expenses"]
     assert transformations["period_selection"] == "Q3 2026"
-    _validator("1.6").validate(record)
+    _validator(CURRENT_SCHEMA_VERSION).validate(record)
 
 
 def test_chat_audit_ignores_mapping_saved_for_an_earlier_file() -> None:
