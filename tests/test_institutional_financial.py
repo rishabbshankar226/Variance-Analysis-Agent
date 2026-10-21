@@ -125,18 +125,19 @@ def test_large_valid_percentage_threshold_can_be_reported():
 
 def test_negative_baseline_percentage_variance_preserves_sign_polarity():
     from variance_agent.analysis import _percent_variance
+    from variance_agent.models import ComparisonBasis
     from variance_agent.report import _pct
 
     # Negative baseline with positive growth (transition from loss to profit)
     # Budget: -100, Actual: 50 -> Variance: +150 (Favorable)
-    pct, label = _percent_variance(Decimal("-100"), Decimal("50"))
+    pct, label = _percent_variance(Decimal("-100"), Decimal("50"), ComparisonBasis.BUDGET)
     assert pct == Decimal("1.5")  # +150%, not -150%
     assert label is None
     assert _pct(Decimal("-100"), Decimal("150")) == "150.0%"
 
     # Negative baseline with worsening loss
     # Budget: -100, Actual: -150 -> Variance: -50 (Unfavorable)
-    pct_loss, _ = _percent_variance(Decimal("-100"), Decimal("-150"))
+    pct_loss, _ = _percent_variance(Decimal("-100"), Decimal("-150"), ComparisonBasis.BUDGET)
     assert pct_loss == Decimal("-0.5")  # -50%, not +50%
     assert _pct(Decimal("-100"), Decimal("-50")) == "-50.0%"
 

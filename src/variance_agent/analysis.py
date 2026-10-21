@@ -10,12 +10,14 @@ from .models import (
     AnalysisConfig,
     AnalysisResult,
     AnalyzedRow,
+    ComparisonBasis,
     DriverEvidence,
     DriverReconciliation,
     LineType,
     Status,
     SummaryVerification,
 )
+from .comparison import zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
@@ -144,12 +146,14 @@ def _classify(
     return LineType.UNCLASSIFIED, "unclassified"
 
 
-def _percent_variance(budget: Decimal, actual: Decimal) -> tuple[Decimal | None, str | None]:
+def _percent_variance(
+    budget: Decimal, actual: Decimal, basis: ComparisonBasis
+) -> tuple[Decimal | None, str | None]:
     if budget != 0:
         return ratio(actual - budget, abs(budget)), None
     if actual == 0:
         return Decimal("0"), None
-    return None, "N/A (Unbudgeted)"
+    return None, zero_comparison_label(basis)
 
 
 def _is_material(budget: Decimal, variance: Decimal, config: AnalysisConfig) -> bool:
@@ -314,7 +318,9 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
     return output
 
 
-def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
+def _aggregate(
+    rows: list[AnalyzedRow], line_type: LineType, basis: ComparisonBasis
+) -> Aggregate:
     included = [
         row
         for row in rows
@@ -323,7 +329,7 @@ def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
     budget = sum((row.budget for row in included), Decimal("0"))
     actual = sum((row.actual for row in included), Decimal("0"))
     variance = actual - budget
-    pct, label = _percent_variance(budget, actual)
+    pct, label = _percent_variance(budget, actual, basis)
     return Aggregate(
         budget=budget,
         actual=actual,
@@ -332,6 +338,13 @@ def _aggregate(rows: list[AnalyzedRow], line_type: LineType) -> Aggregate:
         percent_label=label,
         status=_status(line_type, variance),
     )
+
+
+def _validate_comparison(config: AnalysisConfig) -> None:
+    if not isinstance(config.comparison_basis, ComparisonBasis):
+        raise ValueError("Comparison basis must be a ComparisonBasis value.")
+    if config.comparison_label is not None:
+        validate_text(config.comparison_label, field="comparison_label", nonblank=True)
 
 
 def _verification_failure(message: str) -> RuntimeError:
@@ -348,7 +361,8 @@ def _verify_result(
     for row in rows:
         if row.variance_dollars != row.actual - row.budget:
             raise _verification_failure(f"dollar variance mismatch for {row.line_item!r}")
-        expected_percent, expected_label = _percent_variance(row.budget, row.actual)
+        expected_percent, expected_label = _percent_variance(
+            row.budget, row.actual, config.comparison_basis)
         if (row.variance_percent, row.percent_label) != (expected_percent, expected_label):
             raise _verification_failure(f"percentage mismatch for {row.line_item!r}")
         if row.status != _status(row.line_type, row.variance_dollars):
@@ -372,7 +386,8 @@ def _verify_result(
 
     for line_type, aggregate in ((LineType.REVENUE, revenue), (LineType.EXPENSE, expenses)):
         variance = aggregate.actual - aggregate.budget
-        percent, label = _percent_variance(aggregate.budget, aggregate.actual)
+        percent, label = _percent_variance(
+            aggregate.budget, aggregate.actual, config.comparison_basis)
         if (aggregate.variance_dollars, aggregate.variance_percent, aggregate.percent_label,
                 aggregate.status) != (variance, percent, label, _status(line_type, variance)):
             raise _verification_failure(f"{line_type.value} aggregate metrics mismatch")
@@ -404,6 +419,7 @@ def verify_result(result: AnalysisResult) -> None:
     """Recheck derived facts at each reporting boundary, including Python callers."""
     validate_currency(result.config.currency)
     validate_text(result.config.period, field="Period", nonblank=True)
+    _validate_comparison(result.config)
     if not result.rows:
         raise _verification_failure("dataset contains no data rows")
     _verify_result(list(result.rows), list(result.material_rows), result.revenue,
@@ -416,6 +432,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         raise ValueError("Configuration must be an AnalysisConfig instance.")
     validate_currency(config.currency)
     validate_text(config.period, field="Period", nonblank=True)
+    _validate_comparison(config)
     if not isinstance(rows, list):
         raise ValueError("Rows must be a list of row objects.")
     if not rows:
@@ -499,7 +516,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         line_type, classification_source = _classify(line_item, row, config)
         summary_candidate, summary_source = _summary_candidate(line_item, row)
         variance = actual - budget
-        pct, pct_label = _percent_variance(budget, actual)
+        pct, pct_label = _percent_variance(budget, actual, config.comparison_basis)
         material = _is_material(budget, variance, config)
         driver = _driver_evidence(row, budget, actual, line_item, config.currency)
 
@@ -583,8 +600,8 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         reverse=True,
     )
 
-    revenue = _aggregate(analyzed, LineType.REVENUE)
-    expenses = _aggregate(analyzed, LineType.EXPENSE)
+    revenue = _aggregate(analyzed, LineType.REVENUE, config.comparison_basis)
+    expenses = _aggregate(analyzed, LineType.EXPENSE, config.comparison_basis)
 
     _verify_result(analyzed, material_rows, revenue, expenses, config)
 

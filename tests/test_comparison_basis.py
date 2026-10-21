@@ -4,7 +4,8 @@ from decimal import Decimal
 
 import pytest
 
-from tests.comparison_helpers import B, F, P
+from tests.comparison_helpers import ROWS, B, F, P, cfg
+from variance_agent.analysis import analyze_rows, verify_result
 from variance_agent.comparison import (
     BUDGET_SYNONYMS,
     basis_for_header,
@@ -105,3 +106,44 @@ def test_select_strict_comparison() -> None:
     with pytest.raises(ValueError, match="more than one forecast column"):
         select_strict_comparison(
             [{"line_item": "A", "forecast": "1", "fcst": "2", "actual": "3"}], F)
+
+
+@pytest.mark.parametrize(
+    "basis,label",
+    [(B, "N/A (Unbudgeted)"), (F, "N/A (Not in forecast)"), (P, "N/A (New this period)")],
+)
+def test_zero_comparison_label_follows_basis(basis: ComparisonBasis, label: str) -> None:
+    result = analyze_rows(ROWS, cfg(basis))
+    assert result.rows[0].percent_label == label
+    assert result.revenue.percent_label == label
+    verify_result(result)
+
+
+def test_numbers_identical_across_bases() -> None:
+    def key(r):  # type: ignore[no-untyped-def]
+        return [(x.variance_dollars, x.variance_percent, x.status, x.material) for x in r.rows]
+
+    results = [analyze_rows(ROWS, cfg(b)) for b in ComparisonBasis]
+    assert key(results[0]) == key(results[1]) == key(results[2])
+
+
+def test_blank_comparison_label_rejected() -> None:
+    with pytest.raises(ValueError):
+        analyze_rows(ROWS, cfg(P, label="  "))
+
+
+def test_invalid_basis_rejected() -> None:
+    bad = cfg(B)
+    object.__setattr__(bad, "comparison_basis", "budget")
+    with pytest.raises(ValueError):
+        analyze_rows(ROWS, bad)
+
+
+def test_verify_result_rejects_bad_label_and_checks_basis_label() -> None:
+    from dataclasses import replace
+
+    result = analyze_rows(ROWS, cfg(P))
+    with pytest.raises(ValueError):
+        verify_result(replace(result, config=cfg(P, label=" ")))
+    with pytest.raises(RuntimeError, match="percentage mismatch"):
+        verify_result(replace(result, config=cfg(B)))
