@@ -3026,7 +3026,8 @@ def _handle_list_sheets(session: Session) -> Response:
     """List the worksheets in an uploaded workbook, or the statements in a PDF."""
     if not session.source_bytes or not session.source_name:
         return Response(
-            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) first.",
+            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) "
+                 "or a PDF filing first.",
             phase=session.phase,
             chips=["Help"],
         )
@@ -3080,7 +3081,8 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     """Switch the active worksheet (or PDF statement) and re-analyze or re-intake data."""
     if not session.source_bytes or not session.source_name:
         return Response(
-            text="No file has been uploaded yet. Please upload an Excel workbook first.",
+            text="No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) "
+                 "or a PDF filing first.",
             phase=session.phase,
         )
 

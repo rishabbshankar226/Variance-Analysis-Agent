@@ -127,6 +127,9 @@ def test_lines_the_arithmetic_cannot_settle_are_left_for_the_user() -> None:
         ["Operating income", "0", "0"],
     ])
     assert shaped.unlabeled == ["Fees", "Charges"]
+    assert shaped.notes[-1] == (
+        "Couldn't tell from the statement's arithmetic whether 'Fees', 'Charges' add to or "
+        "reduce income; you'll be asked to label them")
     assert [row[-1] for row in shaped.rows[2:]] == ["", ""]
     assert [row[1:3] for row in shaped.rows[2:]] == [["50", "50"], ["50", "50"]]
 
@@ -140,6 +143,10 @@ def test_subtotal_that_does_not_add_up_leaves_its_lines_unlabeled() -> None:
         ["Net income", "89", "90"],
     ])
     assert shaped.unlabeled == ["Revenue", "Cost of revenue"]
+    single = _shape([["Fees", "50", "40"], ["Operating income", "60", "70"]])
+    assert single.notes[-1] == (
+        "Couldn't tell from the statement's arithmetic whether 'Fees' adds to or reduces "
+        "income; you'll be asked to label it")
     assert {row[0]: row[-1] for row in shaped.rows[2:]}["Income tax expense"] == "Expense"
 
 
@@ -160,3 +167,17 @@ def test_notes_explain_every_change() -> None:
         "Left out 2 subtotals the statement computes from the lines above: "
         "Operating income, Net earnings")
     assert "Labeled 'Net sales' as revenue" in shaped.audit_notes
+
+
+def test_total_costs_row_sums_only_the_costs_above_it() -> None:
+    """Revenue with no total of its own, then costs and a "Total costs and expenses" row."""
+    shaped = _shape([
+        ["Revenues", "90,234", "80,539"],
+        ["Cost of revenues", "36,474", "33,712"],
+        ["Research and development", "13,808", "12,447"],
+        ["General and administrative", "4,001", "3,710"],
+        ["Total costs and expenses", "54,283", "49,869"],
+        ["Income from operations", "35,951", "30,670"],
+    ])
+    assert shaped.unlabeled == []
+    assert [row[-1] for row in shaped.rows[2:]] == ["Revenue", "Expense", "Expense", "Expense"]

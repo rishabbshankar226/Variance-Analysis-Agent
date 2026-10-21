@@ -86,6 +86,24 @@ def _close(computed: list[Decimal], target: list[Decimal], terms: int, unit: Dec
     return all(abs(c - t) <= tolerance for c, t in zip(computed, target))
 
 
+def _block_start(
+    pending: list[_Item], values: list[Decimal], unit: Decimal, *, any_suffix: bool
+) -> int | None:
+    """Where the block a subtotal sums begins, if it is the plain sum of lines above it.
+
+    The block runs from the last summed block to the subtotal. A "Total" row may sum only
+    the lines just above it ("Revenue", then costs, then "Total costs and expenses"), so
+    with ``any_suffix`` it also tries shorter runs ending at it, longest first.
+    """
+    first = max((k + 1 for k, item in enumerate(pending) if item.is_group), default=0)
+    for start in range(first, len(pending) if any_suffix else min(first + 1, len(pending))):
+        block = pending[start:]
+        sums = [sum((item.values[p] for item in block), Decimal(0)) for p in range(len(values))]
+        if _close(sums, values, len(block) + 1, unit):
+            return start
+    return None
+
+
 def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
@@ -115,12 +133,10 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
                 pending.append(_Item([i], values))
                 continue
             subtotal_rows.append(i)
-            # A block total: the plain sum of the lines since the last block.
-            start = max((k + 1 for k, item in enumerate(pending) if item.is_group), default=0)
-            block = pending[start:]
-            sums = [sum((item.values[p] for item in block), Decimal(0)) for p in range(periods)]
-            if block and _close(sums, values, len(block) + 1, unit):
-                lines = [r for item in block for r in item.rows]
+            is_total = str(row[0]).strip().lower().startswith("total")
+            start = _block_start(pending, values, unit, any_suffix=is_total)
+            if start is not None:
+                lines = [r for item in pending[start:] for r in item.rows]
                 pending = [*pending[:start], _Item(lines, values, is_group=True)]
                 continue
             # A running subtotal: the last one, plus or minus each line or block since.
@@ -187,9 +203,11 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     shaped.notes.extend(flips)
     if shaped.unlabeled:
         names = ", ".join(f"'{name}'" for name in shaped.unlabeled)
+        one = len(shaped.unlabeled) == 1
         shaped.notes.append(
-            f"Couldn't tell from the statement's arithmetic whether {names} add to or reduce "
-            f"income; you'll be asked to label {'it' if len(shaped.unlabeled) == 1 else 'them'}")
+            f"Couldn't tell from the statement's arithmetic whether {names} "
+            f"{'adds to or reduces' if one else 'add to or reduce'} income; "
+            f"you'll be asked to label {'it' if one else 'them'}")
     shaped.audit_notes = [*subtotal_note, *shaped.notes,
                           *(f"Labeled '{label}' as {kind.lower()}" for label, kind in labels)]
     return shaped
