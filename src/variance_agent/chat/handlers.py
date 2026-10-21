@@ -658,6 +658,15 @@ def _pct_change(new: Decimal | None, old: Decimal | None) -> Decimal | None:
     return None if new is None or old is None else new - old
 
 
+def _unclassified_note(result: AnalysisResult) -> str:
+    """Caveat for totals that leave out unclassified rows, or '' when there are none."""
+    count = sum(row.line_type == LineType.UNCLASSIFIED for row in _detail_rows(result))
+    if not count:
+        return ""
+    return (f"⚠️ Excludes {count} unclassified line item{'s' if count != 1 else ''} from these totals; "
+            "classify them for complete figures.")
+
+
 def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
     """Line items without reconciled subtotal/total rows, which would double count."""
     return [row for row in result.rows if not row.excluded_from_aggregation]
@@ -2961,6 +2970,7 @@ def _handle_executive_memo(session: Session) -> Response:
         "---",
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
+        *([f"{_unclassified_note(result)}\n"] if _unclassified_note(result) else []),
         f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
         f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) "
         f"against the planned budget of **{format_money(budget_profit, cur, places)}**. "
@@ -3198,9 +3208,22 @@ def _handle_tldr(session: Session) -> Response:
     top_rev = max(rev_rows, key=lambda r: abs(r.variance_dollars), default=None)
     top_exp = max(exp_rows, key=lambda r: abs(r.variance_dollars), default=None)
 
+    def described(row: AnalyzedRow) -> str:
+        if row.status == Status.NEUTRAL:
+            return f"**{safe_inline(row.line_item)}** (on budget)"
+        if row.line_type == LineType.REVENUE:
+            word = "beat" if row.variance_dollars > 0 else "miss"
+        else:
+            word = "overrun" if row.variance_dollars > 0 else "saving"
+        return f"**{safe_inline(row.line_item)}** ({word} of {format_money(abs(row.variance_dollars), cur, places)})"
+
     driver_context = ""
     if top_rev and top_exp:
-        driver_context = f" Top-line momentum was led by **{safe_inline(top_rev.line_item)}**, while expense variance was dominated by **{safe_inline(top_exp.line_item)}**."
+        driver_context = (f" The largest revenue swing was {described(top_rev)}; "
+                          f"the largest expense swing was {described(top_exp)}.")
+    note = _unclassified_note(result)
+    if note:
+        driver_context += f"\n\n{note}"
 
     text = (
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"

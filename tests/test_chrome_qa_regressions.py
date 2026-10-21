@@ -512,3 +512,16 @@ def test_run_rate_states_its_assumption() -> None:
     session, _ = start_csv(fixture_path("sample_variance").read_bytes(), "Spring sprint")
     text = handle_message(session, "run rate").text
     assert "was not recognised" in text
+
+
+@pytest.mark.parametrize("message", ["memo", "tldr"])
+def test_memo_and_tldr_caveat_unclassified_rows(message: str) -> None:
+    text = handle_message(explore("structure", "Skip all"), message).text
+    assert "Excludes 2 unclassified line items" in text
+
+
+def test_tldr_driver_wording_follows_direction() -> None:
+    text = handle_message(explore("unfav_net"), "tldr").text
+    assert "momentum was led by" not in text
+    assert "**Subscription Revenue** (miss of $20,000.00)" in text
+    assert "**Payroll Expense** (overrun of $15,000.00)" in text
