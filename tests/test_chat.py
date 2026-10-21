@@ -314,7 +314,7 @@ def test_full_conversation_lifecycle() -> None:
 def test_handle_invalid_file_upload() -> None:
     session = Session()
     # Bad extension
-    resp = handle_upload(session, b"dummy", "invalid.pdf")
+    resp = handle_upload(session, b"dummy", "invalid.docx")
     assert session.phase == Phase.AWAITING_FILE
     assert "⚠️" in resp.text
     assert "Unsupported input format" in resp.text

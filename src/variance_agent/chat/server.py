@@ -148,7 +148,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
         if file_bytes is None or filename is None:
             self._json_error(
-                "No file found in the upload. Please select a CSV, JSON, XLSX, or XLSM file.",
+                "No file found in the upload. Please select a CSV, JSON, XLSX, XLSM, or PDF file.",
                 HTTPStatus.BAD_REQUEST,
             )
             return

@@ -358,14 +358,14 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "material"),
 
     (re.compile(
-        r"^(?:show\s+)?(?:all\s+)?(?:work)?sheets?\??$"
-        r"|^(?:switch|change)\s+(?:work)?sheets?\??$"
-        r"|^list\s+(?:work)?sheets?\??$",
+        r"^(?:show\s+)?(?:all\s+)?(?:(?:work)?sheets?|statements?)\??$"
+        r"|^(?:switch|change)\s+(?:(?:work)?sheets?|statements?)\??$"
+        r"|^list\s+(?:(?:work)?sheets?|statements?)\??$",
         re.IGNORECASE,
     ), "list_sheets"),
 
     (re.compile(
-        r"^(?:switch\s+(?:to\s+)?)?(?:work)?sheet\s+(?:to\s+)?(?P<sheet>.+?)\s*\??$",
+        r"^(?:switch\s+(?:to\s+)?)?(?:(?:work)?sheet|statement)\s+(?:to\s+)?(?P<sheet>.+?)\s*\??$",
         re.IGNORECASE,
     ), "switch_sheet"),
 

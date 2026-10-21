@@ -114,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="variance-agent",
         description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
     )
-    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file.")
+    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
     parser.add_argument("--period", help="Reporting period shown in the report.")
     parser.add_argument(
         "--dollar-threshold",
@@ -129,7 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     parser.add_argument("--check-only", action="store_true",
                         help="Validate/analyze input and print a summary without writing outputs.")
-    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet).")
+    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
@@ -226,9 +226,10 @@ def _run(args: Arguments) -> int:
         raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
     _validate_output_paths(args)
     input_path = Path(args.input)
-    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+    is_pdf = input_path.suffix.lower() == ".pdf"
+    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
-    validate_input_format(input_path.suffix)
+    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)))
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
@@ -417,6 +418,7 @@ def _run(args: Arguments) -> int:
             type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
             source_worksheet=parsed_worksheet,
             transformations=transformations,
+            source_document=intake_res.source_document() if intake_res is not None else None,
         )
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     write_text_outputs(outputs)

@@ -675,7 +675,7 @@
 
     addAgentMessage(
       'Welcome! Upload your financial data to get started.\n\n' +
-      'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**.\n\n' +
+      'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**, and **PDF** 10-K / 10-Q filings.\n\n' +
       'You can also ask financial domain questions anytime (e.g., *What is materiality?* or *Budget vs Forecast*).',
       null, ['Supported file formats', 'What is materiality?', 'Budget vs forecast'], true
     );
@@ -993,11 +993,11 @@
     zone.innerHTML =
       '<div class="drop-zone-icon">📁</div>' +
       '<div class="drop-zone-title">Drop file here or click to browse</div>' +
-      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm</div>';
+      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)</div>';
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = '.csv,.json,.xlsx,.xlsm';
+    fileInput.accept = '.csv,.json,.xlsx,.xlsm,.pdf';
     zone.appendChild(fileInput);
 
     zone.addEventListener('click', () => fileInput.click());
@@ -1052,11 +1052,11 @@
 
   // ── File Upload ────────────────────────────────────────────
   async function uploadFile(file) {
-    const validExts = ['.csv', '.json', '.xlsx', '.xlsm'];
+    const validExts = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!validExts.includes(ext)) {
       addAgentMessage(
-        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, or XLSM file.',
+        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
         null, null, true
       );
       return;
