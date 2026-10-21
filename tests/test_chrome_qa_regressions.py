@@ -428,3 +428,11 @@ def test_download_header_does_not_reflect_raw_period(server: HTTPServer) -> None
     assert response.status == 200
     assert response.getheader("Content-Disposition") == 'attachment; filename="executive_memo_q3__x__2026__evil_1.md"'
     conn.close()
+
+
+def test_no_match_reply_stays_short_on_large_files() -> None:
+    session = explore("large")
+    text = handle_message(session, "why zzz nothing").text
+    assert "No line item matching" in text
+    assert len(text) < 2000
+    assert "and 4980 more" in text

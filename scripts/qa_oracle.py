@@ -193,7 +193,7 @@ def compute(path: Path) -> dict[str, object]:
 
 def generate_large(path: Path, rows: int = 5000) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["Line Item", "Type", "Budget", "Actual"])
         for i in range(1, rows + 1):
             budget = 1000 + i

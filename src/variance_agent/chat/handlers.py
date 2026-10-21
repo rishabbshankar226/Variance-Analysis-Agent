@@ -928,7 +928,9 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
     matches = find_line_item(item_query, all_items)
 
     if not matches:
-        items_list = ", ".join(safe_inline(item) for item in all_items)
+        items_list = ", ".join(safe_inline(item) for item in all_items[:20])
+        if len(all_items) > 20:
+            items_list += f", and {len(all_items) - 20} more"
         display_q = safe_inline(raw_query or item_query or "unspecified item")
         return Response(
             text=f"No line item matching '{display_q}' was found.\n\n"
@@ -2441,6 +2443,7 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
 
     session.parsed_rows = parsed.rows
     session.worksheet = parsed.worksheet
+    session.skipped_items = set()
     session.sheet = matched_sheet
 
     if (
