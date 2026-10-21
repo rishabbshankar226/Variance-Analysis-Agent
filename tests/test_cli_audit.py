@@ -50,3 +50,30 @@ def test_cli_includes_executive_commentary_when_flag_present(capsys):
     out = capsys.readouterr().out
     assert "# Executive Commentary" in out
     assert "Revenue outpaced expectations cleanly." in out
+
+
+def test_cli_assisted_flag_processes_messy_fixture(capsys):
+    fixture_path = "tests/fixtures/realworld/fixture_a_erp_title_block.xlsx"
+    # 1. Without --assisted: fails because header is on row 5, not row 1
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main([
+            fixture_path,
+            "--period", "Q3 2026",
+            "--dollar-threshold", "1000",
+            "--percent-threshold", "5",
+        ])
+    assert exc_info.value.code == 2
+
+    # 2. With --assisted: succeeds, analyzes rows, and logs adjustments to stderr
+    rc = cli.main([
+        fixture_path,
+        "--assisted",
+        "--period", "Q3 2026",
+        "--dollar-threshold", "1000",
+        "--percent-threshold", "5",
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "# FP&A Variance Report" in captured.out
+    assert "[assisted intake]" in captured.err
+    assert "GL Account" in captured.err

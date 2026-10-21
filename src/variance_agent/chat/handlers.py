@@ -24,9 +24,12 @@ from variance_agent.numeric import financial_context, ratio
 from variance_agent.output import write_text_outputs
 from variance_agent.parsing import (
     get_workbook_sheets,
-    load_input,
     parse_decimal,
-    validate_input_format,
+)
+from variance_agent.intake import (
+    format_intake_summary,
+    plain_analysis_error,
+    read_input_assisted,
 )
 from variance_agent.report import render_markdown
 
@@ -72,12 +75,41 @@ def handle_message(session: Session, text: str) -> Response:
     if intent.intent_id == "switch_sheet":
         return _handle_switch_sheet(session, intent)
 
-    if session.phase == Phase.AWAITING_FILE:
+    if text.lower() in ("show technical details", "technical details"):
+        detail = session.last_technical_detail or "No technical details recorded for the current step."
         return Response(
-            text="Please upload a file using the drop zone above. "
-                 "Supported formats: CSV, JSON, XLSX, XLSM.",
+            text=f"**Technical Details:**\n```\n{detail}\n```",
+            chips=["Upload a different file", "Help"],
             phase=session.phase,
         )
+
+    if session.phase == Phase.AWAITING_FILE:
+        if "\t" in text and ("\n" in text or "\r" in text):
+            intake_res = read_input_assisted(text.encode("utf-8"), suffix=".tsv", filename="pasted_data.tsv")
+            if not intake_res.has_fatal_errors and intake_res.rows:
+                session.source_bytes = text.encode("utf-8")
+                session.source_name = "pasted_data.tsv"
+                session.source_suffix = ".tsv"
+                session.parsed_rows = intake_res.rows
+                session.intake_result = intake_res
+                session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
+                summary_text = format_intake_summary(intake_res)
+                summary_text += "\n\nDoes this look right?"
+                return Response(
+                    text=summary_text,
+                    chips=["Looks right", "Change something"],
+                    phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+                )
+        return Response(
+            text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
+            phase=session.phase,
+        )
+
+    if session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION:
+        return _handle_blank_budget_confirmation(session, text)
+
+    if session.phase == Phase.AWAITING_INTAKE_CONFIRMATION:
+        return _handle_intake_confirmation(session, text)
 
     if session.phase == Phase.AWAITING_PERIOD:
         return _handle_period(session, text)
@@ -95,48 +127,205 @@ def handle_message(session: Session, text: str) -> Response:
     return _handle_exploring(session, text)
 
 
+def _handle_intake_confirmation(session: Session, text: str) -> Response:
+    """Handle confirmation of the 'Here's how I read your file' summary."""
+    lower = text.strip().lower()
+    if lower in ("looks right", "yes", "confirm", "looks good", "correct", "proceed", "looks_right", "1"):
+        if session.period is not None:
+            if session.dollar_threshold is not None and session.percent_threshold is not None:
+                return _run_analysis(session)
+            session.phase = Phase.AWAITING_THRESHOLDS
+            return Response(
+                text=f"Period set to: **{safe_inline(session.period)}**\n\n"
+                     "Now set the materiality thresholds. Enter a dollar amount and a percentage, "
+                     "for example: `$10,000 or 5%`\n\n"
+                     "Or choose a preset below:",
+                chips=["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"],
+                phase=Phase.AWAITING_THRESHOLDS,
+            )
+        session.phase = Phase.AWAITING_PERIOD
+        return Response(
+            text="What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+            phase=Phase.AWAITING_PERIOD,
+        )
+
+    if lower in ("change something", "no", "edit", "change", "2"):
+        chips = []
+        if session.available_sheets and len(session.available_sheets) > 1:
+            for s in session.available_sheets[:4]:
+                chips.append(f"Sheet {s}")
+        chips.append("Upload a different file")
+        return Response(
+            text="What would you like to change? You can choose a different worksheet or upload a different file.",
+            chips=chips,
+            phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+        )
+
+    # Check for direct sheet switch requests
+    if lower.startswith("sheet ") or (session.available_sheets and text in session.available_sheets):
+        sheet_target = text.split(" ", 1)[1] if lower.startswith("sheet ") else text
+        return _handle_switch_sheet(session, ParsedIntent("switch_sheet", captures={"sheet": sheet_target}))
+
+    # If Maya directly typed the period instead of clicking 'Looks right'
+    if not lower.startswith("upload") and len(text.strip()) > 1:
+        period_match = re.search(r"\b(q[1-4]|fy\s*\d{2,4}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", lower)
+        if period_match:
+            session.period = text.strip()
+            session.phase = Phase.AWAITING_THRESHOLDS
+            return Response(
+                text=f"Period set to: **{safe_inline(session.period)}**\n\n"
+                     "Now set the materiality thresholds. Enter a dollar amount and a percentage, "
+                     "for example: `$10,000 or 5%`\n\n"
+                     "Or choose a preset below:",
+                chips=["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"],
+                phase=Phase.AWAITING_THRESHOLDS,
+            )
+
+    return Response(
+        text="Please confirm if the layout looks right, or choose to change something.",
+        chips=["Looks right", "Change something"],
+        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+    )
+
+
+def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
+    """Handle confirmation of whether blank budgets should be treated as 0."""
+    lower = text.strip().lower()
+    treat_as_zero = "0" in lower or "unbudgeted" in lower or "treat" in lower or "yes" in lower
+    if session.source_bytes is not None and session.source_suffix is not None:
+        intake_res = read_input_assisted(
+            session.source_bytes,
+            session.source_suffix,
+            filename=session.source_name or "input",
+            sheet=session.worksheet,
+            treat_blank_budgets_as_zero=treat_as_zero,
+        )
+        session.parsed_rows = intake_res.rows
+        session.worksheet = intake_res.sheet_name
+        session.available_sheets = intake_res.available_sheets
+        session.intake_result = intake_res
+
+        if not intake_res.has_transformations:
+            session.phase = Phase.AWAITING_PERIOD
+            row_count = len(intake_res.rows)
+            worksheet_note = ""
+            if intake_res.sheet_name:
+                worksheet_note = f" from worksheet '{safe_inline(intake_res.sheet_name)}'"
+                if len(session.available_sheets) > 1:
+                    worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
+
+            return Response(
+                text=f"✅ Loaded '{safe_inline(session.source_name or 'file')}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
+                     "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+                phase=Phase.AWAITING_PERIOD,
+            )
+
+        session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
+        summary_text = format_intake_summary(intake_res)
+        summary_text += "\n\nDoes this look right?"
+        return Response(
+            text=summary_text,
+            chips=["Looks right", "Change something"],
+            phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+        )
+    session.phase = Phase.AWAITING_FILE
+    return Response(
+        text="Please upload a file using the drop zone above.",
+        chips=["Upload a different file"],
+        phase=Phase.AWAITING_FILE,
+    )
+
+
 def handle_upload(
     session: Session, file_bytes: bytes, filename: str, sheet: str | None = None,
 ) -> Response:
-    """Process a file upload and advance the session state."""
+    """Process a file upload with assisted reading and plain language."""
     suffix = Path(filename).suffix.lower()
-    try:
-        validate_input_format(suffix)
-        parsed = load_input(file_bytes, suffix, source_name=filename, sheet=sheet)
-    except (ValueError, RuntimeError, OSError) as exc:
-        return Response(
-            text=f"⚠️ {display_text(str(exc))}",
-            chips=["Upload a different file"],
-            phase=Phase.AWAITING_FILE,
-        )
-
-    if not parsed.rows:
-        return Response(
-            text=f"⚠️ The uploaded file '{safe_inline(filename)}' contains no data rows. "
-                 "Please upload a file with at least one row of budget and actual data.",
-            chips=["Upload a different file"],
-            phase=Phase.AWAITING_FILE,
-        )
-
     session.source_bytes = file_bytes
     session.source_name = filename
     session.source_suffix = suffix
-    session.parsed_rows = parsed.rows
-    session.worksheet = parsed.worksheet
-    session.available_sheets = list(parsed.sheetnames)
-    session.phase = Phase.AWAITING_PERIOD
 
-    row_count = len(parsed.rows)
-    worksheet_note = ""
-    if parsed.worksheet:
-        worksheet_note = f" from worksheet '{safe_inline(parsed.worksheet)}'"
-        if len(session.available_sheets) > 1:
-            worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
+    intake_res = read_input_assisted(
+        file_bytes,
+        suffix,
+        filename=filename,
+        sheet=sheet,
+        treat_blank_budgets_as_zero=False,
+    )
+
+    if intake_res.has_fatal_errors or not intake_res.rows:
+        technical = intake_res.fatal_error_message or (
+            f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
+            "Please upload a file with at least one row of budget and actual data."
+        )
+        session.last_technical_detail = technical
+        chips = []
+        if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
+            for s in intake_res.available_sheets[:3]:
+                chips.append(f"Sheet {s}")
+        chips.append("Upload a different file")
+        if session.last_technical_detail:
+            chips.append("Show technical details")
+
+        err_msg = plain_analysis_error(technical)
+        return Response(
+            text=f"⚠️ {err_msg}",
+            chips=chips,
+            phase=Phase.AWAITING_FILE,
+        )
+
+    # Check for blank budgets needing confirmation
+    if intake_res.blank_budget_items:
+        session.intake_result = intake_res
+        session.available_sheets = intake_res.available_sheets
+        session.worksheet = intake_res.sheet_name
+        session.phase = Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
+        count = len(intake_res.blank_budget_items)
+        sample = intake_res.blank_budget_items[0]
+        return Response(
+            text=(
+                f"Found **{count}** line item{'s' if count != 1 else ''} with blank budgets "
+                f"(such as {safe_inline(sample)}).\n\n"
+                "Treat blank budgets as 0 (unbudgeted)?"
+            ),
+            chips=["Treat blank budgets as 0 (unbudgeted)", "Keep blank budgets", "Upload a different file"],
+            phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
+        )
+
+    session.parsed_rows = intake_res.rows
+    session.worksheet = intake_res.sheet_name
+    session.available_sheets = intake_res.available_sheets
+    session.intake_result = intake_res
+
+    if not intake_res.has_transformations:
+        session.phase = Phase.AWAITING_PERIOD
+        row_count = len(intake_res.rows)
+        worksheet_note = ""
+        if intake_res.sheet_name:
+            worksheet_note = f" from worksheet '{safe_inline(intake_res.sheet_name)}'"
+            if len(session.available_sheets) > 1:
+                worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
+
+        return Response(
+            text=f"✅ Loaded '{safe_inline(filename)}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
+                 "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+            phase=Phase.AWAITING_PERIOD,
+        )
+
+    session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
+
+    summary_text = format_intake_summary(intake_res)
+    summary_text += "\n\nDoes this look right?"
+    chips = ["Looks right", "Change something"]
+    if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
+        other_sheets = [s for s in intake_res.available_sheets if s != intake_res.sheet_name]
+        if other_sheets:
+            chips.insert(1, f"Sheet {other_sheets[0]}")
 
     return Response(
-        text=f"✅ Loaded '{safe_inline(filename)}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
-             "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
-        phase=Phase.AWAITING_PERIOD,
+        text=summary_text,
+        chips=chips,
+        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
     )
 
 
@@ -432,9 +621,19 @@ def _run_analysis(session: Session) -> Response:
         with financial_context():
             result = analyze_rows(session.parsed_rows, config)
     except (ValueError, RuntimeError) as exc:
+        session.phase = Phase.AWAITING_FILE
+        technical = str(exc)
+        session.last_technical_detail = technical
+        plain_err = plain_analysis_error(technical)
+        chips = ["Upload a different file"]
+        if session.available_sheets and len(session.available_sheets) > 1:
+            for s in session.available_sheets[:2]:
+                if s != session.worksheet:
+                    chips.append(f"Sheet {s}")
+        chips.append("Show technical details")
         return Response(
-            text=f"⚠️ Analysis failed: {display_text(str(exc))}",
-            chips=["Upload a different file", "Help"],
+            text=f"⚠️ {plain_err}",
+            chips=chips,
             phase=Phase.AWAITING_FILE,
         )
 
@@ -452,8 +651,8 @@ def _run_analysis(session: Session) -> Response:
         item = safe_inline(session.unclassified_queue[0])
         remaining = len(session.unclassified_queue)
         return Response(
-            text=f"Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} unclassified.\n\n"
-                 f"**'{item}'** is Unclassified. Should it be:",
+            text=f"Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or expense.\n\n"
+                 f"**'{item}'** is not yet labeled revenue or expense. Should it be:",
             chips=["Revenue", "Expense", "Skip", "Skip all"],
             phase=Phase.RESOLVE_UNCLASSIFIED,
         )
@@ -467,9 +666,11 @@ def _handle_classify(session: Session, text: str) -> Response:
     text_lower = text.strip().lower()
 
     if text_lower in ("skip all", "done", "skip remaining"):
+        for itm in session.unclassified_queue:
+            session.type_map[itm] = LineType.UNCLASSIFIED
         session.unclassified_queue.clear()
         session.phase = Phase.EXPLORING
-        return _run_analysis(session) if session.type_map else _build_analysis_summary(session)
+        return _build_analysis_summary(session)
 
     if not session.unclassified_queue:
         session.phase = Phase.EXPLORING
@@ -484,6 +685,7 @@ def _handle_classify(session: Session, text: str) -> Response:
         session.type_map[current_item] = LineType.EXPENSE
         session.unclassified_queue.pop(0)
     elif text_lower in ("skip", "3", "ignore"):
+        session.type_map[current_item] = LineType.UNCLASSIFIED
         session.unclassified_queue.pop(0)
     else:
         return Response(
@@ -497,7 +699,7 @@ def _handle_classify(session: Session, text: str) -> Response:
         remaining = len(session.unclassified_queue)
         return Response(
             text=f"Got it. {remaining} remaining.\n\n"
-                 f"**'{next_item}'** is Unclassified. Should it be:",
+                 f"**'{next_item}'** is not yet labeled revenue or expense. Should it be:",
             chips=["Revenue", "Expense", "Skip", "Skip all"],
             phase=Phase.RESOLVE_UNCLASSIFIED,
         )
@@ -2374,27 +2576,32 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
             phase=session.phase,
         )
 
-    try:
-        parsed = load_input(
-            session.source_bytes, suffix, source_name=session.source_name, sheet=matched_sheet,
-        )
-    except (ValueError, RuntimeError, OSError) as exc:
+    intake_res = read_input_assisted(
+        session.source_bytes,
+        suffix,
+        filename=session.source_name,
+        sheet=matched_sheet,
+        treat_blank_budgets_as_zero=False,
+    )
+    if intake_res.has_fatal_errors or not intake_res.rows:
+        technical = intake_res.fatal_error_message or "No data rows found"
+        session.last_technical_detail = technical
+        plain_err = plain_analysis_error(technical)
+        chips = ["Show sheets"]
+        if session.last_technical_detail:
+            chips.append("Show technical details")
         return Response(
-            text=f"⚠️ Failed to load worksheet '{safe_inline(matched_sheet)}': {display_text(str(exc))}",
-            chips=["Show sheets", "Help"],
+            text=f"⚠️ Failed to load worksheet '{safe_inline(matched_sheet)}': {plain_err}",
+            chips=chips,
             phase=session.phase,
         )
 
-    if not parsed.rows:
-        return Response(
-            text=f"⚠️ Worksheet '{safe_inline(matched_sheet)}' contains no data rows.",
-            chips=["Show sheets", "Help"],
-            phase=session.phase,
-        )
-
-    session.parsed_rows = parsed.rows
-    session.worksheet = parsed.worksheet
+    session.parsed_rows = intake_res.rows
+    session.worksheet = intake_res.sheet_name or matched_sheet
     session.sheet = matched_sheet
+    session.intake_result = intake_res
+    if intake_res.available_sheets:
+        session.available_sheets = intake_res.available_sheets
 
     if (
         session.phase == Phase.EXPLORING
@@ -2403,7 +2610,7 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         and session.percent_threshold is not None
     ):
         resp = _run_analysis(session)
-        prefix = f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'** ({len(parsed.rows)} rows).\n\n"
+        prefix = f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'** ({len(intake_res.rows)} rows).\n\n"
         return Response(
             text=prefix + resp.text,
             table=resp.table,
@@ -2412,7 +2619,21 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
             download=resp.download,
         )
 
-    row_count = len(parsed.rows)
+    if session.phase == Phase.AWAITING_INTAKE_CONFIRMATION:
+        summary_text = format_intake_summary(intake_res)
+        summary_text += "\n\nDoes this look right?"
+        chips = ["Looks right", "Change something"]
+        if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
+            other_sheets = [s for s in intake_res.available_sheets if s != matched_sheet]
+            if other_sheets:
+                chips.insert(1, f"Sheet {other_sheets[0]}")
+        return Response(
+            text=f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'**.\n\n" + summary_text,
+            chips=chips,
+            phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+        )
+
+    row_count = len(intake_res.rows)
     return Response(
         text=f"📑 Switched to worksheet **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}).\n\n"
              f"Current reporting period: **{safe_inline(session.period or 'Not set')}**.",

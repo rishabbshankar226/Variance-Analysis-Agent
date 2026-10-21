@@ -1,16 +1,10 @@
-"""Baseline tests for Phase 0 measuring current intake friction.
+"""Real-world intake tests measuring Phase 1 improvements against the 9 synthetic fixtures.
 
-This test suite drives chat.handlers.handle_upload and handle_message against
-all 9 synthetic real-world fixtures in tests/fixtures/realworld/.
-
-Each test records today's outcome under commit a3ce6bb:
-- Either a "dead end" with the exact first error message shown to Maya,
-- Or the count of manual steps (as defined in variance-intake.md) required to reach a summary.
-
-Per variance-intake.md:
-- Manual step: 1 action outside the chat (editing/resaving file) or 1 message typed.
-  Clicking a suggested chip counts as 0.5 step.
-- Dead end: Maya ends up with no analysis and no fix action on screen.
+Per Phase 1 acceptance criteria:
+- Fixtures a, d, g and i reach the "Here's how I read your file" summary with no dead end.
+- The jargon test passes.
+- Every contract fixture report and audit is byte-identical through the CLI.
+- Each visible transformation has a test proving it appears in the summary.
 """
 
 from __future__ import annotations
@@ -23,217 +17,164 @@ from variance_agent.chat.session import Phase, Session
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures" / "realworld"
 
 
-def test_fixture_a_erp_title_block_baseline() -> None:
+def test_fixture_a_erp_title_block_intake() -> None:
     """Fixture a: ERP export with 4-row title block above header.
     
-    Today's outcome: DEAD END on upload.
-    openpyxl iter_rows reads row 1 title text as the header list.
-    Row 5 headers ('GL Account', 'Account Description', etc.) trigger a blank-header
-    violation because row 1 only populated column A.
+    Phase 1 outcome: NO DEAD END.
+    HeaderDetector identifies Row 5 as the true header row, skips rows 1-4,
+    maps 'Account Description' to Line Item, 'Sep-26 Budget' to Budget, and 'Sep-26 Actual' to Actual.
+    Presents 'Here's how I read your file' summary with 'Looks right' chip.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_a_erp_title_block.xlsx"
     response = handle_upload(session, path.read_bytes(), path.name)
     
-    # Maya ends up with no analysis and is returned to awaiting_file with no fix chip
-    assert session.phase == Phase.AWAITING_FILE
-    assert response.chips == ["Upload a different file"]
-    expected_msg = "⚠️ Excel row 5: data appears under a blank header beyond the header row."
-    assert response.text == expected_msg
-    # Outcome: Dead end, 0 steps to summary, first message is the blank header error
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Here's how I read your file:" in response.text
+    assert "Header row:** Row 5" in response.text
+    assert "4 title block rows above header" in response.text
+    assert "Line item from 'Account Description'" in response.text
+    assert "Budget from 'Budget YTD'" in response.text
+    assert "Actual from 'Actual YTD'" in response.text
+    assert "Account ID from 'GL Account'" in response.text
+    assert "Looks right" in (response.chips or [])
+
+    # Confirming proceeds directly to period prompt
+    resp_confirm = handle_message(session, "Looks right")
+    assert resp_confirm.phase == Phase.AWAITING_PERIOD
+    assert "What reporting period does this analysis cover?" in resp_confirm.text
 
 
 def test_fixture_b_departmental_subtotals_baseline() -> None:
     """Fixture b: Departmental P&L with nested subtotals.
     
-    Subtotals: Total Revenue, Gross Profit, Total Operating Expenses, Net Income.
-    Today's outcome: DEAD END on analysis.
-    Upload succeeds, but when period, thresholds, and currency are supplied,
-    _run_analysis encounters ambiguous subtotal labels ('Total Operating Expenses')
-    without a 'Row Kind' column, failing validation.
+    Phase 1 outcome: Plain language error message without jargon ('Row Kind').
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_b_departmental_subtotals.csv"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
     assert resp_upload.phase == Phase.AWAITING_PERIOD
     
-    # Maya answers configuration prompts
-    resp_period = handle_message(session, "Q3 2026")
-    assert resp_period.phase == Phase.AWAITING_THRESHOLDS
-    
-    resp_thresh = handle_message(session, "$10,000 or 5%")
-    assert resp_thresh.phase == Phase.AWAITING_CURRENCY
-    
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$10,000 or 5%")
     resp_curr = handle_message(session, "USD")
     
-    # Analysis fails on ambiguous summary label; Maya receives no actionable fix chip
-    assert session.phase == Phase.AWAITING_CURRENCY or session.result is None
-    expected_prefix = (
-        "⚠️ Analysis failed: Total Operating Expenses: ambiguous summary label; "
-        "specify Row Kind as Detail, Total, or Subtotal."
-    )
-    assert resp_curr.text.startswith(expected_prefix)
-    assert resp_curr.chips == ["Upload a different file", "Help"]
-    # Outcome: Dead end, analysis fails, first error requires manual file edit outside chat
+    assert session.phase == Phase.AWAITING_FILE
+    assert "Some subtotal or total rows could not be distinguished from detail rows" in resp_curr.text
+    assert "Upload a different file" in (resp_curr.chips or [])
+    assert "Show technical details" in (resp_curr.chips or [])
 
 
 def test_fixture_c_signed_ledger_baseline() -> None:
     """Fixture c: Signed ledger export (revenue negative credit, expense positive debit).
     
-    Today's outcome: REACHES SUMMARY WITH DISTORTED / INVERTED FINANCIAL FACTS.
-    Upload and setup succeed. Because revenues are negative numbers, variance
-    calculations and favorability rules are reversed (e.g. higher actual revenue is
-    marked unfavorable, and total revenue is negative).
-    
-    Manual step measurement:
-    - In-chat setup: 3 typed messages (Period, Thresholds, Currency) = 3.0 steps.
-      (Or 1 typed + 2 chips clicked = 2.0 steps).
-    - To fix financial correctness under today's tool: Maya must preprocess the file
-      outside the tool to flip signs (+1 external file edit step, +1 re-upload).
+    Phase 1 baseline measurement: Reaches analysis, signs inverted (Phase 2 scope).
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_c_signed_ledger.csv"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
     assert resp_upload.phase == Phase.AWAITING_PERIOD
     
-    # Step 1: Period
     handle_message(session, "Q3 2026")
-    # Step 2: Thresholds
     handle_message(session, "$10,000 or 5%")
-    # Step 3: Currency -> triggers analysis
     resp_curr = handle_message(session, "USD")
     assert "Analysis Complete" in resp_curr.text
-    
     assert session.phase == Phase.EXPLORING
     assert session.result is not None
-    # Verify that without signed-ledger handling, revenue aggregate is negative
     assert session.result.revenue.actual < 0
-    # Status of revenue exceeding budget is unfavorable because of negative sign
-    row_prod = next(r for r in session.result.rows if "Product Revenue" in r.line_item)
-    assert row_prod.status.value == "U"  # -520,000 actual vs -500,000 budget treated as unfavorable
-    # Outcome: Reaches distorted summary in 3.0 typed steps (2.0 with chips);
-    # requires external file preprocessing (+2 steps) for financial accuracy.
 
 
-def test_fixture_d_thousands_dashes_blanks_baseline() -> None:
-    """Fixture d: Report in thousands ('($000s)' in title) with dashes and blank budgets.
+def test_fixture_d_thousands_dashes_blanks_intake() -> None:
+    """Fixture d: Report in thousands with accounting dashes and blank budgets.
     
-    Today's outcome: DEAD END on upload.
-    Title in row 1 causes openpyxl header parsing to read row 1 as header.
-    Row 2 headers appear as data under blank header beyond row 1.
-    Furthermore, accounting dashes ('-') and blank strings are treated as missing
-    in parsing.py, raising 'required field is missing'.
+    Phase 1 outcome: NO DEAD END.
+    1. Prompts Maya: 'Treat blank budgets as 0 (unbudgeted)?'
+    2. After confirmation, reads dashes as 0, treats blank budgets as 0,
+       and presents 'Here's how I read your file' summary.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_d_thousands_dashes_blanks.xlsx"
-    response = handle_upload(session, path.read_bytes(), path.name)
+    resp_upload = handle_upload(session, path.read_bytes(), path.name)
     
-    assert session.phase == Phase.AWAITING_FILE
-    assert response.chips == ["Upload a different file"]
-    expected_msg = "⚠️ Excel row 2: data appears under a blank header beyond the header row."
-    assert response.text == expected_msg
-    # Outcome: Dead end on upload; first message is blank header error
+    # Step 1: Blank budget confirmation prompt
+    assert session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
+    assert "Treat blank budgets as 0 (unbudgeted)?" in resp_upload.text
+    assert "Treat blank budgets as 0 (unbudgeted)" in (resp_upload.chips or [])
+
+    # Step 2: Confirm treat blank budgets as zero
+    resp_confirm = handle_message(session, "Treat blank budgets as 0 (unbudgeted)")
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Here's how I read your file:" in resp_confirm.text
+    assert "Header row:** Row 2" in resp_confirm.text
+    assert "Read accounting dashes ('-') as 0" in resp_confirm.text
+    assert "Treated blank budgets as 0" in resp_confirm.text
+    assert "Looks right" in (resp_confirm.chips or [])
+
+    # Step 3: Maya confirms layout -> proceeds to period
+    resp_period = handle_message(session, "Looks right")
+    assert resp_period.phase == Phase.AWAITING_PERIOD
 
 
 def test_fixture_e_wide_monthly_baseline() -> None:
     """Fixture e: Wide monthly layout ('Jul-26 Budget', 'Jul-26 Actual', etc.).
     
-    Today's outcome: DEAD END on analysis.
-    Upload succeeds, but column names do not strictly match accepted aliases
-    ('budget', 'plan', 'actual', etc.).
-    Analysis fails with 'required field Budget was not found'.
+    Phase 1 baseline measurement: Plain language missing columns error without dead end.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_e_wide_monthly.xlsx"
     resp_upload = handle_upload(session, path.read_bytes(), path.name)
-    assert resp_upload.phase == Phase.AWAITING_PERIOD
-    
-    handle_message(session, "Q3 2026")
-    handle_message(session, "$10,000 or 5%")
-    resp_curr = handle_message(session, "USD")
-    
-    expected_prefix = (
-        "⚠️ Analysis failed: Row 2: required field 'Budget' was not found. "
-        "Accepted names: budget, budget_amount, plan, planned."
-    )
-    assert resp_curr.text.startswith(expected_prefix)
-    assert resp_curr.chips == ["Upload a different file", "Help"]
-    # Outcome: Dead end; requires manual unpivoting / column renaming outside chat
+    assert session.phase == Phase.AWAITING_FILE
+    assert "Could not find a header row with Line Item, Budget, and Actual columns" in resp_upload.text
+    assert "Upload a different file" in (resp_upload.chips or [])
 
 
 def test_fixture_f_budget_actuals_separate_baseline() -> None:
     """Fixture f: Budget and actuals as two separate files.
     
-    Today's outcome: DEAD END.
-    Uploading the budget file fails during analysis because there is no 'Actual' column.
-    There is no capability in today's chat to upload a second file or join by GL account.
+    Phase 1 baseline measurement: Plain language missing columns error.
     """
     session = Session()
     path_bgt = FIXTURES_DIR / "fixture_f_budget_separate.csv"
-    handle_upload(session, path_bgt.read_bytes(), path_bgt.name)
-    assert session.phase == Phase.AWAITING_PERIOD
+    resp_upload = handle_upload(session, path_bgt.read_bytes(), path_bgt.name)
+    assert session.phase == Phase.AWAITING_FILE
+    assert "Could not find a header row with Line Item, Budget, and Actual columns" in resp_upload.text
+
+
+def test_fixture_g_cover_page_active_intake() -> None:
+    """Fixture g: Active sheet is a cover page; second sheet ('BvA') has data.
     
+    Phase 1 outcome: NO DEAD END.
+    SheetRanker identifies 'BvA' as the primary data worksheet over 'Cover Page',
+    and loads it automatically with an explanatory visible transformation note.
+    """
+    session = Session()
+    path = FIXTURES_DIR / "fixture_g_cover_page_active.xlsx"
+    resp_upload = handle_upload(session, path.read_bytes(), path.name)
+    
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Here's how I read your file:" in resp_upload.text
+    assert "Worksheet:** BvA" in resp_upload.text
+    assert "Selected worksheet 'BvA'" in resp_upload.text
+    assert "over 'Cover Page'" in resp_upload.text
+    assert "Looks right" in (resp_upload.chips or [])
+
+    # Confirm and complete flow
+    handle_message(session, "Looks right")
     handle_message(session, "Q3 2026")
     handle_message(session, "$10,000 or 5%")
     resp_curr = handle_message(session, "USD")
-    
-    # Analysis fails on missing line item or actual
-    assert "required field" in resp_curr.text
-    assert resp_curr.chips == ["Upload a different file", "Help"]
-    # Outcome: Dead end; requires manual Excel VLOOKUP/join before tool intake
+    assert "Analysis Complete" in resp_curr.text
+    assert session.phase == Phase.EXPLORING
+    assert session.result is not None
 
 
-def test_fixture_g_cover_page_active_baseline() -> None:
-    """Fixture g: Second sheet has BvA data, but active sheet is a cover page.
-    
-    Today's outcome:
-    - Default upload path: Reads cover page, fails analysis with missing columns (DEAD END).
-    - Manual sheet command: If Maya notices '(2 sheets available; switch with sheet <name>)',
-      she can type 'sheet BvA' before entering period.
-      Takes 4 manual steps (type sheet command, type period, type thresholds, type currency).
-    """
-    # Case 1: Maya does not switch sheet and answers guided prompts
-    session_default = Session()
-    path = FIXTURES_DIR / "fixture_g_cover_page_active.xlsx"
-    handle_upload(session_default, path.read_bytes(), path.name)
-    handle_message(session_default, "Q3 2026")
-    handle_message(session_default, "$10,000 or 5%")
-    resp_fail = handle_message(session_default, "USD")
-    assert "required field 'Line Item' was not found" in resp_fail.text
-    assert resp_fail.chips == ["Upload a different file", "Help"]
-    
-    # Case 2: Maya explicitly switches sheets using CLI-style command
-    session_switched = Session()
-    handle_upload(session_switched, path.read_bytes(), path.name)
-    # Manual step 1: type sheet switch command
-    resp_sw = handle_message(session_switched, "sheet BvA")
-    assert session_switched.worksheet == "BvA"
-    assert "Switched to worksheet **'BvA'**" in resp_sw.text
-    # Manual step 2: period
-    handle_message(session_switched, "Q3 2026")
-    # Manual step 3: thresholds
-    handle_message(session_switched, "$10,000 or 5%")
-    # Manual step 4: currency
-    resp_ok = handle_message(session_switched, "USD")
-    assert "Analysis Complete" in resp_ok.text
-    assert session_switched.phase == Phase.EXPLORING
-    assert session_switched.result is not None
-    # Outcome: Dead end by default; 4.0 manual typed steps if Maya discovers 'sheet BvA' command
-
-
-def test_fixture_h_120_line_gl_unclassified_friction_baseline() -> None:
+def test_fixture_h_120_line_gl_unclassified_friction() -> None:
     """Fixture h: 120-line GL export with account numbers and no Type column.
     
-    Today's outcome: MASSIVE FRICTION (120 one-by-one classification questions).
-    Upload and configuration succeed, but because account numbers (4000-4999, 5000-8999)
-    are not recognized by keyword regex, all 120 rows enter RESOLVE_UNCLASSIFIED.
-    
-    Maya must answer 120 sequential questions:
-    - 3 setup steps (period, thresholds, currency)
-    - 120 classification prompts:
-      - If typed: 120 * 1.0 = 120 steps -> 123 total steps.
-      - If clicking chips: 120 * 0.5 = 60 steps -> 63 total steps.
-      - If 'Skip all' chip clicked: 0.5 step -> 3.5 total steps (all rows excluded).
+    Phase 1 improvements:
+    1. Zero jargon: replaced 'Unclassified' with 'not yet labeled revenue or expense'.
+    2. Fixed the Skip All loop bug: clicking 'Skip all' after a partial classification
+       no longer traps Maya in an infinite loop.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_h_120_line_gl.csv"
@@ -246,45 +187,29 @@ def test_fixture_h_120_line_gl_unclassified_friction_baseline() -> None:
     
     assert session.phase == Phase.RESOLVE_UNCLASSIFIED
     assert len(session.unclassified_queue) == 120
-    assert "Analysis complete, but **120** line items are unclassified." in resp_curr.text
+    assert "Analysis complete, but **120** line items are not yet labeled revenue or expense." in resp_curr.text
+    assert "**'Account 4001 Stream 1'** is not yet labeled revenue or expense." in resp_curr.text
     assert resp_curr.chips == ["Revenue", "Expense", "Skip", "Skip all"]
     
-    # Case 1: If Maya classifies an item, and then clicks "Skip all",
-    # current handlers.py:_handle_classify re-runs analysis with non-empty type_map,
-    # which detects the remaining 119 unclassified lines and loops back to RESOLVE_UNCLASSIFIED!
+    # Classify 1 item
     resp_step1 = handle_message(session, "Revenue")
     assert len(session.unclassified_queue) == 119
     assert "Got it. 119 remaining." in resp_step1.text
+    assert "not yet labeled revenue or expense" in resp_step1.text
 
+    # Skip all remaining items -> BUG IS FIXED, successfully transitions to EXPLORING!
     resp_step2 = handle_message(session, "Skip all")
-    # Current behavior: "Skip all" after partial classification re-populates the queue!
-    assert session.phase == Phase.RESOLVE_UNCLASSIFIED
-    assert len(session.unclassified_queue) == 119
-    assert "Analysis complete, but **119** line items are unclassified." in resp_step2.text
-
-    # Case 2: Immediate "Skip all" before any item is classified (type_map empty)
-    session_immediate_skip = Session()
-    handle_upload(session_immediate_skip, path.read_bytes(), path.name)
-    handle_message(session_immediate_skip, "Q3 2026")
-    handle_message(session_immediate_skip, "$10,000 or 5%")
-    handle_message(session_immediate_skip, "USD")
-    assert len(session_immediate_skip.unclassified_queue) == 120
-    resp_imm_skip = handle_message(session_immediate_skip, "Skip all")
-    assert "Analysis Complete" in resp_imm_skip.text
-    assert session_immediate_skip.phase == Phase.EXPLORING
-    assert session_immediate_skip.result is not None
-    # All 120 rows remain unclassified and excluded from revenue/expense totals
-    assert len(session_immediate_skip.result.material_rows) == 0
-    # Outcome: Reaching full classification requires 120 sequential answers (123 manual typed steps,
-    # or 63 chip clicks). Partial classification breaks "Skip all" into a loop.
+    assert session.phase == Phase.EXPLORING
+    assert session.result is not None
+    assert "Analysis Complete" in resp_step2.text
 
 
-def test_fixture_i_pasted_tsv_baseline() -> None:
+def test_fixture_i_pasted_tsv_intake() -> None:
     """Fixture i: Tab-separated block pasted directly into chat.
     
-    Today's outcome: DEAD END.
-    In Phase.AWAITING_FILE, handle_message rejects any raw text that is not
-    a system intent (reset, help, etc.), instructing Maya to upload a file instead.
+    Phase 1 outcome: NO DEAD END.
+    handle_message in Phase.AWAITING_FILE parses the pasted TSV,
+    extracts the data, maps headers, and presents the intake summary.
     """
     session = Session()
     path = FIXTURES_DIR / "fixture_i_pasted_tsv.txt"
@@ -292,7 +217,12 @@ def test_fixture_i_pasted_tsv_baseline() -> None:
     
     response = handle_message(session, pasted_text)
     
-    assert session.phase == Phase.AWAITING_FILE
-    expected_msg = "Please upload a file using the drop zone above. Supported formats: CSV, JSON, XLSX, XLSM."
-    assert response.text == expected_msg
-    # Outcome: Dead end; pasted tabular data is rejected outright
+    assert session.phase == Phase.AWAITING_INTAKE_CONFIRMATION
+    assert "Here's how I read your file:" in response.text
+    assert "Read data from pasted tab-separated text" in response.text
+    assert "Columns mapped:" in response.text
+    assert "Looks right" in (response.chips or [])
+
+    # Confirm proceeds to period
+    resp_confirm = handle_message(session, "Looks right")
+    assert resp_confirm.phase == Phase.AWAITING_PERIOD
