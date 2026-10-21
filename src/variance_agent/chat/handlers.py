@@ -19,7 +19,7 @@ from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
 from variance_agent.currencies import CURRENCY_SYMBOLS, validate_currency
 from variance_agent.limits import display_text
-from variance_agent.models import AnalysisConfig, AnalyzedRow, LineType, Status
+from variance_agent.models import AnalysisConfig, AnalysisResult, AnalyzedRow, LineType, Status
 from variance_agent.numeric import financial_context, ratio
 from variance_agent.output import write_text_outputs
 from variance_agent.parsing import (
@@ -124,6 +124,7 @@ def handle_upload(
     session.parsed_rows = parsed.rows
     session.worksheet = parsed.worksheet
     session.available_sheets = list(parsed.sheetnames)
+    session.skipped_items = set()
     session.phase = Phase.AWAITING_PERIOD
 
     row_count = len(parsed.rows)
@@ -432,6 +433,7 @@ def _run_analysis(session: Session) -> Response:
         with financial_context():
             result = analyze_rows(session.parsed_rows, config)
     except (ValueError, RuntimeError) as exc:
+        session.phase = Phase.AWAITING_FILE
         return Response(
             text=f"⚠️ Analysis failed: {display_text(str(exc))}",
             chips=["Upload a different file", "Help"],
@@ -440,11 +442,11 @@ def _run_analysis(session: Session) -> Response:
 
     session.result = result
 
-    # Check for unclassified rows
-    unclassified = [
+    # Ask only about unclassified rows the user has not already decided to skip
+    unclassified = list(dict.fromkeys(
         row.line_item for row in result.rows
-        if row.line_type == LineType.UNCLASSIFIED
-    ]
+        if row.line_type == LineType.UNCLASSIFIED and row.line_item not in session.skipped_items
+    ))
 
     if unclassified:
         session.unclassified_queue = list(unclassified)
@@ -467,9 +469,10 @@ def _handle_classify(session: Session, text: str) -> Response:
     text_lower = text.strip().lower()
 
     if text_lower in ("skip all", "done", "skip remaining"):
+        session.skipped_items.update(session.unclassified_queue)
         session.unclassified_queue.clear()
         session.phase = Phase.EXPLORING
-        return _run_analysis(session) if session.type_map else _build_analysis_summary(session)
+        return _rerun_after_classification(session) if session.type_map else _build_analysis_summary(session)
 
     if not session.unclassified_queue:
         session.phase = Phase.EXPLORING
@@ -484,7 +487,7 @@ def _handle_classify(session: Session, text: str) -> Response:
         session.type_map[current_item] = LineType.EXPENSE
         session.unclassified_queue.pop(0)
     elif text_lower in ("skip", "3", "ignore"):
-        session.unclassified_queue.pop(0)
+        session.skipped_items.add(session.unclassified_queue.pop(0))
     else:
         return Response(
             text=f"Please choose Revenue, Expense, or Skip for '{safe_inline(current_item)}'.",
@@ -503,7 +506,38 @@ def _handle_classify(session: Session, text: str) -> Response:
         )
 
     # All resolved — re-run analysis with updated type_map
-    return _run_analysis(session)
+    return _rerun_after_classification(session)
+
+
+def _rerun_after_classification(session: Session) -> Response:
+    """Re-run analysis with the new classifications, rolling them back if the engine rejects them."""
+    previous = session.result
+    added = [
+        item for item in session.type_map
+        if previous is not None and any(
+            row.line_item == item and row.line_type == LineType.UNCLASSIFIED for row in previous.rows
+        )
+    ]
+    response = _run_analysis(session)
+    if response.phase != Phase.AWAITING_FILE or previous is None:
+        return response
+
+    # e.g. classifying a row as Revenue can break a reconciled 'Total Revenue' subtotal
+    for item in added:
+        del session.type_map[item]
+        session.skipped_items.add(item)
+    session.result = previous
+    session.unclassified_queue.clear()
+    session.phase = Phase.EXPLORING
+    summary = _build_analysis_summary(session)
+    names = ", ".join(f"'{safe_inline(item)}'" for item in added)
+    return Response(
+        text=f"{response.text}\n\nThe classification of {names} was not applied; "
+             f"those items stay Unclassified.\n\n{summary.text}",
+        table=summary.table,
+        chips=summary.chips,
+        phase=Phase.EXPLORING,
+    )
 
 
 def _build_analysis_summary(session: Session) -> Response:
@@ -606,6 +640,11 @@ def _build_analysis_summary(session: Session) -> Response:
 # ---------------------------------------------------------------------------
 # Exploring phase handlers
 # ---------------------------------------------------------------------------
+
+
+def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
+    """Line items without reconciled subtotal/total rows, which would double count."""
+    return [row for row in result.rows if not row.excluded_from_aggregation]
 
 
 def _handle_exploring(session: Session, text: str) -> Response:
@@ -786,7 +825,7 @@ def _handle_filter_status(session: Session, status: Status) -> Response:
     cfg = result.config
     places = report_places(result)
 
-    filtered = [row for row in result.rows if row.status == status]
+    filtered = [row for row in _detail_rows(result) if row.status == status]
     label = status_label(status)
 
     if not filtered:
@@ -826,7 +865,7 @@ def _handle_filter_type(session: Session, line_type: LineType) -> Response:
     cfg = result.config
     places = report_places(result)
 
-    filtered = [row for row in result.rows if row.line_type == line_type]
+    filtered = [row for row in _detail_rows(result) if row.line_type == line_type]
 
     if not filtered:
         return Response(
@@ -858,9 +897,9 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     places = report_places(result)
 
     count = int(intent.captures.get("count", "5"))
-    count = max(1, min(count, len(result.rows)))
+    count = max(1, min(count, len(_detail_rows(result))))
 
-    sorted_rows = sorted(result.rows, key=lambda r: abs(r.variance_dollars), reverse=True)
+    sorted_rows = sorted(_detail_rows(result), key=lambda r: abs(r.variance_dollars), reverse=True)
     top = sorted_rows[:count]
     session.last_table_items = [row.line_item for row in top]
     if session.last_table_items:
@@ -1592,7 +1631,7 @@ def _handle_revenue_status(session: Session) -> Response:
     places = report_places(result)
 
     revenue_rows = [
-        r for r in result.rows
+        r for r in _detail_rows(result)
         if r.line_type == LineType.REVENUE and not r.excluded_from_aggregation
     ]
     session.last_table_items = [row.line_item for row in revenue_rows]
@@ -1652,7 +1691,7 @@ def _handle_expense_status(session: Session) -> Response:
     places = report_places(result)
 
     expense_rows = [
-        r for r in result.rows
+        r for r in _detail_rows(result)
         if r.line_type == LineType.EXPENSE and not r.excluded_from_aggregation
     ]
     session.last_table_items = [row.line_item for row in expense_rows]
@@ -1752,7 +1791,7 @@ def _handle_top_percent(session: Session) -> Response:
     cfg = result.config
     places = report_places(result)
 
-    pct_rows = [r for r in result.rows if r.variance_percent is not None]
+    pct_rows = [r for r in _detail_rows(result) if r.variance_percent is not None]
     if not pct_rows:
         return Response(
             text="No line items with non-zero budgets were found.",
@@ -1986,7 +2025,7 @@ def _handle_concentration(session: Session) -> Response:
     places = report_places(result)
 
     with financial_context():
-        total_abs_var = sum((abs(r.variance_dollars) for r in result.rows), Decimal(0))
+        total_abs_var = sum((abs(r.variance_dollars) for r in _detail_rows(result)), Decimal(0))
 
     if total_abs_var == Decimal(0):
         return Response(
@@ -1996,7 +2035,7 @@ def _handle_concentration(session: Session) -> Response:
         )
 
     # Sort rows by absolute variance descending
-    sorted_rows = sorted(result.rows, key=lambda r: abs(r.variance_dollars), reverse=True)
+    sorted_rows = sorted(_detail_rows(result), key=lambda r: abs(r.variance_dollars), reverse=True)
     top_3 = sorted_rows[:3]
     session.last_table_items = [row.line_item for row in top_3]
     if session.last_table_items:
@@ -2044,7 +2083,7 @@ def _handle_unbudgeted(session: Session) -> Response:
     cfg = result.config
     places = report_places(result)
 
-    unbudgeted = [r for r in result.rows if r.budget == Decimal(0) and r.actual > Decimal(0)]
+    unbudgeted = [r for r in _detail_rows(result) if r.budget == Decimal(0) and r.actual > Decimal(0)]
     session.last_table_items = [row.line_item for row in unbudgeted]
     if session.last_table_items:
         session.last_focused_item = session.last_table_items[0]
@@ -2083,7 +2122,7 @@ def _handle_cost_savings(session: Session) -> Response:
     places = report_places(result)
 
     savings_rows = [
-        r for r in result.rows
+        r for r in _detail_rows(result)
         if r.line_type == LineType.EXPENSE and r.status == Status.FAVORABLE
     ]
     session.last_table_items = [row.line_item for row in savings_rows]
@@ -2129,7 +2168,7 @@ def _handle_revenue_misses(session: Session) -> Response:
     places = report_places(result)
 
     miss_rows = [
-        r for r in result.rows
+        r for r in _detail_rows(result)
         if r.line_type == LineType.REVENUE and r.status == Status.UNFAVORABLE
     ]
     session.last_table_items = [row.line_item for row in miss_rows]
@@ -2199,7 +2238,8 @@ def _handle_waterfall(session: Session) -> Response:
             elif row.line_type == LineType.EXPENSE:
                 impact = row.budget - row.actual
             else:
-                impact = row.variance_dollars if row.status == Status.FAVORABLE else -abs(row.variance_dollars)
+                # Unclassified rows sit outside the category totals, so they cannot move the bridge.
+                impact = Decimal(0)
             bridge_items.append((row, impact))
 
         # Sort items by magnitude of profit impact (largest drivers first)
@@ -2225,7 +2265,8 @@ def _handle_waterfall(session: Session) -> Response:
             "Actual": format_money(row.actual, cur, places),
             f"Var ({sym})": format_money(row.variance_dollars, cur, places),
             f"Profit Impact ({sym})": format_money(impact, cur, places),
-            "Status": "F" if impact > 0 else ("U" if impact < 0 else "Neutral"),
+            "Status": (str(row.status) if row.line_type == LineType.UNCLASSIFIED
+                       else "F" if impact > 0 else ("U" if impact < 0 else "Neutral")),
         })
 
     table_rows.append({
@@ -2257,6 +2298,12 @@ def _handle_waterfall(session: Session) -> Response:
         "Each line item's contribution to operating profit is displayed in the bridge table below "
         "(positive values expand profit; negative values contract profit):"
     )
+    unclassified = [row for row, _ in bridge_items if row.line_type == LineType.UNCLASSIFIED]
+    if unclassified:
+        text += (
+            f"\n\n⚠️ {len(unclassified)} unclassified line item{'s' if len(unclassified) != 1 else ''} "
+            "are excluded from operating profit and shown with zero impact until classified."
+        )
 
     chips = []
     if session.last_table_items:
@@ -2442,9 +2489,9 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             phase=Phase.EXPLORING,
         )
 
-    # Determine sign: negative if drop/decrease/cut/lower/less/fall/down or "-"
+    # Determine sign from the verb stem so every inflection (drop/drops/dropped, fall/falls, ...) agrees
     is_negative = (
-        direction in ("drops", "dropped", "decreases", "decreased", "falls", "lower", "down", "cut", "cuts", "reduce", "reduced", "shrink", "shrinks", "-")
+        direction.startswith(("drop", "decreas", "fall", "cut", "reduc", "shrink", "lower", "down", "-"))
         or suffix in ("lower", "down", "less")
         or raw_amount.startswith("-")
     )
@@ -2583,7 +2630,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         f"• **Simulated vs. Budget**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. planned profit of {format_money(budget_profit, cur, places)})\n"
     )
 
-    table = [
+    target_row = [] if matched_row is None else [
         {
             "Metric": target_label,
             "Budget": format_money(target_budget, cur, places),
@@ -2592,6 +2639,9 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             "Delta vs Baseline": format_money(delta, cur, places),
             "Status": "F" if (delta >= 0 if target_is_rev else delta <= 0) else "U",
         },
+    ]
+    # Aggregate targets are already the Total Revenue / Total Expenses rows below.
+    table = target_row + [
         {
             "Metric": "Total Revenue",
             "Budget": format_money(budget_rev, cur, places),
@@ -2847,12 +2897,12 @@ def _handle_executive_memo(session: Session) -> Response:
         margin_delta = actual_margin - budget_margin
 
     # Find top revenue driver & drag
-    rev_rows = [r for r in result.rows if r.line_type == LineType.REVENUE]
+    rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
     top_rev_beat = max((r for r in rev_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
     top_rev_miss = min((r for r in rev_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
 
     # Find largest cost overrun & largest saving
-    exp_rows = [r for r in result.rows if r.line_type == LineType.EXPENSE]
+    exp_rows = [r for r in _detail_rows(result) if r.line_type == LineType.EXPENSE]
     top_exp_over = max((r for r in exp_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
     top_exp_save = min((r for r in exp_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
 
@@ -2862,22 +2912,9 @@ def _handle_executive_memo(session: Session) -> Response:
     status_word = "beat" if net_impact >= 0 else "shortfall"
     sign_word = "expanded" if margin_delta >= 0 else "contracted"
 
-    # Generate verified conversational narrative adhering to deterministic conditioning
-    from deterministic_conditioning.financial_commentary import FinancialAuditSummary, FinancialCommentaryConditioner
-    audit_summary = FinancialAuditSummary(
-        period=cfg.period,
-        currency=cfg.currency,
-        net_variance_dollars=net_impact,
-        is_favorable=(net_impact >= 0),
-        material_unfavorable_count=sum(1 for r in result.material_rows if r.status == Status.UNFAVORABLE),
-        material_favorable_count=sum(1 for r in result.material_rows if r.status == Status.FAVORABLE),
-        unexplained_residual_exists=any(not getattr(r.driver_evidence, "reconciles", True) for r in result.material_rows if r.driver_evidence),
-        top_material_item=result.material_rows[0].line_item if result.material_rows else None,
-        top_material_variance=result.material_rows[0].variance_dollars if result.material_rows else None,
-    )
-    commentary_conditioner = FinancialCommentaryConditioner()
-    posture_decision = commentary_conditioner.evaluate_audit_posture(audit_summary)
-    narrative_takeaway = commentary_conditioner.generate_adherent_commentary(audit_summary, posture_decision)
+    # Same fact-gated builder as the CLI --commentary report, so both surfaces agree.
+    from deterministic_conditioning.variance_bridge import generate_verified_commentary
+    narrative_takeaway = safe_inline(generate_verified_commentary(result)[0])
 
     memo_lines = [
         "# 📑 Executive Management Briefing & Variance Commentary",
@@ -3119,8 +3156,8 @@ def _handle_tldr(session: Session) -> Response:
     exp_word = "generated savings of" if exp_var <= 0 else "overspent by"
 
     # Identify top accounts
-    rev_rows = [r for r in result.rows if r.line_type == LineType.REVENUE]
-    exp_rows = [r for r in result.rows if r.line_type == LineType.EXPENSE]
+    rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
+    exp_rows = [r for r in _detail_rows(result) if r.line_type == LineType.EXPENSE]
     top_rev = max(rev_rows, key=lambda r: abs(r.variance_dollars), default=None)
     top_exp = max(exp_rows, key=lambda r: abs(r.variance_dollars), default=None)
 
@@ -3231,7 +3268,15 @@ def _handle_unknown(session: Session, text: str) -> Response:
             row = next(r for r in session.result.rows if r.line_item == matched_name)
             cfg = session.result.config
             places = report_places(session.result)
-            status_desc = "favorable beat" if row.status == Status.FAVORABLE else ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE else "unfavorable revenue shortfall")
+            if row.status == Status.FAVORABLE:
+                status_desc = "favorable beat"
+            elif row.status == Status.UNFAVORABLE:
+                status_desc = ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE
+                               else "unfavorable revenue shortfall")
+            elif row.status == Status.NEUTRAL:
+                status_desc = "in line with budget"
+            else:
+                status_desc = "unclassified, so no favorable/unfavorable direction"
             return Response(
                 text=f"Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}:\n\n"
                      f"• **Budget:** {format_money(row.budget, cfg.currency, places)}\n"

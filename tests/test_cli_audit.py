@@ -49,4 +49,7 @@ def test_cli_includes_executive_commentary_when_flag_present(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "# Executive Commentary" in out
-    assert "Revenue outpaced expectations cleanly." in out
+    # The sample is net unfavourable (-$8,500; Marketing Expense +$13,000 over budget), so the
+    # commentary must not claim revenue outperformance (Chrome QA 2026-10-21).
+    assert "Review Marketing Expense immediately." in out
+    assert "Revenue outpaced" not in out

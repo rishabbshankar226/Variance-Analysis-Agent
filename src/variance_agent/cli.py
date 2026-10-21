@@ -16,7 +16,7 @@ from .models import AnalysisConfig, LineType
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
-from .report import render_markdown
+from .report import _safe_inline, render_markdown
 from .limits import display_text
 
 
@@ -185,7 +185,7 @@ def _run(args: Arguments) -> int:
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)
-        report = f"# Executive Commentary\n\n{commentary_text}\n\n---\n\n" + report
+        report = f"# Executive Commentary\n\n{_safe_inline(commentary_text)}\n\n---\n\n" + report
     outputs: dict[Path, str] = {}
     if args.output:
         outputs[Path(args.output)] = report

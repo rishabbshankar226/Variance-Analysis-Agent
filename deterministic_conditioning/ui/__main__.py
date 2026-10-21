@@ -31,6 +31,7 @@ class VisualizerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
             router = DynamicPromptRouter()
             decision = router.route(prompt, history)
+            signals = router.extract_signals(prompt)
 
             response = {
                 "rule_id": decision.rule_id,
@@ -40,6 +41,12 @@ class VisualizerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "inversions": decision.inversion_constraints,
                 "structure": decision.structural_archetype,
                 "compiled_prompt": decision.compiled_system_instruction,
+                "signals": {
+                    "word_count": signals.word_count,
+                    "has_question": signals.has_question,
+                    "has_frustration": signals.has_frustration,
+                    "has_technical_terms": signals.has_technical_terms,
+                },
             }
 
             self.send_response(200)
