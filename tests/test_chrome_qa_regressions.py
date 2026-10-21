@@ -525,3 +525,29 @@ def test_tldr_driver_wording_follows_direction() -> None:
     assert "momentum was led by" not in text
     assert "**Subscription Revenue** (miss of $20,000.00)" in text
     assert "**Payroll Expense** (overrun of $15,000.00)" in text
+
+
+def test_last_one_and_pronoun_compare_follow_the_table() -> None:
+    session = explore("sample_variance")
+    handle_message(session, "material")
+    assert "**Services Revenue**" in handle_message(session, "the last one").text
+    handle_message(session, "why marketing expense")
+    text = handle_message(session, "compare it with payroll").text
+    assert "Marketing Expense vs. Payroll Expense" in text
+
+
+@pytest.mark.parametrize(("message", "item"), [
+    ("how did subscription revenue do?", "Subscription Revenue"),
+    ("is marketing bad?", "Marketing Expense"),
+    ("tell me what happened with rent", "Rent Expense"),
+])
+def test_item_named_inside_a_sentence_is_found(message: str, item: str) -> None:
+    text = handle_message(explore("sample_variance"), message).text
+    assert f"Here is what happened with **{item}**" in text
+
+
+@pytest.mark.parametrize("message", ["why marketng", "detail payrll", "what about subscripton"])
+def test_typo_gets_a_did_you_mean(message: str) -> None:
+    response = handle_message(explore("sample_variance"), message)
+    assert "Did you mean" in response.text
+    assert response.chips and response.chips[0].startswith(("Why ", "Detail "))

@@ -9,6 +9,7 @@ formatting.
 from __future__ import annotations
 
 import csv
+import difflib
 import io
 import re
 from collections.abc import Callable
@@ -334,7 +335,7 @@ def _resolve_item_query(query: str, session: Session) -> str:
         return raw
 
     # 2. "last", "last item", "last one", "last row", "bottom", "bottom one", "lowest"
-    if raw_lower in ("last", "last item", "last one", "last row", "last line", "bottom", "bottom one", "lowest"):
+    if re.sub(r"^the\s+", "", raw_lower) in ("last", "last item", "last one", "last row", "last line", "bottom", "bottom one", "lowest"):
         if candidate_items:
             return candidate_items[-1]
         if session.last_focused_item:
@@ -362,6 +363,61 @@ def _resolve_item_query(query: str, session: Session) -> str:
         return raw
 
     return raw
+
+
+# Words too common in account names to identify one on their own.
+_GENERIC_ITEM_WORDS = frozenset({
+    "revenue", "revenues", "expense", "expenses", "cost", "costs", "total", "sales", "income", "other",
+})
+
+
+def _item_in_sentence(text: str, items: list[str]) -> str | None:
+    """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'."""
+    lower = text.lower()
+    named = sorted((item for item in items if item.strip() and item.lower() in lower), key=len, reverse=True)
+    if named:
+        return named[0]
+    words = set(re.findall(r"[\w&]+", lower))
+    hits = [
+        item for item in dict.fromkeys(items)
+        if any(len(word) >= 4 and word not in _GENERIC_ITEM_WORDS and word in words
+               for word in re.findall(r"[\w&]+", item.lower()))
+    ]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _suggest_items(query: str, items: list[str], limit: int = 3) -> list[str]:
+    """Close spellings of a line item (whole name or any word of it); deterministic."""
+    q = query.strip().lower()
+    if len(q) < 3:
+        return []
+    scored: list[tuple[float, str]] = []
+    for item in dict.fromkeys(items):
+        name = item.lower()
+        score = max([difflib.SequenceMatcher(None, q, name).ratio()]
+                    + [difflib.SequenceMatcher(None, q, word).ratio() for word in name.split()])
+        if score >= 0.75:
+            scored.append((-score, item))
+    return [item for _, item in sorted(scored)[:limit]]
+
+
+def _not_found(display_q: str, query: str, items: list[str], verb: str) -> Response:
+    """No-match reply with a bounded 'did you mean' for likely typos."""
+    suggestions = _suggest_items(query, items)
+    if suggestions:
+        names = " or ".join(f"**{safe_inline(item)}**" for item in suggestions)
+        return Response(
+            text=f"No line item matching '{display_q}' was found. Did you mean {names}?",
+            chips=[f"{verb} {item}?" for item in suggestions],
+            phase=Phase.EXPLORING,
+        )
+    items_list = ", ".join(safe_inline(item) for item in items[:20])
+    if len(items) > 20:
+        items_list += f", and {len(items) - 20} more"
+    return Response(
+        text=f"No line item matching '{display_q}' was found.\n\nAvailable items: {items_list}",
+        phase=Phase.EXPLORING,
+    )
 
 
 def _handle_thresholds(session: Session, text: str) -> Response:
@@ -953,15 +1009,8 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
     matches = find_line_item(item_query, all_items)
 
     if not matches:
-        items_list = ", ".join(safe_inline(item) for item in all_items[:20])
-        if len(all_items) > 20:
-            items_list += f", and {len(all_items) - 20} more"
         display_q = safe_inline(raw_query or item_query or "unspecified item")
-        return Response(
-            text=f"No line item matching '{display_q}' was found.\n\n"
-                 f"Available items: {items_list}",
-            phase=Phase.EXPLORING,
-        )
+        return _not_found(display_q, item_query, all_items, "Why")
 
     if len(matches) > 1:
         chips = [f"Why {m}?" for m in matches[:5]]
@@ -1041,10 +1090,7 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
 
     if not matches:
         display_q = safe_inline(raw_query or item_query or "unspecified item")
-        return Response(
-            text=f"No line item matching '{display_q}' was found.",
-            phase=Phase.EXPLORING,
-        )
+        return _not_found(display_q, item_query, all_items, "Detail")
 
     if len(matches) > 1:
         chips = [f"Detail {m}" for m in matches[:5]]
@@ -1980,8 +2026,8 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
             phase=Phase.EXPLORING,
         )
 
-    matches1 = find_line_item(name1, line_items)
-    matches2 = find_line_item(name2, line_items)
+    matches1 = find_line_item(_resolve_item_query(name1, session), line_items)
+    matches2 = find_line_item(_resolve_item_query(name2, session), line_items)
 
     if not matches1:
         return Response(
@@ -3322,6 +3368,9 @@ def _handle_unknown(session: Session, text: str) -> Response:
         line_items = [r.line_item for r in session.result.rows]
         resolved = _resolve_item_query(text, session)
         matches = find_line_item(resolved, line_items)
+        if not matches:
+            named = _item_in_sentence(text, line_items)
+            matches = [named] if named else []
         if matches:
             matched_name = matches[0]
             session.last_focused_item = matched_name
