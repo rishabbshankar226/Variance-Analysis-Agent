@@ -133,6 +133,52 @@ def test_html_printed_10k_layout() -> None:
 
 
 @needs_pdfplumber
+def test_combined_10q_for_parent_and_subsidiary() -> None:
+    """Layout seen in a real combined 10-Q, rebuilt with fictional data."""
+    tables = _read(FIXTURES_DIR / "fixture_s_combined_10q.pdf")
+    assert [t.name for t in tables] == [
+        "Northwind Fictional Holdings, Inc.: Statements of Consolidated Operations, "
+        "Three Months Ended (p. 1)",
+        "Northwind Fictional Holdings, Inc.: Statements of Consolidated Operations, "
+        "Six Months Ended (p. 1)",
+        "Northwind Fictional Holdings, Inc.: Consolidated Balance Sheets (p. 2)",
+        "Northwind Fictional Holdings, Inc.: Condensed Statements of Consolidated Cash Flows (p. 3)",
+        "Northwind Fictional Airways, Inc.: Statements of Consolidated Operations, "
+        "Three Months Ended (p. 4)",
+        "Northwind Fictional Airways, Inc.: Statements of Consolidated Operations, "
+        "Six Months Ended (p. 4)",
+    ]
+    three_months, six_months, position, cash = tables[:4]
+    assert three_months.raw_rows[1:3] == [
+        ["Line Item", "Jun 2026", "Jun 2025"], ["Passenger revenue", "16,100", "13,836"]]
+    assert six_months.raw_rows[2] == ["Passenger revenue", "29,267", "25,696"]
+    assert position.raw_rows == [
+        ["(In millions, except shares)"],
+        ["Line Item", "Jun 2026", "Dec 2025"],
+        ["Cash and cash equivalents", "1,166", "942"],
+        ["Receivables, net", "473", "391"],
+        ["Total current assets", "1,639", "1,333"],
+        ["Total assets", "4,569", "3,448"],
+        ["Accounts payable", "772", "567"],
+        ["Other (current liabilities)", "854", "757"],
+        ["Total current liabilities", "1,626", "1,324"],
+        ["Long-term debt", "1,294", "1,062"],
+        ["Other (noncurrent liabilities)", "500", "478"],
+        ["Total noncurrent liabilities", "1,794", "1,540"],
+        ["Common stock at par, $0.01 par value; authorized 1,000 shares; issued and outstanding "
+         "1,000 shares at both June 30, 2026 and December 31, 2025", "—", "—"],
+        ["Retained earnings", "1,149", "584"],
+        ["Total liabilities and stockholders' equity", "4,569", "3,448"],
+    ]
+    assert "Named the repeated line 'Other' as 'Other (current liabilities)'" in position.notes
+    assert [row[0] for row in cash.raw_rows[2:]] == [
+        "Net cash provided by operating activities", "Capital expenditures",
+        "Investing Activities: Other, net", "Payments of long-term debt",
+        "Financing Activities: Other, net",
+    ]
+
+
+@needs_pdfplumber
 def test_repeat_reads_are_cached_and_isolated() -> None:
     first = _read(TEN_K)
     first[0].raw_rows.clear()

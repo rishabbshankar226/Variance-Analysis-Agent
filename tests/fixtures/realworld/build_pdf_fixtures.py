@@ -239,12 +239,109 @@ def build_fixture_r() -> None:
     write_pdf(FIXTURES_DIR / "fixture_r_html_printed_10k.pdf", [index, income, position])
 
 
+def build_fixture_s() -> None:
+    """Fixture s: combined 10-Q for a parent and its subsidiary, laid out like a real one.
+
+    Titles read "Statements of Consolidated ...", three- and six-month headers share a
+    line, only one year of the balance-sheet date header lines up with its column, a
+    wrapped common-stock label carries stray numbers, and "Other" repeats.
+    """
+    parent, subsidiary = "NORTHWIND FICTIONAL HOLDINGS, INC.", "NORTHWIND FICTIONAL AIRWAYS, INC."
+    end_note = ("The accompanying Combined Notes to Condensed Consolidated Financial Statements "
+                "are an integral part of these statements.")
+
+    def heading(page: Page, company: str, title: str, caption: str) -> None:
+        page.center(306, 30, FICTIONAL, size=7)
+        page.text(20, 44, "Table of Contents", size=7)
+        page.center(306, 60, company, size=10)
+        page.center(306, 74, title, size=10)
+        page.center(306, 88, caption)
+
+    def operations(company: str, revenue: tuple[str, ...]) -> Page:
+        page = Page()
+        heading(page, company, "STATEMENTS OF CONSOLIDATED OPERATIONS (UNAUDITED)", "(In millions)")
+        page.text(330, 104, "Three Months Ended June 30,")
+        page.text(470, 104, "Six Months Ended June 30,")
+        cols = [380, 440, 510, 574]
+        for x_right, year in zip(cols, ["2026", "2025", "2026", "2025"]):
+            page.right(x_right, 117, year)
+        end = _statement(page, 133, cols, [
+            ("Operating revenue:", None, 0),
+            ("Passenger revenue", revenue, 10),
+            ("Total operating expense", ("1,576", "1,391", "2,912", "2,705"), 10),
+            ("Operating income", ("1,096", "1,325", "1,830", "1,980"), 0),
+        ], dollar_rows=frozenset({"Passenger revenue"}))
+        page.text(LABEL_X, end + 10, end_note, size=7)
+        page.center(306, 760, "3")
+        return page
+
+    position = Page()
+    heading(position, parent, "CONSOLIDATED BALANCE SHEETS (UNAUDITED)", "(In millions, except shares)")
+    position.right(449, 104, "June 30, 2026")
+    position.right(569, 104, "December 31, 2025")
+    cols = [467, 574]
+    y = _statement(position, 120, cols, [
+        ("Cash and cash equivalents", ("1,166", "942"), 0),
+        ("Receivables, net", ("473", "391"), 0),
+        ("Total current assets", ("1,639", "1,333"), 0),
+        ("Total assets", ("4,569", "3,448"), 0),
+        ("LIABILITIES AND STOCKHOLDERS' EQUITY", None, 0),
+        ("Accounts payable", ("772", "567"), 0),
+        ("Other", ("854", "757"), 0),
+        ("Total current liabilities", ("1,626", "1,324"), 0),
+        ("Long-term debt", ("1,294", "1,062"), 0),
+        ("Other", ("500", "478"), 0),
+        ("Total noncurrent liabilities", ("1,794", "1,540"), 0),
+        ("Stockholders' equity:", None, 0),
+    ], dollar_rows=frozenset({"Cash and cash equivalents"}))
+    position.text(LABEL_X, y, "Common stock at par,")
+    position.right(300, y, "$0.01")
+    position.text(304, y, "par value; authorized 1,000 shares; issued and outstanding")
+    y += ROW
+    position.text(LABEL_X, y, "1,000 shares at both June 30,")
+    position.right(300, y, "2026")
+    position.text(304, y, "and December 31, 2025")
+    position.right(467, y, "—")
+    position.right(574, y, "—")
+    y = _statement(position, y + ROW, cols, [
+        ("Retained earnings", ("1,149", "584"), 0),
+        ("Total liabilities and stockholders' equity", ("4,569", "3,448"), 0),
+    ])
+    position.text(LABEL_X, y + 10, end_note, size=7)
+
+    cash = Page()
+    heading(cash, parent, "CONDENSED STATEMENTS OF CONSOLIDATED CASH FLOWS (UNAUDITED)", "(In millions)")
+    cash.center(530, 104, "Six Months Ended June 30,")
+    cols = [490, 574]
+    for x_right, year in zip(cols, ["2026", "2025"]):
+        cash.right(x_right, 117, year)
+    y = _statement(cash, 133, cols, [
+        ("Net cash provided by operating activities", ("2,409", "1,927"), 0),
+        ("Investing Activities:", None, 0),
+        ("Capital expenditures", ("(1,015)", "(920)"), 10),
+        ("Other, net", ("(111)", "(70)"), 10),
+        ("Financing Activities:", None, 0),
+        ("Payments of long-term debt", ("(537)", "(611)"), 10),
+        ("Other, net", ("(93)", "(99)"), 10),
+    ])
+    cash.text(LABEL_X, y + 10, end_note, size=7)
+    cash.text(LABEL_X, y + 40, "Northwind Fictional quarterly report page")
+    cash.right(574, y + 40, "6")
+
+    write_pdf(FIXTURES_DIR / "fixture_s_combined_10q.pdf", [
+        operations(parent, ("16,100", "13,836", "29,267", "25,696")),
+        position, cash,
+        operations(subsidiary, ("16,100", "13,836", "29,267", "25,696")),
+    ])
+
+
 def main() -> None:
     build_fixture_o()
     build_fixture_p()
     build_fixture_q()
     build_fixture_r()
-    print("Built fictional PDF fixtures o, p, q and r in tests/fixtures/realworld/")
+    build_fixture_s()
+    print("Built fictional PDF fixtures o, p, q, r and s in tests/fixtures/realworld/")
 
 
 if __name__ == "__main__":

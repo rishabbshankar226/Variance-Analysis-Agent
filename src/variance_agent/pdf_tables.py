@@ -9,6 +9,7 @@ them into Decimal exactly as it does for CSV cells.
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import hashlib
 import io
 import re
@@ -77,7 +78,8 @@ _ScanOpener = Callable[[bytes], _ScanDocument]
 
 _TITLE_RE = re.compile(
     r"\b(?:condensed\s+)?(?:consolidated\s+)?(?:"
-    r"statements?\s+of\s+(?:operations|income|earnings|comprehensive\s+(?:income|loss)"
+    r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?"
+    r"(?:operations|income|earnings|comprehensive\s+(?:income|loss)"
     r"|cash\s+flows|financial\s+position)"
     r"|balance\s+sheets?)\b",
     re.IGNORECASE,
@@ -110,14 +112,16 @@ _PER_SHARE_RE = re.compile(
     r"|anti-?dilutive",
     re.IGNORECASE,
 )
-_STATEMENT_END_RE = re.compile(r"^(?:see\s+)?(?:the\s+)?accompanying\s+notes\b", re.IGNORECASE)
+_STATEMENT_END_RE = re.compile(r"^(?:see\s+)?(?:the\s+)?accompanying\b.*\bnotes\b", re.IGNORECASE)
 _FOOTER_RE = re.compile(r"\bform\s+10-?[kq]\b", re.IGNORECASE)
+_ENTITY_RE = re.compile(r"^[A-Z0-9&.,'\- ]*\b(?:INC|CORP|CORPORATION|COMPANY|CO|LLC|LP|PLC|LTD)\b\.?$")
 _SHARE_SUBROW_RE = re.compile(r"^(?:basic|diluted)\b", re.IGNORECASE)
 _PER_SHARE_NOTE = "(per-share and share counts are not money totals)"
 
 _LINE_TOLERANCE = 3.0  # points between word tops on one printed line
 _PHRASE_GAP = 8.0  # wider gaps than this split header text into separate phrases
 _COLUMN_TOLERANCE = 8.0  # right edges within this distance share a column
+_COLUMN_SUPPORT = 0.3  # share of the fullest column's amounts a column needs
 
 _CACHE: dict[tuple[str, int, float], list[StatementTable]] = {}
 
@@ -154,6 +158,7 @@ class _PageTable:
     caption: str
     columns: list[_Column]
     body: list[tuple[str, dict[int, str]]]  # label, values by column index
+    entity: str = ""  # the company line printed above the title, when there is one
 
 
 def extract_statement_tables(
@@ -269,7 +274,10 @@ def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float) -> 
         finally:
             pdf.close()
 
-    tables = [t for group in _merge_continued(found) for t in _statement_tables(group)]
+    groups = _merge_continued(found)
+    # A combined filing (parent and subsidiary) repeats each title; name the company too.
+    by_company = len({group[0].entity for group in groups}) > 1
+    tables = [t for group in groups for t in _statement_tables(group, by_company)]
     if not tables:
         raise PdfReadError(
             f"We couldn't find an income statement, balance sheet or cash flow statement in "
@@ -345,9 +353,11 @@ def _find_columns(lines: list[_Line]) -> list[_Column]:
             clusters[-1].append(edge)
         else:
             clusters.append([edge])
+    # A real column has an amount on most rows; stray numbers in wrapped labels do not.
+    support = max((len(c) for c in clusters), default=0) * _COLUMN_SUPPORT
     columns = []
     for cluster in clusters:
-        if len(cluster) >= 2:
+        if len(cluster) >= max(2, support):
             center = sorted(cluster)[len(cluster) // 2]
             columns.append(_Column(center=center, x0=center, x1=center))
     return columns
@@ -384,8 +394,11 @@ def _page_table(lines: list[_Line], page_number: int) -> _PageTable | None:
         return None
 
     assigned = [_assign(line, columns) for line in body_lines]
+    # A header such as "June 30, 2026  December 31, 2025" can put a year under a column.
     data_start = next(
-        (i for i, (label, values) in enumerate(assigned) if label and values), None)
+        (i for i, (label, values) in enumerate(assigned)
+         if label and values and not all(_YEAR_ONLY_RE.match(v) for v in values.values())),
+        None)
     if data_start is None:
         return None
 
@@ -402,7 +415,9 @@ def _page_table(lines: list[_Line], page_number: int) -> _PageTable | None:
 
     body = assigned[data_start:]
     end = next((i for i, (label, _) in enumerate(body) if _STATEMENT_END_RE.match(label)), None)
-    return _PageTable(title, page_number, " ".join(caption_parts), columns, body[:end])
+    above = lines[title_index - 1].text if title_index else ""
+    entity = _pretty_title(above) if _ENTITY_RE.match(above) else ""
+    return _PageTable(title, page_number, " ".join(caption_parts), columns, body[:end], entity)
 
 
 def _phrases(line: _Line) -> list[_Word]:
@@ -479,7 +494,7 @@ def _period(header: str) -> tuple[str | None, str]:
     return None, group
 
 
-def _statement_tables(group: list[_PageTable]) -> list[StatementTable]:
+def _statement_tables(group: list[_PageTable], by_company: bool) -> list[StatementTable]:
     first = group[0]
     periods = [_period(c.header) for c in first.columns]
 
@@ -502,8 +517,31 @@ def _statement_tables(group: list[_PageTable]) -> list[StatementTable]:
         if sum(periods[i][0] is not None for i in indexes) < 2:
             continue
         name = f"{first.title}, {duration} {where}" if duration else f"{first.title} {where}"
+        if by_company and first.entity:
+            name = f"{first.entity}: {name}"
         tables.append(_statement_table(group, name, pages, indexes, periods))
     return tables
+
+
+def _distinct_names(lines: list[tuple[str, str, list[str]]]) -> list[str]:
+    """Tell repeated labels apart by section, else by the subtotal each rolls into."""
+    names = [label for label, _, _ in lines]
+    totals = []
+    for i in range(len(lines)):
+        total = next((label for label, _, _ in lines[i + 1:] if label.lower().startswith("total ")), "")
+        totals.append(total[len("total "):] if total else "")
+    for label, count in Counter(names).items():
+        at = [i for i, name in enumerate(names) if name == label]
+        if count < 2:
+            continue
+        sections = [lines[i][1] for i in at]
+        if all(sections) and len(set(sections)) == count:
+            for i in at:
+                names[i] = f"{lines[i][1]}: {label}"
+        elif all(totals[i] for i in at) and len({totals[i] for i in at}) == count:
+            for i in at:
+                names[i] = f"{label} ({totals[i]})"
+    return names
 
 
 def _statement_table(
@@ -529,6 +567,7 @@ def _statement_table(
     if first.caption:
         rows.append([first.caption])
     rows.append(["Line Item", *headers])
+    lines: list[tuple[str, str, list[str]]] = []  # label, section, amounts
 
     for table in group:
         section = ""
@@ -543,7 +582,7 @@ def _statement_table(
                 if label.endswith(":"):
                     section = label[:-1]
                 continue
-            if pending and label[:1].islower():
+            if pending and (label[:1].islower() or label[:1].isdigit()):
                 label = f"{pending} {label}"
             elif pending:
                 section = pending
@@ -557,5 +596,10 @@ def _statement_table(
                 continue
             cells = [values.get(i, "") for i in indexes]
             if any(cells):
-                rows.append([label, *cells])
+                lines.append((label, section, cells))
+
+    for (label, _, cells), distinct in zip(lines, _distinct_names(lines)):
+        if distinct != label:
+            notes.append(f"Named the repeated line '{label}' as '{distinct}'")
+        rows.append([distinct, *cells])
     return StatementTable(name=name, page_numbers=pages, raw_rows=rows, notes=notes)
