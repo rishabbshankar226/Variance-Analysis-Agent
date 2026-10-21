@@ -32,7 +32,9 @@ from .numeric import financial_context
 from .comparison import (
     _ACTUAL_SUFFIX,
     BUDGET_SYNONYMS,
+    COMPARISON_WORDS,
     basis_for_header,
+    bases_named_in,
     basis_noun,
     comparison_heading,
     comparison_statement,
@@ -101,6 +103,8 @@ class ComparisonDetection:
     actual_column: int | None
     candidates: tuple[str, ...]
     message: str
+    # Bases that --compare-to (or a chat "Compare to ..." reply) can choose to resolve a stop.
+    choices: tuple[ComparisonBasis, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,7 @@ class IntakeResult:
     comparison_basis: ComparisonBasis = ComparisonBasis.BUDGET
     comparison_label: str | None = None
     comparison_candidates: list[str] = field(default_factory=list)
+    comparison_choices: list[ComparisonBasis] = field(default_factory=list)
 
     @property
     def has_transformations(self) -> bool:
@@ -385,7 +390,8 @@ def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
             continue
         p = m.group(1).strip()
         h_lower = h.lower()
-        if "budget" in h_lower or "plan" in h_lower:
+        is_budget_word = "budget" in h_lower or "plan" in h_lower
+        if is_budget_word or ComparisonBasis.BUDGET in bases_named_in(normalize_header(h)):
             budget_cols[p] = h
             if p not in period_order:
                 period_order.append(p)
@@ -736,9 +742,13 @@ def detect_header_row(
                     if parse_period_label(stripped) is not None:
                         period_cols.append(col_idx)
             if len(period_cols) >= 2:
-                roles[CanonicalRole.ACTUAL] = period_cols[0]
-                roles[CanonicalRole.BUDGET] = period_cols[1]
-                return row_idx, roles, ignored
+                # Fill only the roles a named column has not already taken.
+                free = [c for c in period_cols if c not in roles.values()]
+                for role in (CanonicalRole.ACTUAL, CanonicalRole.BUDGET):
+                    if role not in roles and free:
+                        roles[role] = free.pop(0)
+                if CanonicalRole.BUDGET in roles and CanonicalRole.ACTUAL in roles:
+                    return row_idx, roles, ignored
 
     return None, {}, []
 
@@ -808,6 +818,122 @@ def _header_cell_str(cell: object) -> str:
     return str(cell).strip()
 
 
+def _stop(
+    message: str,
+    *,
+    actual_column: int | None = None,
+    candidates: list[str] | tuple[str, ...] = (),
+    choices: list[ComparisonBasis] | tuple[ComparisonBasis, ...] = (),
+) -> ComparisonDetection:
+    """A detection that stops intake and asks, naming the candidates."""
+    return ComparisonDetection(
+        basis=None,
+        label=None,
+        comparison_column=None,
+        actual_column=actual_column,
+        candidates=tuple(candidates),
+        message=message,
+        choices=tuple(choices),
+    )
+
+
+def _ask_which(candidates: list[str]) -> str:
+    return (
+        f"This file has more than one column to compare against ({', '.join(candidates)}). "
+        "Which should Actual be compared against?"
+    )
+
+
+def _carries_period(header: str) -> bool:
+    """True when a header names a period, even alongside words such as 'Forecast'."""
+    if _PERIOD_RE.search(header):
+        return True
+    words = [
+        w for w in normalize_header(header).split("_")
+        if w and w not in COMPARISON_WORDS and w not in _ACTUAL_SYNONYMS
+    ]
+    return bool(words) and parse_period_label(" ".join(words)) is not None
+
+
+@dataclass(frozen=True)
+class _PeriodColumns:
+    """Period-only amount columns (FY2025, 2024 ...) and what blocks reading them."""
+
+    columns: list[tuple[int, str, str]]  # (column index, header, period label)
+    ordered: list[str] | None  # labels newest first, or None when unorderable
+    blockers: list[tuple[int, str]]  # period headers that also name a comparison ('FY2025 Forecast')
+    has_explicit_actual: bool  # an undated Actual column sits beside the period columns
+
+    @property
+    def ambiguous(self) -> bool:
+        return bool(self.blockers) or self.has_explicit_actual
+
+    @property
+    def usable(self) -> bool:
+        return bool(self.columns) and not self.ambiguous and self.ordered is not None
+
+    def candidate_headers(self) -> list[tuple[int, str]]:
+        """Columns Actual could be compared against: the newest is Actual unless one is named."""
+        cols = [(idx, header) for idx, header, _ in self.columns]
+        if self.ordered is not None and not self.has_explicit_actual:
+            newest = self.ordered[0]
+            cols = [(idx, header) for idx, header, label in self.columns if label != newest]
+        return sorted(cols + self.blockers)
+
+
+def _period_columns(headers: list[tuple[int, str]]) -> _PeriodColumns:
+    columns: list[tuple[int, str, str]] = []
+    # Wide budget-vs-actual layouts (period pairs) never take the period-only path.
+    if not detect_period_pairs([s for _, s in headers]):
+        for idx, s in headers:
+            stripped = _ACTUAL_SUFFIX.sub("", s).strip()
+            if parse_period_label(stripped) is not None:
+                columns.append((idx, s, stripped))
+    if len(columns) < 2:
+        return _PeriodColumns([], None, [], False)
+    period_idx = {idx for idx, _, _ in columns}
+    blockers: list[tuple[int, str]] = []
+    has_explicit_actual = False
+    for idx, s in headers:
+        norm = normalize_header(s)
+        if idx in period_idx or basis_for_header(norm) is not None:
+            continue
+        if norm in _ACTUAL_SYNONYMS:
+            has_explicit_actual = True
+        elif bases_named_in(norm) and _carries_period(s):
+            blockers.append((idx, s))
+    ordered = order_period_labels([label for _, _, label in columns])
+    return _PeriodColumns(columns, ordered, blockers, has_explicit_actual)
+
+
+def _period_detection(periods: _PeriodColumns) -> ComparisonDetection:
+    """Read period-only columns as newest = Actual, next newest = Prior Period, or ask."""
+    if periods.ambiguous:
+        names = [h for _, h in periods.candidate_headers()]
+        return _stop(_ask_which(names), candidates=names)
+    labels = [label for _, _, label in periods.columns]
+    if periods.ordered is None:
+        return _stop(
+            f"Could not determine period order for {', '.join(labels)}.",
+            candidates=labels,
+        )
+    label_to_col = {label: idx for idx, _, label in periods.columns}
+    newest, second = periods.ordered[0], periods.ordered[1]
+    return ComparisonDetection(
+        basis=ComparisonBasis.PRIOR_PERIOD,
+        label=second,
+        comparison_column=label_to_col[second],
+        actual_column=label_to_col[newest],
+        candidates=(),
+        message=comparison_statement(
+            ComparisonBasis.PRIOR_PERIOD,
+            label=second,
+            actual_label=newest,
+            all_periods=periods.ordered,
+        ),
+    )
+
+
 def detect_comparison_columns(
     header_cells: list[object],
     compare_to: ComparisonBasis | None = None,
@@ -830,140 +956,88 @@ def detect_comparison_columns(
             actual_label = s
             break
 
-    # 1. Named candidates
-    named_candidates: list[tuple[int, str, ComparisonBasis]] = []
+    named: list[tuple[int, str, ComparisonBasis]] = []
     for idx, s in headers:
-        norm = normalize_header(s)
-        b = basis_for_header(norm)
+        b = basis_for_header(normalize_header(s))
         if b is not None:
-            named_candidates.append((idx, s, b))
+            named.append((idx, s, b))
+    periods = _period_columns(headers)
 
-    if named_candidates:
-        if compare_to is not None:
-            matched = [c for c in named_candidates if c[2] == compare_to]
-            noun = basis_noun(compare_to)
-            if not matched:
-                msg = f"No {noun} column found. Columns found: {all_headers_display}."
-                return ComparisonDetection(
-                    basis=None,
-                    label=None,
-                    comparison_column=None,
-                    actual_column=actual_col,
-                    candidates=(),
-                    message=msg,
-                )
-            if len(matched) > 1:
-                col_names = [c[1] for c in matched]
-                msg = f"Found more than one {noun} column ({', '.join(col_names)}); keep one and rerun."
-                return ComparisonDetection(
-                    basis=None,
-                    label=None,
-                    comparison_column=None,
-                    actual_column=actual_col,
-                    candidates=tuple(col_names),
-                    message=msg,
-                )
-            col_idx, orig_name, basis = matched[0]
-            msg = comparison_statement(basis, None, actual_label)
-            return ComparisonDetection(
-                basis=basis,
-                label=None,
-                comparison_column=col_idx,
-                actual_column=actual_col,
-                candidates=(),
-                message=msg,
-            )
-
-        distinct_bases = {c[2] for c in named_candidates}
-        if len(distinct_bases) > 1:
-            col_names = [c[1] for c in named_candidates]
-            msg = f"This file has more than one column to compare against ({', '.join(col_names)}). Which should Actual be compared against?"
-            return ComparisonDetection(
-                basis=None,
-                label=None,
-                comparison_column=None,
-                actual_column=actual_col,
-                candidates=tuple(col_names),
-                message=msg,
-            )
-        # One distinct basis: the first column wins, as in detect_header_row.
-        col_idx, orig_name, basis = named_candidates[0]
-        msg = comparison_statement(basis, None, actual_label)
+    def choose_named(col_idx: int, basis: ComparisonBasis) -> ComparisonDetection:
+        act_col, act_label = actual_col, actual_label
+        if act_col is None and periods.usable and periods.ordered is not None:
+            # No Actual column: the newest period column is the Actual.
+            act_label = periods.ordered[0]
+            act_col = next(idx for idx, _, label in periods.columns if label == act_label)
         return ComparisonDetection(
             basis=basis,
             label=None,
             comparison_column=col_idx,
-            actual_column=actual_col,
-            candidates=(),
-            message=msg,
-        )
-
-    # 2. Period-only columns (used only when step 1 found no candidates and the
-    #    header is not a wide budget-vs-actual layout of period pairs)
-    period_candidates: list[tuple[int, str, str]] = []
-    if not detect_period_pairs([s for _, s in headers]):
-        for idx, s in headers:
-            stripped = _ACTUAL_SUFFIX.sub("", s).strip()
-            if parse_period_label(stripped) is not None:
-                period_candidates.append((idx, s, stripped))
-
-    if len(period_candidates) >= 2:
-        if compare_to is not None and compare_to != ComparisonBasis.PRIOR_PERIOD:
-            noun = basis_noun(compare_to)
-            msg = f"No {noun} column found. Columns found: {all_headers_display}."
-            return ComparisonDetection(
-                basis=None,
-                label=None,
-                comparison_column=None,
-                actual_column=None,
-                candidates=(),
-                message=msg,
-            )
-        labels = [p[2] for p in period_candidates]
-        ordered = order_period_labels(labels)
-        if ordered is None:
-            msg = f"Could not determine period order for {', '.join(labels)}."
-            return ComparisonDetection(
-                basis=None,
-                label=None,
-                comparison_column=None,
-                actual_column=None,
-                candidates=tuple(labels),
-                message=msg,
-            )
-        label_to_col: dict[str, tuple[int, str]] = {p[2]: (p[0], p[1]) for p in period_candidates}
-        newest_label = ordered[0]
-        second_newest_label = ordered[1]
-        act_col, act_orig = label_to_col[newest_label]
-        comp_col, comp_orig = label_to_col[second_newest_label]
-        msg = comparison_statement(
-            ComparisonBasis.PRIOR_PERIOD,
-            label=second_newest_label,
-            actual_label=newest_label,
-            all_periods=ordered,
-        )
-        return ComparisonDetection(
-            basis=ComparisonBasis.PRIOR_PERIOD,
-            label=second_newest_label,
-            comparison_column=comp_col,
             actual_column=act_col,
             candidates=(),
-            message=msg,
+            message=comparison_statement(basis, None, act_label),
         )
 
-    # 3. Fallback
-    if compare_to is not None and compare_to != ComparisonBasis.BUDGET:
-        noun = basis_noun(compare_to)
-        msg = f"No {noun} column found. Columns found: {all_headers_display}."
+    def not_found(basis: ComparisonBasis) -> ComparisonDetection:
+        return _stop(
+            f"No {basis_noun(basis)} column found. Columns found: {all_headers_display}.",
+            actual_column=actual_col,
+        )
+
+    if compare_to is not None:
+        matched = [c for c in named if c[2] == compare_to]
+        if len(matched) > 1:
+            col_names = [c[1] for c in matched]
+            return _stop(
+                f"Found more than one {basis_noun(compare_to)} column ({', '.join(col_names)}); "
+                "keep one and rerun.",
+                actual_column=actual_col,
+                candidates=col_names,
+            )
+        if matched:
+            return choose_named(matched[0][0], compare_to)
+        if compare_to is ComparisonBasis.PRIOR_PERIOD and periods.columns:
+            return _period_detection(periods)
+        if named or periods.columns or compare_to is not ComparisonBasis.BUDGET:
+            return not_found(compare_to)
         return ComparisonDetection(
-            basis=None,
+            basis=ComparisonBasis.BUDGET,
             label=None,
             comparison_column=None,
             actual_column=actual_col,
             candidates=(),
-            message=msg,
+            message="",
         )
 
+    named_bases: list[ComparisonBasis] = []
+    for _, _, b in named:
+        if b not in named_bases:
+            named_bases.append(b)
+
+    # 1. Named columns and period-only columns together: ask, never guess.
+    if named and periods.columns:
+        choices = list(named_bases)
+        if periods.usable and ComparisonBasis.PRIOR_PERIOD not in choices:
+            choices.append(ComparisonBasis.PRIOR_PERIOD)
+        cols = sorted([(idx, s) for idx, s, _ in named] + periods.candidate_headers())
+        names = [s for _, s in cols]
+        return _stop(_ask_which(names), actual_column=actual_col, candidates=names, choices=choices)
+
+    # 2. Named columns only.
+    if named:
+        if len(named_bases) > 1:
+            col_names = [c[1] for c in named]
+            return _stop(
+                _ask_which(col_names), actual_column=actual_col, candidates=col_names, choices=named_bases,
+            )
+        # One distinct basis: the first column wins, as in detect_header_row.
+        return choose_named(named[0][0], named[0][2])
+
+    # 3. Period-only columns.
+    if periods.columns:
+        return _period_detection(periods)
+
+    # 4. Fallback
     return ComparisonDetection(
         basis=ComparisonBasis.BUDGET,
         label=None,
@@ -1251,6 +1325,7 @@ def _process_raw_table(
             has_fatal_errors=True,
             fatal_error_message=detection.message,
             comparison_candidates=list(detection.candidates),
+            comparison_choices=list(detection.choices),
             sheet_name=sheet_name,
         )
 

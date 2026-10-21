@@ -45,6 +45,25 @@ def basis_for_header(normalized: str) -> ComparisonBasis | None:
     return None
 
 
+def _has_phrase(tokens: list[str], phrase: str) -> bool:
+    words = phrase.split("_")
+    return any(tokens[i:i + len(words)] == words for i in range(len(tokens) - len(words) + 1))
+
+
+def bases_named_in(normalized: str) -> list[ComparisonBasis]:
+    """Bases whose synonyms appear as whole words in a normalized header ('jan_2026_bgt')."""
+    tokens = normalized.split("_")
+    return [
+        basis for basis, synonyms in _SYNONYMS.items()
+        if any(_has_phrase(tokens, synonym) for synonym in synonyms)
+    ]
+
+
+COMPARISON_WORDS: frozenset[str] = frozenset(
+    word for synonyms in _SYNONYMS.values() for synonym in synonyms for word in synonym.split("_")
+)
+
+
 def parse_compare_to(value: str) -> ComparisonBasis:
     try:
         return _CLI_VALUES[value.strip().lower()]

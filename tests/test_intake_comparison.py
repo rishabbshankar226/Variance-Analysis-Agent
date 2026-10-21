@@ -153,3 +153,85 @@ def test_malformed_json_keeps_read_error_prefix() -> None:
     res = read_input_assisted(b"{not json", ".json", filename="bad.json")
     assert res.has_fatal_errors and res.fatal_error_message is not None
     assert res.fatal_error_message.startswith("Could not read JSON data from 'bad.json': ")
+
+
+# --- R14: named and period-only candidates are weighed against each other ---
+
+
+def _assert_asks(res, *names: str) -> None:  # type: ignore[no-untyped-def]
+    assert res.has_fatal_errors and not res.rows
+    assert res.fatal_error_message is not None
+    assert "Which should Actual be compared against?" in res.fatal_error_message
+    for name in names:
+        assert name in res.comparison_candidates
+        assert name in res.fatal_error_message
+
+
+_BUDGET_AND_YEARS = "Line Item,Type,Budget,FY2025,FY2024\nRent Expense,Expense,90,130,100\n"
+
+
+def test_budget_column_and_year_columns_ask() -> None:
+    res = _read_text(_BUDGET_AND_YEARS)
+    _assert_asks(res, "Budget", "FY2024")
+    assert res.comparison_choices == [B, P]
+
+
+def test_budget_column_and_year_columns_resolve_with_compare_to() -> None:
+    prior = _read_text(_BUDGET_AND_YEARS, compare_to=P)
+    assert not prior.has_fatal_errors
+    assert (prior.comparison_basis, prior.comparison_label) == (P, "FY2024")
+    assert prior.rows[0]["actual"] == Decimal("130") and prior.rows[0]["budget"] == Decimal("100")
+
+    budget = _read_text(_BUDGET_AND_YEARS, compare_to=B)
+    assert not budget.has_fatal_errors and budget.comparison_basis is B
+    assert budget.rows[0]["budget"] == Decimal("90") and budget.rows[0]["actual"] == Decimal("130")
+
+
+def test_forecast_column_and_dated_actuals_ask() -> None:
+    res = _read_text("Line Item,Type,Forecast,FY2025 Actual,FY2024 Actual\nRent Expense,Expense,90,130,100\n")
+    _assert_asks(res, "Forecast", "FY2024 Actual")
+    assert res.comparison_choices == [F, P]
+
+
+def test_dated_forecast_beside_dated_actuals_asks() -> None:
+    res = _read_text(
+        "Line Item,Type,FY2025 Forecast,FY2025 Actual,FY2024 Actual\nRent Expense,Expense,90,130,100\n"
+    )
+    _assert_asks(res, "FY2025 Forecast", "FY2024 Actual")
+    assert res.comparison_choices == []
+
+
+def test_wide_monthly_forecast_layout_asks() -> None:
+    res = _read_text(
+        "Line Item,Type,Jan 2026 Forecast,Jan 2026 Actual,Feb 2026 Forecast,Feb 2026 Actual\n"
+        "Rent Expense,Expense,1,2,3,4\n"
+    )
+    _assert_asks(res, "Jan 2026 Forecast", "Feb 2026 Forecast")
+    assert res.comparison_choices == []
+
+
+def test_wide_bgt_layout_pairs_as_budget() -> None:
+    res = _read_text(
+        "Line Item,Type,Jan 2026 Bgt,Jan 2026 Actual,Feb 2026 Bgt,Feb 2026 Actual\nRent,Expense,1,2,3,4\n"
+    )
+    assert not res.has_fatal_errors
+    assert res.comparison_basis is B and res.comparison_label is None
+    assert [p.period for p in res.detected_period_pairs] == ["Jan 2026", "Feb 2026"]
+    assert res.rows[0]["budget"] == Decimal("3") and res.rows[0]["actual"] == Decimal("4")
+    assert res.column_mapping[CanonicalRole.BUDGET] == "Feb 2026 Bgt"
+    assert res.column_mapping[CanonicalRole.ACTUAL] == "Feb 2026 Actual"
+
+
+def test_year_columns_beside_explicit_actual_ask() -> None:
+    res = _read_text("Line Item,Type,FY25,FY24,Actual\nRent Expense,Expense,130,100,140\n")
+    _assert_asks(res, "FY25", "FY24")
+    assert res.comparison_choices == []
+
+
+def test_header_fallback_keeps_named_budget_role() -> None:
+    from variance_agent.intake import detect_header_row
+
+    header: list[object] = ["Line Item", "Type", "Budget", "FY2025", "FY2024"]
+    idx, roles, _ = detect_header_row([header])
+    assert idx == 0
+    assert roles[CanonicalRole.BUDGET] == 2 and roles[CanonicalRole.ACTUAL] == 3
