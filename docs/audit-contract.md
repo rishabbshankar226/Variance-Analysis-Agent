@@ -22,8 +22,10 @@ summary verification, driver reconciliation diagnostics, and completeness basis.
 Version 1.4 records the selected worksheet in `source.worksheet`
 (null for CSV/JSON or Python callers without that metadata).
 Version 1.5 adds `transformations` (assisted-intake header row, column mapping, ignored columns, sign flips, unit scale, zero reads, excluded totals, period selection, classification rules, mapping-file digest).
-Version 1.6 is the default and adds `comparison: {basis, label}` (`basis` is `budget`, `forecast`, or `prior_period`; `label` is the display text or null), included in the configuration identity and therefore the analysis fingerprint. The `budget` keys keep their names and hold the comparison amount.
+Version 1.6 adds `comparison: {basis, label}` (`basis` is `budget`, `forecast`, or `prior_period`; `label` is the display text or null), included in the configuration identity and therefore the analysis fingerprint. The `budget` keys keep their names and hold the comparison amount.
 Schemas 1.0-1.5 record that amount as a budget, so they are refused for Forecast and Prior Period runs: "Audit schema {version} records the comparison amount as a budget; use --audit-schema-version 1.6 for forecast or prior-period comparisons." Budget runs may still select any version.
+Version 1.7 is the default and adds `source.document`: null for every input except a PDF, where it is `{kind: "pdf", statement, pages, reader_notes}`. `statement` is the statement read (also in `source.worksheet`), `pages` its page numbers, and `reader_notes` every adjustment the reader made: which header became which period, rows left out (per-share and share counts), repeated lines renamed, subtotals left out, each line's revenue or expense label and every sign flip. It is part of the record and therefore the analysis fingerprint. Statement subtotals also appear in `transformations.excluded_totals`.
+Schemas 1.0-1.6 cannot hold that record, so PDF input refuses them: "Audit schema {version} cannot record how a PDF statement was read; use --audit-schema-version 1.7 for PDF input."
 See [financial rules](financial-rules.md). Use `--audit-schema-version 1.0` or the Python `schema_version="1.0"`
 keyword for a legacy USD consumer. Version 1.0 cannot represent another currency
 and rejects non-USD runs. Its archived records and fingerprint recipe are retained.

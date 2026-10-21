@@ -3,7 +3,7 @@ services:
     name: variance-analysis-chatbot
     runtime: python
     plan: free
-    buildCommand: pip install ".[excel]"
+    buildCommand: pip install ".[excel,pdf]"
     startCommand: variance-agent --chat --hosted
     healthCheckPath: /status
     autoDeploy: true

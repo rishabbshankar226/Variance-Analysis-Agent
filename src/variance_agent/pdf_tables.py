@@ -33,6 +33,7 @@ class StatementTable:
     page_numbers: tuple[int, ...]
     raw_rows: list[list[object]]
     notes: list[str] = field(default_factory=list)
+    kind: str = ""  # "income", "comprehensive_income", "balance_sheet" or "cash_flow"
 
 
 class _Page(Protocol):
@@ -602,4 +603,16 @@ def _statement_table(
         if distinct != label:
             notes.append(f"Named the repeated line '{label}' as '{distinct}'")
         rows.append([distinct, *cells])
-    return StatementTable(name=name, page_numbers=pages, raw_rows=rows, notes=notes)
+    return StatementTable(name=name, page_numbers=pages, raw_rows=rows, notes=notes,
+                          kind=_kind(first.title))
+
+
+def _kind(title: str) -> str:
+    lowered = title.lower()
+    if "comprehensive" in lowered:
+        return "comprehensive_income"
+    if "balance sheet" in lowered or "financial position" in lowered:
+        return "balance_sheet"
+    if "cash flow" in lowered:
+        return "cash_flow"
+    return "income"

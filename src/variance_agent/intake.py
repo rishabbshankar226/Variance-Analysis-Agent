@@ -29,6 +29,8 @@ from .limits import (
 )
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
+from .pdf_tables import PdfReadError, extract_statement_tables
+from .statement_shape import shape_income_statement
 from .comparison import (
     _ACTUAL_SUFFIX,
     BUDGET_SYNONYMS,
@@ -207,6 +209,17 @@ class IntakeResult:
     comparison_label: str | None = None
     comparison_candidates: list[str] = field(default_factory=list)
     comparison_choices: list[ComparisonBasis] = field(default_factory=list)
+    source_kind: str | None = None  # "pdf" when the rows were read out of a PDF statement
+    source_pages: tuple[int, ...] = ()
+    reader_notes: list[str] = field(default_factory=list)
+    comparable_sheets: list[str] = field(default_factory=list)  # PDF statements that can be compared
+
+    def source_document(self) -> dict[str, object] | None:
+        """How a PDF statement was read, for the audit record; None for other files."""
+        if self.source_kind != "pdf" or self.sheet_name is None:
+            return None
+        return {"kind": "pdf", "statement": self.sheet_name, "pages": list(self.source_pages),
+                "reader_notes": list(self.reader_notes)}
 
     @property
     def has_transformations(self) -> bool:
@@ -375,8 +388,8 @@ _PERIOD_RE = re.compile(
     re.IGNORECASE,
 )
 
-_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\$000s?|\b000s\b)", re.IGNORECASE)
-_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\$m\b|in\s+m\b)", re.IGNORECASE)
+_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\(\s*thousands\b|\$000s?|\b000s\b)", re.IGNORECASE)
+_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\(\s*millions\b|\$m\b|in\s+m\b)", re.IGNORECASE)
 _REVENUE_KEYWORDS = re.compile(r"\b(revenue|sales|income|rev)\b", re.IGNORECASE)
 _EXPENSE_KEYWORDS = re.compile(r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b", re.IGNORECASE)
 _TOTAL_KEYWORD_RE = re.compile(
@@ -1115,10 +1128,22 @@ def read_input_assisted(
         )
     if norm_suffix == ".json":
         return _read_json_bytes(data, filename, compare_to=compare_to)
+    if norm_suffix == ".pdf":
+        return _read_pdf_bytes(
+            data,
+            filename,
+            sheet,
+            treat_blank_budgets_as_zero,
+            selected_period,
+            compare_to=compare_to,
+        )
 
     return IntakeResult(
         has_fatal_errors=True,
-        fatal_error_message=f"Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), CSV, or TSV file.",
+        fatal_error_message=(
+            f"Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), "
+            "a CSV, TSV, JSON or PDF file."
+        ),
     )
 
 
@@ -1311,6 +1336,99 @@ def _read_excel_bytes(
                 wb.close()
 
 
+_STATEMENT_KINDS = (
+    # (pattern, score, rationale): an income statement is the usual variance target.
+    (re.compile(r"comprehensive", re.IGNORECASE), 5, "comprehensive income statement"),
+    (re.compile(r"operations|income|earnings", re.IGNORECASE), 30, "income statement"),
+    (re.compile(r"balance\s+sheet|financial\s+position", re.IGNORECASE), 20, "balance sheet"),
+    (re.compile(r"cash\s+flows?", re.IGNORECASE), 10, "cash flow statement"),
+)
+
+
+_NOT_REVENUE_AND_EXPENSE = {
+    "balance_sheet": "assets, liabilities and equity",
+    "cash_flow": "cash coming in and going out",
+}
+
+
+def rank_statements(names: list[str]) -> list[SheetScore]:
+    """Order statements read from a PDF: income statement first, then balance sheet, cash flows."""
+    scores = []
+    for name in names:
+        score, rationale = 0, "financial statement"
+        for pattern, kind_score, kind in _STATEMENT_KINDS:
+            if pattern.search(name):
+                score, rationale = kind_score, kind
+                break
+        scores.append(SheetScore(name=name, score=score, rationale=rationale))
+    scores.sort(key=lambda s: s.score, reverse=True)  # stable: page order breaks ties
+    return scores
+
+
+def _read_pdf_bytes(
+    data: bytes,
+    filename: str,
+    sheet: str | None,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+) -> IntakeResult:
+    """Read one statement from a 10-K / 10-Q style PDF; each statement acts like a worksheet."""
+    try:
+        tables = extract_statement_tables(data, filename)
+    except PdfReadError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
+
+    names = [t.name for t in tables]
+    ranked = rank_statements(names)
+    chosen_name = ranked[0].name if sheet is None else sheet
+    chosen = next((t for t in tables if t.name == chosen_name), None)
+    if chosen is None:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(
+                f"No statement called '{sheet}' was found in '{filename}'. "
+                f"Statements found: {', '.join(names)}."
+            ),
+            available_sheets=names,
+            source_kind="pdf",
+        )
+    if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
+        income = [t.name for t in tables if t.kind not in _NOT_REVENUE_AND_EXPENSE]
+        instead = f" Choose an income statement instead: {', '.join(income)}." if income else ""
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(
+                f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be "
+                f"compared as revenue and expense yet.{instead}"
+            ),
+            available_sheets=income,  # the statements that can be chosen instead
+            source_kind="pdf",
+        )
+
+    shaped = shape_income_statement(chosen.raw_rows)
+    result = _process_raw_table(
+        shaped.rows,
+        filename,
+        sheet_name=chosen.name,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+        signs_resolved=True,
+    )
+    result.source_kind = "pdf"
+    result.source_pages = chosen.page_numbers
+    result.reader_notes = [*chosen.notes, *shaped.audit_notes]
+    result.candidate_sheets = ranked
+    result.available_sheets = names
+    result.comparable_sheets = [t.name for t in tables if t.kind not in _NOT_REVENUE_AND_EXPENSE]
+    # Statement subtotals are excluded like detected totals, so the audit records them too.
+    result.detected_totals[:0] = shaped.subtotals
+    result.visible_transformations[:0] = [
+        f"Read '{chosen.name}' from the PDF", *chosen.notes, *shaped.notes]
+    return result
+
+
 def _process_raw_table(
     raw_rows: list[list[object]],
     filename: str,
@@ -1318,7 +1436,11 @@ def _process_raw_table(
     treat_blank_budgets_as_zero: bool,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    signs_resolved: bool = False,
 ) -> IntakeResult:
+    """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
+    financial statement: their signs are settled and their subtotals already removed, so the
+    signed-ledger flip and sum-based subtotal detection are skipped."""
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
@@ -1553,7 +1675,8 @@ def _process_raw_table(
         )
 
     # 2. Signed ledger check
-    signed_det = detect_signed_ledger(output_rows)
+    signed_det = (SignedLedgerDetection(False, 0, [])
+                  if signs_resolved else detect_signed_ledger(output_rows))
     flipped_items: list[str] = []
     if signed_det.is_signed_ledger:
         output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
@@ -1566,7 +1689,7 @@ def _process_raw_table(
     has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
     subtotals_det = (
         SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
-        if has_row_kind else detect_subtotals_and_totals(output_rows)
+        if has_row_kind or signs_resolved else detect_subtotals_and_totals(output_rows)
     )
     reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
     if reconciled_names:
@@ -1609,7 +1732,8 @@ def format_intake_summary(result: IntakeResult) -> str:
     lines: list[str] = ["Here's how I read your file:\n"]
 
     if result.sheet_name:
-        lines.append(f"- **Worksheet:** {result.sheet_name}")
+        source = "Statement" if result.source_kind == "pdf" else "Worksheet"
+        lines.append(f"- **{source}:** {result.sheet_name}")
 
     for t in result.visible_transformations:
         if t.startswith("Analyzed period:"):
@@ -1617,7 +1741,8 @@ def format_intake_summary(result: IntakeResult) -> str:
             lines.append(f"- **Analyzed period:** {period_name}")
             break
 
-    lines.append(f"- **Header row:** Row {result.header_row_number}")
+    if result.source_kind != "pdf":  # a PDF has no rows to count; its page is in the name
+        lines.append(f"- **Header row:** Row {result.header_row_number}")
 
     col_details = []
     if CanonicalRole.LINE_ITEM in result.column_mapping:

@@ -50,7 +50,7 @@ jobs:
       - run: |
           python -m venv "$RUNNER_TEMP/minimal-env"
           "$RUNNER_TEMP/minimal-env/bin/python" -m pip install .
-          "$RUNNER_TEMP/minimal-env/bin/python" scripts/check_installation.py --without-excel
+          "$RUNNER_TEMP/minimal-env/bin/python" scripts/check_installation.py --without-excel --without-pdf
           "$RUNNER_TEMP/minimal-env/bin/python" -m pip check
 
   package:
@@ -73,7 +73,7 @@ jobs:
             package_env="$RUNNER_TEMP/package-$(basename "$artifact")"
             python -m venv "$package_env"
             "$package_env/bin/python" -m pip install "$artifact"
-            "$package_env/bin/python" scripts/check_installation.py --without-excel
+            "$package_env/bin/python" scripts/check_installation.py --without-excel --without-pdf
             "$package_env/bin/python" -m pip check
           done
 
