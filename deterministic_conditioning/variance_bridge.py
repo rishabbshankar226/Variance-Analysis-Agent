@@ -22,6 +22,7 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
     - Preserves exact currencies and numbers.
     - Enforces 4-22 rhythm and eliminates stock affirmations.
     """
+    from variance_agent.comparison import basis_noun
     from variance_agent.models import Status
 
     period = result.config.period
@@ -72,6 +73,8 @@ def generate_verified_commentary(result: AnalysisResult) -> tuple[str, Financial
 
     conditioner = FinancialCommentaryConditioner()
     decision = conditioner.evaluate_audit_posture(audit_summary)
-    commentary = conditioner.generate_adherent_commentary(audit_summary, decision)
+    commentary = conditioner.generate_adherent_commentary(
+        audit_summary, decision, basis_noun(result.config.comparison_basis)
+    )
 
     return commentary, audit_summary

@@ -17,7 +17,7 @@ from .models import (
     Status,
     SummaryVerification,
 )
-from .comparison import zero_comparison_label
+from .comparison import comparison_heading, zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
@@ -585,7 +585,9 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     ]
     if nonreconciling:
         warnings.append(
-            "Driver fields were present but did not reconcile to Budget/Actual for: "
+            "Driver fields were present but did not reconcile to "
+            + comparison_heading(config.comparison_basis, config.comparison_label)
+            + "/Actual for: "
             + ", ".join(nonreconciling[:5])
             + ("..." if len(nonreconciling) > 5 else "")
         )

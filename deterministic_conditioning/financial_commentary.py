@@ -115,11 +115,17 @@ STRICT GROUNDING LOCK:
         self,
         audit: FinancialAuditSummary,
         decision: RoutingDecision,
+        comparison_noun: str = "budget",
     ) -> str:
         """Generate verified financial commentary adhering strictly to the conditioned rhythm."""
         curr = audit.currency
         top_name = audit.top_material_item or "Operating Expenses"
         top_var = f"{audit.top_material_variance:,.2f}" if audit.top_material_variance else "0.00"
+
+        if comparison_noun == "budget":
+            limits, projections = "budget limits", "original budget projections"
+        else:
+            limits = projections = f"the {comparison_noun}"
 
         if decision.rule_id == "FIN-R1":
             return (
@@ -129,14 +135,14 @@ STRICT GROUNDING LOCK:
             )
         elif decision.rule_id == "FIN-R2":
             return (
-                f"Review {top_name} immediately. Unfavorable variances in this category exceeded budget limits "
+                f"Review {top_name} immediately. Unfavorable variances in this category exceeded {limits} "
                 f"by {curr} {top_var}, driving total net operating margins into negative territory across {audit.period}. "
                 f"Material cost pressure. Verify procurement logs to validate rate versus quantity drivers."
             )
         elif decision.rule_id == "FIN-R3":
             return (
                 f"Revenue outpaced expectations cleanly. Favorable expansion across {top_name} contributed "
-                f"{curr} {top_var} in surplus over original budget projections for {audit.period}, widening operating margins. "
+                f"{curr} {top_var} in surplus over {projections} for {audit.period}, widening operating margins. "
                 f"Solid cash posture."
             )
         else:
