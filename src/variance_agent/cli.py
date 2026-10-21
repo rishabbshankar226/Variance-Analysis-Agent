@@ -34,6 +34,7 @@ class Arguments(Protocol):
     audit_json: str | None
     chat: bool
     hosted: bool
+    commentary: bool
 
 
 def _decimal(text: str) -> Decimal:
@@ -110,6 +111,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --chat: serve on 0.0.0.0:$PORT for a hosting platform, without "
              "opening a browser or writing exports to server paths.",
     )
+    parser.add_argument(
+        "--commentary",
+        action="store_true",
+        help="Include verified deterministic executive commentary in the Markdown report.",
+    )
     return parser
 
 
@@ -136,7 +142,8 @@ def _run(args: Arguments) -> int:
         if args.check_only or args.output or args.audit_json:
             raise ValueError("--chat cannot be combined with --check-only, --output, or --audit-json.")
         from .chat.server import run_chat_server
-        if args.hosted:
+        is_hosted = args.hosted or "RENDER" in os.environ or ("PORT" in os.environ and os.environ.get("PORT", "").isdigit())
+        if is_hosted:
             return run_chat_server(
                 host="0.0.0.0", port=int(os.environ.get("PORT", "10000")),
                 initial_input=args.input, initial_sheet=args.sheet,
@@ -175,6 +182,10 @@ def _run(args: Arguments) -> int:
               f"reporting currency {config.currency}.")
         return 0
     report = render_markdown(result)
+    if args.commentary:
+        from deterministic_conditioning.variance_bridge import generate_verified_commentary
+        commentary_text, _ = generate_verified_commentary(result)
+        report = f"# Executive Commentary\n\n{commentary_text}\n\n---\n\n" + report
     outputs: dict[Path, str] = {}
     if args.output:
         outputs[Path(args.output)] = report

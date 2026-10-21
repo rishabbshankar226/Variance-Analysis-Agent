@@ -27,19 +27,19 @@ Changelog = "https://github.com/rishabbshankar226/Variance-Analysis-Agent/blob/m
 variance-agent = "variance_agent.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/variance_agent"]
+packages = ["src/variance_agent", "deterministic_conditioning"]
 
 [tool.hatch.version]
 path = "src/variance_agent/version.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/static", "/tests", "/schemas", "/examples", "/docs", "/scripts",
+include = ["/src", "/deterministic_conditioning", "/static", "/tests", "/schemas", "/examples", "/docs", "/scripts",
            "/README.md", "/pyproject.toml", "/requirements-typecheck.txt", "/LICENSE", "/CHANGELOG.md",
            "/CONTRIBUTING.md", "/SECURITY.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.ruff]
 target-version = "py311"

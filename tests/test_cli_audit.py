@@ -36,3 +36,17 @@ def test_cli_writes_report_and_audit_with_source_fingerprint(tmp_path, monkeypat
     assert payload["source"]["name"] == "input.csv"
     assert len(payload["source"]["sha256"]) == 64
     assert payload["analysis_fingerprint"]
+
+
+def test_cli_includes_executive_commentary_when_flag_present(capsys):
+    rc = cli.main([
+        "examples/sample_variance.csv",
+        "--period", "Q3-2024",
+        "--dollar-threshold", "1000",
+        "--percent-threshold", "5",
+        "--commentary",
+    ])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "# Executive Commentary" in out
+    assert "Revenue outpaced expectations cleanly." in out

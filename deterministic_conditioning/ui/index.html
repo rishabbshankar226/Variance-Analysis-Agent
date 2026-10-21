@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deterministic LLM Conditioning & Post-Training Dashboard</title>
+  <meta name="description" content="Visualizer for input-conditioned syntax routing, context state inversion, and greedy argmax burstiness at temperature=0.0.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #070913;
+      --bg-card: rgba(16, 22, 40, 0.75);
+      --bg-card-hover: rgba(23, 31, 56, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-glow: rgba(0, 242, 254, 0.3);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-cyan: #00f2fe;
+      --accent-blue: #4facfe;
+      --accent-purple: #a855f7;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(79, 172, 254, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(168, 85, 247, 0.08) 0%, transparent 45%);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.5;
+      padding: 2rem 1.5rem;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: #070913;
+      box-shadow: 0 0 20px rgba(0, 242, 254, 0.4);
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 60%, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--accent-emerald);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(12px);
+      transition: all 0.25s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-glow);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      height: 100px;
+      background: rgba(7, 9, 19, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      padding: 0.85rem;
+      resize: vertical;
+      transition: border 0.2s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.25);
+    }
+
+    .quick-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .chip-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip-btn:hover {
+      background: rgba(0, 242, 254, 0.12);
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .signal-pill {
+      background: rgba(7, 9, 19, 0.6);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .signal-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .signal-val {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .badge-route {
+      display: inline-block;
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .route-r1 { background: rgba(244, 63, 94, 0.15); border: 1px solid var(--accent-rose); color: var(--accent-rose); }
+    .route-r2 { background: rgba(0, 242, 254, 0.15); border: 1px solid var(--accent-cyan); color: var(--accent-cyan); }
+    .route-r3 { background: rgba(168, 85, 247, 0.15); border: 1px solid var(--accent-purple); color: var(--accent-purple); }
+    .route-r4 { background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-amber); color: var(--accent-amber); }
+    .route-r5 { background: rgba(16, 185, 129, 0.15); border: 1px solid var(--accent-emerald); color: var(--accent-emerald); }
+
+    .inversion-box {
+      background: rgba(7, 9, 19, 0.6);
+      border-left: 3px solid var(--accent-purple);
+      border-radius: 0 8px 8px 0;
+      padding: 0.75rem 1rem;
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .diff-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 800px) {
+      .diff-container { grid-template-columns: 1fr; }
+    }
+
+    .diff-col {
+      background: rgba(7, 9, 19, 0.6);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .diff-header {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .diff-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+
+    .attractor-tag {
+      background: rgba(244, 63, 94, 0.25);
+      border: 1px solid rgba(244, 63, 94, 0.6);
+      color: #fda4af;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .burstiness-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.75rem;
+      height: 90px;
+      margin-top: 1rem;
+      padding-top: 10px;
+      border-bottom: 1px dashed var(--border-subtle);
+    }
+
+    .bar-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      flex: 1;
+    }
+
+    .bar {
+      width: 100%;
+      border-radius: 6px 6px 0 0;
+      transition: height 0.3s ease;
+      position: relative;
+    }
+
+    .bar-label {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+    }
+
+    .bar-val {
+      font-size: 0.7rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+    }
+
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    @media (max-width: 700px) {
+      .metrics-row { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .metric-card {
+      background: rgba(16, 22, 40, 0.5);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .metric-number {
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .metric-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-group">
+        <div class="logo-badge">θ₀</div>
+        <div>
+          <h1>Deterministic LLM Conditioning Architect</h1>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Temperature = 0.0 (Greedy Argmax) Natural Voice Synthesis</p>
+        </div>
+      </div>
+      <div class="status-pill" id="system-status">
+        <div class="status-dot"></div>
+        <span>Argmax Lock Active (Zero Sampling)</span>
+      </div>
+    </header>
+
+    <!-- Top Grid: Interactive Prompt Input & Router Analysis -->
+    <div class="grid-2">
+      <!-- Input Panel -->
+      <div class="card">
+        <div class="card-title">
+          <span>Incoming User Prompt</span>
+        </div>
+        <textarea id="prompt-input" placeholder="Enter user message (e.g., 'hey, what's good' or 'My Postgres connection pool died!')...">hey, what's good today</textarea>
+        
+        <div class="quick-prompts">
+          <button class="chip-btn" id="btn-casual" onclick="setPrompt('hey, what\'s good today')">R2: Casual Opener</button>
+          <button class="chip-btn" id="btn-frustrated" onclick="setPrompt('My Postgres connection pool keeps completely dying on deploy and I\'ve wasted four hours on this garbage error!')">R1: Frustration</button>
+          <button class="chip-btn" id="btn-question" onclick="setPrompt('Can you explain Raft consensus without all the academic math jargon?')">R3: Question</button>
+          <button class="chip-btn" id="btn-analytical" onclick="setPrompt('We are designing a distributed vector database pipeline and need to evaluate the latency trade-offs between synchronous raft replication and gossip protocols under high concurrency write loads.')">R4: Architecture</button>
+          <button class="chip-btn" id="btn-flawed" onclick="setPrompt('We should just store our JWT session tokens in localStorage because it\'s completely safe from CSRF attacks.')">R5: Assertion</button>
+        </div>
+
+        <div class="signal-grid">
+          <div class="signal-pill">
+            <span class="signal-label">Word Count</span>
+            <span class="signal-val" id="sig-words">4</span>
+          </div>
+          <div class="signal-pill">
+            <span class="signal-label">Frustration Flag</span>
+            <span class="signal-val" id="sig-frustration" style="color: var(--accent-emerald);">False</span>
+          </div>
+          <div class="signal-pill">
+            <span class="signal-label">Interrogative</span>
+            <span class="signal-val" id="sig-question">False</span>
+          </div>
+          <div class="signal-pill">
+            <span class="signal-label">Technical Terms</span>
+            <span class="signal-val" id="sig-tech">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Router Output Panel -->
+      <div class="card">
+        <div class="card-title">
+          <span>First-Token Routing Decision</span>
+        </div>
+        <div id="route-badge-container">
+          <span class="badge-route route-r2" id="route-badge">Rule R2: Terse / Casual Opener</span>
+        </div>
+        
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: var(--text-dim);">Mandatory Token-0 POS:</strong>
+          <span id="target-pos" style="font-weight: 600; color: var(--accent-cyan); margin-left: 0.35rem;">Conversational Fragment</span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          <strong>Allowed Starters:</strong> <code id="allowed-starters" style="font-family: var(--font-mono); color: var(--accent-purple);">"Quiet...", "Depends...", "Honestly..."</code>
+        </div>
+
+        <div class="inversion-box" id="inversion-display">
+          <strong>Prior Turn State (A<sub>N-1</sub>):</strong> Initial Turn (Turn 1). Base cadence established.
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <strong style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-dim);">Burstiness Waveform (Sentence Length Distribution)</strong>
+          <div class="burstiness-chart" id="burst-chart">
+            <!-- Dynamically populated bars -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Diff Comparison: Baseline Greedy vs Conditioned Output -->
+    <div class="card" style="margin-bottom: 2rem;">
+      <div class="card-title">
+        <span>Contrastive DPO Output Comparison (Matched Factual Length ±15%)</span>
+      </div>
+      
+      <div class="diff-container">
+        <!-- Rejected Baseline -->
+        <div class="diff-col" style="border-left: 3px solid var(--accent-rose);">
+          <div class="diff-header" style="color: var(--accent-rose);">
+            <span>Unconditioned Argmax Baseline (Rejected)</span>
+            <span id="rejected-wc" style="font-family: var(--font-mono);">35 words</span>
+          </div>
+          <div class="diff-text" id="rejected-text">
+            <span class="attractor-tag">Hello!</span> I am doing well, thank you for asking. I am ready to help you with whatever you need today. We can review code, debug issues, or brainstorm architecture. What would you like to focus on?
+          </div>
+        </div>
+
+        <!-- Chosen Conditioned -->
+        <div class="diff-col" style="border-left: 3px solid var(--accent-cyan);">
+          <div class="diff-header" style="color: var(--accent-cyan);">
+            <span>Conditioned Natural Output (Chosen)</span>
+            <span id="chosen-wc" style="font-family: var(--font-mono);">34 words (Δ: 2.8%)</span>
+          </div>
+          <div class="diff-text" id="chosen-text">
+            <strong>Quiet morning so far.</strong> Depends entirely on what we're building today—we could untangle that stubborn pipeline bug, refactor messy database queries, or just map out new systems. What's at the top of your stack?
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quantitative Metrics Summary -->
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-number">10.05w</div>
+        <div class="metric-desc">Burstiness Score (σ)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number">40.0%</div>
+        <div class="metric-desc">Short Punchy Clauses (3-6w)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number">0.748</div>
+        <div class="metric-desc">Type-Token Ratio (TTR)</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-number">0%</div>
+        <div class="metric-desc">Attractor Violations</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEMO_SCENARIOS = {
+      casual: {
+        prompt: "hey, what's good today",
+        rule: "R2",
+        name: "Terse / Casual Opener",
+        badgeClass: "route-r2",
+        pos: "Adverbial Pivot / Conversational Fragment",
+        starters: '"Quiet...", "Depends...", "Honestly...", "Fair..."',
+        inversion: "Initial Turn (Turn 1). Base conversational cadence established.",
+        rejected: '<span class="attractor-tag">Hello!</span> I am doing well, thank you for asking. I am ready to help you with whatever you need today. We can review code, debug issues, or brainstorm architecture. What would you like to focus on?',
+        rejectedWc: "35 words",
+        chosen: "<strong>Quiet morning so far.</strong> Depends entirely on what we're building today—we could untangle that stubborn pipeline bug, refactor messy database queries, or just map out new systems. What's at the top of your stack?",
+        chosenWc: "34 words (Δ: 2.8%)",
+        sentenceLengths: [4, 23, 7]
+      },
+      frustrated: {
+        prompt: "My Postgres connection pool keeps completely dying on deploy and I've wasted four hours on this garbage error!",
+        rule: "R1",
+        name: "Frustration / Friction Intervention",
+        badgeClass: "route-r1",
+        pos: "Imperative / Active Verb",
+        starters: '"Check", "Kill", "Drop", "Pull", "Look"',
+        inversion: "FORBID opener: Passive acknowledgement. Enforce immediate active verb.",
+        rejected: '<span class="attractor-tag">I understand your frustration,</span> and I am here to help you resolve this issue immediately. This failure usually happens because your old application instances fail to release connections before new pods spin up, quickly exhausting `max_connections`. You should increase your container termination grace period to allow graceful connection drainage, and ensure your PgBouncer is configured for transaction pooling rather than session pooling.',
+        rejectedWc: "62 words",
+        chosen: "<strong>Check your termination grace periods first.</strong> Rolling deploys love spawning fresh application containers before old processes release their open sockets, instantly choking Postgres against its `max_connections` ceiling. <em>Brutal time sink.</em> Give your orchestrator thirty seconds to drain active database clients, and flip PgBouncer into transaction pooling so orphaned idle deployment handles stop killing your rollout.",
+        chosenWc: "55 words (Δ: 11.3%)",
+        sentenceLengths: [6, 21, 3, 25]
+      },
+      question: {
+        prompt: "Can you explain Raft consensus without all the academic math jargon?",
+        rule: "R3",
+        name: "Direct Interrogative / Plain Explanation",
+        badgeClass: "route-r3",
+        pos: "Concrete Noun / Analogy Predicate",
+        starters: '"Picture", "Latency", "Skip", "Leader"',
+        inversion: "CADENCE: Invert closing question to declarative period (.). Forbid em-dashes.",
+        rejected: '<span class="attractor-tag">Certainly!</span> Raft consensus is an algorithm used to manage replicated logs in distributed systems. <span class="attractor-tag">Here is how it works:</span> First, nodes elect a single leader to handle all client requests. Second, the leader writes log entries and replicates them across followers. Third, if the leader fails, followers initiate an election. The candidate with the most up-to-date log wins. This ensures all nodes agree on state without data corruption.',
+        rejectedWc: "68 words",
+        chosen: "<strong>Picture a shared project notebook.</strong> One person gets elected team leader, writes down every decision, and hands exact carbon copies to everyone else at the table. <em>Simple setup.</em> If that leader abruptly stops answering, the team checks their timers, calls a snap vote, and picks whichever peer holds the freshest copy of the notebook so nobody loses track of the truth.",
+        chosenWc: "61 words (Δ: 10.3%)",
+        sentenceLengths: [5, 23, 2, 31]
+      },
+      analytical: {
+        prompt: "We are designing a distributed vector database pipeline and need to evaluate the latency trade-offs between synchronous raft replication and gossip protocols under high concurrency write loads.",
+        rule: "R4",
+        name: "Analytical Architecture Trade-Off",
+        badgeClass: "route-r4",
+        pos: "Subordinate Conjunction",
+        starters: '"While", "Unless", "Because", "Although"',
+        inversion: "STRUCTURE: Trade-off subordinate clause first, punchy thesis second.",
+        rejected: 'There are several important trade-offs between Raft and gossip protocols under high concurrency. Synchronous replication guarantees linearizable consistency but introduces latency bottlenecks on write paths. In contrast, gossip protocols maximize write throughput at the expense of distributed conflict resolution. <span class="attractor-tag">In summary,</span> select Raft if consistency is paramount.',
+        rejectedWc: "50 words",
+        chosen: "<strong>While asynchronous gossip yields massive write throughput under high concurrency,</strong> it demands distributed conflict resolution schemas that add immense operational overhead down the road. <em>Total pain point.</em> If your workload requires linearizable reads, stick with synchronous Raft consensus; otherwise, partition your cluster geographically to insulate network partitions.",
+        chosenWc: "47 words (Δ: 6.0%)",
+        sentenceLengths: [20, 3, 24]
+      },
+      flawed: {
+        prompt: "We should just store our JWT session tokens in localStorage because it's completely safe from CSRF attacks.",
+        rule: "R5",
+        name: "Declarative Assertion Pushback",
+        badgeClass: "route-r5",
+        pos: "Gerund / Conceptual Framing",
+        starters: '"Trading", "Between", "Under", "Running"',
+        inversion: "INVERSION: Invert user premise without stock polite softening.",
+        rejected: 'While it is true that storing JWTs in localStorage protects against CSRF attacks because tokens are not automatically sent by the browser, it introduces a severe security risk: Cross-Site Scripting (XSS). Any malicious script injected into your application can read localStorage and exfiltrate the tokens immediately. <span class="attractor-tag">Therefore,</span> you should store tokens in secure, HttpOnly cookies with SameSite attributes instead to ensure proper protection.',
+        rejectedWc: "63 words",
+        chosen: "<strong>Trading CSRF for trivial XSS isn\'t a win.</strong> While localStorage indeed ignores automatic cookie payloads—dodging forged requests cleanly—it leaves your raw credentials sitting naked in JavaScript reach. <em>Keys gone in seconds.</em> One unvetted third-party npm package or malicious injected script reads your token store immediately, exfiltrating authentication state without touching network proxies. Store tokens in secure `HttpOnly`, `SameSite=Strict` cookies instead.",
+        chosenWc: "60 words (Δ: 4.8%)",
+        sentenceLengths: [7, 19, 4, 20, 10]
+      }
+    };
+
+    function updateSignals(text) {
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      document.getElementById('sig-words').innerText = words.length;
+
+      const frustrationRegex = /\b(broken|fail|failed|stuck|wasted|garbage|ridiculous|terrible|hang|crash|error|bug|died)\b/i;
+      const isFrustrated = frustrationRegex.test(text) || (text.match(/!/g) || []).length >= 2;
+      const sigFrustEl = document.getElementById('sig-frustration');
+      sigFrustEl.innerText = isFrustrated ? 'True (HIGH)' : 'False';
+      sigFrustEl.style.color = isFrustrated ? 'var(--accent-rose)' : 'var(--accent-emerald)';
+
+      const hasQuestion = text.includes('?');
+      document.getElementById('sig-question').innerText = hasQuestion ? 'True' : 'False';
+
+      const techRegex = /\b(postgres|database|connection|pool|latency|vector|schema|concurrency|cluster|consensus|raft|distributed|cache|pipeline|orchestrator|jwt|csrf|xss|cookie|session)\b/gi;
+      const techMatches = text.match(techRegex) || [];
+      document.getElementById('sig-tech').innerText = techMatches.length;
+    }
+
+    function renderBurstiness(lengths) {
+      const container = document.getElementById('burst-chart');
+      container.innerHTML = '';
+      const maxLen = Math.max(...lengths, 30);
+
+      lengths.forEach((len, idx) => {
+        const group = document.createElement('div');
+        group.className = 'bar-group';
+
+        const val = document.createElement('div');
+        val.className = 'bar-val';
+        val.innerText = len + 'w';
+
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        const heightPct = Math.round((len / maxLen) * 65);
+        bar.style.height = `${heightPct}px`;
+        
+        // Color short clauses vs long clauses
+        if (len <= 6) {
+          bar.style.background = 'linear-gradient(to top, var(--accent-cyan), #38bdf8)';
+        } else {
+          bar.style.background = 'linear-gradient(to top, var(--accent-purple), #c084fc)';
+        }
+
+        const lbl = document.createElement('div');
+        lbl.className = 'bar-label';
+        lbl.innerText = `S${idx + 1}`;
+
+        group.appendChild(val);
+        group.appendChild(bar);
+        group.appendChild(lbl);
+        container.appendChild(group);
+      });
+    }
+
+    function setPrompt(promptText) {
+      document.getElementById('prompt-input').value = promptText;
+      updateSignals(promptText);
+
+      // Match scenario
+      let key = 'casual';
+      if (promptText.includes('garbage') || promptText.includes('Postgres')) key = 'frustrated';
+      else if (promptText.includes('Raft')) key = 'question';
+      else if (promptText.includes('vector')) key = 'analytical';
+      else if (promptText.includes('localStorage')) key = 'flawed';
+
+      const sc = DEMO_SCENARIOS[key];
+      const badge = document.getElementById('route-badge');
+      badge.className = `badge-route ${sc.badgeClass}`;
+      badge.innerText = `Rule ${sc.rule}: ${sc.name}`;
+
+      document.getElementById('target-pos').innerText = sc.pos;
+      document.getElementById('allowed-starters').innerText = sc.starters;
+      document.getElementById('inversion-display').innerHTML = `<strong>Prior Turn State (A<sub>N-1</sub>):</strong> ${sc.inversion}`;
+
+      document.getElementById('rejected-wc').innerText = sc.rejectedWc;
+      document.getElementById('rejected-text').innerHTML = sc.rejected;
+
+      document.getElementById('chosen-wc').innerText = sc.chosenWc;
+      document.getElementById('chosen-text').innerHTML = sc.chosen;
+
+      renderBurstiness(sc.sentenceLengths);
+    }
+
+    document.getElementById('prompt-input').addEventListener('input', (e) => {
+      updateSignals(e.target.value);
+    });
+
+    // Initialize with casual
+    setPrompt(DEMO_SCENARIOS.casual.prompt);
+  </script>
+</body>
+</html>

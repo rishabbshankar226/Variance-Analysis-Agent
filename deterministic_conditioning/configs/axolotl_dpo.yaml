@@ -1,0 +1,71 @@
+# Axolotl DPO Configuration for Llama-3-8B Conversational Alignment
+base_model: meta-llama/Meta-Llama-3-8B-Instruct
+model_type: LlamaForCausalLM
+tokenizer_type: AutoTokenizer
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+# Curated DPO Dataset
+datasets:
+  - path: deterministic_conditioning/data/dpo_expanded.jsonl
+    type: chat_template.dpo
+    roles:
+      system: ["system"]
+      user: ["prompt"]
+    chat_template: llama3
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.1
+output_dir: ./output_llama3_dpo_aligned
+
+# LoRA / PEFT Parameters
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Grounded DPO Hyperparameters
+rl: dpo
+dpo_beta: 0.1
+dpo_loss_type: sigmoid
+
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len: true
+
+# Optimizer & Scheduler
+gradient_accumulation_steps: 16
+micro_batch_size: 2
+num_epochs: 3
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0000005  # 5e-7
+weight_decay: 0.05
+warmup_ratio: 0.1
+
+# Performance & Precision
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+fp16: false
+tf32: true
+gradient_checkpointing: true
+flash_attention: true
+
+# Logging & Checkpoints
+logging_steps: 1
+save_strategy: epoch
+save_total_limit: 2
+eval_steps: 5
+early_stopping_patience: 3

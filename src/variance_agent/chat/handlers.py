@@ -2862,6 +2862,23 @@ def _handle_executive_memo(session: Session) -> Response:
     status_word = "beat" if net_impact >= 0 else "shortfall"
     sign_word = "expanded" if margin_delta >= 0 else "contracted"
 
+    # Generate verified conversational narrative adhering to deterministic conditioning
+    from deterministic_conditioning.financial_commentary import FinancialAuditSummary, FinancialCommentaryConditioner
+    audit_summary = FinancialAuditSummary(
+        period=cfg.period,
+        currency=cfg.currency,
+        net_variance_dollars=net_impact,
+        is_favorable=(net_impact >= 0),
+        material_unfavorable_count=sum(1 for r in result.material_rows if r.status == Status.UNFAVORABLE),
+        material_favorable_count=sum(1 for r in result.material_rows if r.status == Status.FAVORABLE),
+        unexplained_residual_exists=any(not getattr(r.driver_evidence, "reconciles", True) for r in result.material_rows if r.driver_evidence),
+        top_material_item=result.material_rows[0].line_item if result.material_rows else None,
+        top_material_variance=result.material_rows[0].variance_dollars if result.material_rows else None,
+    )
+    commentary_conditioner = FinancialCommentaryConditioner()
+    posture_decision = commentary_conditioner.evaluate_audit_posture(audit_summary)
+    narrative_takeaway = commentary_conditioner.generate_adherent_commentary(audit_summary, posture_decision)
+
     memo_lines = [
         "# 📑 Executive Management Briefing & Variance Commentary",
         f"**Reporting Period:** {cfg.period}  ",
@@ -2869,6 +2886,7 @@ def _handle_executive_memo(session: Session) -> Response:
         f"**Materiality Thresholds:** {format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%  \n",
         "---",
         "### 1. Executive Summary",
+        f"**Strategic Takeaway:** {narrative_takeaway}\n",
         f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
         f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({net_pct:+.1f}%) "
         f"against the planned budget of **{format_money(budget_profit, cur, places)}**. "

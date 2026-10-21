@@ -42,10 +42,10 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def do_GET(self) -> None:
-        if self.path == "/" or self.path == "/index.html":
+        if self.path in {"/", "/index.html", "/chat.html"}:
             self._serve_static("chat.html", "text/html; charset=utf-8")
-        elif self.path == "/status":
-            payload: dict[str, object] = {"phase": self.session.phase.value}
+        elif self.path in {"/status", "/health", "/healthz"}:
+            payload: dict[str, object] = {"phase": self.session.phase.value, "status": "ok"}
             if self.initial_response is not None:
                 payload["initial_response"] = {
                     "text": self.initial_response.text,
@@ -53,6 +53,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
                     "table": self.initial_response.table,
                 }
             self._json_response(payload)
+        elif self.path == "/favicon.ico":
+            self.send_response(HTTPStatus.NO_CONTENT)
+            self.end_headers()
         elif self.path.startswith("/download/"):
             raw_filename = self.path[len("/download/"):].split("?")[0]
             filename = urllib.parse.unquote(raw_filename)
