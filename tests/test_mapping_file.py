@@ -103,3 +103,47 @@ def test_cli_mapping_and_chat_produce_identical_financial_values(tmp_path: Path)
         assert cli_row["budget"] == chat_row["budget"]
         assert cli_row["actual"] == chat_row["actual"]
         assert cli_row["variance_dollars"] == chat_row["variance_dollars"]
+
+
+def test_cli_mapping_applies_unit_scale_with_more_than_two_rows(tmp_path: Path) -> None:
+    """--mapping with unit_scale "1000" scales every row (regression: list was unpacked as a pair)."""
+    source = tmp_path / "in_thousands.csv"
+    source.write_text(
+        "Account,Type,Budget,Actual\n"
+        "Sales,Revenue,10,12\n"
+        "Services,Revenue,5,6\n"
+        "Rent,Expense,3,4\n"
+        "Wages,Expense,7,8\n",
+        encoding="utf-8",
+    )
+    mapping = LayoutMapping(
+        mapping_version="1.5",
+        layout_fingerprint=compute_layout_fingerprint(["Account", "Type", "Budget", "Actual"]),
+        header_row_number=1,
+        column_mapping={"line_item": "Account", "type": "Type", "budget": "Budget", "actual": "Actual"},
+        unit_scale="1000",
+        flip_signs=False,
+        treat_blank_budgets_as_zero=True,
+        exclude_totals=[],
+    )
+    mapping_file = tmp_path / "thousands.mapping.json"
+    mapping_file.write_text(save_mapping(mapping), encoding="utf-8")
+    audit_out = tmp_path / "audit.json"
+
+    args = build_parser().parse_args([
+        str(source),
+        "--period", "Q3 2026",
+        "--dollar-threshold", "1",
+        "--percent-threshold", "1",
+        "--currency", "USD",
+        "--mapping", str(mapping_file),
+        "--audit-json", str(audit_out),
+        "--audit-schema-version", "1.5",
+    ])
+    assert _run(args) == 0
+
+    audit = json.loads(audit_out.read_text(encoding="utf-8"))
+    rows = {row["line_item"]: row for row in audit["material_variances"]}
+    assert rows["Sales"]["budget"] == "10000"
+    assert rows["Sales"]["actual"] == "12000"
+    assert audit["transformations"]["unit_scale"] == "1000"
