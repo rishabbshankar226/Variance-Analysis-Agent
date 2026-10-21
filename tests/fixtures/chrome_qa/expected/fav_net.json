@@ -1,0 +1,99 @@
+{
+  "fixture": "fav_net.csv",
+  "thresholds": {
+    "dollar": "10000",
+    "percent": "5"
+  },
+  "lines": [
+    {
+      "line_item": "Subscription Revenue",
+      "type": "Revenue",
+      "budget": "200000",
+      "actual": "230000",
+      "variance": "30000",
+      "percent": "15.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Services Revenue",
+      "type": "Revenue",
+      "budget": "80000",
+      "actual": "86000",
+      "variance": "6000",
+      "percent": "7.5",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Payroll Expense",
+      "type": "Expense",
+      "budget": "120000",
+      "actual": "112000",
+      "variance": "-8000",
+      "percent": "-6.7",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Marketing Expense",
+      "type": "Expense",
+      "budget": "40000",
+      "actual": "36000",
+      "variance": "-4000",
+      "percent": "-10.0",
+      "direction": "F",
+      "material": true
+    },
+    {
+      "line_item": "Rent Expense",
+      "type": "Expense",
+      "budget": "20000",
+      "actual": "20000",
+      "variance": "0",
+      "percent": "0.0",
+      "direction": "Neutral",
+      "material": false
+    }
+  ],
+  "excluded_summaries": [],
+  "unclassified": [],
+  "totals": {
+    "revenue": {
+      "budget": "280000",
+      "actual": "316000",
+      "variance": "36000",
+      "percent": "12.9",
+      "direction": "F"
+    },
+    "expenses": {
+      "budget": "180000",
+      "actual": "168000",
+      "variance": "-12000",
+      "percent": "-6.7",
+      "direction": "F"
+    },
+    "budget_operating_profit": "100000",
+    "actual_operating_profit": "148000",
+    "net_operating_impact": "48000",
+    "net_direction": "F",
+    "budget_margin_pct": "35.7",
+    "actual_margin_pct": "46.8",
+    "margin_move": "up",
+    "actual_margin_negative": false
+  },
+  "material_count": 4,
+  "material_items": [
+    "Subscription Revenue",
+    "Payroll Expense",
+    "Services Revenue",
+    "Marketing Expense"
+  ],
+  "top3_by_abs": [
+    "Subscription Revenue",
+    "Payroll Expense",
+    "Services Revenue"
+  ],
+  "largest_favourable": "Subscription Revenue",
+  "largest_unfavourable": null
+}
