@@ -6,6 +6,7 @@ provides and disables exports to server paths.
 """
 
 import json
+import re
 import urllib.parse
 import webbrowser
 from email.message import Message
@@ -72,7 +73,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
                 content = _downloads[filename].encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                # The filename embeds the user's period text; never reflect quotes or ';' into the header.
+                header_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+                self.send_header("Content-Disposition", f'attachment; filename="{header_name}"')
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)

@@ -426,21 +426,20 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-_TRAILING_FILLER = re.compile(
-    r"(?:[\s,]+(?:please|pls|plz|thanks|thank\s+you))+[\s.!?]*$|(?<=\w)[.!?]+$", re.IGNORECASE,
-)
+_TRAILING_FILLER = re.compile(r"(?:[\s,]+(?:please|pls|plz|thanks|thank\s+you))+[\s.!?]*$", re.IGNORECASE)
+_TRAILING_PUNCTUATION = re.compile(r"(?<=[\w%])[.!?]+$")
 
 
 def parse_intent(text: str) -> ParsedIntent:
     """Match user text against ordered patterns and return the first hit.
 
-    Unmatched text is retried once with trailing filler ("please", "thanks") and
-    trailing punctuation removed, so "summary please" and "Summary?!" still resolve.
+    Trailing filler ("please", "thanks") is always ignored; unmatched text is retried
+    once without trailing punctuation, so "summary please" and "Summary?!" resolve.
     """
-    text = text.strip()
+    text = _TRAILING_FILLER.sub("", text.strip()).strip() or text.strip()
     parsed = _match_intent(text)
     if parsed.intent_id == "unknown":
-        relaxed = _TRAILING_FILLER.sub("", text).strip()
+        relaxed = _TRAILING_PUNCTUATION.sub("", text).strip()
         if relaxed and relaxed != text:
             retry = _match_intent(relaxed)
             if retry.intent_id != "unknown":
@@ -471,7 +470,7 @@ def find_line_item(
     Strips surrounding quotes, brackets, and trailing question marks.
     Returns a list of matches (empty if none, multiple if ambiguous).
     """
-    query_cleaned = query.strip().rstrip("?").strip("'\"`[]").strip()
+    query_cleaned = query.strip().rstrip("?.!").strip("'\"`[]").strip()
     if not query_cleaned:
         return []
 

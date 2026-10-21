@@ -292,9 +292,17 @@ def test_analysis_failure_keeps_session_phase_in_sync() -> None:
     ("show me the biggest risks", "biggest_risks"),
     ("show me the biggest wins", "biggest_wins"),
     ("?", "help"),
+    ("drivers please", "driver_summary"),
+    ("thanks", "gratitude"),
+    ("what if revenue drops 10%.", "what_if"),
 ])
 def test_phrasing_tolerance(text: str, intent: str) -> None:
     assert parse_intent(text).intent_id == intent
+
+
+def test_item_lookup_ignores_trailing_punctuation() -> None:
+    text = handle_message(explore("sample_variance"), "detail payroll expense.").text
+    assert "Payroll Expense" in text and "No line item matching" not in text
 
 
 INPUT_CHIPS = {"Revenue", "Expense", "Skip", "Skip all", "Upload a different file", "USD", "EUR", "GBP"}
@@ -408,3 +416,15 @@ def test_table_row_click_sends_the_drill_down_question() -> None:
     html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
     assert "sendMessage(`Why" not in html
     assert "addUserMessage(question);\n              postMessage(question);" in html
+
+
+def test_download_header_does_not_reflect_raw_period(server: HTTPServer) -> None:
+    from variance_agent.chat import server as server_module
+
+    server_module._downloads['executive_memo_q3_"x"_2026;_evil=1.md'] = "memo"
+    conn = HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
+    conn.request("GET", "/download/executive_memo_q3_%22x%22_2026%3B_evil%3D1.md")
+    response = conn.getresponse()
+    assert response.status == 200
+    assert response.getheader("Content-Disposition") == 'attachment; filename="executive_memo_q3__x__2026__evil_1.md"'
+    conn.close()
