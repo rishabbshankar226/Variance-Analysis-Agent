@@ -274,7 +274,7 @@ def run_chat_server(
     if hosted:
         print(f"Variance Analysis Chatbot listening on port {actual_port} (hosted mode)", flush=True)
     else:
-        print(f"Variance Analysis Chatbot running at {url}")
+        print(f"Variance Analysis Chatbot running at {url}", flush=True)
     print("Press Ctrl+C to stop.\n")
 
     if open_browser:

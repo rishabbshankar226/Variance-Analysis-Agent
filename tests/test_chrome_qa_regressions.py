@@ -619,3 +619,22 @@ def test_cli_no_browser_requires_chat() -> None:
     with pytest.raises(SystemExit) as exc:
         cli.main(["--no-browser"])
     assert exc.value.code == 2
+
+
+def test_local_chat_server_flushes_its_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    # With --no-browser the printed URL is the only way in, so it must not sit in a pipe buffer.
+    import variance_agent.chat.server as srv
+
+    flushed: list[bool] = []
+    real_print = print
+
+    def spy(*args: object, **kwargs: Any) -> None:
+        if args and "running at" in str(args[0]):
+            flushed.append(bool(kwargs.get("flush")))
+        kwargs.pop("flush", None)
+
+    monkeypatch.setattr("builtins.print", spy)
+    monkeypatch.setattr(srv.HTTPServer, "serve_forever", lambda self: None)
+    assert srv.run_chat_server(port=0, open_browser=False) == 0
+    monkeypatch.setattr("builtins.print", real_print)
+    assert flushed == [True]
