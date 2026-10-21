@@ -15,6 +15,7 @@ dependencies = []
 
 [project.optional-dependencies]
 excel = ["openpyxl==3.1.5"]
+pdf = ["pdfplumber==0.11.10", "pypdfium2==5.14.0"]
 dev = ["pytest==9.1.1", "ruff==0.17.1", "jsonschema==4.26.0", "mypy==2.4.0"]
 release = ["build==1.6.1", "twine==7.0.0"]
 

@@ -12,6 +12,8 @@ MAX_TEXT_LENGTH: Final = 128 * 1024
 MAX_NUMBER_LENGTH: Final = 4096
 MAX_JSON_DEPTH: Final = 128
 MAX_XML_DEPTH: Final = 128
+MAX_PDF_PAGES: Final = 400
+MAX_PDF_SECONDS: Final = 20.0
 
 
 def validate_text(value: object, *, field: str, nonblank: bool = False) -> str:
