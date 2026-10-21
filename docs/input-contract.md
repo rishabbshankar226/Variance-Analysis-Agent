@@ -106,9 +106,18 @@ variance-agent exports/raw_erp_dump.xlsx --assisted --period 'Q3 2026' \
 Each run compares Actual against exactly one amount: Budget (default), Forecast, or Prior Period. Internally and in audit JSON the comparison amount keeps the `budget` field name.
 
 - **Detection (assisted intake and chat).** Forecast and Prior Period headers are listed above. Amount columns labeled only by period (`FY2025`/`FY2024`, `2025`/`2024`, optionally suffixed "Actual") make the newest period Actual and the next newest the Prior Period comparison. With three or more periods the newest two are compared and intake says so.
-- **Stops and asks.** More than one distinct comparison (for example Budget and Forecast both present) or periods that cannot be ordered (for example `FY2025` with `Q3 2024`). Intake never chooses between candidates of different bases.
-- **Unchanged.** Wide Budget/Actual period-pair layouts remain Budget.
-- **Strict mode.** Without `--assisted` or `--mapping`, nothing is detected. Pass `--compare-to {budget,forecast,prior-period}` to use a forecast or prior-period column; a basis with no matching column is an input error (exit 2) naming the columns found.
+- **Stops and asks.** Intake never chooses between candidates of different bases. It stops, lists the candidates, and asks when:
+  - more than one distinct named comparison is present (for example `Budget` and `Forecast`);
+  - a named comparison sits beside period-only columns (for example `Budget, FY2025, FY2024`, or `Forecast, FY2025 Actual, FY2024 Actual`);
+  - a period column also names a comparison (for example `FY2025 Forecast, FY2025 Actual, FY2024 Actual`, or monthly `Jan 2026 Forecast` / `Jan 2026 Actual` columns);
+  - an undated `Actual` column sits beside period columns (for example `FY25, FY24, Actual`);
+  - periods cannot be ordered (for example `FY2025` with `Q3 2024`).
+
+  The CLI exits 2 and ends the message with "Rerun with --compare-to budget|forecast|prior-period." where `--compare-to` can settle the choice; chat offers one "Compare to …" reply per such basis. `--compare-to budget` or `forecast` picks the named column (with no `Actual` column, the newest period column is Actual); `--compare-to prior-period` reads the period columns.
+- **Same basis twice.** Two columns of the same basis (for example `Budget` and `Plan`) are not ambiguous: the first column is used, as before this feature. Naming that basis with `--compare-to` while it appears twice stops with "keep one and rerun".
+- **Unchanged.** Wide Budget/Actual period-pair layouts remain Budget, including headers that use a budget synonym as a word (`Jan 2026 Bgt` / `Jan 2026 Actual`).
+- **Saved mappings.** A layout mapping saved from chat records `comparison_basis` when a basis was chosen or a non-Budget basis was detected; `--mapping` replays it, and an explicit `--compare-to` wins. Mappings without the field (all earlier files and Budget mappings) load and run as before.
+- **Strict mode.** Without `--assisted` or `--mapping`, nothing is detected. Pass `--compare-to {budget,forecast,prior-period}` to use a forecast or prior-period column; a basis with no matching column is an input error (exit 2) naming the columns found. A file with Forecast or Prior Year columns but no Budget column, run without `--compare-to`, fails with the missing-Budget error plus the same "Rerun with --compare-to …" hint.
 - **Chat.** "compare to forecast", "compare to prior year", or "compare to budget" switches the basis and re-reads the file; "what can I compare against?" explains the options.
 - **Naming.** The comparison label comes from the comparison column's period (for example `FY2024`) or the basis name. Reports and chat show it as "Prior Period (FY2024)" or "Compared Against: …" and never call a forecast or prior period a budget.
 

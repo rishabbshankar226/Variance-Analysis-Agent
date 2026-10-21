@@ -6,7 +6,7 @@ import pytest
 
 from variance_agent.analysis import analyze_rows, _verify_result
 from variance_agent.cli import main, _load_type_map
-from variance_agent.models import AnalysisConfig, Status
+from variance_agent.models import AnalysisConfig, ComparisonBasis, Status
 from variance_agent.parsing import load_json_text, load_json_value, parse_decimal
 
 CFG = AnalysisConfig("Q3", Decimal("10"), Decimal(".05"))
@@ -274,9 +274,11 @@ def test_output_paths_cannot_contain_one_another(tmp_path):
     assert not report.exists()
 
 
-def test_financial_invariants_against_independent_fraction_oracle():
+@pytest.mark.parametrize("basis", list(ComparisonBasis))
+def test_financial_invariants_against_independent_fraction_oracle(basis):
     from fractions import Fraction
     from random import Random
+    from variance_agent.comparison import zero_comparison_label
     from variance_agent.models import LineType
 
     rng = Random(20260928)
@@ -285,7 +287,7 @@ def test_financial_invariants_against_independent_fraction_oracle():
         actual = rng.randint(-100000, 100000)
         kind = rng.choice([LineType.REVENUE, LineType.EXPENSE, LineType.UNCLASSIFIED])
         dollars = rng.randint(0, 100000)
-        cfg = AnalysisConfig("Q3", Decimal(dollars), Decimal(".05"))
+        cfg = AnalysisConfig("Q3", Decimal(dollars), Decimal(".05"), comparison_basis=basis)
         analyzed = analyze_rows(
             [{"Line Item": "Item", "Budget": budget, "Actual": actual, "Type": kind}], cfg
         )
@@ -307,7 +309,7 @@ def test_financial_invariants_against_independent_fraction_oracle():
         assert row.status == expected_status
         if ratio is None:
             assert row.variance_percent is None
-            assert row.percent_label == "N/A (Unbudgeted)"
+            assert row.percent_label == zero_comparison_label(basis)
         else:
             assert abs(Fraction(row.variance_percent) - ratio) < Fraction(1, 10**20)
         assert len(analyzed.material_rows) == int(material)

@@ -119,9 +119,16 @@ def test_zero_comparison_label_follows_basis(basis: ComparisonBasis, label: str)
 
 def test_numbers_identical_across_bases() -> None:
     def key(r):  # type: ignore[no-untyped-def]
-        return [(x.variance_dollars, x.variance_percent, x.status, x.material) for x in r.rows]
+        rows = [(x.variance_dollars, x.variance_percent, x.status, x.material) for x in r.rows]
+        aggregates = [
+            (a.budget, a.actual, a.variance_dollars, a.variance_percent, a.status)
+            for a in (r.revenue, r.expenses)
+        ]
+        return rows, aggregates, [x.line_item for x in r.material_rows]
 
     results = [analyze_rows(ROWS, cfg(b)) for b in ComparisonBasis]
+    # ROWS holds a zero-comparison row (New Revenue) and a material row (Rent Expense).
+    assert results[0].rows[0].budget == 0 and results[0].material_rows
     assert key(results[0]) == key(results[1]) == key(results[2])
 
 

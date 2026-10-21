@@ -293,3 +293,19 @@ def test_worksheet_rationale_names_forecast(tmp_path: Path) -> None:
     note = res.visible_transformations[0]
     assert note.startswith("Selected worksheet 'Data'") and "Forecast" in note
     assert "budget" not in note.lower()
+
+
+# --- Final review M5: the "Found ..." form is only for three or more periods ---
+
+
+def test_two_periods_use_the_short_statement() -> None:
+    res = _read("fixture_m_years_reversed.csv")
+    assert "Comparing 2025 against 2024 (prior period)." in res.visible_transformations
+    assert not any(t.startswith("Found ") for t in res.visible_transformations)
+
+
+def test_two_period_statement_helper() -> None:
+    from variance_agent.comparison import comparison_statement
+
+    assert comparison_statement(P, "FY2024", "FY2025", ["FY2025", "FY2024"]) == (
+        "Comparing FY2025 against FY2024 (prior period).")

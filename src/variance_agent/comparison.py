@@ -164,7 +164,7 @@ def comparison_statement(
     all_periods: list[str] | None = None,
 ) -> str:
     actual = actual_label or "Actual"
-    if all_periods and label and actual_label:
+    if all_periods and len(all_periods) >= 3 and label and actual_label:
         return (
             f"Found {', '.join(all_periods)} — "
             f"comparing {actual_label} against {label}."
