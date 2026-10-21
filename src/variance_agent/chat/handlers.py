@@ -33,6 +33,7 @@ from variance_agent.intake import (
     read_input_assisted,
 )
 from variance_agent.report import render_markdown
+from variance_agent.xlsx import render_xlsx
 
 from .intent import KNOWLEDGE_INTENTS, ParsedIntent, find_line_item, parse_intent
 from .responses import (
@@ -953,6 +954,7 @@ def _handle_exploring(session: Session, text: str) -> Response:
         "export_report": lambda: _handle_export_report(session, intent),
         "export_audit": lambda: _handle_export_audit(session, intent),
         "export_csv": lambda: _handle_export_csv(session, intent),
+        "export_xlsx": lambda: _handle_export_xlsx(session, intent),
         # ── Advanced Analytics ──
         "waterfall": lambda: _handle_waterfall(session),
         "what_if": lambda: _handle_what_if(session, intent),
@@ -1034,6 +1036,8 @@ def _handle_help(session: Session) -> Response:
         "• `threshold $X or Y%` — Re-run analysis with adjusted thresholds\n\n"
         "**Export & Session:**\n"
         "• `export report` — Download Markdown report\n"
+        "• `export excel` — Download formatted Excel workbook\n"
+        "• `export csv` — Download all rows as CSV\n"
         "• `export audit` — Download audit JSON\n"
         "• `report` — View full report inline\n"
         "• `new` — Start over with a new file\n"
@@ -1542,14 +1546,16 @@ def _handle_full_report(session: Session) -> Response:
     report = render_markdown(result)
     return Response(
         text=report,
-        chips=["Export report", "Export audit"],
+        chips=["Export report", "Export excel", "Export audit"],
         phase=Phase.EXPLORING,
     )
 
 
 def _path_export_disabled(path: str, intent: ParsedIntent) -> Response:
     """Refuse a server-side write on hosted deployments and point to the download."""
-    chip = {"export_audit": "Export audit", "export_csv": "Export csv"}.get(
+    chip = {
+        "export_audit": "Export audit", "export_csv": "Export csv", "export_xlsx": "Export excel",
+    }.get(
         intent.intent_id, "Export report"
     )
     return Response(
@@ -1590,7 +1596,7 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     return Response(
         text="📄 Markdown report ready for download.",
         download={filename: report},
-        chips=["Export audit", "Summary"],
+        chips=["Export excel", "Export audit", "Summary"],
         phase=Phase.EXPLORING,
     )
 
@@ -1709,6 +1715,42 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
     return Response(
         text="📊 Analysis CSV ready for download.",
         download={filename: csv_text},
+        chips=["Export excel", "Export report", "Summary"],
+        phase=Phase.EXPLORING,
+    )
+
+
+def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
+    """Generate the formatted Excel workbook for download."""
+    result = session.result
+    assert result is not None
+
+    workbook = render_xlsx(result)
+    period_slug = result.config.period.replace(" ", "_").lower()
+    filename = f"variance_workbook_{period_slug}.xlsx"
+
+    path = intent.captures.get("path")
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
+    if path:
+        try:
+            write_text_outputs({Path(path): workbook})
+            return Response(
+                text=f"✅ Excel workbook written to `{safe_inline(path)}`.",
+                chips=["Export report", "Export audit", "Summary"],
+                phase=Phase.EXPLORING,
+            )
+        except (ValueError, OSError) as exc:
+            return Response(
+                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
+                chips=["Export excel"],
+                phase=Phase.EXPLORING,
+            )
+
+    return Response(
+        text=("📗 Excel workbook ready for download: Summary, Material Variances, "
+              "Root Causes & Actions, and All Rows sheets."),
+        download={filename: workbook},
         chips=["Export report", "Export audit", "Summary"],
         phase=Phase.EXPLORING,
     )

@@ -95,7 +95,13 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "export_audit"),
 
     (re.compile(
-        r"^(?:export|save|download|write)\s+(?:data|csv|excel|table)"
+        r"^(?:export|save|download|write)\s+(?:excel|xlsx|workbook|spreadsheet)"
+        r"(?:\s+(?:to\s+)?(?P<path>.+))?$",
+        re.IGNORECASE,
+    ), "export_xlsx"),
+
+    (re.compile(
+        r"^(?:export|save|download|write)\s+(?:data|csv|table)"
         r"(?:\s+(?:to\s+)?(?P<path>.+))?$",
         re.IGNORECASE,
     ), "export_csv"),

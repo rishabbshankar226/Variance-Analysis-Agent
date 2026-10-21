@@ -97,6 +97,10 @@ def test_session_reset() -> None:
         ("download report", "export_report"),
         ("export audit", "export_audit"),
         ("download audit", "export_audit"),
+        ("export excel", "export_xlsx"),
+        ("download xlsx", "export_xlsx"),
+        ("save workbook", "export_xlsx"),
+        ("export csv", "export_csv"),
         # Financial concepts
         ("variance analysis", "concept_variance"),
         ("what is variance analysis?", "concept_variance"),
@@ -738,6 +742,52 @@ def test_concept_ebitda_margin_knowledge() -> None:
     assert "excluded_from_aggregation" in resp.text
 
 
+def test_http_server_excel_download(chat_server_url: str) -> None:
+    conn = HTTPConnection(chat_server_url)
+    session = _ChatHandler.session
+    handle_upload(session, SAMPLE_CSV, "test.csv")
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$10,000 or 5%")
+    handle_message(session, "USD")
+    handle_message(session, "Expense")
+    expected = handle_message(session, "export excel").download
+
+    msg_body = json.dumps({"text": "export excel"}).encode("utf-8")
+    conn.request(
+        "POST",
+        "/message",
+        body=msg_body,
+        headers={"Content-Type": "application/json", "Content-Length": str(len(msg_body))},
+    )
+    export_data = json.loads(conn.getresponse().read().decode("utf-8"))
+    assert export_data["download_filename"] == "variance_workbook_q3_2026.xlsx"
+
+    conn.request("GET", export_data["download_url"])
+    res = conn.getresponse()
+    assert res.status == HTTPStatus.OK
+    assert res.getheader("Content-Type") == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    body = res.read()
+    assert expected is not None and body == expected["variance_workbook_q3_2026.xlsx"]
+    assert body.startswith(b"PK")
+    conn.close()
+
+
+def test_export_excel_writes_workbook_to_path(tmp_path: Path) -> None:
+    session = Session()
+    handle_upload(session, SAMPLE_CSV, "test.csv")
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$5,000 or 5%")
+    handle_message(session, "USD")
+    handle_message(session, "Expense")
+
+    target = tmp_path / "book.xlsx"
+    resp = handle_message(session, f"export excel to {target}")
+    assert "Excel workbook written" in resp.text
+    assert target.read_bytes().startswith(b"PK")
+
+
 def test_export_csv_download() -> None:
     session = Session()
     handle_upload(session, SAMPLE_CSV, "test.csv")
@@ -758,6 +808,7 @@ def test_export_csv_download() -> None:
 
 @pytest.mark.parametrize("command", [
     "export report to {path}", "export audit to {path}", "export csv to {path}",
+    "export excel to {path}",
 ])
 def test_hosted_session_refuses_path_exports(tmp_path: Path, command: str) -> None:
     session = Session(path_exports_enabled=False)

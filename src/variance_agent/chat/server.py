@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from variance_agent.limits import MAX_INPUT_BYTES, MAX_TEXT_LENGTH
+from variance_agent.xlsx import XLSX_MEDIA_TYPE
 
 from .handlers import handle_message, handle_upload
 from .responses import Response
@@ -27,7 +28,9 @@ _STATIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static"
 _PKG_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 # Staged downloads keyed by filename
-_downloads: dict[str, str] = {}
+_downloads: dict[str, str | bytes] = {}
+
+_DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
 
 # Request bodies beyond these sizes are refused before they are read.
 _MAX_UPLOAD_BODY = MAX_INPUT_BYTES + 1024 * 1024  # file plus multipart framing
@@ -70,9 +73,13 @@ class _ChatHandler(BaseHTTPRequestHandler):
             raw_filename = self.path[len("/download/"):].split("?")[0]
             filename = urllib.parse.unquote(raw_filename)
             if filename in _downloads:
-                content = _downloads[filename].encode("utf-8")
+                staged = _downloads[filename]
+                content = staged if isinstance(staged, bytes) else staged.encode("utf-8")
+                content_type = _DOWNLOAD_TYPES.get(
+                    Path(filename).suffix.lower(), "application/octet-stream"
+                )
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Type", content_type)
                 # The filename embeds the user's period text; never reflect quotes or ';' into the header.
                 header_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
                 self.send_header("Content-Disposition", f'attachment; filename="{header_name}"')

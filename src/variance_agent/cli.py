@@ -18,6 +18,7 @@ from .parsing import load_input, load_json_value, parse_decimal, read_input_byte
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
+from .xlsx import render_xlsx
 from .limits import display_text
 
 
@@ -33,6 +34,7 @@ class Arguments(Protocol):
     audit_schema_version: str
     output: str | None
     audit_json: str | None
+    xlsx: str | None
     chat: bool
     hosted: bool
     no_browser: bool
@@ -99,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
                         default=CURRENT_SCHEMA_VERSION, help="Audit JSON format version.")
     parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
+    parser.add_argument("--xlsx", help="Write a formatted Excel workbook to this path.")
     parser.add_argument(
         "--audit-json",
         help="Write a machine-readable audit/agent-context record with source provenance.",
@@ -143,17 +146,21 @@ def _validate_output_paths(args: Arguments) -> None:
     inputs = [Path(args.input)]
     if args.type_map:
         inputs.append(Path(args.type_map))
-    outputs = [Path(value) for value in (args.output, args.audit_json) if value]
+    outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx) if value]
     for index, output in enumerate(outputs):
         if any(_same_path(output, other) for other in inputs + outputs[:index]):
-            raise ValueError("Input, type-map, report, and audit output paths must be distinct.")
+            raise ValueError(
+                "Input, type-map, report, audit, and workbook output paths must be distinct."
+            )
 
 
 @financial_context()
 def _run(args: Arguments) -> int:
     if args.chat:
-        if args.check_only or args.output or args.audit_json:
-            raise ValueError("--chat cannot be combined with --check-only, --output, or --audit-json.")
+        if args.check_only or args.output or args.audit_json or args.xlsx:
+            raise ValueError(
+                "--chat cannot be combined with --check-only, --output, --audit-json, or --xlsx."
+            )
         from .chat.server import run_chat_server
         is_hosted = args.hosted or "RENDER" in os.environ or ("PORT" in os.environ and os.environ.get("PORT", "").isdigit())
         if is_hosted:
@@ -169,8 +176,8 @@ def _run(args: Arguments) -> int:
     assert args.period is not None
     assert args.dollar_threshold is not None
     assert args.percent_threshold is not None
-    if args.check_only and (args.output or args.audit_json):
-        raise ValueError("--check-only cannot be combined with --output or --audit-json.")
+    if args.check_only and (args.output or args.audit_json or args.xlsx):
+        raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
     _validate_output_paths(args)
     input_path = Path(args.input)
     if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
@@ -220,9 +227,11 @@ def _run(args: Arguments) -> int:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)
         report = f"# Executive Commentary\n\n{_safe_inline(commentary_text)}\n\n---\n\n" + report
-    outputs: dict[Path, str] = {}
+    outputs: dict[Path, str | bytes] = {}
     if args.output:
         outputs[Path(args.output)] = report
+    if args.xlsx:
+        outputs[Path(args.xlsx)] = render_xlsx(result)
     if args.audit_json:
         record = build_audit_record(
             result, source_name=input_path.name, source_sha256=source_hash,
