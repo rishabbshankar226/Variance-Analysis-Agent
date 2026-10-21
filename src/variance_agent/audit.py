@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType
+from .models import Aggregate, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
@@ -15,8 +15,8 @@ from .json_types import JSONObject, JSONValue
 from .limits import validate_text
 from .version import __version__
 
-CURRENT_SCHEMA_VERSION = "1.5"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5")
+CURRENT_SCHEMA_VERSION = "1.6"
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -184,6 +184,11 @@ def build_audit_record(
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
+    if schema_version != "1.6" and result.config.comparison_basis != ComparisonBasis.BUDGET:
+        raise ValueError(
+            f"Audit schema {schema_version} records the comparison amount as a budget; "
+            "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
+        )
     if source_name is not None:
         validate_text(source_name, field="source_name")
     if source_sha256 is not None and (not isinstance(source_sha256, str)
@@ -196,7 +201,7 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6"}
 
     row_count = len(result.rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
@@ -274,11 +279,17 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
+    comparison: JSONObject = {
+        "basis": str(result.config.comparison_basis),
+        "label": result.config.comparison_label,
+    }
+    if schema_version == "1.6":
+        record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.4", "1.5"}:
+    if schema_version in {"1.4", "1.5", "1.6"}:
         source["worksheet"] = source_worksheet
-    if schema_version in {"1.2", "1.3", "1.4", "1.5"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -286,8 +297,10 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version in {"1.4", "1.5"}:
+        if schema_version in {"1.4", "1.5", "1.6"}:
             config_identity["worksheet"] = source_worksheet
+        if schema_version == "1.6":
+            config_identity["comparison"] = comparison
         record["provenance"] = {
             "tool_version": __version__,
             "numeric_policy": NUMERIC_POLICY_ID,
@@ -303,7 +316,7 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
-    if schema_version == "1.5":
+    if schema_version in {"1.5", "1.6"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
         zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
@@ -329,6 +342,6 @@ def build_audit_record(
             _row_record(row, include_diagnostics=include_diagnostics) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4", "1.5"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6"}:
         record["payload_sha256"] = payload_sha256(record)
     return record

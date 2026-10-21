@@ -18,7 +18,6 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import (
-    CURRENT_SCHEMA_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
     build_audit_record,
 )
@@ -30,7 +29,6 @@ SCHEMAS_DIR = ROOT / "schemas"
 
 def test_schema_15_is_supported_and_current() -> None:
     assert "1.5" in SUPPORTED_SCHEMA_VERSIONS
-    assert CURRENT_SCHEMA_VERSION == "1.5"
 
 
 def test_audit_15_schema_file_valid() -> None:
