@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 from .limits import MAX_INPUT_BYTES
+from .models import ComparisonBasis
 
 
 @dataclass
@@ -28,9 +29,12 @@ class LayoutMapping:
     exclude_totals: list[str] = field(default_factory=list)
     period_column_selection: str | None = None
     classification_rules: dict[str, object] | None = None
+    # Optional: the chosen comparison. Omitted from the file when unset, so Budget
+    # mappings (and their SHA-256) are unchanged and older mappings still load.
+    comparison_basis: ComparisonBasis | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "mapping_version": self.mapping_version,
             "layout_fingerprint": self.layout_fingerprint,
             "header_row_number": self.header_row_number,
@@ -43,6 +47,9 @@ class LayoutMapping:
             "period_column_selection": self.period_column_selection,
             "classification_rules": self.classification_rules,
         }
+        if self.comparison_basis is not None:
+            data["comparison_basis"] = self.comparison_basis.value
+        return data
 
 
 def _normalize_header_str(raw: str) -> str:
@@ -97,6 +104,15 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
     period_sel = str(parsed["period_column_selection"]) if parsed.get("period_column_selection") is not None else None
     rules = parsed.get("classification_rules")
     classification_rules = dict(rules) if isinstance(rules, dict) else None
+    basis_raw = parsed.get("comparison_basis")
+    comparison_basis: ComparisonBasis | None = None
+    if basis_raw is not None:
+        try:
+            comparison_basis = ComparisonBasis(str(basis_raw))
+        except ValueError:
+            raise ValueError(
+                "Mapping comparison_basis must be budget, forecast or prior_period."
+            ) from None
 
     return LayoutMapping(
         mapping_version=version,
@@ -110,4 +126,5 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
         exclude_totals=exclude_totals,
         period_column_selection=period_sel,
         classification_rules=classification_rules,
+        comparison_basis=comparison_basis,
     )

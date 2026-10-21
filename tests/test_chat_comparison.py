@@ -332,3 +332,34 @@ def test_miss_and_no_risk_branches_never_say_plan_or_target(data: bytes) -> None
     item_prompts = [f"{verb} {row.line_item}" for row in session.result.rows for verb in ("why", "details")]
     for prompt in ALL_RESULT_PROMPTS + item_prompts:
         _no_plan_words(_ask(session, prompt).text, prompt)
+
+
+# --- Final review I5: a new upload starts a fresh comparison choice ---
+
+
+def test_new_upload_clears_previous_comparison_choice() -> None:
+    session = _upload("fixture_l_budget_and_forecast.csv")
+    _ask(session, "Compare to forecast")
+    _configure(session)
+    assert session.compare_to is F
+    sample = Path(__file__).resolve().parent.parent / "examples" / "sample_variance.csv"
+    response = handle_upload(session, sample.read_bytes(), sample.name)
+    assert not response.text.startswith("⚠️"), response.text
+    assert session.compare_to is None
+    assert session.intake_result is not None and not session.intake_result.has_fatal_errors
+    assert session.intake_result.comparison_basis is B
+
+
+def test_mixed_named_and_year_columns_offer_both_chips() -> None:
+    session = Session()
+    data = b"Line Item,Type,Budget,FY2025,FY2024\nRent Expense,Expense,90,130,100\n"
+    response = handle_upload(session, data, "mixed.csv")
+    assert response.text.startswith("⚠️")
+    assert response.chips is not None
+    assert response.chips[:2] == ["Compare to budget", "Compare to prior period"]
+    assert not any("--compare-to" in chip for chip in response.chips)
+    assert "--compare-to" not in response.text
+
+    _ask(session, "compare to prior period")
+    assert session.intake_result is not None
+    assert session.intake_result.comparison_basis is P

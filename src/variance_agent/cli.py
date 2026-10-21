@@ -6,7 +6,7 @@ import os
 import sys
 from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
@@ -14,12 +14,31 @@ from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, ComparisonBasis, LineType
-from .comparison import parse_compare_to, select_strict_comparison
+from .comparison import (
+    FORECAST_SYNONYMS,
+    PRIOR_PERIOD_SYNONYMS,
+    parse_compare_to,
+    select_strict_comparison,
+)
 from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import render_markdown
 from .limits import display_text
+
+if TYPE_CHECKING:
+    from .intake import IntakeResult
+
+
+COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
+
+
+def _intake_error(intake_res: IntakeResult) -> str:
+    message = intake_res.fatal_error_message or "Could not read input."
+    if intake_res.comparison_choices:
+        # Chat offers chips for this choice; the CLI names the flag that makes it.
+        message = f"{message} {COMPARE_TO_HINT}"
+    return message
 
 
 class Arguments(Protocol):
@@ -194,6 +213,7 @@ def _run(args: Arguments) -> int:
     intake_res = None
 
     compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
+    strict_without_basis = False
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
@@ -216,10 +236,11 @@ def _run(args: Arguments) -> int:
             sheet=args.sheet,
             treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
             selected_period=mapping_obj.period_column_selection,
-            compare_to=compare_to_basis,
+            # An explicit --compare-to wins over the basis saved in the mapping.
+            compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
         )
         if intake_res.has_fatal_errors:
-            raise ValueError(intake_res.fatal_error_message or "Could not read input.")
+            raise ValueError(_intake_error(intake_res))
         rows = list(intake_res.rows)
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
@@ -266,7 +287,7 @@ def _run(args: Arguments) -> int:
             compare_to=compare_to_basis,
         )
         if intake_res.has_fatal_errors:
-            raise ValueError(intake_res.fatal_error_message or "Could not read input.")
+            raise ValueError(_intake_error(intake_res))
         parsed_rows = intake_res.rows
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
@@ -279,6 +300,7 @@ def _run(args: Arguments) -> int:
         parsed_worksheet = parsed.worksheet
         comparison_basis = ComparisonBasis.BUDGET
         comparison_label = None
+        strict_without_basis = compare_to_basis is None
         if compare_to_basis is not None:
             parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
             comparison_basis = compare_to_basis
@@ -293,7 +315,14 @@ def _run(args: Arguments) -> int:
         comparison_basis=comparison_basis,
         comparison_label=comparison_label,
     )
-    result = analyze_rows(parsed_rows, config)
+    try:
+        result = analyze_rows(parsed_rows, config)
+    except ValueError as exc:
+        if strict_without_basis and "required field 'Budget' was not found" in str(exc):
+            other_bases = FORECAST_SYNONYMS | PRIOR_PERIOD_SYNONYMS
+            if any(key in other_bases for row in parsed_rows for key in row):
+                raise ValueError(f"{exc} {COMPARE_TO_HINT}") from exc
+        raise
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
         print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "

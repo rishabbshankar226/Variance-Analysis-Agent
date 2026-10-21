@@ -19,7 +19,6 @@ from pathlib import Path
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
 from variance_agent.comparison import (
-    basis_for_header,
     basis_noun,
     comparison_heading,
     zero_comparison_phrase,
@@ -38,7 +37,6 @@ from variance_agent.intake import (
     apply_classification_rules,
     format_intake_summary,
     infer_gl_range_rules,
-    normalize_header,
     plain_analysis_error,
     read_input_assisted,
 )
@@ -129,16 +127,9 @@ _UNBUDGETED_WORDING: dict[ComparisonBasis, _UnbudgetedWording] = {
 }
 
 
-def _comparison_chips(candidate_headers: list[str]) -> list[str]:
-    """Offer one 'Compare to ...' chip per distinct basis, in header order."""
-    bases: list[ComparisonBasis] = []
-    for header in candidate_headers:
-        basis = basis_for_header(normalize_header(header))
-        if basis is not None and basis not in bases:
-            bases.append(basis)
-    if len(bases) < 2:
-        return []
-    return [f"Compare to {basis_noun(b)}" for b in bases]
+def _comparison_chips(choices: list[ComparisonBasis]) -> list[str]:
+    """Offer one 'Compare to ...' chip per basis that resolves the stop, in header order."""
+    return [f"Compare to {basis_noun(b)}" for b in choices]
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +386,10 @@ def handle_upload(
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
     suffix = Path(filename).suffix.lower()
+    if session.source_bytes is not None:
+        # A comparison choice belongs to the file it was made for; a replacement file is
+        # detected afresh. A choice made before the first upload still applies to it.
+        session.compare_to = None
     session.source_bytes = file_bytes
     session.source_name = filename
     session.source_suffix = suffix
@@ -418,7 +413,7 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
             "Please upload a file with at least one row of budget and actual data."
         )
         session.last_technical_detail = technical
-        chips = _comparison_chips(intake_res.comparison_candidates)
+        chips = _comparison_chips(intake_res.comparison_choices)
         if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
             for s in intake_res.available_sheets[:3]:
                 chips.append(f"Sheet {s}")
@@ -1058,6 +1053,16 @@ def _build_analysis_summary(session: Session) -> Response:
 # ---------------------------------------------------------------------------
 
 
+def _saved_comparison_basis(session: Session) -> ComparisonBasis | None:
+    """The basis a saved mapping replays: an explicit choice, else a detected non-Budget basis."""
+    if session.compare_to is not None:
+        return session.compare_to
+    intake_res = session.intake_result
+    if intake_res is not None and intake_res.comparison_basis is not ComparisonBasis.BUDGET:
+        return intake_res.comparison_basis
+    return None
+
+
 def _handle_save_mapping(session: Session) -> Response:
     """Export confirmed layout choices as a JSON mapping file."""
     intake_res = session.intake_result
@@ -1096,6 +1101,7 @@ def _handle_save_mapping(session: Session) -> Response:
         exclude_totals=excluded_totals,
         period_column_selection=session.period,
         classification_rules=classification_rules,
+        comparison_basis=_saved_comparison_basis(session),
     )
     session.layout_mapping = mapping
     mapping_json = save_mapping(mapping)
