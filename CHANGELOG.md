@@ -50,6 +50,12 @@
   identity. Schemas 1.0-1.5 are refused for Forecast and Prior Period runs. The commentary prompt now reads
   `comparison.basis` and `comparison.label`.
 - Fix `--mapping` with `unit_scale` crashing.
+- Fix a layout mapping saved in the chat giving different amounts when replayed with
+  `--mapping`: amounts in a file titled "(in thousands)" were scaled twice, and
+  `flip_signs` flipped every line (undoing the revenue flip and negating expenses).
+  The mapping now adds only the scale or revenue flip the file itself does not show,
+  flips only revenue lines stored as credits, and stops with an error when the file's
+  title and the mapping disagree on the unit.
 - Add Python 3.11-3.14, Windows output, minimal-install, and distribution CI gates;
   use one package-version source and include the declared MIT license.
 
