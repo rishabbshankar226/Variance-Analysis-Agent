@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: python -m pip install -c requirements-typecheck.txt -e ".[dev,excel]"
+      - run: python -m pip install -c requirements-typecheck.txt -e ".[dev,excel,pdf]"
       - run: ruff check .
       - run: python -m mypy --strict src/variance_agent scripts
       - run: python -m compileall -q src tests scripts
