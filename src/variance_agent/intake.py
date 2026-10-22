@@ -19,7 +19,7 @@ import io
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from enum import StrEnum
 from typing import cast
 
@@ -27,8 +27,11 @@ from .classification import infer_line_type
 from .currencies import SYMBOL_CURRENCIES
 from .excel import WorkbookLoader, cell_value, inspect_archive
 from .limits import (
+    MAX_CELLS,
+    MAX_COLUMNS,
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
+    MAX_ROWS,
 )
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
@@ -542,14 +545,81 @@ def flip_ledger_signs(
     return flipped, affected
 
 
+class _ToleranceIndex:
+    """Grid index over (budget, actual) points that answers "which stored point lies within
+    the tolerance of this one?" without comparing against every stored point.
+
+    Cells are twice the tolerance wide, so any point within the tolerance of a query lies in
+    the query's cell or one of its eight neighbours. Candidates are always re-checked with the
+    exact ``<=`` comparison, so the grid only prunes.
+    """
+
+    def __init__(self) -> None:
+        self._cells: dict[tuple[int, int], list[int]] = {}
+        self._points: list[tuple[Decimal, Decimal]] = []
+
+    @staticmethod
+    def _cell(value: Decimal) -> int:
+        # Units of 0.01, two per cell; scaleb only moves the exponent, so it is exact.
+        return int(value.scaleb(2).to_integral_value(rounding=ROUND_FLOOR)) // 2
+
+    def add(self, budget: Decimal, actual: Decimal) -> None:
+        self._cells.setdefault((self._cell(budget), self._cell(actual)), []).append(len(self._points))
+        self._points.append((budget, actual))
+
+    def find(
+        self,
+        budget: Decimal,
+        actual: Decimal,
+        tolerance: Decimal,
+        *,
+        newest_first: bool,
+        max_position: int | None = None,
+        skip: int | None = None,
+    ) -> int | None:
+        """Position of the newest (or oldest) stored point within ``tolerance`` of the query."""
+        base_b, base_a = self._cell(budget), self._cell(actual)
+        best: int | None = None
+        for cell_b in (base_b - 1, base_b, base_b + 1):
+            for cell_a in (base_a - 1, base_a, base_a + 1):
+                positions = self._cells.get((cell_b, cell_a))
+                if not positions:
+                    continue
+                for position in (reversed(positions) if newest_first else positions):
+                    if max_position is not None and position > max_position:
+                        if newest_first:
+                            continue
+                        break
+                    if position == skip:
+                        continue
+                    point_b, point_a = self._points[position]
+                    if abs(point_b - budget) <= tolerance and abs(point_a - actual) <= tolerance:
+                        if best is None or (position > best if newest_first else position < best):
+                            best = position
+                        break
+        return best
+
+
 def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetectionResult:
-    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance."""
+    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance.
+
+    A row is a block subtotal when it equals the sum of the detail rows just above it (two or
+    more rows, or one row when its label says total), and a formula total when it equals a
+    prior total minus a detail row or minus another prior total. Both searches use tolerance
+    indexes, so detection stays near-linear on ledgers of tens of thousands of rows.
+    """
     tolerance = Decimal("0.01")
     reconciled_totals: list[ReconciledTotal] = []
     unreconciled_totals: list[UnreconciledTotal] = []
-    detail_indices: list[int] = []
-    # (budget, actual) of each detail row, parsed once and aligned with detail_indices.
-    detail_values: list[tuple[Decimal, Decimal]] = []
+    detail_indices: list[int] = []  # row index of each detail row, in order
+    details = _ToleranceIndex()  # (budget, actual) of each detail row
+    totals = _ToleranceIndex()  # (budget, actual) of each reconciled total
+    # prefix holds, at position j, the (budget, actual) sum of the first j detail rows, so the
+    # sum of the last L detail rows is prefix[m] - prefix[m - L].
+    prefix = _ToleranceIndex()
+    prefix.add(Decimal("0"), Decimal("0"))
+    running_b = Decimal("0")
+    running_a = Decimal("0")
 
     for i, row in enumerate(rows):
         name = str(row.get("line_item", "")).strip()
@@ -558,90 +628,66 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
         b = Decimal(str(b_raw)) if b_raw is not None else Decimal("0")
         a = Decimal(str(a_raw)) if a_raw is not None else Decimal("0")
         is_total_kw = bool(_TOTAL_KEYWORD_RE.search(name))
+        detail_count = len(detail_indices)
 
-        # 1. Contiguous block check over prior detail rows
-        # Blocks grow backwards from the latest detail row, so keep running sums
-        # instead of re-summing every block (large ledgers have thousands of rows).
-        found_block = False
-        sum_b = Decimal("0")
-        sum_a = Decimal("0")
-        for j in range(len(detail_indices) - 1, -1, -1):
-            block_len = len(detail_indices) - j
-            det_b, det_a = detail_values[j]
-            sum_b += det_b
-            sum_a += det_a
-            if abs(b - sum_b) <= tolerance and abs(a - sum_a) <= tolerance:
-                if block_len >= 2 or is_total_kw:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"sum of {block_len} detail rows",
-                        )
-                    )
-                    found_block = True
-                    break
-        if found_block:
+        # 1. Contiguous block check: the smallest block of prior detail rows that sums to this row.
+        start = prefix.find(
+            running_b - b, running_a - a, tolerance, newest_first=True,
+            max_position=detail_count - 1 if is_total_kw else detail_count - 2,
+        )
+        if start is not None:
+            reconciled_totals.append(
+                ReconciledTotal(
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    formula_description=f"sum of {detail_count - start} detail rows",
+                )
+            )
+            totals.add(b, a)
             continue
 
-        # 2. Nested formula check (diff between prior totals or detail)
+        # 2. Nested formula check (a prior total minus a detail row, or minus another prior total)
+        prior_total_count = len(reconciled_totals)
         found_formula = False
-        prior_totals = list(reconciled_totals)
-        for prev in prior_totals:
-            for d_idx, (det_b, det_a) in zip(detail_indices, detail_values):
-                if abs((prev.budget - det_b) - b) <= tolerance and abs((prev.actual - det_a) - a) <= tolerance:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"{prev.line_item} - {rows[d_idx].get('line_item')}",
-                        )
-                    )
-                    found_formula = True
-                    break
-            if found_formula:
-                break
-            for prev2 in prior_totals:
-                if prev2.row_index == prev.row_index:
+        for prev_position in range(prior_total_count):
+            prev = reconciled_totals[prev_position]
+            wanted_b, wanted_a = prev.budget - b, prev.actual - a
+            detail_position = details.find(wanted_b, wanted_a, tolerance, newest_first=False)
+            if detail_position is not None:
+                subtracted = str(rows[detail_indices[detail_position]].get("line_item"))
+            else:
+                other = totals.find(
+                    wanted_b, wanted_a, tolerance, newest_first=False,
+                    max_position=prior_total_count - 1, skip=prev_position,
+                )
+                if other is None:
                     continue
-                if abs((prev.budget - prev2.budget) - b) <= tolerance and abs((prev.actual - prev2.actual) - a) <= tolerance:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"{prev.line_item} - {prev2.line_item}",
-                        )
-                    )
-                    found_formula = True
-                    break
-            if found_formula:
-                break
-
+                subtracted = reconciled_totals[other].line_item
+            reconciled_totals.append(
+                ReconciledTotal(
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    formula_description=f"{prev.line_item} - {subtracted}",
+                )
+            )
+            totals.add(b, a)
+            found_formula = True
+            break
         if found_formula:
             continue
 
         if is_total_kw:
-            sum_prior_b = sum((v[0] for v in detail_values), Decimal("0")) if detail_indices else None
-            sum_prior_a = sum((v[1] for v in detail_values), Decimal("0")) if detail_indices else None
             unreconciled_totals.append(
                 UnreconciledTotal(
-                    line_item=name,
-                    budget=b,
-                    actual=a,
-                    row_index=i,
-                    sum_budget=sum_prior_b,
-                    sum_actual=sum_prior_a,
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    sum_budget=running_b if detail_count else None,
+                    sum_actual=running_a if detail_count else None,
                 )
             )
         else:
             detail_indices.append(i)
-            detail_values.append((b, a))
+            details.add(b, a)
+            running_b += b
+            running_a += a
+            prefix.add(running_b, running_a)
 
     return SubtotalDetectionResult(
         reconciled_totals=reconciled_totals,
@@ -1131,6 +1177,7 @@ def _decode_text(data: bytes, filename: str) -> tuple[str, str | None]:
         ) from None
 
 
+@financial_context()
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -1191,6 +1238,58 @@ def read_input_assisted(
     )
 
 
+_CANDIDATE_DELIMITERS = (",", ";", "\t", "|")
+
+
+def _sniff_delimiter(text: str) -> str:
+    """Pick the delimiter that splits the first lines into the most consistent 3+ columns.
+
+    European Excel exports use ";" because "," is the decimal mark; ties keep the comma.
+    """
+    sample = text[:65536]
+    best, best_lines = ",", 0
+    for delimiter in _CANDIDATE_DELIMITERS:
+        try:
+            widths = [
+                len(record)
+                for record in csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)
+                if record
+            ][:50]
+        except csv.Error:
+            continue
+        if not widths:
+            continue
+        modal = max(set(widths), key=lambda width: (widths.count(width), width))
+        if modal >= 3 and widths.count(modal) > best_lines:
+            best, best_lines = delimiter, widths.count(modal)
+    return best
+
+
+def _delimited_rows(text: str, delimiter: str, filename: str) -> list[list[object]]:
+    """Split delimited text into rows, keeping quoted newlines and enforcing the input limits.
+
+    Blank lines are kept as empty rows so that row numbers in messages match the file.
+    """
+    rows: list[list[object]] = []
+    cells = 0
+    try:
+        for record in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter):
+            if len(record) > MAX_COLUMNS:
+                raise ValueError(
+                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read."
+                )
+            cells += len(record)
+            if len(rows) >= MAX_ROWS or cells > MAX_CELLS:
+                raise ValueError(
+                    f"'{filename}' has more rows or cells than I can read "
+                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells)."
+                )
+            rows.append(cast(list[object], record))
+    except csv.Error as exc:
+        raise ValueError(f"I could not split '{filename}' into columns: {exc}.") from exc
+    return rows
+
+
 def _read_tsv_text(
     text: str,
     filename: str,
@@ -1198,9 +1297,10 @@ def _read_tsv_text(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
-    lines = [line for line in text.splitlines() if line.strip()]
-    reader = csv.reader(lines, delimiter="\t")
-    raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
+    try:
+        raw_rows = _delimited_rows(text, "\t", filename)
+    except ValueError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
     res = _process_raw_table(
         raw_rows,
         filename,
@@ -1221,9 +1321,10 @@ def _read_csv_text(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
-    lines = [line for line in text.splitlines() if line.strip()]
-    reader = csv.reader(lines)
-    raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
+    try:
+        raw_rows = _delimited_rows(text, _sniff_delimiter(text), filename)
+    except ValueError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
     return _process_raw_table(
         raw_rows,
         filename,

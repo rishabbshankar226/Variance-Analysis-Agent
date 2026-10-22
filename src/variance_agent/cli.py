@@ -261,7 +261,7 @@ def _run(args: Arguments) -> int:
             scale_rows_by_unit,
         )
         mapping_path = Path(mapping_arg)
-        mapping_obj = load_mapping(mapping_path.read_text(encoding="utf-8"))
+        mapping_obj = load_mapping(read_input_bytes(mapping_path))
 
         intake_res = read_input_assisted(
             source_bytes,
@@ -298,6 +298,9 @@ def _run(args: Arguments) -> int:
         type_map: dict[str, LineType] = {}
         if type_map_bytes is not None:
             type_map = _parse_type_map(type_map_bytes)
+            if mapping_obj.classification_rules:
+                print("[mapping] --type-map is used; the mapping's classification_rules were not applied.",
+                      file=sys.stderr)
         elif mapping_obj.classification_rules:
             gl_rules_data = cast(list[dict[str, object]], mapping_obj.classification_rules.get("gl_ranges", []))
             gl_rules = [
