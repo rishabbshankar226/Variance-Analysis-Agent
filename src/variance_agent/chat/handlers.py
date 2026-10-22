@@ -62,6 +62,8 @@ from .responses import (
     Response,
     format_money,
     format_pct,
+    format_threshold_amount,
+    format_threshold_pct,
     report_places,
     row_to_table_dict,
     safe_inline,
@@ -1004,8 +1006,8 @@ def _handle_thresholds(session: Session, text: str) -> Response:
     session.phase = Phase.AWAITING_CURRENCY
 
     return Response(
-        text=f"Thresholds set: **{CURRENCY_SYMBOLS.get(session.currency, '$')}"
-             f"{dollar:,.2f}** or **{pct_ratio * 100:.1f}%**\n\n"
+        text=f"Thresholds set: **{format_threshold_amount(dollar, session.currency)}** "
+             f"or **{format_threshold_pct(pct_ratio)}**\n\n"
              "What is the reporting currency?",
         chips=["USD", "EUR", "GBP"],
         phase=Phase.AWAITING_CURRENCY,
@@ -1268,14 +1270,13 @@ def _build_analysis_summary(session: Session) -> Response:
     assert result is not None
     cfg = result.config
     places = report_places(result)
-    symbol = CURRENCY_SYMBOLS[cfg.currency]
 
     lines = [
         "✅ **Analysis Complete**\n",
         f"**Period:** {safe_inline(cfg.period)}",
         f"**Currency:** {cfg.currency}",
-        f"**Thresholds:** {symbol}{cfg.dollar_threshold:,.2f} or "
-        f"{cfg.percent_threshold * 100:.1f}%\n",
+        f"**Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+        f"{format_threshold_pct(cfg.percent_threshold)}\n",
     ]
 
     # Revenue summary
@@ -1435,6 +1436,11 @@ def _handle_save_mapping(session: Session) -> Response:
 def _pct_text(value: Decimal | None, spec: str = ".1f", suffix: str = "%") -> str:
     """Format a percentage, or N/A when its base was zero (the ratio is undefined)."""
     return "N/A" if value is None else f"{value:{spec}}{suffix}"
+
+
+def _variance_percent(variance: Decimal, comparison: Decimal) -> Decimal | None:
+    """Variance as a percent of the absolute comparison amount (the engine's rule), None if it is 0."""
+    return None if comparison == 0 else ratio(variance, abs(comparison)) * Decimal(100)
 
 
 def _pct_change(new: Decimal | None, old: Decimal | None) -> Decimal | None:
@@ -1630,8 +1636,8 @@ def _handle_material(session: Session) -> Response:
     chips.extend(["Unfavorable", "Favorable", "Export report"])
 
     return Response(
-        text=f"**Material Variances** (Threshold: {CURRENCY_SYMBOLS[cfg.currency]}"
-             f"{cfg.dollar_threshold:,.2f} or {cfg.percent_threshold * 100:.1f}%)",
+        text=f"**Material Variances** (Threshold: {format_threshold_amount(cfg.dollar_threshold, cfg.currency)}"
+             f" or {format_threshold_pct(cfg.percent_threshold)})",
         table=table,
         chips=chips,
         phase=Phase.EXPLORING,
@@ -2477,8 +2483,8 @@ def _handle_biggest_risks(session: Session) -> Response:
         return Response(
             text="✅ **No Material Risks Detected**\n\n"
                  "There are zero material unfavorable variances exceeding your thresholds "
-                 f"({CURRENCY_SYMBOLS.get(cfg.currency, '$')}{cfg.dollar_threshold:,.2f} or "
-                 f"{cfg.percent_threshold * 100:.1f}%). "
+                 f"({format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+                 f"{format_threshold_pct(cfg.percent_threshold)}). "
                  + ("All revenue targets and expense allocations " if _is_budget(cfg)
                     else "All revenue and expense lines ")
                  + f"performed within {_noun(cfg)} tolerance.",
@@ -2605,9 +2611,11 @@ def _handle_revenue_status(session: Session) -> Response:
         f"• **{_planned(cfg)} Revenue:** {format_money(rev.budget, cfg.currency, places)}",
         f"• **Actual Revenue:** {format_money(rev.actual, cfg.currency, places)}",
     ]
-    if rev.budget != 0:
+    if rev.budget > 0:
         rate = ratio(rev.actual, rev.budget) * Decimal("100")
         lines.append(f"• **Achievement Rate:** {rate:.1f}% of {_noun(cfg)}")
+    elif rev.budget < 0:
+        lines.append(f"• **Achievement Rate:** N/A (the {_noun(cfg)} is negative, so a ratio is not meaningful)")
     lines.append(f"• **Status:** {status_label(rev.status)}\n")
     lines.append("**Revenue Breakdown:**")
 
@@ -2665,10 +2673,12 @@ def _handle_expense_status(session: Session) -> Response:
         f"• **{_planned(cfg)} Expenses:** {format_money(exp.budget, cfg.currency, places)}",
         f"• **Actual Expenses:** {format_money(exp.actual, cfg.currency, places)}",
     ]
-    if exp.budget != 0:
+    utilization = "Budget Utilization" if _is_budget(cfg) else f"Spend vs. {_heading(cfg)}"
+    if exp.budget > 0:
         burn = ratio(exp.actual, exp.budget) * Decimal("100")
-        utilization = "Budget Utilization" if _is_budget(cfg) else f"Spend vs. {_heading(cfg)}"
         lines.append(f"• **{utilization}:** {burn:.1f}%")
+    elif exp.budget < 0:
+        lines.append(f"• **{utilization}:** N/A (the {_noun(cfg)} is negative, so a ratio is not meaningful)")
     lines.append(f"• **Status:** {status_label(exp.status)}\n")
 
     overspent = sorted(
@@ -2712,7 +2722,9 @@ def _handle_budget_utilization(session: Session) -> Response:
         zero_note = f"zero {noun} expenses"
     lines = [f"📊 **{title}**\n"]
 
-    if result.expenses.budget != 0:
+    if result.expenses.budget < 0:
+        lines.append(f"• **{utilization}:** N/A (negative {noun} expenses; a utilization ratio is not meaningful)")
+    elif result.expenses.budget != 0:
         util = ratio(result.expenses.actual, result.expenses.budget) * Decimal("100")
         diff = result.expenses.actual - result.expenses.budget
         status_text = f"over {noun} by {format_money(diff, cfg.currency, places)}" if diff > 0 else f"under {noun} by {format_money(abs(diff), cfg.currency, places)}"
@@ -2720,7 +2732,7 @@ def _handle_budget_utilization(session: Session) -> Response:
     else:
         lines.append(f"• **{utilization}:** N/A ({zero_note})")
 
-    if result.revenue.budget != 0:
+    if result.revenue.budget > 0:
         achieve = ratio(result.revenue.actual, result.revenue.budget) * Decimal("100")
         diff = result.revenue.actual - result.revenue.budget
         status_text = f"beat by {format_money(diff, cfg.currency, places)}" if diff >= 0 else f"shortfall of {format_money(abs(diff), cfg.currency, places)}"
@@ -2842,7 +2854,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
                     "Actual": format_money(result.revenue.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(rev_var, cfg.currency, places),
-                    "Variance (%)": f"{(ratio(rev_var, result.revenue.budget) * 100):+.1f}%" if result.revenue.budget != 0 else "N/A",
+                    "Variance (%)": _pct_text(_variance_percent(rev_var, result.revenue.budget), "+.1f"),
                     "Status": "F" if rev_var >= 0 else "U",
                 },
                 {
@@ -2850,7 +2862,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(result.expenses.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(exp_var, cfg.currency, places),
-                    "Variance (%)": f"{(ratio(exp_var, result.expenses.budget) * 100):+.1f}%" if result.expenses.budget != 0 else "N/A",
+                    "Variance (%)": _pct_text(_variance_percent(exp_var, result.expenses.budget), "+.1f"),
                     "Status": "F" if exp_var <= 0 else "U",
                 },
                 {
@@ -3999,12 +4011,12 @@ def _handle_executive_memo(session: Session) -> Response:
         rev_budget = result.revenue.budget
         rev_actual = result.revenue.actual
         rev_var = rev_actual - rev_budget
-        rev_pct = (ratio(rev_var, rev_budget) * Decimal(100)) if rev_budget != 0 else None
+        rev_pct = _variance_percent(rev_var, rev_budget)
 
         exp_budget = result.expenses.budget
         exp_actual = result.expenses.actual
         exp_var = exp_actual - exp_budget
-        exp_pct = (ratio(exp_var, exp_budget) * Decimal(100)) if exp_budget != 0 else None
+        exp_pct = _variance_percent(exp_var, exp_budget)
 
         budget_profit = rev_budget - exp_budget
         actual_profit = rev_actual - exp_actual
@@ -4040,7 +4052,7 @@ def _handle_executive_memo(session: Session) -> Response:
         "# 📑 Executive Management Briefing & Variance Commentary",
         f"**Reporting Period:** {cfg.period}  ",
         f"**Currency:** {cfg.currency}  ",
-        f"**Materiality Thresholds:** {format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%  \n",
+        f"**Materiality Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}  \n",
         "---",
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
@@ -4072,7 +4084,7 @@ def _handle_executive_memo(session: Session) -> Response:
 
     memo_lines.extend([
         "\n### 4. Governance & Material Variances",
-        f"• **{len(result.material_rows)}** line items breached the materiality hurdle ({format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%).",
+        f"• **{len(result.material_rows)}** line items breached the materiality hurdle ({format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}).",
         f"• **Net Flow-Through:** {format_money(net_impact, cur, places)} retained in net operating profit.",
         f"• **Driver Evidence Coverage:** {reconciled_count} of {len(result.material_rows)} material items verified by mathematical driver decomposition.",
         "\n### 5. Prioritized Management Action Items",
@@ -4191,7 +4203,7 @@ def _handle_greeting(session: Session) -> Response:
 
         text = (
             f"👋 **Hello!** I am ready to explore your **{cfg.period}** financial results.\n\n"
-            f"Currently tracking **{cur}** with materiality set at **{format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%**. "
+            f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. "
             f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n"
             f"What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
         )

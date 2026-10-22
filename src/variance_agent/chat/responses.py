@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from variance_agent.models import AnalysisResult, AnalyzedRow, Status
-from variance_agent.report import _money, _pct, _safe_inline, _report_places
+from variance_agent.report import _money, _pct, _report_places, _safe_inline, _threshold_number
 from variance_agent.currencies import CURRENCY_SYMBOLS
 
 
@@ -33,6 +33,16 @@ def format_money(value: Decimal, currency: str = "USD", places: int = 2) -> str:
 def format_pct(budget: Decimal, variance: Decimal, label: str | None = None) -> str:
     """Format a percentage using the engine's exact formatter."""
     return _pct(budget, variance, label)
+
+
+def format_threshold_amount(value: Decimal, currency: str = "USD") -> str:
+    """A dollar cutoff with every significant digit ('$10,000.00', '$2.505')."""
+    return f"{CURRENCY_SYMBOLS.get(currency, '$')}{_threshold_number(value, 2)}"
+
+
+def format_threshold_pct(ratio: Decimal) -> str:
+    """A percent cutoff held as a ratio, with every significant digit ('5.0%', '0.125%')."""
+    return f"{_threshold_number(ratio, 1, scale=2)}%"
 
 
 def safe_inline(value: object) -> str:
