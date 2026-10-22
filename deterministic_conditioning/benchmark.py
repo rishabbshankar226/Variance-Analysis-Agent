@@ -50,6 +50,9 @@ class BenchmarkEvaluator:
         re.IGNORECASE,
     )
     SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+    # Inclusive word-count ranges; the report rows and README label them "3–6w" and "18–28w".
+    SHORT_WORDS = (3, 6)
+    LONG_WORDS = (18, 28)
 
     @classmethod
     def evaluate(cls, corpus: list[str]) -> LinguisticMetrics:
@@ -64,16 +67,17 @@ class BenchmarkEvaluator:
             sentences = [s.strip() for s in cls.SENTENCE_SPLIT.split(text.strip()) if s.strip()]
 
             for s in sentences:
-                words = [re.sub(r"[^\w]", "", w).lower() for w in s.split() if w]
+                cleaned = (re.sub(r"[^\w]", "", w).lower() for w in s.split())
+                words = [w for w in cleaned if w]  # a spaced dash or bare symbol is not a word
                 if not words:
                     continue
                 w_len = len(words)
                 sentence_lens.append(w_len)
                 all_words.extend(words)
 
-                if 2 <= w_len <= 7:
+                if cls.SHORT_WORDS[0] <= w_len <= cls.SHORT_WORDS[1]:
                     short_count += 1
-                elif 17 <= w_len <= 30:
+                elif cls.LONG_WORDS[0] <= w_len <= cls.LONG_WORDS[1]:
                     long_count += 1
 
         total_words = len(all_words)
