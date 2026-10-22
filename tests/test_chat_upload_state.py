@@ -131,7 +131,7 @@ def test_deployment_policy_survives_a_new_upload() -> None:
     Phase.AWAITING_FILE, Phase.AWAITING_PERIOD, Phase.AWAITING_THRESHOLDS,
     Phase.AWAITING_CURRENCY, Phase.EXPLORING,
 ])
-def test_upload_a_different_file_chip_points_at_the_drop_zone(phase: Phase) -> None:
+def test_upload_a_different_file_chip_shows_the_drop_zone_without_losing_anything(phase: Phase) -> None:
     session = Session()
     if phase == Phase.EXPLORING:
         analysed(session=session)
@@ -140,7 +140,8 @@ def test_upload_a_different_file_chip_points_at_the_drop_zone(phase: Phase) -> N
     period = session.period
     response = handle_message(session, "Upload a different file")
     assert "drop zone" in response.text
-    assert session.phase == phase
+    assert response.phase == Phase.AWAITING_FILE  # the page shows its drop zone for this phase
+    assert session.phase == phase  # ... but nothing is lost until a new file is read
     assert session.period == period
 
 

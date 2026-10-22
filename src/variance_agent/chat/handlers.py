@@ -211,11 +211,13 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
         )
 
     if routing_key in _UPLOAD_ANOTHER_FILE:
+        # The page shows its drop zone for a reply in the awaiting_file phase. The session itself
+        # is left alone: the new file replaces it only once it has been read successfully.
         return Response(
-            text="Use the drop zone above to choose another file. It replaces the current one "
-                 "once it has been read successfully.",
+            text="Choose the new file in the drop zone below. It replaces the current one once it "
+                 "has been read successfully; until then you can keep working with the current file.",
             chips=["Help"],
-            phase=session.phase,
+            phase=Phase.AWAITING_FILE,
         )
 
     if session.phase == Phase.AWAITING_FILE:
