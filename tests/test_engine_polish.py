@@ -142,6 +142,28 @@ def test_price_index_is_a_data_sheet_but_index_is_a_cover() -> None:
     assert ranked["Price Index"].score > ranked["Index"].score
 
 
+def test_an_oversized_worksheet_is_named_in_the_error() -> None:
+    openpyxl = pytest.importorskip("openpyxl")
+    from variance_agent.intake import read_input_assisted
+
+    workbook = openpyxl.Workbook(write_only=True)
+    final = workbook.create_sheet("Final")
+    final.append(["Line Item", "Type", "Budget", "Actual"])
+    final.append(["Rent", "Expense", 100, 90])
+    big = workbook.create_sheet("Hidden export")
+    for row in range(100_050):
+        big.append([row])
+    big.sheet_state = "hidden"
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+
+    result = read_input_assisted(buffer.getvalue(), ".xlsx", filename="book.xlsx")
+    assert result.has_fatal_errors
+    message = result.fatal_error_message or ""
+    assert "100,000 rows" in message and "hidden sheets included" in message
+    assert "CSV" in message
+
+
 def test_hidden_worksheets_do_not_win_automatically(tmp_path: Path) -> None:
     openpyxl = pytest.importorskip("openpyxl")
     from variance_agent.intake import read_input_assisted

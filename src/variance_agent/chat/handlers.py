@@ -4199,9 +4199,26 @@ def _handle_tldr(session: Session) -> Response:
         impact_pct = (ratio(net_impact, abs(budget_profit)) * Decimal(100)) if budget_profit != 0 else None
         margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
 
-    beat_word = "beat" if net_impact >= 0 else "shortfall"
-    rev_word = "outperformed" if rev_var >= 0 else "underperformed"
-    exp_word = "generated savings of" if exp_var <= 0 else "overspent by"
+    basis = "plan" if _is_budget(cfg) else f"the {_noun(cfg)}"
+    # A zero difference is neither a beat nor a saving: say it is on plan.
+    if net_impact == 0:
+        outcome = (f"exactly matching {'the planned budget' if _is_budget(cfg) else _noun(cfg)} "
+                   f"of {format_money(budget_profit, cur, places)}")
+    else:
+        beat_word = "beat" if net_impact > 0 else "shortfall"
+        outcome = (f"delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
+                   f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} "
+                   f"of {format_money(budget_profit, cur, places)})")
+    if rev_var == 0:
+        revenue_clause = f"Top-line revenue came in exactly on {basis}"
+    else:
+        rev_word = "outperformed" if rev_var > 0 else "underperformed"
+        revenue_clause = f"Top-line revenue {rev_word} {basis} by {format_money(abs(rev_var), cur, places)}"
+    if exp_var == 0:
+        expense_clause = f"operating expenses came in exactly on {basis}"
+    else:
+        exp_word = "generated savings of" if exp_var < 0 else "overspent by"
+        expense_clause = f"operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}"
 
     # Identify top accounts
     rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
@@ -4229,9 +4246,9 @@ def _handle_tldr(session: Session) -> Response:
 
     text = (
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"
-        f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
-        f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with operating margin standing at **{_pct_text(margin)}**. "
-        f"Top-line revenue {rev_word} {'plan' if _is_budget(cfg) else 'the ' + _noun(cfg)} by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
+        f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, {outcome} "
+        f"with operating margin standing at **{_pct_text(margin)}**. "
+        f"{revenue_clause}, while {expense_clause}.{driver_context}"
     )
 
     chips = ["Executive memo", "Waterfall", "Sensitivity", "Summary"]

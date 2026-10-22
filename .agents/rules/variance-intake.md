@@ -9,7 +9,7 @@ Layout:
 - `src/variance_agent/analysis.py`: variances, classification, summaries, drivers
 - `src/variance_agent/report.py`, `audit.py`, `output.py`: report, audit and file writing
 - `src/variance_agent/cli.py`: the command line
-- `src/variance_agent/chat/`: the deterministic chatbot (`handlers.py`, `session.py`, `intent.py`, `server.py`). The UI is `static/chat.html`, with an identical copy at `src/variance_agent/static/chat.html`.
+- `src/variance_agent/chat/`: the deterministic chatbot (`handlers.py`, `session.py`, `intent.py`, `server.py`). The UI is the single packaged copy in `src/variance_agent/static/` (`chat.html`, `chat.js`, `chat.css`).
 - Documentation: `docs/input-contract.md`, `docs/financial-rules.md`, `docs/audit-contract.md`. Schemas: `schemas/audit-1.x.schema.json`.
 
 The goal is to make getting budget-vs-actual data into the tool easy for a non-technical analyst. The task prompt names the phase. The `deterministic_conditioning/` folder is out of scope.

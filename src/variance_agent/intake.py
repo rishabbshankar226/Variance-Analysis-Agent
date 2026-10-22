@@ -1438,11 +1438,18 @@ def _read_excel_bytes(
 ) -> IntakeResult:
     try:
         stored_numbers = inspect_archive(data)
-    except Exception:
-        return IntakeResult(
-            has_fatal_errors=True,
-            fatal_error_message=f"The Excel file '{filename}' could not be opened safely.",
-        )
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else ""
+        if any(term in reason for term in ("worksheet exceeds", "physical rows", "physical coordinates")):
+            # A very large sheet, hidden or not, makes the whole workbook unsafe to read.
+            message = (
+                f"The Excel file '{filename}' has a worksheet larger than I can read "
+                f"(at most {MAX_ROWS:,} rows and {MAX_CELLS:,} cells on any sheet, hidden sheets included). "
+                "Export the sheet you need to CSV, or save a copy without the large sheet."
+            )
+        else:
+            message = f"The Excel file '{filename}' could not be opened safely."
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=message)
 
     loader = _excel_loader()
     with io.BytesIO(data) as src:
