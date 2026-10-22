@@ -353,6 +353,10 @@ def parse_assisted_decimal(
     if text.lower() in {"na", "n/a", "none", "null"}:
         raise ValueError(f"{line_item}: required value in {field} is missing (marked {text}).")
 
+    # "$(1,234)" is the accounting negative with the symbol outside the parentheses.
+    if outside := re.fullmatch(r"([$€£])\s*\((.*)\)", text):
+        text = f"({outside.group(1)}{outside.group(2)})"
+
     # ERP exports (SAP, ...) put the sign after the digits: "500.00-" is -500.00.
     trailing_minus = False
     if text.endswith("-") and not text.startswith("("):

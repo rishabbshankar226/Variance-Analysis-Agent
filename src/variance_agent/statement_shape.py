@@ -63,7 +63,7 @@ class _Item:
 
 
 def _amount(text: object) -> Decimal | None:
-    raw = str(text).strip().replace("$", "")
+    raw = str(text).strip().replace("$", "").replace("\u2212", "-").replace(" ", "")
     if raw in _DASHES:
         return Decimal(0)
     negative = raw.startswith("(") and raw.endswith(")")
