@@ -1431,6 +1431,12 @@ def _unclassified_note(result: AnalysisResult) -> str:
             "classify them for complete figures.")
 
 
+def _with_unclassified_note(text: str, result: AnalysisResult) -> str:
+    """Append the unclassified-rows caveat to an answer built from category totals."""
+    note = _unclassified_note(result)
+    return f"{text}\n\n{note}" if note else text
+
+
 def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
     """Line items without reconciled subtotal/total rows, which would double count."""
     return [row for row in result.rows if not row.excluded_from_aggregation]
@@ -1730,38 +1736,13 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     )
 
 
-def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
-    """Explain the driver decomposition for a specific line item."""
-    result = session.result
-    assert result is not None
-    cfg = result.config
-    places = report_places(result)
+def _rows_named(result: AnalysisResult, name: str) -> list[AnalyzedRow]:
+    """Every row with this exact line-item name (a name can repeat, e.g. one per department)."""
+    return [row for row in result.rows if row.line_item == name]
 
-    raw_query = intent.captures.get("item", "")
-    item_query = _resolve_item_query(raw_query, session)
-    all_items = [row.line_item for row in result.rows]
-    matches = find_line_item(item_query, all_items)
-    if not matches and raw_query:
-        named = _item_in_sentence(raw_query, all_items)  # "why is marketing over budget?"
-        matches = [named] if named else []
 
-    if not matches:
-        display_q = safe_inline(raw_query or item_query or "unspecified item")
-        return _not_found(display_q, item_query, all_items, "Why")
-
-    if len(matches) > 1:
-        chips = [f"Why {m}?" for m in matches[:5]]
-        return Response(
-            text="Multiple matches found. Which one?\n\n"
-                 + "\n".join(f"• {safe_inline(m)}" for m in matches),
-            chips=chips,
-            phase=Phase.EXPLORING,
-        )
-
-    matched_name = matches[0]
-    session.last_focused_item = matched_name
-    row = next(r for r in result.rows if r.line_item == matched_name)
-
+def _explain_lines(cfg: AnalysisConfig, row: AnalyzedRow, places: int) -> list[str]:
+    """The driver-evidence answer for one row."""
     lines = [
         f"**Driver Evidence: {safe_inline(row.line_item)}**\n",
         f"{_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}",
@@ -1795,6 +1776,46 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
             f"**Status: No driver data provided.**\n\n"
             f"To support a causal claim, provide: {likely_metrics}."
         )
+    return lines
+
+
+def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
+    """Explain the driver decomposition for a specific line item."""
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+
+    raw_query = intent.captures.get("item", "")
+    item_query = _resolve_item_query(raw_query, session)
+    all_items = [row.line_item for row in result.rows]
+    matches = find_line_item(item_query, all_items)
+    if not matches and raw_query:
+        named = _item_in_sentence(raw_query, all_items)  # "why is marketing over budget?"
+        matches = [named] if named else []
+
+    if not matches:
+        display_q = safe_inline(raw_query or item_query or "unspecified item")
+        return _not_found(display_q, item_query, all_items, "Why")
+
+    if len(matches) > 1:
+        chips = [f"Why {m}?" for m in matches[:5]]
+        return Response(
+            text="Multiple matches found. Which one?\n\n"
+                 + "\n".join(f"• {safe_inline(m)}" for m in matches),
+            chips=chips,
+            phase=Phase.EXPLORING,
+        )
+
+    matched_name = matches[0]
+    session.last_focused_item = matched_name
+    named_rows = _rows_named(result, matched_name)
+
+    sections = ["\n".join(_explain_lines(cfg, row, places)) for row in named_rows]
+    lines = [sections[0]] if len(sections) == 1 else [
+        f"{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.\n",
+        *[f"**Row {i} of {len(named_rows)}**\n\n{section}" for i, section in enumerate(sections, 1)],
+    ]
 
     chips = ["Material", "Summary"]
     # Suggest explaining the next material item
@@ -1807,7 +1828,7 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
         pass
 
     return Response(
-        text="\n".join(lines),
+        text="\n\n".join(lines),
         chips=chips,
         phase=Phase.EXPLORING,
     )
@@ -1842,7 +1863,15 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
 
     matched_name = matches[0]
     session.last_focused_item = matched_name
-    row = next(r for r in result.rows if r.line_item == matched_name)
+    named_rows = _rows_named(result, matched_name)
+    if len(named_rows) > 1:
+        return Response(
+            text=f"{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.",
+            table=[row_to_table_dict(r, cfg.currency, places, _heading(cfg)) for r in named_rows],
+            chips=[f"Why {matched_name}?", "Material", "Summary"],
+            phase=Phase.EXPLORING,
+        )
+    row = named_rows[0]
 
     lines = [
         f"**{safe_inline(row.line_item)}**\n",
@@ -2612,7 +2641,10 @@ def _handle_expense_status(session: Session) -> Response:
         lines.append(f"• **{utilization}:** {burn:.1f}%")
     lines.append(f"• **Status:** {status_label(exp.status)}\n")
 
-    overspent = [r for r in expense_rows if r.actual > r.budget]
+    overspent = sorted(
+        (r for r in expense_rows if r.actual > r.budget),
+        key=lambda r: r.variance_dollars, reverse=True,
+    )
     if overspent:
         over_heading = "Over-Budget Accounts" if _is_budget(cfg) else f"Accounts Over {_heading(cfg)}"
         lines.append(f"**{over_heading}:**")
@@ -2677,7 +2709,7 @@ def _handle_budget_utilization(session: Session) -> Response:
         )
 
     chips = ["Summary", "Biggest risks", "Biggest wins"]
-    return Response(text="\n".join(lines), chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note("\n".join(lines), result), chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_top_percent(session: Session) -> Response:
@@ -2722,17 +2754,18 @@ def _handle_metrics_count(session: Session) -> Response:
     result = session.result
     assert result is not None
 
-    total_rows = len(result.rows)
+    rows = _detail_rows(result)
+    total_rows = len(rows)
     mat_rows = len(result.material_rows)
     mat_pct = (mat_rows / total_rows * 100) if total_rows > 0 else 0
 
-    f_count = sum(1 for r in result.rows if r.status == Status.FAVORABLE)
-    u_count = sum(1 for r in result.rows if r.status == Status.UNFAVORABLE)
-    n_count = sum(1 for r in result.rows if r.status == Status.NEUTRAL)
+    f_count = sum(1 for r in rows if r.status == Status.FAVORABLE)
+    u_count = sum(1 for r in rows if r.status == Status.UNFAVORABLE)
+    n_count = sum(1 for r in rows if r.status == Status.NEUTRAL)
 
-    rev_count = sum(1 for r in result.rows if r.line_type == LineType.REVENUE)
-    exp_count = sum(1 for r in result.rows if r.line_type == LineType.EXPENSE)
-    unc_count = sum(1 for r in result.rows if r.line_type == LineType.UNCLASSIFIED)
+    rev_count = sum(1 for r in rows if r.line_type == LineType.REVENUE)
+    exp_count = sum(1 for r in rows if r.line_type == LineType.EXPENSE)
+    unc_count = sum(1 for r in rows if r.line_type == LineType.UNCLASSIFIED)
 
     lines = [
         "🔢 **Portfolio Metrics Breakdown**\n",
@@ -2802,10 +2835,11 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
         status_word = "beat" if net_impact >= 0 else "shortfall"
         target = "budget target" if _is_budget(cfg) else _noun(cfg)
         return Response(
-            text=f"⚖️ **Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
-                 f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, representing a "
-                 f"**{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against the {target} of "
-                 f"{format_money(base_profit, cfg.currency, places)}.",
+            text=_with_unclassified_note(
+                f"⚖️ **Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
+                f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, representing a "
+                f"**{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against the {target} of "
+                f"{format_money(base_profit, cfg.currency, places)}.", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -2845,10 +2879,11 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                 },
             ]
         return Response(
-            text=f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
-                 f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
-                 f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
-                 f"({_pct_text(margin)} EBITDA margin; cost-to-income ratio of {_pct_text(cost_ratio)}).",
+            text=_with_unclassified_note(
+                f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
+                f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
+                f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
+                f"({_pct_text(margin)} EBITDA margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -3535,6 +3570,14 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         amount_dec = abs(amount_dec)
         is_negative = True
 
+    if is_negative and is_percent and amount_dec > Decimal(100):
+        return Response(
+            text=f"A drop of more than 100% would take {safe_inline(target_clean)} below zero, "
+                 "which is not a meaningful scenario. Try a smaller percentage or a dollar amount.",
+            chips=["What if revenue drops 5%?", "What if expenses drop 10%?", "Sensitivity analysis"],
+            phase=Phase.EXPLORING,
+        )
+
     # Identify target: aggregate revenue, aggregate expense, or specific line item
     is_rev_agg = target_clean.lower() in ("revenue", "revenues", "sales", "topline", "top line")
     is_exp_agg = target_clean.lower() in ("expense", "expenses", "costs", "spend", "opex")
@@ -3556,6 +3599,15 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
                 chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Summary"],
                 phase=Phase.EXPLORING,
             )
+
+    if matched_row is not None and matched_row.line_type == LineType.UNCLASSIFIED:
+        return Response(
+            text=f"**{safe_inline(matched_row.line_item)}** is not classified as Revenue or Expense, so I "
+                 "cannot tell whether a change helps or hurts profit. Classify it first: type `new`, "
+                 "upload the file again and label it when asked, or add a Type column to your file.",
+            chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Summary"],
+            phase=Phase.EXPLORING,
+        )
 
     with financial_context() as context:
         context.traps[Inexact] = False
@@ -3679,7 +3731,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
     ]
 
     chips = ["Sensitivity analysis", "Run rate", "Waterfall", "What if expenses drop 5%?"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_sensitivity(session: Session) -> Response:
@@ -3737,39 +3789,52 @@ def _handle_sensitivity(session: Session) -> Response:
     )
 
     chips = ["What if revenue drops 5%?", "What if expenses increase 5%?", "Run rate", "Waterfall"]
-    return Response(text=text, table=table_rows, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table_rows, chips=chips, phase=Phase.EXPLORING)
 
 
 _UNRECOGNISED_PERIOD = "Quarterly (3 months assumed)"
 
 
-def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
-    """Detect elapsed months and period label from session period text."""
-    p = period.lower()
-    if "q1" in p:
-        return 3, "Q1 (3 months elapsed)"
-    if "q2" in p:
-        return 6, "Q2 (6 months elapsed)"
-    if "q3" in p:
-        return 9, "Q3 (9 months elapsed)"
-    if "q4" in p or "fy" in p or "full year" in p or "annual" in p:
-        return 12, "Full Year (12 months)"
-    if "h1" in p or "first half" in p:
-        return 6, "H1 (6 months elapsed)"
-    if "h2" in p or "second half" in p:
-        return 12, "H2 (12 months)"
+_MONTH_NUMBERS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_MONTH_NAME = re.compile(r"\b(" + "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True)) + r")\b")
+_QUARTER = re.compile(r"(?<![a-z\d])q([1-4])(?!\d)")
+_HALF = re.compile(r"(?<![a-z\d])h([12])(?!\d)")
 
-    months = {
-        "jan": 1, "january": 1, "feb": 2, "february": 2,
-        "mar": 3, "march": 3, "apr": 4, "april": 4,
-        "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-        "aug": 8, "august": 8, "sep": 9, "september": 9,
-        "oct": 10, "october": 10, "nov": 11, "november": 11,
-        "dec": 12, "december": 12,
-    }
-    for m_name, m_num in months.items():
-        if re.search(rf"\b{m_name}\b", p):
-            return m_num, f"{m_name.capitalize()} ({m_num} month{'s' if m_num != 1 else ''} elapsed)"
+
+def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
+    """Detect elapsed months and period label from session period text.
+
+    The period names the end of the year-to-date span: a quarter or half by its number, a
+    month (or the last month of a range such as 'Jan-Jun 2026') by its position in the year.
+    """
+    p = normalize_for_routing(period).lower()
+    quarter = _QUARTER.search(p)
+    if quarter:
+        number = int(quarter.group(1))
+        if number == 4:
+            return 12, "Full Year (12 months)"
+        return 3 * number, f"Q{number} ({3 * number} months elapsed)"
+    half = _HALF.search(p)
+    if half or "first half" in p or "second half" in p:
+        if (half is not None and half.group(1) == "2") or "second half" in p:
+            return 12, "H2 (12 months)"
+        return 6, "H1 (6 months elapsed)"
+    if re.search(r"\b(?:fy|fiscal\s+year|year)\s+end", p):
+        return 12, "Full Year (12 months)"
+
+    month_hits = _MONTH_NAME.findall(p)
+    if month_hits:
+        m_name = month_hits[-1]
+        m_num = _MONTH_NUMBERS[m_name]
+        return m_num, f"{m_name.capitalize()} ({m_num} month{'s' if m_num != 1 else ''} elapsed)"
+
+    if re.search(r"\bfy|full\s+year|annual", p):
+        return 12, "Full Year (12 months)"
 
     m_match = re.search(r"\bm(?:onth)?\s*([1-9]|1[0-2])\b", p)
     if m_match:
@@ -3882,7 +3947,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
     ]
 
     chips = ["Sensitivity analysis", "What if revenue drops 5%?", "Waterfall", "Summary"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_executive_memo(session: Session) -> Response:
@@ -4272,7 +4337,7 @@ def _handle_profitability(session: Session) -> Response:
     ]
 
     chips = ["Waterfall", "Run rate", "Executive memo", "Summary"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
 
 
 def _describe_item_reply(session: Session, matched_name: str) -> Response:
