@@ -179,7 +179,8 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if intent.intent_id == "too_long":
         return Response(
             text=f"That message is too long for me to read as a question (limit {MAX_ROUTING_CHARS} "
-                 "characters). Ask a shorter question, or upload your data with the drop zone above.",
+                 "characters). Ask a shorter question. To load data, paste a table before any file is "
+                 "loaded, or type `new` and use the drop zone.",
             phase=session.phase,
         )
     routing_key = normalize_for_routing(text).lower()
@@ -1059,7 +1060,7 @@ def _clean_currency_input(text: str) -> str:
 
 def _handle_currency(session: Session, text: str) -> Response:
     """Set the reporting currency and run the initial analysis."""
-    currency = _clean_currency_input(text)
+    currency = _clean_currency_input(normalize_for_routing(text))
     try:
         validate_currency(currency)
     except ValueError:

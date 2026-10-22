@@ -160,3 +160,29 @@ def test_pasted_table_that_cannot_be_read_explains_why() -> None:
     assert "paste a table" in response.text.lower()
     assert session.source_bytes is None
     assert session.phase == Phase.AWAITING_FILE
+
+
+def test_workbook_read_on_an_unreadable_sheet_replaces_the_session_and_offers_its_sheets() -> None:
+    session = analysed()
+    name = "fixture_g_cover_page_active.xlsx"
+    response = handle_upload(session, (REALWORLD / name).read_bytes(), name, sheet="Cover Page")
+    assert response.text.startswith("⚠️")
+    assert session.source_name == name
+    assert session.phase == Phase.AWAITING_FILE
+    assert session.result is None
+    assert "Sheet BvA" in (response.chips or [])
+    reply = ask(session, "Sheet BvA")
+    assert session.worksheet == "BvA"
+    assert "Switched to worksheet" in reply.text
+
+
+def test_full_width_currency_and_over_long_message_hint() -> None:
+    session = Session()
+    handle_upload(session, SAMPLE_CSV, "a.csv")
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$1,000 or 5%")
+    fullwidth_usd = "".join(chr(ord(c) + 0xFEE0) for c in "USD")
+    handle_message(session, fullwidth_usd)
+    assert session.currency == "USD"
+    assert session.phase == Phase.EXPLORING
+    assert "type `new`" in handle_message(session, "why " + "x" * 700).text
