@@ -17,6 +17,7 @@ from .models import (
     Status,
     SummaryVerification,
 )
+from .classification import infer_line_type
 from .comparison import comparison_heading, zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
@@ -40,11 +41,6 @@ _CATEGORY_SUMMARY_RE = re.compile(
     r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)|"
     r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)\s+"
     r"(?:grand\s+total|sub\s*total|total)|grand\s+total|sub\s*total|total)",
-    re.IGNORECASE,
-)
-_REVENUE_RE = re.compile(r"\b(revenue|sales|income)\b", re.IGNORECASE)
-_EXPENSE_RE = re.compile(
-    r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b",
     re.IGNORECASE,
 )
 
@@ -136,17 +132,7 @@ def _classify(
         if type_field[1] is not None and str(type_field[1]).strip():
             return LineType.UNCLASSIFIED, "unrecognized_type"
 
-    # Profit measures already net costs against revenue and are not additive sales.
-    if re.search(r"\b(net|operating|gross)\s+(income|profit|earnings)\b", line_item, re.I):
-        return LineType.UNCLASSIFIED, "non_additive_profit"
-
-    revenue_match = bool(_REVENUE_RE.search(line_item))
-    expense_match = bool(_EXPENSE_RE.search(line_item))
-    if revenue_match and not expense_match:
-        return LineType.REVENUE, "label_inference"
-    if expense_match and not revenue_match:
-        return LineType.EXPENSE, "label_inference"
-    return LineType.UNCLASSIFIED, "unclassified"
+    return infer_line_type(line_item)
 
 
 def _percent_variance(

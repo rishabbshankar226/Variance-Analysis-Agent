@@ -13,14 +13,17 @@ Handles:
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import cast
 
+from .classification import infer_line_type
 from .currencies import SYMBOL_CURRENCIES
 from .excel import WorkbookLoader, cell_value, inspect_archive
 from .limits import (
@@ -195,6 +198,8 @@ class IntakeResult:
     blank_budget_items: list[str] = field(default_factory=list)
     # Whether those blank budgets were read as 0 (confirmed in chat; always on for CLI --assisted).
     blank_budgets_as_zero: bool = False
+    # Accounting dashes ('-', en/em dash) read as 0, for the audit's zero_reads record.
+    dash_count: int = 0
     candidate_sheets: list[SheetScore] = field(default_factory=list)
     available_sheets: list[str] = field(default_factory=list)
     has_fatal_errors: bool = False
@@ -337,12 +342,21 @@ def parse_assisted_decimal(
     if not isinstance(value, str):
         raise ValueError(f"{line_item}: field '{field}' must be a numeric scalar.")
 
-    text = value.strip()
+    # NFKC folds full-width digits/signs and non-breaking spaces; U+2212 is the typographic minus.
+    text = unicodedata.normalize("NFKC", value).strip().replace("\u2212", "-")
     if text in _ACCOUNTING_DASHES:
         return Decimal("0"), f"Read accounting dash '{text}' as 0"
 
     if text.lower() in {"na", "n/a", "none", "null"}:
         raise ValueError(f"{line_item}: required value in {field} is missing (marked {text}).")
+
+    # ERP exports (SAP, ...) put the sign after the digits: "500.00-" is -500.00.
+    trailing_minus = False
+    if text.endswith("-") and not text.startswith("("):
+        unsigned = _NUMBER_RE.fullmatch(text[:-1].rstrip())
+        if unsigned is not None and not any(sign in unsigned["prefix"] for sign in "+-"):
+            trailing_minus = True
+            text = text[:-1].rstrip()
 
     negative_parentheses = text.startswith("(") and text.endswith(")")
     if negative_parentheses:
@@ -371,7 +385,7 @@ def parse_assisted_decimal(
     except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{line_item}: field '{field}' is not numeric: {value}.") from exc
 
-    if negative_parentheses:
+    if negative_parentheses or trailing_minus:
         number = number.copy_negate()
 
     if not number.is_finite():
@@ -379,6 +393,10 @@ def parse_assisted_decimal(
     if len(number.as_tuple().digits) > MAX_NUMBER_LENGTH:
         raise ValueError(f"{line_item}: field '{field}' exceeds the supported numeric length.")
 
+    if trailing_minus:
+        return number, f"Read trailing minus sign on '{value.strip()}' as negative"
+    if "\u2212" in value:
+        return number, f"Read typographic minus sign in '{value.strip()}' as negative"
     return number, None
 
 
@@ -393,8 +411,6 @@ _PERIOD_RE = re.compile(
 
 _THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\(\s*thousands\b|\$000s?|\b000s\b)", re.IGNORECASE)
 _MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\(\s*millions\b|\$m\b|in\s+m\b)", re.IGNORECASE)
-_REVENUE_KEYWORDS = re.compile(r"\b(revenue|sales|income|rev)\b", re.IGNORECASE)
-_EXPENSE_KEYWORDS = re.compile(r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b", re.IGNORECASE)
 _TOTAL_KEYWORD_RE = re.compile(
     r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
     re.IGNORECASE,
@@ -482,8 +498,9 @@ def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection
         b_dec = Decimal(str(b)) if b is not None else Decimal("0")
         a_dec = Decimal(str(a)) if a is not None else Decimal("0")
 
-        is_rev = bool(_REVENUE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "revenue"
-        is_exp = bool(_EXPENSE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "expense"
+        inferred, _ = infer_line_type(name)
+        is_rev = inferred is LineType.REVENUE or str(r.get("type", "")).lower() == "revenue"
+        is_exp = inferred is LineType.EXPENSE or str(r.get("type", "")).lower() == "expense"
 
         if is_rev and not is_exp:
             is_neg = (b_dec < 0 or a_dec < 0)
@@ -1086,6 +1103,34 @@ def detect_comparison_columns(
     )
 
 
+def _decode_text(data: bytes, filename: str) -> tuple[str, str | None]:
+    """Decode CSV/TSV bytes without ever substituting replacement characters.
+
+    UTF-16 (with a byte-order mark) and UTF-8 (with or without one) are read silently;
+    Windows-1252, the usual encoding of Excel "CSV" exports on Windows, is read with a note;
+    anything else is refused rather than corrupted.
+    """
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        try:
+            return data.decode("utf-16"), None
+        except UnicodeDecodeError:
+            pass
+    try:
+        return data.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        pass
+    try:
+        return data.decode("cp1252"), (
+            "Read the file as Windows-1252 text because it is not valid UTF-8. "
+            "Check that accented letters and currency symbols look right."
+        )
+    except UnicodeDecodeError:
+        raise ValueError(
+            f"I could not read '{filename}' as text. Save it as a UTF-8 CSV "
+            "(in Excel: Save As, then CSV UTF-8) and upload it again."
+        ) from None
+
+
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -1104,22 +1149,18 @@ def read_input_assisted(
         )
 
     norm_suffix = suffix.lower()
-    if norm_suffix in {".tsv", ".txt"}:
-        return _read_tsv_text(
-            data.decode("utf-8-sig", errors="replace"),
-            filename,
-            treat_blank_budgets_as_zero,
-            selected_period,
-            compare_to=compare_to,
+    if norm_suffix in {".tsv", ".txt", ".csv"}:
+        try:
+            text, encoding_note = _decode_text(data, filename)
+        except ValueError as exc:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
+        reader = _read_tsv_text if norm_suffix != ".csv" else _read_csv_text
+        result = reader(
+            text, filename, treat_blank_budgets_as_zero, selected_period, compare_to=compare_to,
         )
-    if norm_suffix == ".csv":
-        return _read_csv_text(
-            data.decode("utf-8-sig", errors="replace"),
-            filename,
-            treat_blank_budgets_as_zero,
-            selected_period,
-            compare_to=compare_to,
-        )
+        if encoding_note and not result.has_fatal_errors:
+            result.visible_transformations.insert(0, encoding_note)
+        return result
     if norm_suffix in {".xlsx", ".xlsm"}:
         return _read_excel_bytes(
             data,
@@ -1201,7 +1242,7 @@ def _read_json_bytes(
     # Delegate to parsing.load_json_text and wrap into IntakeResult
     from .parsing import load_json_text
     try:
-        rows = load_json_text(data.decode("utf-8"))
+        rows = load_json_text(data.decode("utf-8-sig"))
         basis = compare_to if compare_to is not None else ComparisonBasis.BUDGET
         if basis != ComparisonBasis.BUDGET:
             try:
@@ -1432,6 +1473,35 @@ def _read_pdf_bytes(
     return result
 
 
+_MAX_LISTED_CELLS = 10
+
+
+def _cell_problem(
+    row: int, line_item: str, column: str | None, field_label: str, exc: ValueError,
+) -> IntakeProblem:
+    """A problem for one amount that could not be read, worded for the person who must fix it."""
+    detail = str(exc).removeprefix(f"{line_item}: ")
+    return IntakeProblem(
+        row=row,
+        column=column,
+        line_item=line_item,
+        message=f"Row {row}, {line_item}, {field_label} column: {detail}",
+        technical_detail=str(exc),
+    )
+
+
+def _unreadable_cells_message(filename: str, cells: list[IntakeProblem]) -> str:
+    """Stop-and-fix message for amounts that cannot be read (never read as 0)."""
+    lines = [
+        f"I could not read every amount in '{filename}', so I stopped instead of guessing. "
+        "Fix these cells and upload the file again:"
+    ]
+    lines.extend(f"- {cell.message}" for cell in cells[:_MAX_LISTED_CELLS])
+    if len(cells) > _MAX_LISTED_CELLS:
+        lines.append(f"- ...and {len(cells) - _MAX_LISTED_CELLS} more.")
+    return "\n".join(lines)
+
+
 def _process_raw_table(
     raw_rows: list[list[object]],
     filename: str,
@@ -1549,8 +1619,10 @@ def _process_raw_table(
 
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
+    unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
     blank_budget_items: list[str] = []
     dash_count = 0
+    minus_count = 0  # trailing / typographic minus signs read as negative
 
     data_rows = raw_rows[header_idx + 1:]
     for physical_idx, row in enumerate(data_rows, start=header_row_number + 1):
@@ -1585,15 +1657,15 @@ def _process_raw_table(
                     budget_dec = Decimal("0")
             elif b_note and "dash" in b_note:
                 dash_count += 1
+            elif b_note and "minus" in b_note:
+                minus_count += 1
         except ValueError as exc:
-            problems.append(
-                IntakeProblem(
-                    row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.BUDGET, comparison_field),
-                    line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, {comparison_field} column: {exc}",
-                )
+            problem = _cell_problem(
+                physical_idx, line_item_str,
+                column_mapping.get(CanonicalRole.BUDGET, comparison_field), comparison_field, exc,
             )
+            problems.append(problem)
+            unreadable_cells.append(problem)
 
         raw_actual = row[actual_idx] if actual_idx < len(row) else None
         actual_dec: Decimal | None = None
@@ -1606,15 +1678,15 @@ def _process_raw_table(
             )
             if a_note and "dash" in a_note:
                 dash_count += 1
+            elif a_note and "minus" in a_note:
+                minus_count += 1
         except ValueError as exc:
-            problems.append(
-                IntakeProblem(
-                    row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.ACTUAL, "Actual"),
-                    line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, Actual column: {exc}",
-                )
+            problem = _cell_problem(
+                physical_idx, line_item_str,
+                column_mapping.get(CanonicalRole.ACTUAL, "Actual"), "Actual", exc,
             )
+            problems.append(problem)
+            unreadable_cells.append(problem)
 
         row_dict: dict[str, object] = {
             "line_item": line_item_str,
@@ -1649,9 +1721,26 @@ def _process_raw_table(
 
         output_rows.append(row_dict)
 
+    if unreadable_cells:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=_unreadable_cells_message(filename, unreadable_cells),
+            problems=problems,
+            sheet_name=sheet_name,
+            header_row_number=header_row_number,
+            column_mapping=column_mapping,
+            comparison_basis=detection.basis,
+            comparison_label=detection.label,
+        )
+
     if dash_count > 0:
         visible_transformations.append(
             f"Read accounting dashes ('-') as 0 across {dash_count} amount{'s' if dash_count != 1 else ''}"
+        )
+    if minus_count > 0:
+        visible_transformations.append(
+            f"Read a trailing or typographic minus sign (for example '500.00-') as a negative "
+            f"amount across {minus_count} amount{'s' if minus_count != 1 else ''}"
         )
 
     if treat_blank_budgets_as_zero and blank_budget_items:
@@ -1716,6 +1805,7 @@ def _process_raw_table(
         problems=problems,
         blank_budget_items=blank_budget_items,
         blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        dash_count=dash_count,
         detected_totals=reconciled_names,
         unreconciled_totals=subtotals_det.unreconciled_totals,
         detected_unit_multiplier=detected_mult,
@@ -1747,7 +1837,7 @@ def audit_transformations(
             "sign_flip": mapping.flip_signs,
             "flipped_line_items": intake_res.negative_revenue_items if mapping.flip_signs else [],
             "unit_scale": mapping.unit_scale if mapping.unit_scale != "1" else None,
-            "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
+            "zero_reads": {"accounting_dashes": intake_res.dash_count, "blank_budgets": blank_budgets},
             "excluded_totals": mapping.exclude_totals,
             "period_selection": mapping.period_column_selection,
             "classification_rules": mapping.classification_rules,
@@ -1763,7 +1853,7 @@ def audit_transformations(
             str(intake_res.detected_unit_multiplier)
             if intake_res.detected_unit_multiplier != Decimal("1") else None
         ),
-        "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
+        "zero_reads": {"accounting_dashes": intake_res.dash_count, "blank_budgets": blank_budgets},
         "excluded_totals": intake_res.detected_totals,
         "period_selection": None,
         "classification_rules": None,
