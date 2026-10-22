@@ -1530,7 +1530,7 @@ def _handle_help(session: Session) -> Response:
         "• `sheets` / `sheet <name>` — View and switch between Excel worksheets or PDF statements\n"
         "• `metrics` — Total accounts, materiality rate, and portfolio breakdown\n\n"
         "**Financial Concepts & Education (Ask Anytime):**\n"
-        "• `what is materiality?` — Dual-threshold noise reduction logic\n"
+        "• `what is materiality?` — The dollar-or-percent test for what needs explaining\n"
         "• `favorable vs unfavorable` — Sign conventions for revenue vs. expense\n"
         "• `what is net impact?` — Net operating income formula\n"
         "• `budget vs forecast` — AOP vs. Latest Estimate baseline principles\n"
@@ -1538,7 +1538,7 @@ def _handle_help(session: Session) -> Response:
         "• `operating leverage` — Fixed vs. variable costs and drop-through\n"
         "• `what are financial kpis?` — Key variance performance indicators\n"
         "• `what is driver decomposition?` — Price vs. volume causal analysis\n"
-        "• `audit trail` — Cryptographic SHA-256 provenance standards\n\n"
+        "• `audit trail` — SHA-256 source fingerprints and what the audit file records\n\n"
         "**Standard Exploration:**\n"
         "• `summary` — Executive summary with net operating impact\n"
         "• `material` — Show all material variances\n"
@@ -2882,7 +2882,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "% of Revenue": _pct_text(cost_ratio),
                 },
                 {
-                    "Category": "Operating Profit (EBITDA)",
+                    "Category": "Operating Profit",
                     _heading(cfg): format_money(result.revenue.budget - result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(actual_profit, cfg.currency, places),
                     "Operating Flow": "Net Retained Margin",
@@ -2894,7 +2894,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                 f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
                 f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
                 f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
-                f"({_pct_text(margin)} EBITDA margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
+                f"({_pct_text(margin)} operating margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -3704,7 +3704,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
         f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
         f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
-        f"• **Simulated EBITDA Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
+        f"• **Simulated Operating Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
         f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. {'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
     )
 
@@ -3789,7 +3789,7 @@ def _handle_sensitivity(session: Session) -> Response:
                 "Expenses": format_money(s_exp, cur, places),
                 "Operating Profit": format_money(s_profit, cur, places),
                 f"Var vs {_heading(cfg)} ({sym})": format_money(s_var_budget, cur, places),
-                "EBITDA Margin": _pct_text(s_margin),
+                "Operating Margin": _pct_text(s_margin),
                 "Status": status,
             })
 
@@ -3919,7 +3919,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         f"• **Corporate Latest Estimate (LE = Actuals + {remaining_label})**: **{format_money(le_profit, cur, places)}**\n"
         f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at {format_money(le_profit, cur, places)} "
         f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n"
-        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (EBITDA Margin: {_pct_text(rr_margin)})\n"
+        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (Operating Margin: {_pct_text(rr_margin)})\n"
         f"• **Annualized Expense Run-Rate**: {format_money(rr_exp, cur, places)}"
     )
 
@@ -3930,7 +3930,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(actual_exp, cur, places),
             "Operating Profit": format_money(actual_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(actual_profit - budget_profit, cur, places),
-            "EBITDA Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
+            "Operating Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
             "Status": "F" if (actual_profit - budget_profit) >= 0 else "U",
         },
         {
@@ -3939,7 +3939,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(rr_exp, cur, places),
             "Operating Profit": format_money(rr_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(rr_var, cur, places),
-            "EBITDA Margin": _pct_text(rr_margin),
+            "Operating Margin": _pct_text(rr_margin),
             "Status": "F" if rr_var >= 0 else "U",
         },
         {
@@ -3948,7 +3948,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(le_exp, cur, places),
             "Operating Profit": format_money(le_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(le_var, cur, places),
-            "EBITDA Margin": _pct_text(le_margin),
+            "Operating Margin": _pct_text(le_margin),
             "Status": "F" if le_var >= 0 else "U",
         },
         {
@@ -3957,7 +3957,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(budget_exp * multiplier, cur, places),
             "Operating Profit": format_money(annual_budget_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(Decimal(0), cur, places),
-            "EBITDA Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
+            "Operating Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
             "Status": "Neutral",
         },
     ]
@@ -4029,7 +4029,7 @@ def _handle_executive_memo(session: Session) -> Response:
         f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
         f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) "
         f"against the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(budget_profit, cur, places)}**. "
-        f"EBITDA margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
+        f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
         "### 2. Top-Line Performance (Revenue)",
         f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(rev_budget, cur, places)}** "
         f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'Favorable' if rev_var >= 0 else 'Unfavorable'}).",
@@ -4225,15 +4225,22 @@ def _handle_gratitude(session: Session) -> Response:
 
 def _handle_identity(session: Session) -> Response:
     """Explain agent identity, institutional purpose, and deterministic guarantees."""
+    where = (
+        "On this shared hosted version your file is processed on the host's server, so do not "
+        "upload confidential data; run the app locally for sensitive files."
+        if not session.path_exports_enabled
+        else "Run locally, your file is read on your own machine."
+    )
     text = (
         "🤖 **Institutional Variance Analysis Agent**\n\n"
         "I am an intelligent, deterministic financial analysis assistant built specifically for FP&A teams, "
         "controllers, and CFO organizations.\n\n"
         "**How I differ from a non-deterministic LLM:**\n"
         "• **100% Deterministic Calculations**: Zero hallucination. Every variance, percentage, and waterfall step is computed with 50-digit exact Decimal precision.\n"
-        "• **Cryptographic Provenance**: Every analysis produces a SHA-256 fingerprint for complete auditability.\n"
+        "• **Source Fingerprints**: Every analysis produces a SHA-256 fingerprint of the file it came from, for traceability.\n"
         "• **Conversational Fluency**: I interpret natural business queries, multi-turn follow-ups, and scenarios, giving you the ease of a conversational AI with the trustworthiness of an audited ledger.\n"
-        "• **Zero External Dependencies**: Standard library Python only; your sensitive financial data never leaves your environment."
+        "• **No AI Model In The Loop**: The calculations use standard-library Python and no language model sees or computes your numbers. "
+        + where
     )
     chips = ["Summary", "Executive memo", "What is materiality?", "Help"] if session.phase == Phase.EXPLORING else ["Supported file formats", "Help"]
     return Response(text=text, chips=chips, phase=session.phase)
@@ -4288,7 +4295,7 @@ def _handle_tldr(session: Session) -> Response:
     text = (
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"
         f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
-        f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with EBITDA margin standing at **{_pct_text(margin)}**. "
+        f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with operating margin standing at **{_pct_text(margin)}**. "
         f"Top-line revenue {rev_word} {'plan' if _is_budget(cfg) else 'the ' + _noun(cfg)} by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
     )
 
@@ -4321,7 +4328,7 @@ def _handle_profitability(session: Session) -> Response:
     text = (
         f"📊 **Profitability Standing: {cfg.period}**\n\n"
         f"Operations are {stance}!\n\n"
-        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (EBITDA margin: **{_pct_text(actual_margin)}**)\n"
+        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (operating margin: **{_pct_text(actual_margin)}**)\n"
         f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} ({'Planned' if _is_budget(cfg) else _heading(cfg)} margin: {_pct_text(budget_margin)})\n"
         f"• **Variance vs. {_heading(cfg)}:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {_pct_text(margin_delta, '+.1f', ' pts')})\n\n"
         f"Operating profit reflects gross commercial revenues ({format_money(result.revenue.actual, cur, places)}) "

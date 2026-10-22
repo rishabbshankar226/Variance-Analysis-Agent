@@ -39,16 +39,17 @@ def explain_favorable_unfavorable() -> str:
 
 def explain_materiality() -> str:
     return (
-        "**Materiality Thresholds: Strict Conjunction**\n\n"
+        "**Materiality Thresholds: Dollar Amount or Percent**\n\n"
         "Materiality determines which variances require executive investigation and operational explanation. "
-        "This agent applies a **dual-threshold test**:\n\n"
+        "This agent applies **two tests, and either one is enough**:\n\n"
         "A line item is flagged as **Material** if:\n"
-        "• `|Variance Amount| > Dollar Threshold` **AND/OR** `|Variance %| > Percent Threshold`\n\n"
-        "**Why Both Criteria Matter:**\n"
-        "• **Noise Suppression:** A 200% variance on a $50 office supply item is immaterial ($100 swing).\n"
-        "• **Scale Sensitivity:** A $50,000 variance on a $100M revenue line is routine operational noise (0.05%).\n"
-        "• **Strict Semantics:** Equality is not material (`strict >` comparison; exactly meeting the threshold is excluded).\n"
-        "• **Zero-Budget Handling:** If budget is $0.00, percentage variance is mathematically undefined, so only the dollar threshold test applies."
+        "• `|Variance Amount| > Dollar Threshold` **or**\n"
+        "• `|Variance %| > Percent Threshold`, where the percent is taken against the absolute comparison amount\n\n"
+        "**Why Two Tests:**\n"
+        "• **Large moves on large lines:** the dollar test catches a $50,000 swing even when it is a small percentage of a big line.\n"
+        "• **Large moves on small lines:** the percent test catches a line that doubled even when the dollar amount is small. Raise the percent threshold if small lines are creating noise.\n"
+        "• **Strict Comparison:** Equality is not material (`>`, not `>=`; exactly meeting a threshold is excluded).\n"
+        "• **Zero-Budget Handling:** If the comparison amount is $0.00, percentage variance is undefined, so only the dollar test applies."
     )
 
 
@@ -56,7 +57,7 @@ def explain_net_impact() -> str:
     return (
         "**Net Operating Impact**\n\n"
         "Net Operating Impact measures how budget deviations directly affect the company's bottom-line "
-        "Operating Income (or EBITDA):\n\n"
+        "operating profit (revenue less all listed expenses):\n\n"
         "$$\\text{Net Operating Impact} = \\text{Total Revenue Variance} - \\text{Total Expense Variance}$$\n\n"
         "**Interpretation:**\n"
         "• **Positive Net Impact:** The company generated more net operating income than budgeted (revenue overperformance exceeded expense overruns, or cost savings offset revenue shortfalls).\n"
@@ -98,12 +99,14 @@ def explain_unclassified() -> str:
 def explain_audit_trail() -> str:
     return (
         "**Audit Trail & Verification Standards**\n\n"
-        "This agent produces deterministic, audit-certified financial outputs designed for internal audit, "
-        "board review, and SEC/SOX compliance:\n\n"
+        "This agent produces deterministic, reproducible outputs designed to support internal review: "
+        "every number can be traced back to the file you supplied and recomputed.\n\n"
         "• **Zero Non-Determinism:** All math uses Python's Decimal context with 50 digits of precision and round-half-even ties.\n"
-        "• **Cryptographic Provenance:** Source data bytes and type map files are fingerprinted with SHA-256 hashes.\n"
-        "• **Immutable Context:** The generated audit JSON records exact source hashes, schema version, configuration parameters, and classification decision origins.\n"
-        "• **Zero Hallucination:** Every number in chat and reports is computed directly from validated input rows; no language model calculates numbers."
+        "• **Source Fingerprints:** Source data bytes and type map files are fingerprinted with SHA-256 hashes.\n"
+        "• **Recorded Context:** The generated audit JSON records exact source hashes, schema version, configuration parameters, and classification decision origins.\n"
+        "• **Zero Hallucination:** Every number in chat and reports is computed directly from validated input rows; no language model calculates numbers.\n\n"
+        "The audit file is evidence of how a result was produced. It is not a certification or a "
+        "statement of regulatory compliance."
     )
 
 
@@ -117,7 +120,7 @@ def explain_mitigation_actions() -> str:
         "3. **Forecast Re-baselining:** Update remaining quarters in the rolling forecast to reflect permanent run-rate shifts.\n\n"
         "**For Favorable Revenue Beats:**\n"
         "1. **Analyze Sustainability:** Determine whether the beat was one-time timing (early contract close) or structural organic demand.\n"
-        "2. **Reinvestment Strategy:** Allocate excess gross margin toward high-ROI pipeline generation or EBITDA reserve."
+        "2. **Reinvestment Strategy:** Allocate excess gross margin toward high-ROI pipeline generation or a profit reserve."
     )
 
 
@@ -132,8 +135,11 @@ def explain_supported_formats() -> str:
         "filing's tables and compared with the prior period (scanned PDFs can't be read)\n\n"
         "**Required Columns/Fields:**\n"
         "• `Line Item` (or `account`, `item`, `description`): Name of the line item\n"
-        "• `Budget`: Baseline planned amount (positive decimal number)\n"
-        "• `Actual`: Realized period amount (positive decimal number)\n\n"
+        "• `Budget`: Baseline planned amount (or `Forecast` / the prior period when you compare to those)\n"
+        "• `Actual`: Realized period amount\n\n"
+        "**Sign convention:** enter costs as positive numbers (an expense of $500 is `500`, and spending "
+        "above the comparison amount is unfavorable). A ledger that shows costs as negatives is detected "
+        "and shown to you for confirmation before anything is flipped.\n\n"
         "**Optional Columns:**\n"
         "• `Line Type`: `Revenue` or `Expense`\n"
         "• `Period`: Reporting period identifier (e.g., `Q3 2026`)\n"
@@ -183,7 +189,7 @@ def explain_timing_vs_permanent() -> str:
 def explain_operating_leverage() -> str:
     return (
         "**Operating Leverage & Fixed vs. Variable Costs**\n\n"
-        "Operating leverage dictates how deviations in revenue flow through to bottom-line profitability (EBITDA margin):\n\n"
+        "Operating leverage dictates how deviations in revenue flow through to bottom-line profitability (operating margin):\n\n"
         "**1. Cost Classification:**\n"
         "• **Fixed Costs:** Overhead that does not fluctuate with volume (e.g., office facilities, core software licenses, executive salaries).\n"
         "• **Variable Costs:** Expenses that move in direct proportion to volume (e.g., payment processing fees, cloud compute usage, raw materials).\n\n"
@@ -199,7 +205,7 @@ def explain_kpis() -> str:
         "Professional finance teams evaluate variance health through five core quantitative metrics:\n\n"
         "• **1. Revenue Target Achievement Rate:** `(Actual Revenue / Budget Revenue) × 100%` (Target: ≥ 100%).\n"
         "• **2. Expense Budget Utilization (Burn Rate):** `(Actual Expense / Budget Expense) × 100%` (Target: ≤ 100%).\n"
-        "• **3. Net Operating Margin Impact:** `Revenue Variance - Expense Variance` (Direct contribution to Operating Income).\n"
+        "• **3. Net Operating Impact:** `Revenue Variance - Expense Variance` (Direct contribution to operating profit).\n"
         "• **4. Variance Concentration (Pareto Ratio):** The share of total portfolio variance driven by the top 3 line items (measures volatility concentration).\n"
         "• **5. Driver Reconciliation Rate:** Percentage of material variances explained by verified causal drivers (price, volume, rate)."
     )
@@ -222,18 +228,22 @@ def explain_budgeting_methods() -> str:
 
 def explain_ebitda_margin() -> str:
     return (
-        "**EBITDA & Operating Margin Impact in Variance Analysis**\n\n"
-        "In corporate financial reporting, profit metrics (EBITDA, Gross Margin, Operating Income) "
+        "**Operating Profit & Margin Impact in Variance Analysis**\n\n"
+        "In corporate financial reporting, profit metrics (Gross Margin, Operating Income, EBITDA) "
         "represent **calculated subtotals**, not independent additive accounts:\n\n"
         "**1. The Bottom-Line Formula:**\n"
-        "$$\\text{Net Operating Variance} = \\text{Total Revenue Variance} - \\text{Total Expense Variance}$$\n"
-        "• A **favorable revenue variance** directly increases EBITDA.\n"
-        "• An **unfavorable expense variance (overspend)** directly decreases EBITDA.\n\n"
+        "$$\\text{Net Operating Impact} = \\text{Total Revenue Variance} - \\text{Total Expense Variance}$$\n"
+        "• A **favorable revenue variance** directly increases operating profit.\n"
+        "• An **unfavorable expense variance (overspend)** directly decreases operating profit.\n\n"
+        "**What this tool calls operating profit:** total revenue minus all listed expense lines, "
+        "and **operating margin** is that profit divided by revenue. The tool does not separate "
+        "depreciation, amortization, interest or tax, so its operating profit is not EBITDA unless "
+        "your expense lines already leave those out.\n\n"
         "**2. Operating Drop-Through / Flow-Through Ratio:**\n"
-        "$$\\text{Flow-Through Rate} = \\frac{\\Delta \\text{EBITDA Variance}}{\\Delta \\text{Revenue Variance}} \\times 100\\%$$\n"
+        "$$\\text{Flow-Through Rate} = \\frac{\\Delta \\text{Operating Profit}}{\\Delta \\text{Revenue Variance}} \\times 100\\%$$\n"
         "• **High Flow-Through (> 70%):** Operating leverage is working effectively; revenue expansion is not being consumed by incremental variable overhead.\n"
         "• **Low Flow-Through (< 30%):** Indicates cost bloat or escalating variable costs diluting incremental revenue gains.\n\n"
-        "💡 **Integrity Standard:** Subtotal rows (Gross Margin, EBITDA, Total Revenue) are marked `excluded_from_aggregation` "
+        "💡 **Integrity Standard:** Subtotal rows (Gross Margin, Operating Income, Total Revenue) are marked `excluded_from_aggregation` "
         "in this engine to prevent double-counting line items."
     )
 

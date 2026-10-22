@@ -855,7 +855,7 @@ def test_cli_chat_rejects_conflicting_output_flags() -> None:
 def test_concept_ebitda_margin_knowledge() -> None:
     session = Session()
     resp = handle_message(session, "what is ebitda impact?")
-    assert "EBITDA & Operating Margin Impact" in resp.text
+    assert "Operating Profit & Margin Impact" in resp.text
     assert "Bottom-Line Formula" in resp.text
     assert "Flow-Through Rate" in resp.text
     assert "excluded_from_aggregation" in resp.text
