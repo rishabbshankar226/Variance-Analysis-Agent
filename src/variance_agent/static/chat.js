@@ -209,6 +209,19 @@ export function renderMarkdown(text) {
   return html.replace(/\u0000(\d+)\u0000/g, (_, i) => literals[Number(i)]);
 }
 
+const PREVIEW_CHARS = 4000;
+
+/**
+ * What to echo back of a very long paste: the first part and how much was left out. The full text
+ * is still what gets sent.
+ * @param {string} text
+ * @returns {string}
+ */
+export function previewText(text) {
+  if (text.length <= PREVIEW_CHARS) return text;
+  return `${text.slice(0, PREVIEW_CHARS)}\n… (${(text.length - PREVIEW_CHARS).toLocaleString('en-US')} more characters)`;
+}
+
 /**
  * Parse a displayed amount such as "$(1,234.50)" or "12.5%" to a number (0 when there is none).
  * @param {unknown} val
@@ -306,6 +319,7 @@ function boot() {
     currentPhase = phase;
     phaseLabelEl.textContent = phaseLabel(phase);
     inputEl.placeholder = phasePlaceholder(phase);
+    autoGrow(); // a long placeholder wraps on a phone; leave room for it
   }
 
   /** @param {boolean} value */
@@ -319,7 +333,9 @@ function boot() {
   /** Grow the message box with its content, up to its CSS max-height. */
   function autoGrow() {
     inputEl.style.height = 'auto';
-    inputEl.style.height = inputEl.scrollHeight + 'px';
+    // The box is border-box, so its height must include the border that scrollHeight leaves out.
+    const border = inputEl.offsetHeight - inputEl.clientHeight;
+    inputEl.style.height = (inputEl.scrollHeight + border) + 'px';
   }
 
   // ── Message rendering ────────────────────────────────────
@@ -388,7 +404,7 @@ function boot() {
 
     const body = document.createElement('div');
     body.className = 'message-body';
-    body.textContent = text;
+    body.textContent = previewText(text);
     msg.appendChild(body);
 
     messagesEl.appendChild(msg);

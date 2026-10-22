@@ -425,3 +425,18 @@ def test_amounts_parse_like_the_table_sorter_expects(run_js: Callable[[str], obj
     values = run_js("""
       return ['$1,234.50', '(1,234)', '($50)', '12.5%', '€-7', '', null, 'n/a'].map(m.parseNumericVal);""")
     assert values == [1234.5, -1234, -50, 12.5, -7, 0, 0, 0]
+
+
+def test_a_huge_paste_is_echoed_as_a_bounded_preview(run_js: Callable[[str], object]) -> None:
+    out = run_js("""
+      const short = 'a\\tb\\n1\\t2';
+      const long = 'x'.repeat(10000);
+      return [m.previewText(short), m.previewText(long).length < 4200, m.previewText(long).includes('6,000 more characters')];""")
+    assert out == ["a\tb\n1\t2", True, True]
+
+
+def test_the_phone_header_keeps_the_phase_label_visible() -> None:
+    css = _css()
+    narrow = css[css.index("@media (max-width: 420px)"):]
+    assert ".header-status { display: none; }" not in narrow
+    assert "autoGrow();" in re.search(r"function updatePhase\(phase\) \{(.*?)\n  \}", _script(), re.DOTALL)[1]  # type: ignore[index]

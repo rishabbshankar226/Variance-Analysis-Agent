@@ -637,7 +637,8 @@ body.is-busy .drop-zone {
 
 @media (max-width: 420px) {
   .header-text p { display: none; }
-  .header-status { display: none; }
+  .header-actions { flex-basis: 100%; margin-left: 0; }
+  .header-status { margin-left: auto; }
   .header-icon { width: 32px; height: 32px; font-size: 16px; }
   .header-action-btn { padding: 8px 10px; }
   .table-search-input { width: 100%; max-width: none; }
