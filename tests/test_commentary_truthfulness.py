@@ -135,6 +135,7 @@ def test_detector_flags_a_zero_amount_outperformance_or_shortfall(claim: str) ->
     "Net operating impact finished exactly on budget.",
     "Revenue beat plan by $10.05, a shortfall of $0.50 elsewhere.",
     "Payroll sits at $0.00 budget with an overrun of $1,200.00.",
+    "Revenue beat plan, net 0 items were excluded.",  # "net 0" is a word and a count, not a currency code
 ])
 def test_detector_does_not_flag_nonzero_amounts(claim: str) -> None:
     problems = [p for p in commentary_contradictions(claim, analyse(PROFIT_TURNS_NEGATIVE)) if "zero" in p]

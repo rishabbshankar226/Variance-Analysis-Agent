@@ -111,7 +111,7 @@ class BenchmarkEvaluator:
 
 
 # A money token that shows zero: "$0.00", "€0", "£0.00", or the "USD 0.00" form of the default formatter.
-_ZERO_MONEY = r"(?:[$€£]|\b[A-Z]{3} )0(?:\.0+)?(?![\d,]|\.\d)"
+_ZERO_MONEY = r"(?:[$€£]|\b(?-i:[A-Z]{3}) )0(?:\.0+)?(?![\d,]|\.\d)"
 _OUTCOME_CLAIM = (r"(?:outperform\w*|underperform\w*|\bbeats?\b|shortfall|surplus|savings?|overspen[dt]|"
                   r"overrun|ahead of|behind)")
 _ZERO_OUTCOME = re.compile(
