@@ -74,6 +74,11 @@ Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/B
   `--no-browser`, `--commentary`, `--assisted`, `--mapping` and the `pdf` extra are documented in the README;
   `render.yaml` builds `.[excel,pdf]`.
 
+- Recognise `Total Revenues`, `Total Operating Revenue`, `Total Operating Expenses`, `Total Costs and Expenses`
+  and similar category summaries in strict mode; they are verified against their details and excluded like
+  `Total Revenue`, instead of stopping with "ambiguous summary label; specify Row Kind". `Revenues` now
+  infers as Revenue. `Total Operating Income` and other `Total ...` labels still need a Row Kind.
+
 ### Earlier in 0.3.0
 
 - Record the file adjustments confirmed in the chat (header row below a title block,

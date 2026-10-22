@@ -46,7 +46,12 @@ measures are not treated as additive Revenue. Audit 1.3 records the actual sourc
 of these decisions for material rows; public API records constructed manually may
 have `unavailable` decision metadata.
 
-Explicit Row Kind Detail/Total/Subtotal overrides summary label inference.
+Explicit Row Kind Detail/Total/Subtotal overrides summary label inference. A label that
+names a whole category is recognised as a summary: `Total Revenue(s)`, `Total Sales`,
+`Total Operating Revenue`, `Total Net Sales`, `Total Expenses`, `Total Operating Expenses`,
+`Total Costs and Expenses`, `Total Opex`, `Total COGS`, `Total Income`, and the reversed
+`Revenues Total`. `Total Operating Income` and other `Total ...` labels stay ambiguous and
+need a Row Kind. A recognised summary still has to reconcile to its details.
 Ambiguous labels require an explicit Row Kind. One summary per classified category
 may reconcile to supplied detail rows within 0.01 for both Budget and Actual and
 then be excluded. A lone category summary remains included and is not claimed
