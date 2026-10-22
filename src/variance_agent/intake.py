@@ -432,13 +432,14 @@ def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
         if not m:
             continue
         p = m.group(1).strip()
-        h_lower = h.lower()
-        is_budget_word = "budget" in h_lower or "plan" in h_lower
+        # Whole words only: "Contract Value" and "Planning" must not read as Actual or Budget.
+        words = set(normalize_header(h).split("_"))
+        is_budget_word = bool(words & {"budget", "budgeted", "plan", "planned"})
         if is_budget_word or ComparisonBasis.BUDGET in bases_named_in(normalize_header(h)):
             budget_cols[p] = h
             if p not in period_order:
                 period_order.append(p)
-        elif "actual" in h_lower or "act" in h_lower:
+        elif words & {"actual", "actuals", "act"}:
             actual_cols[p] = h
             if p not in period_order:
                 period_order.append(p)
@@ -783,6 +784,11 @@ def detect_header_row(
             role, _ = match_column_synonym(cell_str)
             if role == CanonicalRole.IGNORED_COMPUTED:
                 ignored.append(col_idx)
+            elif role == CanonicalRole.LINE_ITEM and role in roles:
+                # "Category" usually groups accounts; a column that names them wins over it.
+                if (normalize_header(str(row[roles[role]])) == "category"
+                        and normalize_header(cell_str) != "category"):
+                    roles[role] = col_idx
             elif role != CanonicalRole.UNKNOWN and role not in roles:
                 roles[role] = col_idx
 
@@ -919,6 +925,16 @@ def _header_cell_str(cell: object) -> str:
     return str(cell).strip()
 
 
+def _column_name(index: int) -> str:
+    """Spreadsheet-style column name for a zero-based index: 0 -> 'column A', 27 -> 'column AB'."""
+    letters = ""
+    number = index + 1
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        letters = chr(ord("A") + remainder) + letters
+    return f"column {letters}"
+
+
 def _stop(
     message: str,
     *,
@@ -1050,12 +1066,14 @@ def detect_comparison_columns(
 
     actual_col: int | None = None
     actual_label: str | None = None
+    actual_headers: list[str] = []
     for idx, s in headers:
         norm = normalize_header(s)
         if norm in _ACTUAL_SYNONYMS:
-            actual_col = idx
-            actual_label = s
-            break
+            actual_headers.append(f"{s} ({_column_name(idx)})")
+            if actual_col is None:
+                actual_col = idx
+                actual_label = s
 
     named: list[tuple[int, str, ComparisonBasis]] = []
     for idx, s in headers:
@@ -1077,6 +1095,14 @@ def detect_comparison_columns(
             actual_column=act_col,
             candidates=(),
             message=comparison_statement(basis, None, act_label),
+        )
+
+    if len(actual_headers) > 1 and not detect_period_pairs([s for _, s in headers]):
+        # Which one is the Actual (this month, year to date, ...) is the user's call.
+        return _stop(
+            f"Found more than one Actual column ({', '.join(actual_headers)}); keep one and rerun.",
+            actual_column=actual_col,
+            candidates=actual_headers,
         )
 
     def not_found(basis: ComparisonBasis) -> ComparisonDetection:
@@ -1131,7 +1157,16 @@ def detect_comparison_columns(
             return _stop(
                 _ask_which(col_names), actual_column=actual_col, candidates=col_names, choices=named_bases,
             )
-        # One distinct basis: the first column wins, as in detect_header_row.
+        # Different names for one basis (Budget, Plan) take the first; an exact repeat is a mistake.
+        repeated = len({normalize_header(c[1]) for c in named}) < len(named)
+        if repeated and not detect_period_pairs([s for _, s in headers]):
+            col_names = [f"{c[1]} ({_column_name(c[0])})" for c in named]
+            return _stop(
+                f"Found more than one {basis_noun(named_bases[0])} column ({', '.join(col_names)}); "
+                "keep one and rerun.",
+                actual_column=actual_col,
+                candidates=col_names,
+            )
         return choose_named(named[0][0], named[0][2])
 
     # 3. Period-only columns.
