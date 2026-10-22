@@ -1,0 +1,874 @@
+// @ts-check
+/**
+ * Variance Analysis Agent: chat page.
+ *
+ * Plain browser JavaScript, no build step. `// @ts-check` and the JSDoc types let an editor (or an
+ * optional local `tsc --noEmit --checkJs`) type-check it. The pure helpers are exported so Node can
+ * test them; everything that touches the page starts only when a `document` exists.
+ */
+
+/**
+ * @typedef {Object} ChatReply  One JSON reply from the server.
+ * @property {string} [text]
+ * @property {Array<Record<string, string>>} [table]
+ * @property {string[]} [chips]
+ * @property {string} [phase]
+ * @property {string} [error]
+ * @property {string} [download_url]
+ * @property {string} [download_filename]
+ * @property {ChatReply} [initial_response]  Only on /status, when a file was loaded at start-up.
+ */
+
+/**
+ * @typedef {Object} JsonResult
+ * @property {boolean} ok
+ * @property {number} status
+ * @property {ChatReply | null} data  The parsed body when it was a JSON object.
+ */
+
+// ── Limits (mirror variance_agent.limits; a test keeps them equal) ─────────
+export const MAX_MESSAGE_CHARS = 128 * 1024;
+export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+const MESSAGE_TIMEOUT_MS = 60_000; // the server is single-threaded; a PDF read can take ~20 s
+const UPLOAD_TIMEOUT_MS = 120_000;
+const STATUS_TIMEOUT_MS = 10_000;
+const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
+
+// ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
+/** @type {Record<string, string>} */
+export const PHASE_LABELS = {
+  awaiting_file:                      'Upload File',
+  awaiting_sheet_choice:              'Choose Sheet',
+  awaiting_header_choice:             'Choose Header Row',
+  awaiting_blank_budget_confirmation: 'Confirm Blank Budgets',
+  awaiting_period_choice:             'Choose Period',
+  awaiting_intake_confirmation:       'Confirm Intake',
+  awaiting_period:                    'Set Period',
+  awaiting_thresholds:                'Set Thresholds',
+  awaiting_currency:                  'Set Currency',
+  resolve_unclassified:               'Classify Items',
+  exploring:                          'Exploring',
+};
+
+/** @type {Record<string, string>} */
+export const PHASE_PLACEHOLDERS = {
+  awaiting_file:                      'Upload a file above or ask a financial question (e.g., "what is materiality?")...',
+  awaiting_sheet_choice:              'Pick a worksheet from the options above...',
+  awaiting_header_choice:             'Pick the header row from the options above...',
+  awaiting_blank_budget_confirmation: 'Choose how to treat the blank values...',
+  awaiting_period_choice:             'Pick the period to analyze...',
+  awaiting_intake_confirmation:       'Confirm the summary above, or say what to change...',
+  awaiting_period:                    'Enter the reporting period (e.g., Q3 2026)...',
+  awaiting_thresholds:                'Set thresholds (e.g., $10,000 or 5%)...',
+  awaiting_currency:                  'Enter currency (USD, EUR, GBP)...',
+  resolve_unclassified:               'Revenue, Expense, or Skip...',
+  exploring:                          'Ask a question (e.g., "why marketing?", "biggest risks")...',
+};
+
+/**
+ * A readable label for any phase, including ones this page has not heard of.
+ * @param {string} phase
+ * @returns {string}
+ */
+export function phaseLabel(phase) {
+  if (Object.hasOwn(PHASE_LABELS, phase)) return PHASE_LABELS[phase];
+  const words = String(phase).replace(/^awaiting_/, '').split('_').filter(Boolean);
+  return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Ready';
+}
+
+/**
+ * @param {string} phase
+ * @returns {string}
+ */
+export function phasePlaceholder(phase) {
+  return Object.hasOwn(PHASE_PLACEHOLDERS, phase) ? PHASE_PLACEHOLDERS[phase] : 'Type a message...';
+}
+
+/**
+ * What to show when the page loads, from the server's /status reply. The server's phase always
+ * wins: a reload in the middle of an intake must not look like a fresh start.
+ * @param {ChatReply | null} status
+ * @returns {{kind: 'welcome' | 'restored' | 'resumed', phase: string, reply?: ChatReply}}
+ */
+export function startupView(status) {
+  const phase = status && typeof status.phase === 'string' && status.phase ? status.phase : 'awaiting_file';
+  if (phase === 'awaiting_file') return { kind: 'welcome', phase };
+  if (status && status.initial_response) return { kind: 'restored', phase, reply: status.initial_response };
+  return { kind: 'resumed', phase };
+}
+
+/**
+ * The text of a warning bubble for a request that did not succeed.
+ * @param {number} status HTTP status
+ * @param {ChatReply | null} data the parsed JSON body, if there was one
+ * @returns {string}
+ */
+export function describeFailure(status, data) {
+  if (data && typeof data.error === 'string' && data.error.trim()) return data.error.trim();
+  if (status === 413) return 'That is larger than the server accepts.';
+  if (status === 502 || status === 503 || status === 504) {
+    return 'The server is not responding (it may be starting up). Please try again in a moment.';
+  }
+  return `The server could not handle that request (HTTP ${status}).`;
+}
+
+/**
+ * Fetch a JSON reply with a deadline. Resolves for every HTTP status (check `ok`); rejects with a
+ * readable Error only when no usable reply arrived.
+ * @param {string} url
+ * @param {RequestInit} init
+ * @param {number} timeoutMs
+ * @param {typeof fetch} [fetchImpl]
+ * @returns {Promise<JsonResult>}
+ */
+export async function requestJson(url, init, timeoutMs, fetchImpl = globalThis.fetch) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, { ...init, signal: controller.signal });
+    /** @type {ChatReply | null} */
+    let data = null;
+    try {
+      const parsed = await response.json();
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed;
+    } catch (_) {
+      data = null; // e.g. an HTML error page from a proxy
+    }
+    return { ok: response.ok, status: response.status, data };
+  } catch (_) {
+    if (controller.signal.aborted) {
+      throw new Error('The server did not answer in time. Please try again.');
+    }
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Text handling ───────────────────────────────────────────────────────────
+
+/**
+ * Escape text for use as HTML element content.
+ * @param {string} text
+ * @returns {string}
+ */
+export function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * The server escapes source labels for Markdown/HTML documents (R&D_Costs -> R&amp;D\_Costs).
+ * The chat UI escapes HTML itself, so undo the server's entity escapes exactly once here.
+ * @param {string} text
+ * @returns {string}
+ */
+export function decodeServerEscapes(text) {
+  return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+// Markdown backslash escapes (\_ \* \| ...). A function so every use gets a fresh /g regex.
+const mdEscapes = () => /\\([\\`*_{}[\]()#+\-.!|~>])/g;
+
+/**
+ * Table cells are set with textContent, so they need plain text with no escapes at all.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function plainText(text) {
+  return decodeServerEscapes(String(text)).replace(mdEscapes(), '$1');
+}
+
+/**
+ * Minimal Markdown to HTML (no library). The result is built from escaped text and fixed tags
+ * only, and uses classes rather than inline styles so the page's CSP can forbid both.
+ * @param {string} text
+ * @returns {string}
+ */
+export function renderMarkdown(text) {
+  let html = escapeHtml(decodeServerEscapes(text));
+
+  // Markdown backslash escapes (\_ \* \| ...) become literal characters, not formatting
+  /** @type {string[]} */
+  const literals = [];
+  html = html.replace(mdEscapes(), (_, ch) => {
+    literals.push(ch);
+    return '\u0000' + (literals.length - 1) + '\u0000';
+  });
+
+  html = html.replace(/^---+$/gm, '<hr class="md-hr">');
+  html = html.replace(/^###\s+(.+)$/gm, '<h4 class="md-h4">$1</h4>');
+  html = html.replace(/^##\s+(.+)$/gm, '<h3 class="md-h3">$1</h3>');
+  html = html.replace(/^#\s+(.+)$/gm, '<h2 class="md-h2">$1</h2>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>'); // after bold so ** is not eaten
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/^[•-]\s+(.+)$/gm, '<div class="md-bullet">• $1</div>');
+  html = html.replace(/\n/g, '<br>');
+
+  return html.replace(/\u0000(\d+)\u0000/g, (_, i) => literals[Number(i)]);
+}
+
+/**
+ * Parse a displayed amount such as "$(1,234.50)" or "12.5%" to a number (0 when there is none).
+ * @param {unknown} val
+ * @returns {number}
+ */
+export function parseNumericVal(val) {
+  if (!val) return 0;
+  let s = String(val).trim();
+  const isNegParen = s.startsWith('(') && s.endsWith(')');
+  if (isNegParen) s = s.slice(1, -1);
+  s = s.replace(/[$,€£¥%\s]/g, '');
+  const num = parseFloat(s);
+  if (isNaN(num)) return 0;
+  return isNegParen ? -num : num;
+}
+
+// ── The page ────────────────────────────────────────────────────────────────
+
+function boot() {
+  // ── State ────────────────────────────────────────────────
+  let currentPhase = 'awaiting_file';
+  let busy = false;
+
+  // Visitors share one hosted session, so this browser remembers whether its
+  // visitor has seen the welcome intro that opens the first file.
+  const INTRO_SEEN_KEY = 'variance-agent:intro-seen';
+  let introSeen = false;
+  try { introSeen = localStorage.getItem(INTRO_SEEN_KEY) === '1'; } catch (_) { /* storage blocked */ }
+  function markIntroSeen() {
+    introSeen = true;
+    try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch (_) { /* storage blocked */ }
+  }
+
+  /**
+   * @param {string} id
+   * @returns {HTMLElement}
+   */
+  function byId(id) {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`Missing element #${id}`);
+    return el;
+  }
+
+  const messagesEl = byId('messages');
+  const inputEl = /** @type {HTMLTextAreaElement} */ (byId('input'));
+  const sendBtn = /** @type {HTMLButtonElement} */ (byId('send-btn'));
+  const phaseLabelEl = byId('phase-label');
+
+  // ── Init ─────────────────────────────────────────────────
+  async function init() {
+    inputEl.addEventListener('keydown', (e) => {
+      // Enter sends; Shift+Enter adds a line. Enter that confirms an IME composition (keyCode 229
+      // on Safari) belongs to the IME and must not send.
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    inputEl.addEventListener('input', autoGrow);
+    sendBtn.addEventListener('click', sendMessage);
+
+    byId('btn-quick-help').addEventListener('click', () => sendText('help'));
+    byId('btn-quick-reset').addEventListener('click', () => sendText('reset'));
+
+    /** @type {ChatReply | null} */
+    let status = null;
+    try {
+      status = (await requestJson('/status', {}, STATUS_TIMEOUT_MS)).data;
+    } catch (_) { /* start from the welcome screen */ }
+
+    const view = startupView(status);
+    updatePhase(view.phase);
+    if (view.kind === 'restored' && view.reply) {
+      markIntroSeen();
+      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false);
+    } else if (view.kind === 'resumed') {
+      addAgentMessage(
+        'Welcome back. This server already has an analysis in progress (step: **' +
+        phaseLabel(view.phase) + '**). Carry on where it left off, or reset to start over.',
+        null, ['help', 'reset'], false
+      );
+    } else {
+      addAgentMessage(
+        'Welcome! Upload your financial data to get started.\n\n' +
+        'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**, and **PDF** 10-K / 10-Q filings.\n\n' +
+        'You can also ask financial domain questions anytime (e.g., *What is materiality?* or *Budget vs Forecast*).',
+        null, ['Supported file formats', 'What is materiality?', 'Budget vs forecast'], true
+      );
+    }
+  }
+
+  // ── Phase management ─────────────────────────────────────
+  /** @param {string} phase */
+  function updatePhase(phase) {
+    currentPhase = phase;
+    phaseLabelEl.textContent = phaseLabel(phase);
+    inputEl.placeholder = phasePlaceholder(phase);
+  }
+
+  /** @param {boolean} value */
+  function setBusy(value) {
+    busy = value;
+    sendBtn.disabled = value;
+    inputEl.setAttribute('aria-busy', String(value));
+    document.body.classList.toggle('is-busy', value);
+  }
+
+  /** Grow the message box with its content, up to its CSS max-height. */
+  function autoGrow() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = inputEl.scrollHeight + 'px';
+  }
+
+  // ── Message rendering ────────────────────────────────────
+  /**
+   * @param {string | undefined} text
+   * @param {Array<Record<string, string>> | null | undefined} table
+   * @param {string[] | null | undefined} chips
+   * @param {boolean} [showDropZone]
+   * @returns {HTMLElement} the new message
+   */
+  function addAgentMessage(text, table, chips, showDropZone) {
+    const msg = document.createElement('div');
+    msg.className = 'message agent';
+
+    const sender = document.createElement('div');
+    sender.className = 'message-sender';
+    sender.textContent = 'AGENT';
+    msg.appendChild(sender);
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+
+    if (text && text.startsWith('⚠️')) {
+      body.classList.add('warning');
+    }
+
+    body.innerHTML = renderMarkdown(text || '');
+    msg.appendChild(body);
+
+    if (table && table.length > 0) {
+      body.appendChild(renderTable(table));
+    }
+
+    if (showDropZone) {
+      body.appendChild(createDropZone());
+    }
+
+    if (chips && chips.length > 0) {
+      const chipsEl = document.createElement('div');
+      chipsEl.className = 'chips';
+      chips.forEach((chipText) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = chipText;
+        chip.addEventListener('click', () => sendText(chipText));
+        chipsEl.appendChild(chip);
+      });
+      msg.appendChild(chipsEl);
+    }
+
+    messagesEl.appendChild(msg);
+    scrollToBottom();
+    return msg;
+  }
+
+  /** @param {string} text */
+  function addUserMessage(text) {
+    const msg = document.createElement('div');
+    msg.className = 'message user';
+
+    const sender = document.createElement('div');
+    sender.className = 'message-sender';
+    sender.textContent = 'YOU';
+    msg.appendChild(sender);
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    body.textContent = text;
+    msg.appendChild(body);
+
+    messagesEl.appendChild(msg);
+    scrollToBottom();
+  }
+
+  /**
+   * @param {HTMLElement} msg  The agent message to attach the link to.
+   * @param {string} url
+   * @param {string | undefined} filename
+   */
+  function addDownloadLink(msg, url, filename) {
+    const link = document.createElement('a');
+    link.className = 'download-btn';
+    link.href = url;
+    link.download = filename || '';
+    link.textContent = '⬇ Download ' + (filename || 'file');
+    msg.appendChild(link);
+  }
+
+  // ── Table rendering ──────────────────────────────────────
+  /**
+   * @param {Array<Record<string, string>>} initialRows
+   * @returns {HTMLElement}
+   */
+  function renderTable(initialRows) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'data-table-wrapper';
+    wrapper.setAttribute('role', 'region');
+    wrapper.setAttribute('aria-label', 'Data table');
+    wrapper.tabIndex = 0; // a scrollable region must be reachable by keyboard
+
+    if (!initialRows || initialRows.length === 0) return wrapper;
+
+    const table = document.createElement('table');
+    table.className = 'data-table';
+
+    let currentRows = [...initialRows];
+    /** @type {string | null} */
+    let sortCol = null;
+    let sortAsc = true;
+
+    const columns = Object.keys(initialRows[0]);
+    /** @param {string} col */
+    function isNumericCol(col) {
+      return col.startsWith('Var ') || col === 'Budget' || col === 'Actual' || col === 'Status' ||
+        col.includes('Impact') || col.includes('Profit') || col.includes('Cumulative');
+    }
+
+    // Toolbar: quick filter search & row count indicator
+    let filterQuery = '';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'table-toolbar';
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'table-search-input';
+    searchInput.placeholder = '🔍 Filter rows...';
+    searchInput.title = 'Filter rows by account name, type, amount, or status';
+    searchInput.setAttribute('aria-label', 'Filter rows');
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'table-row-count';
+    countSpan.setAttribute('aria-live', 'polite');
+    countSpan.textContent = `${initialRows.length} rows`;
+
+    toolbar.appendChild(searchInput);
+    toolbar.appendChild(countSpan);
+    wrapper.appendChild(toolbar);
+
+    // Header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    /** @type {Record<string, HTMLTableCellElement>} */
+    const thMap = {};
+
+    columns.forEach((col) => {
+      const th = document.createElement('th');
+      th.className = 'sortable' + (isNumericCol(col) ? ' num' : '');
+      th.setAttribute('aria-sort', 'none');
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'th-btn';
+      button.title = 'Click to sort';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = col;
+      button.appendChild(labelSpan);
+
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'sort-icon';
+      iconSpan.setAttribute('aria-hidden', 'true');
+      iconSpan.textContent = '↕';
+      button.appendChild(iconSpan);
+      th.appendChild(button);
+
+      button.addEventListener('click', () => {
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = isNumericCol(col) && col !== 'Status' ? false : true;
+        }
+
+        columns.forEach((c) => {
+          thMap[c].classList.remove('sorted-asc', 'sorted-desc');
+          thMap[c].setAttribute('aria-sort', 'none');
+          const ic = thMap[c].querySelector('.sort-icon');
+          if (ic) ic.textContent = '↕';
+        });
+
+        th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
+        th.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
+        iconSpan.textContent = sortAsc ? '▲' : '▼';
+
+        updateTable();
+      });
+
+      thMap[col] = th;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    function updateTable() {
+      const filtered = initialRows.filter((row) => {
+        if (!filterQuery) return true;
+        return columns.some((col) => String(row[col] || '').toLowerCase().includes(filterQuery));
+      });
+
+      const column = sortCol;
+      if (column) {
+        filtered.sort((a, b) => {
+          const valA = a[column] || '';
+          const valB = b[column] || '';
+          if (isNumericCol(column) && column !== 'Status') {
+            const numA = parseNumericVal(valA);
+            const numB = parseNumericVal(valB);
+            return sortAsc ? numA - numB : numB - numA;
+          }
+          const strA = String(valA).toLowerCase();
+          const strB = String(valB).toLowerCase();
+          if (strA < strB) return sortAsc ? -1 : 1;
+          if (strA > strB) return sortAsc ? 1 : -1;
+          return 0;
+        });
+      }
+
+      currentRows = filtered;
+      countSpan.textContent = filterQuery
+        ? `${currentRows.length} of ${initialRows.length} rows`
+        : `${currentRows.length} rows`;
+      renderBody();
+    }
+
+    searchInput.addEventListener('input', () => {
+      filterQuery = searchInput.value.toLowerCase().trim();
+      updateTable();
+    });
+
+    // Body
+    const tbody = document.createElement('tbody');
+    function renderBody() {
+      tbody.textContent = '';
+
+      let maxVar = 0;
+      currentRows.forEach((row) => {
+        columns.forEach((col) => {
+          if (col.startsWith('Var ') || col.includes('Impact')) {
+            const v = Math.abs(parseNumericVal(row[col]));
+            if (v > maxVar) maxVar = v;
+          }
+        });
+      });
+
+      currentRows.forEach((row) => {
+        const tr = document.createElement('tr');
+        const status = row['Status'] || '';
+        if (status === 'F') tr.className = 'row-favorable';
+        else if (status === 'U') tr.className = 'row-unfavorable';
+        else if (status === 'Neutral') tr.className = 'row-neutral';
+
+        columns.forEach((col) => {
+          const td = document.createElement('td');
+          const val = row[col] || '';
+          if (isNumericCol(col)) td.className = 'num';
+          if (col === 'Status') {
+            td.textContent = val;
+            if (val === 'F') td.className += ' status-f';
+            else if (val === 'U') td.className += ' status-u';
+          } else if (col === 'Line Item') {
+            const name = plainText(val);
+            const link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'item-link';
+            link.textContent = name;
+            link.title = `Click to drill down: Why ${name}?`;
+            link.addEventListener('click', () => {
+              const question = `Why ${name}?`;
+              sendText(question);
+            });
+            td.appendChild(link);
+          } else if (col.startsWith('Var ') || col.includes('Impact')) {
+            const numVal = parseNumericVal(val);
+            const absVal = Math.abs(numVal);
+            const pct = maxVar > 0 ? Math.min(100, Math.round((absVal / maxVar) * 100)) : 0;
+
+            const cellWrapper = document.createElement('div');
+            cellWrapper.className = 'variance-cell';
+
+            const valSpan = document.createElement('span');
+            valSpan.className = 'variance-val';
+            valSpan.textContent = val;
+            cellWrapper.appendChild(valSpan);
+
+            if (maxVar > 0 && absVal > 0) {
+              const barTrack = document.createElement('div');
+              barTrack.className = 'variance-bar-track';
+              barTrack.setAttribute('aria-hidden', 'true');
+              const barFill = document.createElement('div');
+              const isFav = status === 'F' || (status !== 'U' && numVal > 0);
+              const isUnfav = status === 'U' || (status !== 'F' && numVal < 0);
+              barFill.className = 'variance-bar-fill ' +
+                (isFav ? 'bar-favorable' : (isUnfav ? 'bar-unfavorable' : 'bar-neutral'));
+              barFill.style.width = Math.max(5, pct) + '%'; // CSSOM, which a strict CSP allows
+              barTrack.appendChild(barFill);
+              cellWrapper.appendChild(barTrack);
+            }
+            td.appendChild(cellWrapper);
+          } else {
+            td.textContent = plainText(val);
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    renderBody();
+    table.appendChild(tbody);
+
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
+  // ── Drop zone ────────────────────────────────────────────
+  function createDropZone() {
+    const zone = document.createElement('div');
+    zone.className = 'drop-zone';
+    zone.setAttribute('role', 'button');
+    zone.setAttribute('aria-label', 'Upload a file: press Enter to browse, or drop one here');
+    zone.tabIndex = 0;
+
+    zone.innerHTML =
+      '<div class="drop-zone-icon" aria-hidden="true">📁</div>' +
+      '<div class="drop-zone-title">Drop file here or click to browse</div>' +
+      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)</div>';
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = VALID_EXTENSIONS.join(',');
+    fileInput.tabIndex = -1;
+    zone.appendChild(fileInput);
+
+    zone.addEventListener('click', (e) => {
+      if (e.target !== fileInput) fileInput.click();
+    });
+
+    zone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    });
+
+    zone.addEventListener('dragleave', () => {
+      zone.classList.remove('dragover');
+    });
+
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const files = e.dataTransfer ? e.dataTransfer.files : null;
+      if (files && files.length > 0) uploadFile(files[0]);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files && fileInput.files.length > 0) uploadFile(fileInput.files[0]);
+    });
+
+    return zone;
+  }
+
+  function showTypingIndicator() {
+    removeTypingIndicator();
+    const msg = document.createElement('div');
+    msg.className = 'message agent';
+    msg.id = 'typing-indicator';
+    msg.setAttribute('role', 'status');
+
+    const sender = document.createElement('div');
+    sender.className = 'message-sender';
+    sender.textContent = 'Agent';
+    msg.appendChild(sender);
+
+    const body = document.createElement('div');
+    body.className = 'message-body typing-dots';
+    body.innerHTML = '<span></span><span></span><span></span>';
+    const label = document.createElement('span');
+    label.className = 'sr-only';
+    label.textContent = 'Agent is working on it';
+    body.appendChild(label);
+    msg.appendChild(body);
+
+    messagesEl.appendChild(msg);
+    scrollToBottom();
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  // ── Requests ─────────────────────────────────────────────
+  /**
+   * Show the outcome of a request: an error as a warning bubble, otherwise the reply.
+   * @param {JsonResult} result
+   * @param {boolean} fromUpload  A failed upload offers the drop zone again.
+   */
+  function showResult(result, fromUpload) {
+    const data = result.data;
+    if (!result.ok || !data || data.error) {
+      addAgentMessage('⚠️ ' + describeFailure(result.status, data), null, null, fromUpload);
+      return;
+    }
+
+    // A table pasted while waiting for a file is this visitor's first file too.
+    const leftUploadStep = data.phase && data.phase !== 'awaiting_file';
+    if (leftUploadStep && (fromUpload || currentPhase === 'awaiting_file')) markIntroSeen();
+    if (data.phase) updatePhase(data.phase);
+
+    const showDrop = !fromUpload && data.phase === 'awaiting_file';
+    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop);
+    if (data.download_url) {
+      addDownloadLink(msg, data.download_url, data.download_filename);
+    }
+  }
+
+  /**
+   * Run one request at a time: the server is single-threaded and the session is shared, so a
+   * second click while one is pending waits for nothing and is ignored instead.
+   * @param {() => Promise<void>} task
+   * @returns {Promise<boolean>} false when another request was still in flight
+   */
+  async function runExclusive(task) {
+    if (busy) return false;
+    setBusy(true);
+    try {
+      await task();
+    } finally {
+      setBusy(false);
+    }
+    return true;
+  }
+
+  // ── File upload ──────────────────────────────────────────
+  /** @param {File} file */
+  async function uploadFile(file) {
+    if (busy) return;
+
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!VALID_EXTENSIONS.includes(ext)) {
+      addAgentMessage(
+        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
+        null, null, true
+      );
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      addAgentMessage(
+        `⚠️ That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
+        `${MAX_UPLOAD_BYTES / 1048576} MB.`,
+        null, null, true
+      );
+      return;
+    }
+
+    await runExclusive(async () => {
+      addUserMessage('📎 ' + file.name);
+      document.querySelectorAll('.drop-zone').forEach((z) => z.remove());
+
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      formData.append('first_visit', introSeen ? '0' : '1');
+
+      showTypingIndicator();
+      try {
+        const result = await requestJson(
+          '/upload', { method: 'POST', body: formData }, UPLOAD_TIMEOUT_MS
+        );
+        removeTypingIndicator();
+        showResult(result, true);
+        inputEl.focus();
+      } catch (err) {
+        removeTypingIndicator();
+        addAgentMessage('⚠️ Upload failed: ' + errorMessage(err), null, null, true);
+      }
+    });
+  }
+
+  // ── Sending messages ─────────────────────────────────────
+  /** Send what is in the message box. */
+  async function sendMessage() {
+    if (busy) return; // keep the draft; it is sent when the user presses Enter again
+    // trim() only touches the ends: line breaks inside a pasted table must reach the server.
+    const text = inputEl.value.trim();
+    if (!text) return;
+    if (text.length > MAX_MESSAGE_CHARS) {
+      addAgentMessage(
+        `⚠️ That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
+        `limit is ${MAX_MESSAGE_CHARS.toLocaleString('en-US')}). Upload large data as a file instead.`,
+        null, null, false
+      );
+      return;
+    }
+    inputEl.value = '';
+    autoGrow();
+    await sendText(text);
+  }
+
+  /**
+   * Send a message that is not in the box (a chip, a table row, Help or Reset).
+   * @param {string} text
+   */
+  async function sendText(text) {
+    await runExclusive(async () => {
+      addUserMessage(text);
+      await postMessage(text);
+    });
+  }
+
+  /** @param {string} text */
+  async function postMessage(text) {
+    showTypingIndicator();
+    try {
+      const result = await requestJson('/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, first_visit: !introSeen }),
+      }, MESSAGE_TIMEOUT_MS);
+      removeTypingIndicator();
+      showResult(result, false);
+    } catch (err) {
+      removeTypingIndicator();
+      addAgentMessage('⚠️ ' + errorMessage(err), null, null, false);
+    }
+  }
+
+  /**
+   * @param {unknown} err
+   * @returns {string}
+   */
+  function errorMessage(err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  // ── Utilities ────────────────────────────────────────────
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    });
+  }
+
+  init();
+}
+
+if (typeof document !== 'undefined') boot();

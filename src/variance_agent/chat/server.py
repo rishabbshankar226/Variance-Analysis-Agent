@@ -32,7 +32,16 @@ from .session import Phase, Session
 # The only files served from the package's static/ directory, by exact name.
 _STATIC_TYPES = {
     "chat.html": "text/html; charset=utf-8",
+    "chat.js": "text/javascript; charset=utf-8",
+    "chat.css": "text/css; charset=utf-8",
 }
+
+# The page loads only its own script and stylesheet: no inline code, no third-party origins, no
+# framing, no <base> or plugin tricks. chat.js builds the DOM with createElement/textContent.
+_PAGE_CSP = (
+    "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'; "
+    "frame-ancestors 'none'"
+)
 
 # Staged downloads keyed by filename, oldest first. They are sensitive (reports, memos) and the
 # service is small, so they are bounded and dropped when the analysis they belong to ends.
@@ -231,6 +240,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
     def _route_get(self) -> None:
         if self.path in {"/", "/index.html", "/chat.html"}:
             self._serve_static("chat.html")
+        elif self.path.startswith("/static/") and self.path[len("/static/"):] in _STATIC_TYPES:
+            self._serve_static(self.path[len("/static/"):])
         elif self.path in {"/status", "/health", "/healthz"}:
             payload: dict[str, object] = {"phase": self.session.phase.value, "status": "ok"}
             if self.initial_response is not None:
@@ -423,6 +434,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-cache")  # revalidate, so a new release is picked up
+        if filename.endswith(".html"):
+            self.send_header("Content-Security-Policy", _PAGE_CSP)
         self.end_headers()
         self.wfile.write(content)
 

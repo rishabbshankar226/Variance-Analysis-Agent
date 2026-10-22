@@ -343,10 +343,10 @@ def test_welcome_chips_are_answered() -> None:
 # ---------------------------------------------------------------------------
 
 def test_chat_ui_decodes_server_escapes_before_rendering() -> None:
-    html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
-    assert "function plainText(" in html
-    assert "renderMarkdown(text) {\n    let html = escapeHtml(decodeServerEscapes(text));" in html
-    assert "td.textContent = plainText(val);" in html
+    script = (ROOT / "src" / "variance_agent" / "static" / "chat.js").read_text(encoding="utf-8")
+    assert "export function plainText(" in script
+    assert "let html = escapeHtml(decodeServerEscapes(text));" in script
+    assert "td.textContent = plainText(val);" in script
 
 
 # ---------------------------------------------------------------------------
@@ -405,10 +405,10 @@ def test_visualizer_routes_typed_input_through_the_router() -> None:
 
 
 def test_table_row_click_sends_the_drill_down_question() -> None:
-    # sendMessage() reads the input box and ignores arguments, so rows must post directly.
-    html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
-    assert "sendMessage(`Why" not in html
-    assert "addUserMessage(question);\n              postMessage(question);" in html
+    # sendMessage() reads the input box and ignores arguments, so rows must send their text directly.
+    script = (ROOT / "src" / "variance_agent" / "static" / "chat.js").read_text(encoding="utf-8")
+    assert "sendMessage(`Why" not in script
+    assert "const question = `Why ${name}?`;\n              sendText(question);" in script
 
 
 def test_download_header_does_not_reflect_raw_period(server: HTTPServer) -> None:

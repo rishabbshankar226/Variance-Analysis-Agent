@@ -772,7 +772,7 @@ def test_http_message_first_visit_controls_pasted_table_intro(chat_server_url: s
 
 
 def test_chat_page_sends_first_visit_with_uploads_and_messages() -> None:
-    page = (Path(__file__).resolve().parents[1] / "src/variance_agent/static/chat.html").read_text("utf-8")
+    page = (Path(__file__).resolve().parents[1] / "src/variance_agent/static/chat.js").read_text("utf-8")
     assert "formData.append('first_visit'" in page
     assert "first_visit: !introSeen" in page
 
