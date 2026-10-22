@@ -197,6 +197,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
                 return False
         return True
 
+    def end_headers(self) -> None:
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        super().end_headers()
+
     def _guarded(self, route: Callable[[], None]) -> None:
         """Run a route so that a failure becomes a logged JSON 500, never a dropped connection."""
         try:
@@ -250,6 +255,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
                 header_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
                 self.send_header("Content-Disposition", f'attachment; filename="{header_name}"')
                 self.send_header("Content-Length", str(len(content)))
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(content)
             else:
@@ -359,13 +365,12 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     def _read_body(self, limit: int) -> bytes | None:
         """Read a request body of a declared, bounded length; reply 4xx and return None otherwise."""
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            length = -1
-        if length < 0:
+        # int() also accepts '+5', '5_0' and non-ASCII digits; a length is plain ASCII digits.
+        raw_length = self.headers.get("Content-Length", "0").strip()
+        if not re.fullmatch(r"[0-9]{1,12}", raw_length):
             self._json_error("Invalid Content-Length.", HTTPStatus.BAD_REQUEST)
             return None
+        length = int(raw_length)
         if length > limit:
             self._json_error("Request body is too large.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return None
@@ -396,6 +401,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 

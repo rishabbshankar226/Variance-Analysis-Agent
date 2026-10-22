@@ -472,3 +472,57 @@ def test_staged_downloads_are_bounded_in_bytes_but_keep_the_newest(
     _stub_download(monkeypatch, {"huge.md": "x" * 5000})
     _post_message(httpd, {})
     assert list(server_module._downloads) == ["huge.md"]
+
+
+# ---------------------------------------------------------------------------
+# Content-Length strictness and response headers
+# ---------------------------------------------------------------------------
+
+def _raw_post(server: HTTPServer, content_length: str, body: bytes = b"") -> bytes:
+    import socket
+
+    request = (
+        b"POST /message HTTP/1.1\r\nHost: " + _host(server).encode() + b"\r\n"
+        b"Content-Type: application/json\r\nContent-Length: " + content_length.encode()
+        + b"\r\n\r\n" + body
+    )
+    with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as sock:
+        sock.sendall(request)
+        return sock.recv(400)
+
+
+@pytest.mark.parametrize("value", ["+16", "1_6", "0x10", "16.0", "١٦", "-16", "1e1", ""])
+def test_content_length_must_be_plain_ascii_digits(httpd: HTTPServer, value: str) -> None:
+    # int() would accept several of these as 16, the real length of this body.
+    body = b'{"text": "help"}'
+    assert len(body) == 16
+    reply = _raw_post(httpd, value, body)
+    assert b" 400 " in reply.split(b"\r\n", 1)[0], reply
+
+
+def test_a_plain_content_length_is_still_accepted(httpd: HTTPServer) -> None:
+    body = b'{"text": "help"}'
+    assert b" 200 " in _raw_post(httpd, str(len(body)), body).split(b"\r\n", 1)[0]
+
+
+@pytest.mark.parametrize("path", ["/status", "/favicon.ico", "/download/none.md", "/nope"])
+def test_every_reply_forbids_content_sniffing_and_referrers(httpd: HTTPServer, path: str) -> None:
+    response, _ = _request(httpd, "GET", path)
+    assert response.getheader("X-Content-Type-Options") == "nosniff"
+    assert response.getheader("Referrer-Policy") == "no-referrer"
+
+
+def test_api_replies_are_not_cacheable(httpd: HTTPServer) -> None:
+    response, _ = _request(httpd, "GET", "/status")
+    assert response.getheader("Cache-Control") == "no-store"
+    response, _ = _request(httpd, "POST", "/message", b'{"text": "help"}',
+                           {"Content-Type": "application/json"})
+    assert response.getheader("Cache-Control") == "no-store"
+
+
+def test_downloads_are_not_cacheable_and_not_sniffed(httpd: HTTPServer) -> None:
+    server_module._downloads["report.md"] = "# private"
+    response, body = _request(httpd, "GET", "/download/report.md")
+    assert response.status == 200 and body == b"# private"
+    assert response.getheader("Cache-Control") == "no-store"
+    assert response.getheader("X-Content-Type-Options") == "nosniff"
