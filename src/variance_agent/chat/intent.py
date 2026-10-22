@@ -427,7 +427,8 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "filter_type_unc"),
 
     (re.compile(
-        r"^(?:show\s+)?top\s+(?P<count>\d{1,9})(?:\s+(?:variances?|items?|rows?))?"
+        r"^(?:show\s+)?top\s+(?P<count>\d{1,9})(?:\s+(?P<kind>expenses?|costs?|revenues?|sales|income))?"
+        r"(?:\s+(?:variances?|items?|rows?|lines?))?"
         r"(?:\s+by\s+(?:dollars?|amount|value|\$))?$", re.IGNORECASE,
     ), "top_n"),
 

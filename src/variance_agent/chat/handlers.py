@@ -255,9 +255,27 @@ def _looks_like_pasted_table(text: str) -> bool:
     return "\t" in text and ("\n" in text or "\r" in text)
 
 
+_PERIOD_HINT = re.compile(
+    r"\b(q[1-4]|fy\s*\d{2,4}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b",
+)
+_QUESTION_OPENERS = re.compile(
+    r"^(?:can|could|may|might|would|should|will|what|why|how|is|are|do|does|did|please|i|we)\b",
+)
+
+
+def _looks_like_typed_period(lower: str) -> bool:
+    """A short label such as 'Q3 2026', not a question that happens to contain 'may' or 'sep'."""
+    return (
+        len(lower) <= 40
+        and "?" not in lower
+        and _QUESTION_OPENERS.match(lower) is None
+        and _PERIOD_HINT.search(lower) is not None
+    )
+
+
 def _handle_intake_confirmation(session: Session, text: str) -> Response:
     """Handle confirmation of the 'Here's how I read your file' summary."""
-    lower = text.strip().lower()
+    lower = normalize_for_routing(text).lower()
     if lower in ("looks right", "yes", "confirm", "looks good", "correct", "proceed", "looks_right", "1"):
         if session.period is not None:
             if session.dollar_threshold is not None and session.percent_threshold is not None:
@@ -296,10 +314,15 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
         sheet_target = text.split(" ", 1)[1] if lower.startswith(("sheet ", "statement ")) else text
         return _handle_switch_sheet(session, ParsedIntent("switch_sheet", captures={"sheet": sheet_target}))
 
-    # If Maya directly typed the period instead of clicking 'Looks right'
+    # The user may type the period instead of clicking 'Looks right'.
     if not lower.startswith("upload") and len(text.strip()) > 1:
-        period_match = re.search(r"\b(q[1-4]|fy\s*\d{2,4}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", lower)
-        if period_match:
+        if session.detected_period_pairs:
+            # The columns were read for one chosen period, so a typed period must be another one
+            # found in the file; anything else would disagree with the data on screen.
+            wanted = normalize_for_routing(_clean_period_input(text)).lower()
+            if any(normalize_for_routing(p.period).lower() == wanted for p in session.detected_period_pairs):
+                return _handle_period_choice(session, text)
+        elif _looks_like_typed_period(lower):
             session.period = text.strip()
             session.phase = Phase.AWAITING_THRESHOLDS
             return Response(
@@ -379,18 +402,20 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
 
 def _handle_period_choice(session: Session, text: str) -> Response:
     """Handle user selection of which period to analyze from multi-period columns."""
-    chosen_period = _clean_period_input(text)
-    if not chosen_period:
-        chips = [p.period for p in session.detected_period_pairs] if session.detected_period_pairs else []
+    options = [p.period for p in session.detected_period_pairs]
+    wanted = normalize_for_routing(_clean_period_input(text)).lower()
+    chosen_period = next((o for o in options if normalize_for_routing(o).lower() == wanted), None)
+    if chosen_period is None:
         return Response(
-            text="Please choose which period you would like to analyze.",
-            chips=chips,
+            text="Please choose which period you would like to analyze. "
+                 "Pick one of the periods found in your file.",
+            chips=options,
             phase=Phase.AWAITING_PERIOD_CHOICE,
         )
+    if session.source_bytes is None or session.source_suffix is None:
+        return _file_is_gone(session)
 
     session.period = chosen_period
-    assert session.source_bytes is not None
-    assert session.source_suffix is not None
 
     intake_res = read_input_assisted(
         session.source_bytes,
@@ -414,6 +439,16 @@ def _handle_period_choice(session: Session, text: str) -> Response:
         text=summary_text,
         chips=chips,
         phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+    )
+
+
+def _file_is_gone(session: Session) -> Response:
+    """The stored file is missing, so a question that needs it restarts at the upload."""
+    session.phase = Phase.AWAITING_FILE
+    return Response(
+        text="I no longer have your file. Please upload it again using the drop zone above.",
+        chips=["Help"],
+        phase=Phase.AWAITING_FILE,
     )
 
 
@@ -866,17 +901,36 @@ _GENERIC_ITEM_WORDS = frozenset({
 })
 
 
+# Words that are never an account name when they stand alone in a sentence ("is it over budget").
+_SENTENCE_STOPWORDS = frozenset({
+    "it", "is", "a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "we", "us", "our", "up",
+})
+_WORD_RE = re.compile(r"[\w&]+")
+
+
+def _items_named_in(text: str, items: list[str]) -> list[str]:
+    """Line items whose whole name appears in the sentence as whole words, longest name first."""
+    padded = f" {' '.join(_WORD_RE.findall(normalize_for_routing(text).lower()))} "
+    named: list[str] = []
+    for item in dict.fromkeys(items):
+        words = _WORD_RE.findall(normalize_for_routing(item).lower())
+        if not words or (len(words) == 1 and words[0] in _SENTENCE_STOPWORDS):
+            continue
+        if f" {' '.join(words)} " in padded:
+            named.append(item)
+    return sorted(named, key=len, reverse=True)
+
+
 def _item_in_sentence(text: str, items: list[str]) -> str | None:
     """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'."""
-    lower = text.lower()
-    named = sorted((item for item in items if item.strip() and item.lower() in lower), key=len, reverse=True)
+    named = _items_named_in(text, items)
     if named:
         return named[0]
-    words = set(re.findall(r"[\w&]+", lower))
+    words = set(_WORD_RE.findall(normalize_for_routing(text).lower()))
     hits = [
         item for item in dict.fromkeys(items)
         if any(len(word) >= 4 and word not in _GENERIC_ITEM_WORDS and word in words
-               for word in re.findall(r"[\w&]+", item.lower()))
+               for word in _WORD_RE.findall(normalize_for_routing(item).lower()))
     ]
     return hits[0] if len(hits) == 1 else None
 
@@ -974,10 +1028,22 @@ def _handle_currency(session: Session, text: str) -> Response:
 
 def _run_analysis(session: Session) -> Response:
     """Run the deterministic analysis engine and handle classification."""
-    assert session.parsed_rows is not None
-    assert session.period is not None
-    assert session.dollar_threshold is not None
-    assert session.percent_threshold is not None
+    if session.parsed_rows is None:
+        return _file_is_gone(session)
+    if session.period is None:
+        session.phase = Phase.AWAITING_PERIOD
+        return Response(
+            text="What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+            phase=Phase.AWAITING_PERIOD,
+        )
+    if session.dollar_threshold is None or session.percent_threshold is None:
+        session.phase = Phase.AWAITING_THRESHOLDS
+        return Response(
+            text="I need your materiality thresholds first. Enter a dollar amount and a percentage, "
+                 "for example: `$10,000 or 5%`",
+            chips=["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"],
+            phase=Phase.AWAITING_THRESHOLDS,
+        )
 
     intake = session.intake_result
     config = AnalysisConfig(
@@ -1376,8 +1442,8 @@ def _handle_exploring(session: Session, text: str) -> Response:
         return _handle_save_mapping(session)
 
     intent = parse_intent(text)
-    result = session.result
-    assert result is not None
+    if session.result is None:
+        return _file_is_gone(session)
 
     handler_map: dict[str, Callable[[], Response]] = {
         "help": lambda: _handle_help(session),
@@ -1492,7 +1558,7 @@ def _handle_help(session: Session) -> Response:
     return Response(
         text=text,
         chips=["Summary", "Biggest risks", "Biggest wins", "Material"],
-        phase=Phase.EXPLORING,
+        phase=session.phase,
     )
 
 
@@ -1626,9 +1692,29 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     places = report_places(result)
 
     count = int(intent.captures.get("count", "5"))
-    count = max(1, min(count, len(_detail_rows(result))))
+    if count < 1:
+        return Response(
+            text="Please ask for at least 1 line, for example `top 3`.",
+            chips=["Top 3", "Top 5", "Summary"],
+            phase=Phase.EXPLORING,
+        )
 
-    sorted_rows = sorted(_detail_rows(result), key=lambda r: abs(r.variance_dollars), reverse=True)
+    kind = intent.captures.get("kind", "").lower()
+    line_type = (
+        LineType.EXPENSE if kind.startswith(("expense", "cost"))
+        else LineType.REVENUE if kind.startswith(("revenue", "sales", "income"))
+        else None
+    )
+    rows = [row for row in _detail_rows(result) if line_type is None or row.line_type == line_type]
+    if not rows:
+        return Response(
+            text=f"No {line_type.value if line_type else 'line item'} rows found.",
+            chips=["Summary", "Material"],
+            phase=Phase.EXPLORING,
+        )
+    count = min(count, len(rows))
+
+    sorted_rows = sorted(rows, key=lambda r: abs(r.variance_dollars), reverse=True)
     top = sorted_rows[:count]
     session.last_table_items = [row.line_item for row in top]
     if session.last_table_items:
@@ -1637,7 +1723,7 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     table = [row_to_table_dict(row, cfg.currency, places, _heading(cfg)) for row in top]
 
     return Response(
-        text=f"**Top {count} Variances by Absolute Amount**",
+        text=f"**Top {count} {line_type.value + ' ' if line_type else ''}Variances by Absolute Amount**",
         table=table,
         chips=[f"Why {top[0].line_item}?", "Material", "Summary"],
         phase=Phase.EXPLORING,
@@ -1655,6 +1741,9 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
     item_query = _resolve_item_query(raw_query, session)
     all_items = [row.line_item for row in result.rows]
     matches = find_line_item(item_query, all_items)
+    if not matches and raw_query:
+        named = _item_in_sentence(raw_query, all_items)  # "why is marketing over budget?"
+        matches = [named] if named else []
 
     if not matches:
         display_q = safe_inline(raw_query or item_query or "unspecified item")
@@ -1735,6 +1824,9 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
     item_query = _resolve_item_query(raw_query, session)
     all_items = [row.line_item for row in result.rows]
     matches = find_line_item(item_query, all_items)
+    if not matches and raw_query:
+        named = _item_in_sentence(raw_query, all_items)  # "details on how marketing is doing"
+        matches = [named] if named else []
 
     if not matches:
         display_q = safe_inline(raw_query or item_query or "unspecified item")
@@ -1997,6 +2089,18 @@ def _handle_full_report(session: Session) -> Response:
     )
 
 
+_PATH_CHARACTERS = re.compile(r"[/\\.~]")
+
+
+def _export_path(intent: ParsedIntent) -> str | None:
+    """The file path an export asked for, if the words after 'export report' are one.
+
+    "download report now" names no file; a path has a separator, an extension or a '~'.
+    """
+    path = intent.captures.get("path", "").strip().strip("'\"`")
+    return path if path and _PATH_CHARACTERS.search(path) else None
+
+
 def _path_export_disabled(path: str, intent: ParsedIntent) -> Response:
     """Refuse a server-side write on hosted deployments and point to the download."""
     chip = {
@@ -2021,7 +2125,7 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     period_slug = result.config.period.replace(" ", "_").lower()
     filename = f"variance_report_{period_slug}.md"
 
-    path = intent.captures.get("path")
+    path = _export_path(intent)
     if path and not session.path_exports_enabled:
         return _path_export_disabled(path, intent)
     if path:
@@ -2072,7 +2176,7 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
     period_slug = result.config.period.replace(" ", "_").lower()
     filename = f"variance_audit_{period_slug}.json"
 
-    path = intent.captures.get("path")
+    path = _export_path(intent)
     if path and not session.path_exports_enabled:
         return _path_export_disabled(path, intent)
     if path:
@@ -2149,7 +2253,7 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
     period_slug = result.config.period.replace(" ", "_").lower()
     filename = f"variance_data_{period_slug}.csv"
 
-    path = intent.captures.get("path")
+    path = _export_path(intent)
     if path and not session.path_exports_enabled:
         return _path_export_disabled(path, intent)
     if path:
@@ -2184,7 +2288,7 @@ def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
     period_slug = result.config.period.replace(" ", "_").lower()
     filename = f"variance_workbook_{period_slug}.xlsx"
 
-    path = intent.captures.get("path")
+    path = _export_path(intent)
     if path and not session.path_exports_enabled:
         return _path_export_disabled(path, intent)
     if path:
@@ -4171,13 +4275,48 @@ def _handle_profitability(session: Session) -> Response:
     return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
 
 
+def _describe_item_reply(session: Session, matched_name: str) -> Response:
+    """Conversational reply for a line item the user mentioned in passing."""
+    assert session.result is not None
+    session.last_focused_item = matched_name
+    row = next(r for r in session.result.rows if r.line_item == matched_name)
+    cfg = session.result.config
+    places = report_places(session.result)
+    if row.status == Status.FAVORABLE:
+        status_desc = "favorable beat"
+    elif row.status == Status.UNFAVORABLE:
+        status_desc = ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE
+                       else "unfavorable revenue shortfall")
+    elif row.status == Status.NEUTRAL:
+        status_desc = "in line with budget" if _is_budget(cfg) else f"in line with the {_noun(cfg)}"
+    else:
+        status_desc = "unclassified, so no favorable/unfavorable direction"
+    return Response(
+        text=f"Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}:\n\n"
+             f"• **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)}\n"
+             f"• **Actual:** {format_money(row.actual, cfg.currency, places)}\n"
+             f"• **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** "
+             f"({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc})\n\n"
+             f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what if {safe_inline(row.line_item)} drops 5%`)?",
+        table=[row_to_table_dict(row, cfg.currency, places, _heading(cfg))],
+        chips=[f"Why {row.line_item}?", f"Detail {row.line_item}?", "Waterfall", "Summary"],
+        phase=Phase.EXPLORING,
+    )
+
+
 def _handle_unknown(session: Session, text: str) -> Response:
     """Fallback for unrecognized queries with intelligent financial keyword detection and conversational guidance."""
-    text_lower = text.strip().lower()
+    text_lower = normalize_for_routing(text).lower()
+
+    # An account named in full ("Profit Sharing looks high") outranks the keywords below.
+    if session.result is not None:
+        named = _items_named_in(text, [r.line_item for r in session.result.rows])
+        if named:
+            return _describe_item_reply(session, named[0])
 
     if any(k in text_lower for k in ("margin", "ebitda", "profit", "operating income")):
         return _handle_profitability(session) if (session.phase == Phase.EXPLORING and session.result is not None) else Response(
-            text="💡 **FP&A Note:** Net operating impact measures the overall variance contribution toward operating income / EBITDA. "
+            text="💡 **FP&A Note:** Net operating impact measures the overall variance contribution toward operating profit. "
                  "Under standard financial rules, profit measures are not treated as additive revenue to prevent double-counting. "
                  "Try asking: `summary`, `what is net impact?`, or `totals`.",
             chips=["Summary", "Net impact", "Totals"],
@@ -4200,34 +4339,10 @@ def _handle_unknown(session: Session, text: str) -> Response:
         resolved = _resolve_item_query(text, session)
         matches = find_line_item(resolved, line_items)
         if not matches:
-            named = _item_in_sentence(text, line_items)
-            matches = [named] if named else []
+            named_item = _item_in_sentence(text, line_items)
+            matches = [named_item] if named_item else []
         if matches:
-            matched_name = matches[0]
-            session.last_focused_item = matched_name
-            row = next(r for r in session.result.rows if r.line_item == matched_name)
-            cfg = session.result.config
-            places = report_places(session.result)
-            if row.status == Status.FAVORABLE:
-                status_desc = "favorable beat"
-            elif row.status == Status.UNFAVORABLE:
-                status_desc = ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE
-                               else "unfavorable revenue shortfall")
-            elif row.status == Status.NEUTRAL:
-                status_desc = "in line with budget" if _is_budget(cfg) else f"in line with the {_noun(cfg)}"
-            else:
-                status_desc = "unclassified, so no favorable/unfavorable direction"
-            return Response(
-                text=f"Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}:\n\n"
-                     f"• **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)}\n"
-                     f"• **Actual:** {format_money(row.actual, cfg.currency, places)}\n"
-                     f"• **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** "
-                     f"({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc})\n\n"
-                     f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what if {safe_inline(row.line_item)} drops 5%`)?",
-                table=[row_to_table_dict(row, cfg.currency, places, _heading(cfg))],
-                chips=[f"Why {row.line_item}?", f"Detail {row.line_item}?", "Waterfall", "Summary"],
-                phase=Phase.EXPLORING,
-            )
+            return _describe_item_reply(session, matches[0])
 
     first_item = session.result.rows[0].line_item if (session.result and session.result.rows) else "Marketing"
     return Response(
