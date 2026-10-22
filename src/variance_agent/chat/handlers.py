@@ -50,6 +50,7 @@ from variance_agent.mapping import (
 from variance_agent.report import render_markdown
 from variance_agent.xlsx import render_xlsx
 
+from . import knowledge
 from .intent import (
     KNOWLEDGE_INTENTS,
     MAX_ROUTING_CHARS,
@@ -1499,56 +1500,9 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
-    handler_map: dict[str, Callable[[], Response]] = {
-        "help": lambda: _handle_help(session),
-        "reset": lambda: _handle_reset(session),
-        "summary": lambda: _handle_summary(session),
-        "material": lambda: _handle_material(session),
-        "filter_status_u": lambda: _handle_filter_status(session, Status.UNFAVORABLE),
-        "filter_status_f": lambda: _handle_filter_status(session, Status.FAVORABLE),
-        "filter_type_rev": lambda: _handle_filter_type(session, LineType.REVENUE),
-        "filter_type_exp": lambda: _handle_filter_type(session, LineType.EXPENSE),
-        "filter_type_unc": lambda: _handle_filter_type(session, LineType.UNCLASSIFIED),
-        "top_n": lambda: _handle_top_n(session, intent),
-        "explain": lambda: _handle_explain(session, intent),
-        "detail": lambda: _handle_detail(session, intent),
-        "set_threshold": lambda: _handle_set_threshold(session, intent),
-        "warnings": lambda: _handle_warnings(session),
-        "recommendations": lambda: _handle_recommendations(session),
-        "totals": lambda: _handle_totals(session),
-        "full_report": lambda: _handle_full_report(session),
-        "export_report": lambda: _handle_export_report(session, intent),
-        "export_audit": lambda: _handle_export_audit(session, intent),
-        "export_csv": lambda: _handle_export_csv(session, intent),
-        "export_xlsx": lambda: _handle_export_xlsx(session, intent),
-        # ── Advanced Analytics ──
-        "waterfall": lambda: _handle_waterfall(session),
-        "what_if": lambda: _handle_what_if(session, intent),
-        "sensitivity": lambda: _handle_sensitivity(session),
-        "run_rate": lambda: _handle_run_rate(session, intent),
-        "biggest_risks": lambda: _handle_biggest_risks(session),
-        "biggest_wins": lambda: _handle_biggest_wins(session),
-        "revenue_status": lambda: _handle_revenue_status(session),
-        "expense_status": lambda: _handle_expense_status(session),
-        "budget_utilization": lambda: _handle_budget_utilization(session),
-        "top_percent": lambda: _handle_top_percent(session),
-        "metrics_count": lambda: _handle_metrics_count(session),
-        "variance_concentration": lambda: _handle_concentration(session),
-        "unbudgeted_spend": lambda: _handle_unbudgeted(session),
-        "cost_savings": lambda: _handle_cost_savings(session),
-        "revenue_misses": lambda: _handle_revenue_misses(session),
-        "compare_items": lambda: _handle_compare(session, intent),
-        "executive_memo": lambda: _handle_executive_memo(session),
-        "driver_summary": lambda: _handle_driver_summary(session),
-        "tldr": lambda: _handle_tldr(session),
-        "profitability": lambda: _handle_profitability(session),
-        "list_sheets": lambda: _handle_list_sheets(session),
-        "switch_sheet": lambda: _handle_switch_sheet(session, intent),
-    }
-
-    handler = handler_map.get(intent.intent_id)
+    handler = _EXPLORING_HANDLERS.get(intent.intent_id)
     if handler is not None:
-        return handler()
+        return handler(session, intent)
 
     return _handle_unknown(session, text)
 
@@ -2367,49 +2321,7 @@ def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
 
 def _handle_knowledge(session: Session, intent_id: str) -> Response:
     """Answer financial domain questions with FP&A precision."""
-    from .knowledge import (
-        explain_audit_trail,
-        explain_budget_vs_forecast,
-        explain_budgeting_methods,
-        explain_comparison_types,
-        explain_drivers,
-        explain_favorable_unfavorable,
-        explain_kpis,
-        explain_materiality,
-        explain_mitigation_actions,
-        explain_net_impact,
-        explain_operating_leverage,
-        explain_supported_formats,
-        explain_timing_vs_permanent,
-        explain_unclassified,
-        explain_variance_analysis,
-        explain_ebitda_margin,
-        explain_variance_bridge,
-    )
-
-    explanations: dict[str, str] = {
-        "concept_variance": explain_variance_analysis(),
-        "concept_f_vs_u": explain_favorable_unfavorable(),
-        "concept_fav": explain_favorable_unfavorable(),
-        "concept_unfav": explain_favorable_unfavorable(),
-        "concept_materiality": explain_materiality(),
-        "concept_net_impact": explain_net_impact(),
-        "concept_drivers": explain_drivers(),
-        "concept_unclassified": explain_unclassified(),
-        "concept_audit": explain_audit_trail(),
-        "concept_actions": explain_mitigation_actions(),
-        "concept_formats": explain_supported_formats(),
-        "concept_budget_forecast": explain_budget_vs_forecast(),
-        "concept_timing_permanent": explain_timing_vs_permanent(),
-        "concept_operating_leverage": explain_operating_leverage(),
-        "concept_kpis": explain_kpis(),
-        "concept_budgeting_methods": explain_budgeting_methods(),
-        "concept_ebitda_margin": explain_ebitda_margin(),
-        "concept_bridge": explain_variance_bridge(),
-        "comparison_types": explain_comparison_types(),
-    }
-
-    text = explanations.get(intent_id, explain_variance_analysis())
+    text = _KNOWLEDGE_TEXTS.get(intent_id, knowledge.explain_variance_analysis)()
 
     # If currently in a guided setup phase, provide a helpful prompt to continue
     chips = ["Summary", "Material", "Biggest risks", "Help"]
@@ -4464,3 +4376,76 @@ def _handle_unknown(session: Session, text: str) -> Response:
         chips=["Summary", "Waterfall", "Biggest risks", "Help"],
         phase=session.phase,
     )
+
+
+# Intent id -> the explanation it asks for; each is built only when asked.
+_KNOWLEDGE_TEXTS: dict[str, Callable[[], str]] = {
+    "concept_variance": knowledge.explain_variance_analysis,
+    "concept_f_vs_u": knowledge.explain_favorable_unfavorable,
+    "concept_fav": knowledge.explain_favorable_unfavorable,
+    "concept_unfav": knowledge.explain_favorable_unfavorable,
+    "concept_materiality": knowledge.explain_materiality,
+    "concept_net_impact": knowledge.explain_net_impact,
+    "concept_drivers": knowledge.explain_drivers,
+    "concept_unclassified": knowledge.explain_unclassified,
+    "concept_audit": knowledge.explain_audit_trail,
+    "concept_actions": knowledge.explain_mitigation_actions,
+    "concept_formats": knowledge.explain_supported_formats,
+    "concept_budget_forecast": knowledge.explain_budget_vs_forecast,
+    "concept_timing_permanent": knowledge.explain_timing_vs_permanent,
+    "concept_operating_leverage": knowledge.explain_operating_leverage,
+    "concept_kpis": knowledge.explain_kpis,
+    "concept_budgeting_methods": knowledge.explain_budgeting_methods,
+    "concept_ebitda_margin": knowledge.explain_ebitda_margin,
+    "concept_bridge": knowledge.explain_variance_bridge,
+    "comparison_types": knowledge.explain_comparison_types,
+}
+
+
+# Intent id -> handler for the exploring phase, built once rather than on every message.
+_EXPLORING_HANDLERS: dict[str, Callable[[Session, ParsedIntent], Response]] = {
+    "help": lambda session, intent: _handle_help(session),
+    "reset": lambda session, intent: _handle_reset(session),
+    "summary": lambda session, intent: _handle_summary(session),
+    "material": lambda session, intent: _handle_material(session),
+    "filter_status_u": lambda session, intent: _handle_filter_status(session, Status.UNFAVORABLE),
+    "filter_status_f": lambda session, intent: _handle_filter_status(session, Status.FAVORABLE),
+    "filter_type_rev": lambda session, intent: _handle_filter_type(session, LineType.REVENUE),
+    "filter_type_exp": lambda session, intent: _handle_filter_type(session, LineType.EXPENSE),
+    "filter_type_unc": lambda session, intent: _handle_filter_type(session, LineType.UNCLASSIFIED),
+    "top_n": lambda session, intent: _handle_top_n(session, intent),
+    "explain": lambda session, intent: _handle_explain(session, intent),
+    "detail": lambda session, intent: _handle_detail(session, intent),
+    "set_threshold": lambda session, intent: _handle_set_threshold(session, intent),
+    "warnings": lambda session, intent: _handle_warnings(session),
+    "recommendations": lambda session, intent: _handle_recommendations(session),
+    "totals": lambda session, intent: _handle_totals(session),
+    "full_report": lambda session, intent: _handle_full_report(session),
+    "export_report": lambda session, intent: _handle_export_report(session, intent),
+    "export_audit": lambda session, intent: _handle_export_audit(session, intent),
+    "export_csv": lambda session, intent: _handle_export_csv(session, intent),
+    "export_xlsx": lambda session, intent: _handle_export_xlsx(session, intent),
+    # ── Advanced Analytics ──
+    "waterfall": lambda session, intent: _handle_waterfall(session),
+    "what_if": lambda session, intent: _handle_what_if(session, intent),
+    "sensitivity": lambda session, intent: _handle_sensitivity(session),
+    "run_rate": lambda session, intent: _handle_run_rate(session, intent),
+    "biggest_risks": lambda session, intent: _handle_biggest_risks(session),
+    "biggest_wins": lambda session, intent: _handle_biggest_wins(session),
+    "revenue_status": lambda session, intent: _handle_revenue_status(session),
+    "expense_status": lambda session, intent: _handle_expense_status(session),
+    "budget_utilization": lambda session, intent: _handle_budget_utilization(session),
+    "top_percent": lambda session, intent: _handle_top_percent(session),
+    "metrics_count": lambda session, intent: _handle_metrics_count(session),
+    "variance_concentration": lambda session, intent: _handle_concentration(session),
+    "unbudgeted_spend": lambda session, intent: _handle_unbudgeted(session),
+    "cost_savings": lambda session, intent: _handle_cost_savings(session),
+    "revenue_misses": lambda session, intent: _handle_revenue_misses(session),
+    "compare_items": lambda session, intent: _handle_compare(session, intent),
+    "executive_memo": lambda session, intent: _handle_executive_memo(session),
+    "driver_summary": lambda session, intent: _handle_driver_summary(session),
+    "tldr": lambda session, intent: _handle_tldr(session),
+    "profitability": lambda session, intent: _handle_profitability(session),
+    "list_sheets": lambda session, intent: _handle_list_sheets(session),
+    "switch_sheet": lambda session, intent: _handle_switch_sheet(session, intent),
+}

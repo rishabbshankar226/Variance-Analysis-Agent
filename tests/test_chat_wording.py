@@ -97,3 +97,10 @@ def test_audit_text_claims_reproducibility_not_regulatory_compliance() -> None:
     assert "SHA-256" in text
     assert "not a certification" in text
 
+
+
+def test_every_knowledge_intent_has_an_answer_and_none_is_orphaned() -> None:
+    from variance_agent.chat.handlers import _KNOWLEDGE_TEXTS
+    from variance_agent.chat.intent import KNOWLEDGE_INTENTS
+
+    assert set(_KNOWLEDGE_TEXTS) == set(KNOWLEDGE_INTENTS)
