@@ -79,6 +79,14 @@ Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/B
   `Total Revenue`, instead of stopping with "ambiguous summary label; specify Row Kind". `Revenues` now
   infers as Revenue. `Total Operating Income` and other `Total ...` labels still need a Row Kind.
 
+- Lint: ruff now also enforces bugbear (`B`) and `E501` at 140 columns, which is the length the code already uses
+  (`line-length` said 100 and was not enforced; 873 lines exceeded it). The 41 bugbear findings were made explicit:
+  `zip()` states `strict=`, unused loop variables are named, and the three intentional patterns (a unary `+` that forces
+  the Decimal policy, lambdas called inside their own loop iteration, `getattr` on a dynamically imported optional
+  module) carry a one-line reason. The reply, prompt and training-text template files `chat/handlers.py`,
+  `chat/knowledge.py`, `dataset_generator.py`, `router.py` and `benchmark.py` are exempt from `E501` (see
+  `pyproject.toml`) until they are next wrapped.
+
 ### Earlier in 0.3.0
 
 - Record the file adjustments confirmed in the chat (header row below a title block,

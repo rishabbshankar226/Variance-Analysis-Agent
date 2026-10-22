@@ -39,9 +39,17 @@ class CurationGates:
     # punctuation are matched with the punctuation inside the pattern and no boundary after it.
     BANNED_ATTRACTORS = [
         re.compile(r"\b(?:Certainly|Great question|I'd be happy to|Sure thing|Of course|Good day)\b|\bHello!", re.IGNORECASE),
-        re.compile(r"\b(?:Here is a breakdown|Here is what you need to know|Let's dive in|Below are the steps|Here is how to think about this)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:Here is a breakdown|Here is what you need to know|Let's dive in|Below are the steps"
+            r"|Here is how to think about this)\b",
+            re.IGNORECASE,
+        ),
         re.compile(r"\b(?:Furthermore|Moreover|Additionally|In addition|Consequently|Therefore|To begin with),", re.IGNORECASE),
-        re.compile(r"\b(?:In summary|In conclusion|Overall),|\b(?:Let me know if you have any questions|Feel free to ask)\b|\bHope this helps!", re.IGNORECASE),
+        re.compile(
+            r"\b(?:In summary|In conclusion|Overall),"
+            r"|\b(?:Let me know if you have any questions|Feel free to ask)\b|\bHope this helps!",
+            re.IGNORECASE,
+        ),
         re.compile(r"^[ \t]*[-*]\s*\*\*[^*]+:\*\*", re.MULTILINE),  # Symmetrical bold bullet template
     ]
 

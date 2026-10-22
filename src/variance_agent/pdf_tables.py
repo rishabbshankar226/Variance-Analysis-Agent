@@ -192,8 +192,9 @@ def _pdf_tools() -> tuple[_ScanOpener, _Opener]:
             "PDF files require the optional PDF tools. "
             "Please install with: pip install 'variance-analysis-agent[pdf]'"
         ) from exc
-    return (cast(_ScanOpener, getattr(pdfium, "PdfDocument")),
-            cast(_Opener, getattr(plumber, "open")))
+    # The optional modules are imported dynamically, so attribute access is by name.
+    return (cast(_ScanOpener, getattr(pdfium, "PdfDocument")),  # noqa: B009
+            cast(_Opener, getattr(plumber, "open")))  # noqa: B009
 
 
 def _cannot_open(filename: str) -> PdfReadError:
@@ -567,7 +568,7 @@ def _statement_table(
                      if _period(h)[0] is None)
     else:
         headers = [label for label in labels if label is not None]
-        notes.extend(f"Read column '{o}' as {h}" for o, h in zip(originals, headers))
+        notes.extend(f"Read column '{o}' as {h}" for o, h in zip(originals, headers, strict=True))
 
     rows: list[list[object]] = []
     if first.caption:
@@ -604,7 +605,7 @@ def _statement_table(
             if any(cells):
                 lines.append((label, section, cells))
 
-    for (label, _, cells), distinct in zip(lines, _distinct_names(lines)):
+    for (label, _, cells), distinct in zip(lines, _distinct_names(lines), strict=True):
         if distinct != label:
             notes.append(f"Named the repeated line '{label}' as '{distinct}'")
         rows.append([distinct, *cells])

@@ -919,7 +919,7 @@ def _excel_loader() -> WorkbookLoader:
         raise ValueError(
             "Excel files require the optional Excel tools. Please install with: pip install 'variance-analysis-agent[excel]'"
         ) from exc
-    return cast(WorkbookLoader, getattr(module, "load_workbook"))
+    return cast(WorkbookLoader, getattr(module, "load_workbook"))  # noqa: B009 (dynamic optional import)
 
 
 def _header_cell_str(cell: object) -> str:
@@ -1493,7 +1493,10 @@ def _read_excel_bytes(
             elif chosen_sheet not in sheetnames:
                 return IntakeResult(
                     has_fatal_errors=True,
-                    fatal_error_message=f"Worksheet '{chosen_sheet}' was not found in '{filename}'. Available sheets: {', '.join(sheetnames)}.",
+                    fatal_error_message=(
+                        f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
+                        f"Available sheets: {', '.join(sheetnames)}."
+                    ),
                     available_sheets=sheetnames,
                 )
 
@@ -1776,7 +1779,7 @@ def _process_raw_table(
     if ignored_columns:
         visible_transformations.append(f"Ignored computed columns: {', '.join(ignored_columns)}")
 
-    for role, orig_name in column_mapping.items():
+    for orig_name in column_mapping.values():
         _, note = match_column_synonym(orig_name)
         if note:
             visible_transformations.append(note)
@@ -1959,7 +1962,8 @@ def _process_raw_table(
     if signed_det.is_signed_ledger:
         output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
         visible_transformations.append(
-            f"Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
+            "Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost "
+            f"convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
         )
 
     # 3. Subtotals and totals detection. An explicit Row Kind column already marks totals,
@@ -1973,7 +1977,8 @@ def _process_raw_table(
     if reconciled_names:
         output_rows = [r for r in output_rows if str(r.get("line_item", "")).strip() not in set(reconciled_names)]
         visible_transformations.append(
-            f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. Excluded from line items to avoid double-counting."
+            f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. "
+            "Excluded from line items to avoid double-counting."
         )
 
     single_periods = detect_single_period_column_values(output_rows)
@@ -2067,7 +2072,8 @@ def format_intake_summary(result: IntakeResult) -> str:
 
     read_text = f"- **Rows read:** {result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
     if result.rows_skipped_count > 0:
-        read_text += f" ({result.rows_skipped_count} row{'s' if result.rows_skipped_count != 1 else ''} skipped: {', '.join(result.skip_reasons)})"
+        skipped = result.rows_skipped_count
+        read_text += f" ({skipped} row{'s' if skipped != 1 else ''} skipped: {', '.join(result.skip_reasons)})"
     lines.append(read_text)
 
     if result.detected_totals:
@@ -2135,7 +2141,10 @@ def plain_analysis_error(error_text: str) -> str:
     if m_reconcile:
         summary_name = m_reconcile.group(1) or m_reconcile.group(2) or m_reconcile.group(3)
         line_type = m_reconcile.group(4).strip()
-        return f"Summary total for '{summary_name}' does not match the sum of its {line_type} detail rows. Please check for missing or overlapping line items."
+        return (
+            f"Summary total for '{summary_name}' does not match the sum of its {line_type} detail rows. "
+            "Please check for missing or overlapping line items."
+        )
 
     # 7. Ambiguous summary label / Row Kind
     if "ambiguous summary label" in text.lower() or "row kind" in text.lower():

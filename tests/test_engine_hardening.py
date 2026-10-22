@@ -91,7 +91,7 @@ def _reference_detect(rows: list[dict[str, object]]) -> tuple[list[tuple[object,
         prior = list(reconciled)
         for prev in prior:
             hit = next(
-                (d for d, (db, da) in zip(detail_rows, detail_values)
+                (d for d, (db, da) in zip(detail_rows, detail_values, strict=True)
                  if abs((prev[1] - db) - b) <= tol and abs((prev[2] - da) - a) <= tol),
                 None,
             )

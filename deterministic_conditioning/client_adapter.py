@@ -167,7 +167,8 @@ class DeterministicChatClient:
             return (
                 "Skip the manual headers entirely. Set `credentials: 'include'` on your fetch calls, "
                 "and the browser quietly attaches the cookie to every outbound request on your domain "
-                f"without JavaScript ever touching it. Your backend API just pulls the token off incoming `Cookie` headers as normal. {closing}"
+                "without JavaScript ever touching it. Your backend API just pulls the token off incoming "
+                f"`Cookie` headers as normal. {closing}"
             )
         elif decision.rule_id == "R4":
             return (

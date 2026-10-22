@@ -86,7 +86,7 @@ def _text(value: Decimal) -> str:
 def _close(computed: list[Decimal], target: list[Decimal], terms: int, unit: Decimal) -> bool:
     """Equal within the rounding of `terms` independently rounded printed figures."""
     tolerance = unit * terms / 2
-    return all(abs(c - t) <= tolerance for c, t in zip(computed, target))
+    return all(abs(c - t) <= tolerance for c, t in zip(computed, target, strict=True))
 
 
 def _block_start(
@@ -150,12 +150,12 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
             if pending and len(pending) <= _MAX_ITEMS:
                 fits = [
                     combo for combo in itertools.product((1, -1), repeat=len(pending))
-                    if _close([base[p] + sum((s * item.values[p] for s, item in zip(combo, pending)),
+                    if _close([base[p] + sum((s * item.values[p] for s, item in zip(combo, pending, strict=True)),
                                              Decimal(0)) for p in range(periods)],
                               values, len(pending) + 2, unit)
                 ]
                 if len(fits) == 1:
-                    for s, item in zip(fits[0], pending):
+                    for s, item in zip(fits[0], pending, strict=True):
                         for r in item.rows:
                             signs[r] = s
             running, pending = values, []
