@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import urllib.request
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -160,11 +162,17 @@ class TestDatasetIntegrity:
         assert jsonl_path.exists()
         with open(jsonl_path, "r", encoding="utf-8") as f:
             lines = [json.loads(line) for line in f if line.strip()]
-        assert len(lines) == len(EXPANDED_DATASET_SPECS)
+        # The committed file must be what the generator would write, not merely the same length.
+        assert lines == [asdict(spec) for spec in EXPANDED_DATASET_SPECS]
 
 
 class TestDeterministicChatClient:
-    def test_multi_turn_simulation(self) -> None:
+    def test_multi_turn_simulation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def no_network(*args: object, **kwargs: object) -> None:
+            raise AssertionError("the default client must not open a connection")
+
+        monkeypatch.delenv("LLM_API_BASE", raising=False)
+        monkeypatch.setattr(urllib.request, "urlopen", no_network)
         client = DeterministicChatClient()
         r1 = client.step("hey what's good today")
         assert r1.history_turn_count == 1
