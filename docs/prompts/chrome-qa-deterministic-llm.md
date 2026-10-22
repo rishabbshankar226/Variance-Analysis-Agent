@@ -8,7 +8,7 @@ delivering them as a pull request. Work through the phases in order. Be skeptica
 
 "The deterministic LLM" here means both surfaces:
 - **The variance chatbot:** `src/variance_agent/chat/`, with the UI in
-  `src/variance_agent/static/chat.html`.
+  `src/variance_agent/static/` (`chat.html`, `chat.js`, `chat.css`).
 - **The conditioning engine:** the `deterministic_conditioning/` package. Its templated commentary
   appears in the memo's "Strategic Takeaway" and in the CLI `--commentary` report, and its router has
   its own browser visualizer.
@@ -63,7 +63,7 @@ delivering them as a pull request. Work through the phases in order. Be skeptica
    ```
 5. Build a **capability inventory** from the bot's own claims:
    - every intent in the help text;
-   - every chip label in `handlers.py` and `src/variance_agent/static/chat.html`;
+   - every chip label in `handlers.py` and `src/variance_agent/static/chat.js`;
    - every knowledge topic in `knowledge.py` / `intent.py`.
 
    This inventory is your test matrix. Anything the bot advertises must work.
@@ -215,9 +215,8 @@ of every hypothesis in the appendix.
 Fix in severity order: all Critical, then High, then Medium where cheap. For each fix:
 1. Write a failing pytest in `tests/` that reproduces the observed behaviour, using the Phase 1
    fixtures and oracle values. Watch it fail.
-2. Make the smallest change that fixes the root cause, matching the surrounding code style. Keep
-   `static/chat.html` and `src/variance_agent/static/chat.html` in sync, or make one the source of
-   truth.
+2. Make the smallest change that fixes the root cause, matching the surrounding code style. The UI has
+   one source, `src/variance_agent/static/`; there is no second copy to keep in sync.
 3. Run `pytest`, `ruff` and `mypy --strict`; all must be green.
 4. Restart the local server and **re-verify in Chrome** with the original repro steps.
 5. Commit one fix per commit, citing the findings-log entry.

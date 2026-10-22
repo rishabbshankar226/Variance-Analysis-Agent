@@ -772,7 +772,7 @@ def test_http_message_first_visit_controls_pasted_table_intro(chat_server_url: s
 
 
 def test_chat_page_sends_first_visit_with_uploads_and_messages() -> None:
-    page = (Path(__file__).resolve().parents[1] / "src/variance_agent/static/chat.html").read_text("utf-8")
+    page = (Path(__file__).resolve().parents[1] / "src/variance_agent/static/chat.js").read_text("utf-8")
     assert "formData.append('first_visit'" in page
     assert "first_visit: !introSeen" in page
 
@@ -855,7 +855,7 @@ def test_cli_chat_rejects_conflicting_output_flags() -> None:
 def test_concept_ebitda_margin_knowledge() -> None:
     session = Session()
     resp = handle_message(session, "what is ebitda impact?")
-    assert "EBITDA & Operating Margin Impact" in resp.text
+    assert "Operating Profit & Margin Impact" in resp.text
     assert "Bottom-Line Formula" in resp.text
     assert "Flow-Through Rate" in resp.text
     assert "excluded_from_aggregation" in resp.text
@@ -1592,16 +1592,3 @@ def test_conversational_inverted_what_if() -> None:
     assert 'Scenario Analysis ("What-If" Simulation)' in inc_sim.text
     assert "Product Sales" in inc_sim.text
     assert "+5.0%" in inc_sim.text
-
-
-def test_chat_html_copies_identical() -> None:
-    """Ensure root static/chat.html and package src/variance_agent/static/chat.html remain byte-identical."""
-    root_static = Path(__file__).resolve().parent.parent / "static" / "chat.html"
-    pkg_static = Path(__file__).resolve().parent.parent / "src" / "variance_agent" / "static" / "chat.html"
-    assert root_static.exists(), f"Missing root static file: {root_static}"
-    assert pkg_static.exists(), f"Missing package static file: {pkg_static}"
-    assert root_static.read_bytes() == pkg_static.read_bytes(), "static/chat.html and src/variance_agent/static/chat.html must be identical."
-
-
-
-

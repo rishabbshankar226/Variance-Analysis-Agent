@@ -89,8 +89,13 @@ _TITLE_SLACK = 25  # a title line may carry "(Continued)" or "(Unaudited)", not 
 _TITLE_SEARCH_LINES = 10
 _SMALL_WORDS = {"of", "and", "in", "to"}
 
-_NUMBER_RE = re.compile(r"^\(?-?\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?%?$")
+_CORE = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+# Balanced printed forms only: 1,234  -1,234  −1,234  $1,234  (1,234)  ($1,234)  $(1,234)  (5.0)%  12.5%
+_NUMBER_RE = re.compile(
+    rf"^(?:[-\u2212]?\$?{_CORE}%?|\(\$?{_CORE}\)%?|\$\({_CORE}\))$"
+)
 _DASHES = {"-", "–", "—"}
+_DASH_AMOUNT_RE = re.compile(r"^(?:\$[-–—]|\([-–—]\)|\$\([-–—]\))$")  # $—  (—)  $(—)
 _YEAR_ONLY_RE = re.compile(r"^(?:19|20)\d{2}$")
 _PARENTHETICAL_RE = re.compile(r"^\(.*\)$")
 
@@ -324,7 +329,7 @@ def _join_split_parentheses(words: list[_Word]) -> list[_Word]:
 
 
 def _is_amount(text: str) -> bool:
-    return text in _DASHES or bool(_NUMBER_RE.match(text))
+    return text in _DASHES or bool(_NUMBER_RE.match(text)) or bool(_DASH_AMOUNT_RE.match(text))
 
 
 def _title(lines: list[str]) -> tuple[int, str] | None:

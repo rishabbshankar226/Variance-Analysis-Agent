@@ -13,19 +13,25 @@ Handles:
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import re
-from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+import unicodedata
+from dataclasses import dataclass, field, replace
+from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from enum import StrEnum
 from typing import cast
 
+from .classification import infer_line_type
 from .currencies import SYMBOL_CURRENCIES
 from .excel import WorkbookLoader, cell_value, inspect_archive
 from .limits import (
+    MAX_CELLS,
+    MAX_COLUMNS,
     MAX_INPUT_BYTES,
     MAX_NUMBER_LENGTH,
+    MAX_ROWS,
 )
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
@@ -195,6 +201,8 @@ class IntakeResult:
     blank_budget_items: list[str] = field(default_factory=list)
     # Whether those blank budgets were read as 0 (confirmed in chat; always on for CLI --assisted).
     blank_budgets_as_zero: bool = False
+    # Accounting dashes ('-', en/em dash) read as 0, for the audit's zero_reads record.
+    dash_count: int = 0
     candidate_sheets: list[SheetScore] = field(default_factory=list)
     available_sheets: list[str] = field(default_factory=list)
     has_fatal_errors: bool = False
@@ -337,12 +345,25 @@ def parse_assisted_decimal(
     if not isinstance(value, str):
         raise ValueError(f"{line_item}: field '{field}' must be a numeric scalar.")
 
-    text = value.strip()
+    # NFKC folds full-width digits/signs and non-breaking spaces; U+2212 is the typographic minus.
+    text = unicodedata.normalize("NFKC", value).strip().replace("\u2212", "-")
     if text in _ACCOUNTING_DASHES:
         return Decimal("0"), f"Read accounting dash '{text}' as 0"
 
     if text.lower() in {"na", "n/a", "none", "null"}:
         raise ValueError(f"{line_item}: required value in {field} is missing (marked {text}).")
+
+    # "$(1,234)" is the accounting negative with the symbol outside the parentheses.
+    if outside := re.fullmatch(r"([$€£])\s*\((.*)\)", text):
+        text = f"({outside.group(1)}{outside.group(2)})"
+
+    # ERP exports (SAP, ...) put the sign after the digits: "500.00-" is -500.00.
+    trailing_minus = False
+    if text.endswith("-") and not text.startswith("("):
+        unsigned = _NUMBER_RE.fullmatch(text[:-1].rstrip())
+        if unsigned is not None and not any(sign in unsigned["prefix"] for sign in "+-"):
+            trailing_minus = True
+            text = text[:-1].rstrip()
 
     negative_parentheses = text.startswith("(") and text.endswith(")")
     if negative_parentheses:
@@ -371,7 +392,7 @@ def parse_assisted_decimal(
     except (InvalidOperation, ValueError) as exc:
         raise ValueError(f"{line_item}: field '{field}' is not numeric: {value}.") from exc
 
-    if negative_parentheses:
+    if negative_parentheses or trailing_minus:
         number = number.copy_negate()
 
     if not number.is_finite():
@@ -379,6 +400,10 @@ def parse_assisted_decimal(
     if len(number.as_tuple().digits) > MAX_NUMBER_LENGTH:
         raise ValueError(f"{line_item}: field '{field}' exceeds the supported numeric length.")
 
+    if trailing_minus:
+        return number, f"Read trailing minus sign on '{value.strip()}' as negative"
+    if "\u2212" in value:
+        return number, f"Read typographic minus sign in '{value.strip()}' as negative"
     return number, None
 
 
@@ -393,8 +418,6 @@ _PERIOD_RE = re.compile(
 
 _THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\(\s*thousands\b|\$000s?|\b000s\b)", re.IGNORECASE)
 _MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\(\s*millions\b|\$m\b|in\s+m\b)", re.IGNORECASE)
-_REVENUE_KEYWORDS = re.compile(r"\b(revenue|sales|income|rev)\b", re.IGNORECASE)
-_EXPENSE_KEYWORDS = re.compile(r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b", re.IGNORECASE)
 _TOTAL_KEYWORD_RE = re.compile(
     r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
     re.IGNORECASE,
@@ -413,13 +436,14 @@ def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
         if not m:
             continue
         p = m.group(1).strip()
-        h_lower = h.lower()
-        is_budget_word = "budget" in h_lower or "plan" in h_lower
+        # Whole words only: "Contract Value" and "Planning" must not read as Actual or Budget.
+        words = set(normalize_header(h).split("_"))
+        is_budget_word = bool(words & {"budget", "budgeted", "plan", "planned"})
         if is_budget_word or ComparisonBasis.BUDGET in bases_named_in(normalize_header(h)):
             budget_cols[p] = h
             if p not in period_order:
                 period_order.append(p)
-        elif "actual" in h_lower or "act" in h_lower:
+        elif words & {"actual", "actuals", "act"}:
             actual_cols[p] = h
             if p not in period_order:
                 period_order.append(p)
@@ -482,8 +506,9 @@ def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection
         b_dec = Decimal(str(b)) if b is not None else Decimal("0")
         a_dec = Decimal(str(a)) if a is not None else Decimal("0")
 
-        is_rev = bool(_REVENUE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "revenue"
-        is_exp = bool(_EXPENSE_KEYWORDS.search(name)) or str(r.get("type", "")).lower() == "expense"
+        inferred, _ = infer_line_type(name)
+        is_rev = inferred is LineType.REVENUE or str(r.get("type", "")).lower() == "revenue"
+        is_exp = inferred is LineType.EXPENSE or str(r.get("type", "")).lower() == "expense"
 
         if is_rev and not is_exp:
             is_neg = (b_dec < 0 or a_dec < 0)
@@ -525,14 +550,81 @@ def flip_ledger_signs(
     return flipped, affected
 
 
+class _ToleranceIndex:
+    """Grid index over (budget, actual) points that answers "which stored point lies within
+    the tolerance of this one?" without comparing against every stored point.
+
+    Cells are twice the tolerance wide, so any point within the tolerance of a query lies in
+    the query's cell or one of its eight neighbours. Candidates are always re-checked with the
+    exact ``<=`` comparison, so the grid only prunes.
+    """
+
+    def __init__(self) -> None:
+        self._cells: dict[tuple[int, int], list[int]] = {}
+        self._points: list[tuple[Decimal, Decimal]] = []
+
+    @staticmethod
+    def _cell(value: Decimal) -> int:
+        # Units of 0.01, two per cell; scaleb only moves the exponent, so it is exact.
+        return int(value.scaleb(2).to_integral_value(rounding=ROUND_FLOOR)) // 2
+
+    def add(self, budget: Decimal, actual: Decimal) -> None:
+        self._cells.setdefault((self._cell(budget), self._cell(actual)), []).append(len(self._points))
+        self._points.append((budget, actual))
+
+    def find(
+        self,
+        budget: Decimal,
+        actual: Decimal,
+        tolerance: Decimal,
+        *,
+        newest_first: bool,
+        max_position: int | None = None,
+        skip: int | None = None,
+    ) -> int | None:
+        """Position of the newest (or oldest) stored point within ``tolerance`` of the query."""
+        base_b, base_a = self._cell(budget), self._cell(actual)
+        best: int | None = None
+        for cell_b in (base_b - 1, base_b, base_b + 1):
+            for cell_a in (base_a - 1, base_a, base_a + 1):
+                positions = self._cells.get((cell_b, cell_a))
+                if not positions:
+                    continue
+                for position in (reversed(positions) if newest_first else positions):
+                    if max_position is not None and position > max_position:
+                        if newest_first:
+                            continue
+                        break
+                    if position == skip:
+                        continue
+                    point_b, point_a = self._points[position]
+                    if abs(point_b - budget) <= tolerance and abs(point_a - actual) <= tolerance:
+                        if best is None or (position > best if newest_first else position < best):
+                            best = position
+                        break
+        return best
+
+
 def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetectionResult:
-    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance."""
+    """Detect contiguous block subtotals and nested formula totals within 0.01 tolerance.
+
+    A row is a block subtotal when it equals the sum of the detail rows just above it (two or
+    more rows, or one row when its label says total), and a formula total when it equals a
+    prior total minus a detail row or minus another prior total. Both searches use tolerance
+    indexes, so detection stays near-linear on ledgers of tens of thousands of rows.
+    """
     tolerance = Decimal("0.01")
     reconciled_totals: list[ReconciledTotal] = []
     unreconciled_totals: list[UnreconciledTotal] = []
-    detail_indices: list[int] = []
-    # (budget, actual) of each detail row, parsed once and aligned with detail_indices.
-    detail_values: list[tuple[Decimal, Decimal]] = []
+    detail_indices: list[int] = []  # row index of each detail row, in order
+    details = _ToleranceIndex()  # (budget, actual) of each detail row
+    totals = _ToleranceIndex()  # (budget, actual) of each reconciled total
+    # prefix holds, at position j, the (budget, actual) sum of the first j detail rows, so the
+    # sum of the last L detail rows is prefix[m] - prefix[m - L].
+    prefix = _ToleranceIndex()
+    prefix.add(Decimal("0"), Decimal("0"))
+    running_b = Decimal("0")
+    running_a = Decimal("0")
 
     for i, row in enumerate(rows):
         name = str(row.get("line_item", "")).strip()
@@ -541,90 +633,66 @@ def detect_subtotals_and_totals(rows: list[dict[str, object]]) -> SubtotalDetect
         b = Decimal(str(b_raw)) if b_raw is not None else Decimal("0")
         a = Decimal(str(a_raw)) if a_raw is not None else Decimal("0")
         is_total_kw = bool(_TOTAL_KEYWORD_RE.search(name))
+        detail_count = len(detail_indices)
 
-        # 1. Contiguous block check over prior detail rows
-        # Blocks grow backwards from the latest detail row, so keep running sums
-        # instead of re-summing every block (large ledgers have thousands of rows).
-        found_block = False
-        sum_b = Decimal("0")
-        sum_a = Decimal("0")
-        for j in range(len(detail_indices) - 1, -1, -1):
-            block_len = len(detail_indices) - j
-            det_b, det_a = detail_values[j]
-            sum_b += det_b
-            sum_a += det_a
-            if abs(b - sum_b) <= tolerance and abs(a - sum_a) <= tolerance:
-                if block_len >= 2 or is_total_kw:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"sum of {block_len} detail rows",
-                        )
-                    )
-                    found_block = True
-                    break
-        if found_block:
+        # 1. Contiguous block check: the smallest block of prior detail rows that sums to this row.
+        start = prefix.find(
+            running_b - b, running_a - a, tolerance, newest_first=True,
+            max_position=detail_count - 1 if is_total_kw else detail_count - 2,
+        )
+        if start is not None:
+            reconciled_totals.append(
+                ReconciledTotal(
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    formula_description=f"sum of {detail_count - start} detail rows",
+                )
+            )
+            totals.add(b, a)
             continue
 
-        # 2. Nested formula check (diff between prior totals or detail)
+        # 2. Nested formula check (a prior total minus a detail row, or minus another prior total)
+        prior_total_count = len(reconciled_totals)
         found_formula = False
-        prior_totals = list(reconciled_totals)
-        for prev in prior_totals:
-            for d_idx, (det_b, det_a) in zip(detail_indices, detail_values):
-                if abs((prev.budget - det_b) - b) <= tolerance and abs((prev.actual - det_a) - a) <= tolerance:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"{prev.line_item} - {rows[d_idx].get('line_item')}",
-                        )
-                    )
-                    found_formula = True
-                    break
-            if found_formula:
-                break
-            for prev2 in prior_totals:
-                if prev2.row_index == prev.row_index:
+        for prev_position in range(prior_total_count):
+            prev = reconciled_totals[prev_position]
+            wanted_b, wanted_a = prev.budget - b, prev.actual - a
+            detail_position = details.find(wanted_b, wanted_a, tolerance, newest_first=False)
+            if detail_position is not None:
+                subtracted = str(rows[detail_indices[detail_position]].get("line_item"))
+            else:
+                other = totals.find(
+                    wanted_b, wanted_a, tolerance, newest_first=False,
+                    max_position=prior_total_count - 1, skip=prev_position,
+                )
+                if other is None:
                     continue
-                if abs((prev.budget - prev2.budget) - b) <= tolerance and abs((prev.actual - prev2.actual) - a) <= tolerance:
-                    reconciled_totals.append(
-                        ReconciledTotal(
-                            line_item=name,
-                            budget=b,
-                            actual=a,
-                            row_index=i,
-                            formula_description=f"{prev.line_item} - {prev2.line_item}",
-                        )
-                    )
-                    found_formula = True
-                    break
-            if found_formula:
-                break
-
+                subtracted = reconciled_totals[other].line_item
+            reconciled_totals.append(
+                ReconciledTotal(
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    formula_description=f"{prev.line_item} - {subtracted}",
+                )
+            )
+            totals.add(b, a)
+            found_formula = True
+            break
         if found_formula:
             continue
 
         if is_total_kw:
-            sum_prior_b = sum((v[0] for v in detail_values), Decimal("0")) if detail_indices else None
-            sum_prior_a = sum((v[1] for v in detail_values), Decimal("0")) if detail_indices else None
             unreconciled_totals.append(
                 UnreconciledTotal(
-                    line_item=name,
-                    budget=b,
-                    actual=a,
-                    row_index=i,
-                    sum_budget=sum_prior_b,
-                    sum_actual=sum_prior_a,
+                    line_item=name, budget=b, actual=a, row_index=i,
+                    sum_budget=running_b if detail_count else None,
+                    sum_actual=running_a if detail_count else None,
                 )
             )
         else:
             detail_indices.append(i)
-            detail_values.append((b, a))
+            details.add(b, a)
+            running_b += b
+            running_a += a
+            prefix.add(running_b, running_a)
 
     return SubtotalDetectionResult(
         reconciled_totals=reconciled_totals,
@@ -720,6 +788,11 @@ def detect_header_row(
             role, _ = match_column_synonym(cell_str)
             if role == CanonicalRole.IGNORED_COMPUTED:
                 ignored.append(col_idx)
+            elif role == CanonicalRole.LINE_ITEM and role in roles:
+                # "Category" usually groups accounts; a column that names them wins over it.
+                if (normalize_header(str(row[roles[role]])) == "category"
+                        and normalize_header(cell_str) != "category"):
+                    roles[role] = col_idx
             elif role != CanonicalRole.UNKNOWN and role not in roles:
                 roles[role] = col_idx
 
@@ -781,6 +854,11 @@ def detect_header_row(
     return None, {}, []
 
 
+_COVER_SHEET_WORDS = frozenset({
+    "cover", "page", "sheet", "contents", "table", "of", "readme", "read", "me", "notes", "index", "summary",
+})
+
+
 def rank_workbook_sheets(
     sheets: list[tuple[str, list[list[object]]]],
     *,
@@ -819,7 +897,7 @@ def rank_workbook_sheets(
             score += min(len(rows), 10)
 
         lower_name = name.lower()
-        if any(term in lower_name for term in ("cover", "contents", "readme", "notes", "index", "summary_cover")):
+        if set(re.findall(r"[a-z]+", lower_name)) <= _COVER_SHEET_WORDS:  # "Index", not "Price Index"
             score -= 15
             reasons.append("title suggests cover page or notes")
 
@@ -854,6 +932,16 @@ def _header_cell_str(cell: object) -> str:
         except (ValueError, OverflowError, InvalidOperation):
             pass
     return str(cell).strip()
+
+
+def _column_name(index: int) -> str:
+    """Spreadsheet-style column name for a zero-based index: 0 -> 'column A', 27 -> 'column AB'."""
+    letters = ""
+    number = index + 1
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        letters = chr(ord("A") + remainder) + letters
+    return f"column {letters}"
 
 
 def _stop(
@@ -987,12 +1075,14 @@ def detect_comparison_columns(
 
     actual_col: int | None = None
     actual_label: str | None = None
+    actual_headers: list[str] = []
     for idx, s in headers:
         norm = normalize_header(s)
         if norm in _ACTUAL_SYNONYMS:
-            actual_col = idx
-            actual_label = s
-            break
+            actual_headers.append(f"{s} ({_column_name(idx)})")
+            if actual_col is None:
+                actual_col = idx
+                actual_label = s
 
     named: list[tuple[int, str, ComparisonBasis]] = []
     for idx, s in headers:
@@ -1014,6 +1104,14 @@ def detect_comparison_columns(
             actual_column=act_col,
             candidates=(),
             message=comparison_statement(basis, None, act_label),
+        )
+
+    if len(actual_headers) > 1 and not detect_period_pairs([s for _, s in headers]):
+        # Which one is the Actual (this month, year to date, ...) is the user's call.
+        return _stop(
+            f"Found more than one Actual column ({', '.join(actual_headers)}); keep one and try again.",
+            actual_column=actual_col,
+            candidates=actual_headers,
         )
 
     def not_found(basis: ComparisonBasis) -> ComparisonDetection:
@@ -1068,7 +1166,16 @@ def detect_comparison_columns(
             return _stop(
                 _ask_which(col_names), actual_column=actual_col, candidates=col_names, choices=named_bases,
             )
-        # One distinct basis: the first column wins, as in detect_header_row.
+        # Different names for one basis (Budget, Plan) take the first; an exact repeat is a mistake.
+        repeated = len({normalize_header(c[1]) for c in named}) < len(named)
+        if repeated and not detect_period_pairs([s for _, s in headers]):
+            col_names = [f"{c[1]} ({_column_name(c[0])})" for c in named]
+            return _stop(
+                f"Found more than one {basis_noun(named_bases[0])} column ({', '.join(col_names)}); "
+                "keep one and try again.",
+                actual_column=actual_col,
+                candidates=col_names,
+            )
         return choose_named(named[0][0], named[0][2])
 
     # 3. Period-only columns.
@@ -1086,6 +1193,35 @@ def detect_comparison_columns(
     )
 
 
+def _decode_text(data: bytes, filename: str) -> tuple[str, str | None]:
+    """Decode CSV/TSV bytes without ever substituting replacement characters.
+
+    UTF-16 (with a byte-order mark) and UTF-8 (with or without one) are read silently;
+    Windows-1252, the usual encoding of Excel "CSV" exports on Windows, is read with a note;
+    anything else is refused rather than corrupted.
+    """
+    if data.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        try:
+            return data.decode("utf-16"), None
+        except UnicodeDecodeError:
+            pass
+    try:
+        return data.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        pass
+    try:
+        return data.decode("cp1252"), (
+            "Read the file as Windows-1252 text because it is not valid UTF-8. "
+            "Check that accented letters and currency symbols look right."
+        )
+    except UnicodeDecodeError:
+        raise ValueError(
+            f"I could not read '{filename}' as text. Save it as a UTF-8 CSV "
+            "(in Excel: Save As, then CSV UTF-8) and upload it again."
+        ) from None
+
+
+@financial_context()
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -1104,22 +1240,18 @@ def read_input_assisted(
         )
 
     norm_suffix = suffix.lower()
-    if norm_suffix in {".tsv", ".txt"}:
-        return _read_tsv_text(
-            data.decode("utf-8-sig", errors="replace"),
-            filename,
-            treat_blank_budgets_as_zero,
-            selected_period,
-            compare_to=compare_to,
+    if norm_suffix in {".tsv", ".txt", ".csv"}:
+        try:
+            text, encoding_note = _decode_text(data, filename)
+        except ValueError as exc:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
+        reader = _read_tsv_text if norm_suffix != ".csv" else _read_csv_text
+        result = reader(
+            text, filename, treat_blank_budgets_as_zero, selected_period, compare_to=compare_to,
         )
-    if norm_suffix == ".csv":
-        return _read_csv_text(
-            data.decode("utf-8-sig", errors="replace"),
-            filename,
-            treat_blank_budgets_as_zero,
-            selected_period,
-            compare_to=compare_to,
-        )
+        if encoding_note and not result.has_fatal_errors:
+            result.visible_transformations.insert(0, encoding_note)
+        return result
     if norm_suffix in {".xlsx", ".xlsm"}:
         return _read_excel_bytes(
             data,
@@ -1150,6 +1282,58 @@ def read_input_assisted(
     )
 
 
+_CANDIDATE_DELIMITERS = (",", ";", "\t", "|")
+
+
+def _sniff_delimiter(text: str) -> str:
+    """Pick the delimiter that splits the first lines into the most consistent 3+ columns.
+
+    European Excel exports use ";" because "," is the decimal mark; ties keep the comma.
+    """
+    sample = text[:65536]
+    best, best_lines = ",", 0
+    for delimiter in _CANDIDATE_DELIMITERS:
+        try:
+            widths = [
+                len(record)
+                for record in csv.reader(io.StringIO(sample, newline=""), delimiter=delimiter)
+                if record
+            ][:50]
+        except csv.Error:
+            continue
+        if not widths:
+            continue
+        modal = max(set(widths), key=lambda width: (widths.count(width), width))
+        if modal >= 3 and widths.count(modal) > best_lines:
+            best, best_lines = delimiter, widths.count(modal)
+    return best
+
+
+def _delimited_rows(text: str, delimiter: str, filename: str) -> list[list[object]]:
+    """Split delimited text into rows, keeping quoted newlines and enforcing the input limits.
+
+    Blank lines are kept as empty rows so that row numbers in messages match the file.
+    """
+    rows: list[list[object]] = []
+    cells = 0
+    try:
+        for record in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter):
+            if len(record) > MAX_COLUMNS:
+                raise ValueError(
+                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read."
+                )
+            cells += len(record)
+            if len(rows) >= MAX_ROWS or cells > MAX_CELLS:
+                raise ValueError(
+                    f"'{filename}' has more rows or cells than I can read "
+                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells)."
+                )
+            rows.append(cast(list[object], record))
+    except csv.Error as exc:
+        raise ValueError(f"I could not split '{filename}' into columns: {exc}.") from exc
+    return rows
+
+
 def _read_tsv_text(
     text: str,
     filename: str,
@@ -1157,9 +1341,10 @@ def _read_tsv_text(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
-    lines = [line for line in text.splitlines() if line.strip()]
-    reader = csv.reader(lines, delimiter="\t")
-    raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
+    try:
+        raw_rows = _delimited_rows(text, "\t", filename)
+    except ValueError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
     res = _process_raw_table(
         raw_rows,
         filename,
@@ -1180,9 +1365,10 @@ def _read_csv_text(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
-    lines = [line for line in text.splitlines() if line.strip()]
-    reader = csv.reader(lines)
-    raw_rows: list[list[object]] = [cast(list[object], row) for row in reader]
+    try:
+        raw_rows = _delimited_rows(text, _sniff_delimiter(text), filename)
+    except ValueError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
     return _process_raw_table(
         raw_rows,
         filename,
@@ -1201,7 +1387,7 @@ def _read_json_bytes(
     # Delegate to parsing.load_json_text and wrap into IntakeResult
     from .parsing import load_json_text
     try:
-        rows = load_json_text(data.decode("utf-8"))
+        rows = load_json_text(data.decode("utf-8-sig"))
         basis = compare_to if compare_to is not None else ComparisonBasis.BUDGET
         if basis != ComparisonBasis.BUDGET:
             try:
@@ -1234,6 +1420,14 @@ def _read_json_bytes(
         )
 
 
+def _hidden_sheets_last(ranked: list[SheetScore], hidden: set[str]) -> list[SheetScore]:
+    """Visible worksheets first (a hidden draft must not win automatically), order otherwise kept."""
+    marked = [
+        replace(s, rationale=f"{s.rationale}; hidden worksheet") if s.name in hidden else s for s in ranked
+    ]
+    return sorted(marked, key=lambda s: s.name in hidden)
+
+
 def _read_excel_bytes(
     data: bytes,
     filename: str,
@@ -1244,11 +1438,18 @@ def _read_excel_bytes(
 ) -> IntakeResult:
     try:
         stored_numbers = inspect_archive(data)
-    except Exception:
-        return IntakeResult(
-            has_fatal_errors=True,
-            fatal_error_message=f"The Excel file '{filename}' could not be opened safely.",
-        )
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, ValueError) else ""
+        if any(term in reason for term in ("worksheet exceeds", "physical rows", "physical coordinates")):
+            # A very large sheet, hidden or not, makes the whole workbook unsafe to read.
+            message = (
+                f"The Excel file '{filename}' has a worksheet larger than I can read "
+                f"(at most {MAX_ROWS:,} rows and {MAX_CELLS:,} cells on any sheet, hidden sheets included). "
+                "Export the sheet you need to CSV, or save a copy without the large sheet."
+            )
+        else:
+            message = f"The Excel file '{filename}' could not be opened safely."
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=message)
 
     loader = _excel_loader()
     with io.BytesIO(data) as src:
@@ -1281,6 +1482,9 @@ def _read_excel_bytes(
                 all_sheets_raw.append((name, sheet_rows))
 
             ranked = rank_workbook_sheets(all_sheets_raw)
+            hidden = {n for n in sheetnames if getattr(wb[n], "sheet_state", "visible") != "visible"}
+            if hidden:
+                ranked = _hidden_sheets_last(ranked, hidden)
 
             # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
             chosen_sheet = sheet
@@ -1318,6 +1522,8 @@ def _read_excel_bytes(
                 ranked = rank_workbook_sheets(
                     all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
                 )
+                if hidden:
+                    ranked = _hidden_sheets_last(ranked, hidden)
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
             if chosen_sheet != sheetnames[0] and ranked:
@@ -1417,7 +1623,8 @@ def _read_pdf_bytes(
         treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
         selected_period=selected_period,
         compare_to=compare_to,
-        signs_resolved=True,
+        signs_resolved=shaped.shaped,
+        from_pdf=True,
     )
     result.source_kind = "pdf"
     result.source_pages = chosen.page_numbers
@@ -1432,6 +1639,53 @@ def _read_pdf_bytes(
     return result
 
 
+_MAX_LISTED_CELLS = 10
+
+
+def _plain_cell_detail(detail: str, field_label: str) -> str:
+    """Say what is wrong with a cell the way a person would, not in parser terms."""
+    if match := re.search(r"has an unrecognized number format: (.*)\.$", detail):
+        return f"'{match.group(1)}' is not an amount I can read."
+    if match := re.search(r"is missing \(marked (.+)\)\.$", detail):
+        return f"the amount is marked {match.group(1)}."
+    if detail.startswith("required value in") and "is missing" in detail:
+        return "the amount is blank."
+    return detail
+
+
+def _cell_problem(
+    row: int, line_item: str, column: str | None, field_label: str, exc: ValueError,
+) -> IntakeProblem:
+    """A problem for one amount that could not be read, worded for the person who must fix it."""
+    detail = _plain_cell_detail(str(exc).removeprefix(f"{line_item}: "), field_label)
+    return IntakeProblem(
+        row=row,
+        column=column,
+        line_item=line_item,
+        message=f"Row {row}, {line_item}, {field_label} column: {detail}",
+        technical_detail=str(exc),
+    )
+
+
+def _unreadable_cells_message(filename: str, cells: list[IntakeProblem], *, from_pdf: bool = False) -> str:
+    """Stop-and-fix message for amounts that cannot be read (never read as 0)."""
+    if from_pdf:
+        lines = [
+            f"I could not read every figure in the PDF '{filename}' as a number, so I stopped "
+            "instead of guessing. A footnote marker or stray symbol next to a figure is the usual "
+            "cause. Upload an Excel or CSV copy of the statement, or check these figures:"
+        ]
+    else:
+        lines = [
+            f"I could not read every amount in '{filename}', so I stopped instead of guessing. "
+            "Fix these cells and upload the file again:"
+        ]
+    lines.extend(f"- {cell.message}" for cell in cells[:_MAX_LISTED_CELLS])
+    if len(cells) > _MAX_LISTED_CELLS:
+        lines.append(f"- ...and {len(cells) - _MAX_LISTED_CELLS} more.")
+    return "\n".join(lines)
+
+
 def _process_raw_table(
     raw_rows: list[list[object]],
     filename: str,
@@ -1440,6 +1694,7 @@ def _process_raw_table(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
     signs_resolved: bool = False,
+    from_pdf: bool = False,
 ) -> IntakeResult:
     """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
     financial statement: their signs are settled and their subtotals already removed, so the
@@ -1549,8 +1804,10 @@ def _process_raw_table(
 
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
+    unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
     blank_budget_items: list[str] = []
     dash_count = 0
+    minus_count = 0  # trailing / typographic minus signs read as negative
 
     data_rows = raw_rows[header_idx + 1:]
     for physical_idx, row in enumerate(data_rows, start=header_row_number + 1):
@@ -1585,15 +1842,15 @@ def _process_raw_table(
                     budget_dec = Decimal("0")
             elif b_note and "dash" in b_note:
                 dash_count += 1
+            elif b_note and "minus" in b_note:
+                minus_count += 1
         except ValueError as exc:
-            problems.append(
-                IntakeProblem(
-                    row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.BUDGET, comparison_field),
-                    line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, {comparison_field} column: {exc}",
-                )
+            problem = _cell_problem(
+                physical_idx, line_item_str,
+                column_mapping.get(CanonicalRole.BUDGET, comparison_field), comparison_field, exc,
             )
+            problems.append(problem)
+            unreadable_cells.append(problem)
 
         raw_actual = row[actual_idx] if actual_idx < len(row) else None
         actual_dec: Decimal | None = None
@@ -1606,15 +1863,15 @@ def _process_raw_table(
             )
             if a_note and "dash" in a_note:
                 dash_count += 1
+            elif a_note and "minus" in a_note:
+                minus_count += 1
         except ValueError as exc:
-            problems.append(
-                IntakeProblem(
-                    row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.ACTUAL, "Actual"),
-                    line_item=line_item_str,
-                    message=f"Row {physical_idx}, {line_item_str}, Actual column: {exc}",
-                )
+            problem = _cell_problem(
+                physical_idx, line_item_str,
+                column_mapping.get(CanonicalRole.ACTUAL, "Actual"), "Actual", exc,
             )
+            problems.append(problem)
+            unreadable_cells.append(problem)
 
         row_dict: dict[str, object] = {
             "line_item": line_item_str,
@@ -1649,9 +1906,26 @@ def _process_raw_table(
 
         output_rows.append(row_dict)
 
+    if unreadable_cells:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=_unreadable_cells_message(filename, unreadable_cells, from_pdf=from_pdf),
+            problems=problems,
+            sheet_name=sheet_name,
+            header_row_number=header_row_number,
+            column_mapping=column_mapping,
+            comparison_basis=detection.basis,
+            comparison_label=detection.label,
+        )
+
     if dash_count > 0:
         visible_transformations.append(
             f"Read accounting dashes ('-') as 0 across {dash_count} amount{'s' if dash_count != 1 else ''}"
+        )
+    if minus_count > 0:
+        visible_transformations.append(
+            f"Read a trailing or typographic minus sign (for example '500.00-') as a negative "
+            f"amount across {minus_count} amount{'s' if minus_count != 1 else ''}"
         )
 
     if treat_blank_budgets_as_zero and blank_budget_items:
@@ -1674,7 +1948,8 @@ def _process_raw_table(
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
         unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
         visible_transformations.append(
-            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit ($)."
+            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit "
+            "(full currency units, not thousands)."
         )
 
     # 2. Signed ledger check
@@ -1716,6 +1991,7 @@ def _process_raw_table(
         problems=problems,
         blank_budget_items=blank_budget_items,
         blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        dash_count=dash_count,
         detected_totals=reconciled_names,
         unreconciled_totals=subtotals_det.unreconciled_totals,
         detected_unit_multiplier=detected_mult,
@@ -1734,25 +2010,14 @@ def _process_raw_table(
 def audit_transformations(
     intake_res: IntakeResult, mapping: LayoutMapping | None = None,
 ) -> dict[str, object]:
-    """The audit's transformations record for an assisted read, replayed from a mapping if given.
+    """The audit's transformations record: what assisted intake did to the file.
 
-    Shared by the CLI (--assisted, --mapping) and the chat's audit export.
+    Shared by the CLI (--assisted, --mapping) and the chat's audit export. A mapping adds only
+    what it alone decides (period selection, classification rules, its own digest); the header
+    row, columns, scale, sign flips and exclusions are what intake actually applied. The CLI
+    folds the mapping's own scale, flips and exclusions into ``intake_res`` first.
     """
     blank_budgets = len(intake_res.blank_budget_items) if intake_res.blank_budgets_as_zero else 0
-    if mapping is not None:
-        return {
-            "header_row_number": mapping.header_row_number,
-            "column_mapping": mapping.column_mapping,
-            "ignored_columns": intake_res.ignored_columns,
-            "sign_flip": mapping.flip_signs,
-            "flipped_line_items": intake_res.negative_revenue_items if mapping.flip_signs else [],
-            "unit_scale": mapping.unit_scale if mapping.unit_scale != "1" else None,
-            "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
-            "excluded_totals": mapping.exclude_totals,
-            "period_selection": mapping.period_column_selection,
-            "classification_rules": mapping.classification_rules,
-            "mapping_file_sha256": mapping_sha256(mapping),
-        }
     return {
         "header_row_number": intake_res.header_row_number,
         "column_mapping": {role.value: name for role, name in intake_res.column_mapping.items()},
@@ -1763,11 +2028,11 @@ def audit_transformations(
             str(intake_res.detected_unit_multiplier)
             if intake_res.detected_unit_multiplier != Decimal("1") else None
         ),
-        "zero_reads": {"accounting_dashes": 0, "blank_budgets": blank_budgets},
+        "zero_reads": {"accounting_dashes": intake_res.dash_count, "blank_budgets": blank_budgets},
         "excluded_totals": intake_res.detected_totals,
-        "period_selection": None,
-        "classification_rules": None,
-        "mapping_file_sha256": None,
+        "period_selection": mapping.period_column_selection if mapping is not None else None,
+        "classification_rules": mapping.classification_rules if mapping is not None else None,
+        "mapping_file_sha256": mapping_sha256(mapping) if mapping is not None else None,
     }
 
 
@@ -1827,6 +2092,11 @@ def format_intake_summary(result: IntakeResult) -> str:
     return "\n".join(lines)
 
 
+_INTERNAL_FIELD_NAMES = frozenset(_ROLE_ALIAS_KEYS | {
+    "row_kind", "account_id", "budget_amount", "actual_amount", "line_type", "revenue_expense_type",
+})
+
+
 def plain_analysis_error(error_text: str) -> str:
     """Rewrite any technical or exception error message into plain accounting language for Maya."""
     text = error_text.strip()
@@ -1859,10 +2129,12 @@ def plain_analysis_error(error_text: str) -> str:
         return "The workbook file appears to be damaged or could not be read. Please try saving it again in Excel and re-uploading."
 
     # 6. Unreconciled summaries
-    m_reconcile = re.search(r"Summary\s+([^ ]+)\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE)
+    m_reconcile = re.search(
+        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE
+    )
     if m_reconcile:
-        summary_name = m_reconcile.group(1).strip("'\"`")
-        line_type = m_reconcile.group(2).strip()
+        summary_name = m_reconcile.group(1) or m_reconcile.group(2) or m_reconcile.group(3)
+        line_type = m_reconcile.group(4).strip()
         return f"Summary total for '{summary_name}' does not match the sum of its {line_type} detail rows. Please check for missing or overlapping line items."
 
     # 7. Ambiguous summary label / Row Kind
@@ -1873,11 +2145,15 @@ def plain_analysis_error(error_text: str) -> str:
     if "unclassified" in text.lower():
         text = re.sub(r"\bunclassified\b", "not yet labeled revenue or expense", text, flags=re.IGNORECASE)
 
-    # 9. CLI flags
-    text = re.sub(r"--[a-z0-9\-]+", "setting", text)
+    # 9. CLI flags (only a flag standing alone, never "--" inside a line-item name)
+    text = re.sub(r"(?<![\w-])--[a-z][a-z0-9\-]*", "setting", text)
 
-    # 10. Snake_case keys in quotes
-    text = re.sub(r"'([a-z0-9]+)_([a-z0-9_]+)'", r"'\1 \2'", text)
+    # 10. Internal field names in quotes; the user's own snake_case names stay as written
+    text = re.sub(
+        r"'([a-z0-9]+_[a-z0-9_]+)'",
+        lambda m: f"'{m.group(1).replace('_', ' ')}'" if m.group(1) in _INTERNAL_FIELD_NAMES else m.group(0),
+        text,
+    )
 
     # 11. Forbidden words
     text = re.sub(r"\bnormalize[sd]?\b", "standardize", text, flags=re.IGNORECASE)

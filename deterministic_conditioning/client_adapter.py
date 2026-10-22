@@ -2,13 +2,19 @@
 
 Wraps model invocations with dynamic prompt routing, state inversion tracking,
 and deterministic logit modifiers (temperature=0.0).
+
+The client is offline by default and answers from a rule-adhering simulator. It only
+contacts an OpenAI-compatible server (vLLM, TGI, ...) when one is configured explicitly,
+through ``api_base`` or the ``LLM_API_BASE`` environment variable; ``LLM_API_KEY`` supplies
+a bearer token when that server wants one.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
-import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -38,7 +44,12 @@ class DeterministicChatClient:
     ) -> None:
         self.config = config or DeterministicDecodingConfig()
         self.router = router or DynamicPromptRouter()
-        self.api_base = api_base or os.getenv("LLM_API_BASE", "http://localhost:8000/v1")
+        base = api_base or os.getenv("LLM_API_BASE") or None
+        if base is not None:
+            parts = urllib.parse.urlsplit(base)
+            if parts.scheme not in {"http", "https"} or not parts.netloc:
+                raise ValueError(f"api_base must be an http or https URL, got {base!r}")
+        self.api_base: str | None = base
         self.model_name = model_name
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.history: list[dict[str, str]] = []
@@ -76,19 +87,22 @@ class DeterministicChatClient:
     def _dispatch_completion(
         self, messages: list[dict[str, str]], decision: RoutingDecision
     ) -> tuple[str, str]:
-        """Dispatch generation request to OpenAI-compatible endpoint or mock simulator."""
+        """Dispatch generation request to the configured endpoint, or to the offline simulator."""
+        if self.api_base is None:
+            return self._generate_adherent_mock(decision), "deterministic-simulator"
+
         endpoint = f"{self.api_base.rstrip('/')}/chat/completions"
-        payload = {
+        payload: dict[str, object] = {
             "model": self.model_name,
             "messages": messages,
             "temperature": self.config.temperature,
             "frequency_penalty": self.config.frequency_penalty,
             "presence_penalty": self.config.presence_penalty,
-            # Note: repetition_penalty / no_repeat_ngram_size are supported in vLLM/TGI
-            "extra_body": {
-                "repetition_penalty": self.config.repetition_penalty,
-                "no_repeat_ngram_size": self.config.no_repeat_ngram_size,
-            },
+            # vLLM and TGI read these sampling fields from the top level of the JSON body. The OpenAI
+            # SDK's ``extra_body`` argument merges into that body; a nested "extra_body" key would be
+            # ignored by the server.
+            "repetition_penalty": self.config.repetition_penalty,
+            "no_repeat_ngram_size": self.config.no_repeat_ngram_size,
         }
 
         headers = {"Content-Type": "application/json"}
@@ -104,13 +118,24 @@ class DeterministicChatClient:
 
         try:
             with urllib.request.urlopen(req, timeout=2.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                choice = data["choices"][0]["message"]["content"]
-                return choice.strip(), f"remote ({self.api_base})"
-        except (urllib.error.URLError, TimeoutError, KeyError, Exception):
-            # Fallback to local rule-adhering mock generation when offline
+                text = self._completion_text(json.loads(resp.read().decode("utf-8")))
+            return text, f"remote ({self.api_base})"
+        except (OSError, http.client.HTTPException, ValueError) as error:
+            # Unreachable server (URLError, timeouts and resets are OSError), truncated reply, or a body
+            # that is not the expected JSON. Anything else is a bug and must surface.
             mock_text = self._generate_adherent_mock(decision)
-            return mock_text, "deterministic-simulator"
+            return mock_text, f"deterministic-simulator (remote unavailable: {type(error).__name__})"
+
+    @staticmethod
+    def _completion_text(data: object) -> str:
+        """The first choice's message text, or ValueError when the reply is not a chat completion."""
+        choices = data.get("choices") if isinstance(data, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else None
+        message = first.get("message") if isinstance(first, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("The backend reply has no completion text")
+        return content.strip()
 
     def _generate_adherent_mock(self, decision: RoutingDecision) -> str:
         """Generate a rule-adhering synthetic response matching exact POS & burstiness contracts."""

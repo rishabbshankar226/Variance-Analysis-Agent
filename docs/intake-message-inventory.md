@@ -2,7 +2,7 @@
 
 This document catalogs every user-facing message Maya can encounter during the data intake and analysis preparation workflow across the Variance Analysis Agent codebase (commit `a3ce6bb`).
 
-Per the definitions in [`.agents/rules/variance-intake.md`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/.agents/rules/variance-intake.md):
+Per the definitions in [`.agents/rules/variance-intake.md`](../.agents/rules/variance-intake.md):
 - **Jargon**: Any message containing:
   1. A snake_case key or `repr()` quoting (such as `'budget_ytd'`, `!r`, `seen[key]!r`).
   2. An exception name (`ValueError`, `RuntimeError`, `BadZipFile`, `SyntaxError`, `KeyError`, etc.).
@@ -27,11 +27,11 @@ Per the definitions in [`.agents/rules/variance-intake.md`](file:///Users/rishab
 
 | Component Source | Total Messages | Jargon Messages | Offers Fix |
 |---|---|---|---|
-| [`src/variance_agent/parsing.py`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/src/variance_agent/parsing.py) | 42 | 9 (21.4%) | 12 (28.6%) |
-| [`src/variance_agent/excel.py`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/src/variance_agent/excel.py) | 16 | 7 (43.8%) | 0 (0.0%) |
-| [`src/variance_agent/analysis.py`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/src/variance_agent/analysis.py) | 25 | 10 (40.0%) | 8 (32.0%) |
-| [`src/variance_agent/chat/handlers.py`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/src/variance_agent/chat/handlers.py) | 23 | 5 (21.7%) | 22 (95.7%) |
-| [`src/variance_agent/chat/server.py`](file:///Users/rishabbshankar/Desktop/projects/Automated%20Variance%20Analysis/Variance%20Analysis%20Agent/src/variance_agent/chat/server.py) | 7 | 1 (14.3%) | 1 (14.3%) |
+| [`src/variance_agent/parsing.py`](../src/variance_agent/parsing.py) | 42 | 9 (21.4%) | 12 (28.6%) |
+| [`src/variance_agent/excel.py`](../src/variance_agent/excel.py) | 16 | 7 (43.8%) | 0 (0.0%) |
+| [`src/variance_agent/analysis.py`](../src/variance_agent/analysis.py) | 25 | 10 (40.0%) | 8 (32.0%) |
+| [`src/variance_agent/chat/handlers.py`](../src/variance_agent/chat/handlers.py) | 23 | 5 (21.7%) | 22 (95.7%) |
+| [`src/variance_agent/chat/server.py`](../src/variance_agent/chat/server.py) | 7 | 1 (14.3%) | 1 (14.3%) |
 
 ---
 

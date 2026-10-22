@@ -10,9 +10,9 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Iterable
 
-from .limits import MAX_INPUT_BYTES
 from .models import ComparisonBasis
 
 
@@ -81,29 +81,127 @@ def save_mapping(mapping: LayoutMapping) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
+MAX_MAPPING_BYTES = 1024 * 1024
+_RULE_KEYS = frozenset({"gl_ranges", "keywords", "bulk_default"})
+_LINE_TYPE_NAMES = {"revenue": "Revenue", "expense": "Expense", "unclassified": "Unclassified"}
+
+
+def _bad(field_name: str, expected: str) -> ValueError:
+    return ValueError(f"Mapping file: {field_name} must be {expected}.")
+
+
+def _whole_number(value: object, field_name: str, *, minimum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _bad(field_name, "a whole number")
+    if minimum is not None and value < minimum:
+        raise _bad(field_name, f"a whole number of {minimum} or more")
+    return value
+
+
+def _text_or_none(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise _bad(field_name, "text")
+    return value
+
+
+def _flag(value: object, field_name: str, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise _bad(field_name, "true or false")
+    return value
+
+
+def _line_type_name(value: object, field_name: str, *, allow_unclassified: bool) -> str:
+    name = _LINE_TYPE_NAMES.get(str(value).strip().lower()) if isinstance(value, str) else None
+    if name is None or (name == "Unclassified" and not allow_unclassified):
+        allowed = "Revenue, Expense or Unclassified" if allow_unclassified else "Revenue or Expense"
+        raise _bad(field_name, allowed)
+    return name
+
+
+def _unit_scale(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise _bad("unit_scale", "a positive number such as 1000")
+    text = str(value).strip()
+    try:
+        scale = Decimal(text)
+    except InvalidOperation:
+        raise _bad("unit_scale", "a positive number such as 1000") from None
+    if not scale.is_finite() or scale <= 0:
+        raise _bad("unit_scale", "a positive number such as 1000")
+    return text
+
+
+def _classification_rules(value: object) -> dict[str, object] | None:
+    """Validate the saved classification rules and spell their line types canonically."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise _bad("classification_rules", "an object or null")
+    unknown = sorted(str(key) for key in value if key not in _RULE_KEYS)
+    if unknown:
+        raise _bad("classification_rules", f"limited to gl_ranges, keywords and bulk_default (found {unknown[0]})")
+    rules: dict[str, object] = {}
+    if "gl_ranges" in value:
+        raw_ranges = value["gl_ranges"]
+        if not isinstance(raw_ranges, list):
+            raise _bad("classification_rules.gl_ranges", "a list")
+        ranges: list[object] = []
+        for entry in raw_ranges:
+            if not isinstance(entry, dict) or set(entry) != {"min", "max", "type"}:
+                raise _bad("each gl_ranges entry", "an object with exactly min, max and type")
+            low = _whole_number(entry["min"], "gl_ranges min")
+            high = _whole_number(entry["max"], "gl_ranges max")
+            if low > high:
+                raise _bad("gl_ranges min", "no larger than max")
+            ranges.append({
+                "min": low, "max": high,
+                "type": _line_type_name(entry["type"], "gl_ranges type", allow_unclassified=False),
+            })
+        rules["gl_ranges"] = ranges
+    if "keywords" in value:
+        raw_keywords = value["keywords"]
+        if not isinstance(raw_keywords, dict):
+            raise _bad("classification_rules.keywords", "an object")
+        rules["keywords"] = {
+            str(key): _line_type_name(kind, f"the type for keyword '{key}'", allow_unclassified=True)
+            for key, kind in raw_keywords.items()
+        }
+    if "bulk_default" in value:
+        bulk = value["bulk_default"]
+        rules["bulk_default"] = (
+            None if bulk is None else _line_type_name(bulk, "bulk_default", allow_unclassified=False)
+        )
+    return rules
+
+
 def load_mapping(data: bytes | str) -> LayoutMapping:
-    """Parse and validate a LayoutMapping from JSON bytes or string."""
-    text = data.decode("utf-8") if isinstance(data, bytes) else data
-    if len(text.encode("utf-8")) > MAX_INPUT_BYTES:
-        raise ValueError("Mapping file exceeds maximum allowed size.")
-    parsed = json.loads(text)
+    """Parse a LayoutMapping from JSON, rejecting anything the CLI could not apply safely."""
+    raw = data if isinstance(data, bytes) else data.encode("utf-8")
+    if len(raw) > MAX_MAPPING_BYTES:
+        raise ValueError("Mapping file is too large (the limit is 1 MiB).")
+    parsed = json.loads(raw.decode("utf-8-sig"))
     if not isinstance(parsed, dict):
         raise ValueError("Mapping file must be a JSON object.")
 
-    version = str(parsed.get("mapping_version", "1.5"))
-    fingerprint = str(parsed.get("layout_fingerprint", ""))
-    header_row = int(parsed.get("header_row_number", 1))
-    sheet_name = parsed.get("sheet_name")
-    if sheet_name is not None:
-        sheet_name = str(sheet_name)
-    column_mapping = {str(k): str(v) for k, v in dict(parsed.get("column_mapping", {})).items()}
-    unit_scale = str(parsed["unit_scale"]) if parsed.get("unit_scale") is not None else None
-    flip_signs = bool(parsed.get("flip_signs", False))
-    treat_blank_zero = bool(parsed.get("treat_blank_budgets_as_zero", True))
-    exclude_totals = [str(item) for item in list(parsed.get("exclude_totals", []))]
-    period_sel = str(parsed["period_column_selection"]) if parsed.get("period_column_selection") is not None else None
-    rules = parsed.get("classification_rules")
-    classification_rules = dict(rules) if isinstance(rules, dict) else None
+    raw_columns = parsed.get("column_mapping", {})
+    if not isinstance(raw_columns, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in raw_columns.items()
+    ):
+        raise _bad("column_mapping", "an object of column names")
+    raw_totals = parsed.get("exclude_totals", [])
+    if not isinstance(raw_totals, list) or not all(isinstance(item, str) for item in raw_totals):
+        raise _bad("exclude_totals", "a list of line-item names")
+    version = parsed.get("mapping_version", "1.5")
+    fingerprint = parsed.get("layout_fingerprint", "")
+    if not isinstance(version, str) or not isinstance(fingerprint, str):
+        raise _bad("mapping_version and layout_fingerprint", "text")
+
     basis_raw = parsed.get("comparison_basis")
     comparison_basis: ComparisonBasis | None = None
     if basis_raw is not None:
@@ -117,14 +215,18 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
     return LayoutMapping(
         mapping_version=version,
         layout_fingerprint=fingerprint,
-        header_row_number=header_row,
-        sheet_name=sheet_name,
-        column_mapping=column_mapping,
-        unit_scale=unit_scale,
-        flip_signs=flip_signs,
-        treat_blank_budgets_as_zero=treat_blank_zero,
-        exclude_totals=exclude_totals,
-        period_column_selection=period_sel,
-        classification_rules=classification_rules,
+        header_row_number=_whole_number(parsed.get("header_row_number", 1), "header_row_number", minimum=1),
+        sheet_name=_text_or_none(parsed.get("sheet_name"), "sheet_name"),
+        column_mapping=dict(raw_columns),
+        unit_scale=_unit_scale(parsed.get("unit_scale")),
+        flip_signs=_flag(parsed.get("flip_signs"), "flip_signs", False),
+        treat_blank_budgets_as_zero=_flag(
+            parsed.get("treat_blank_budgets_as_zero"), "treat_blank_budgets_as_zero", True
+        ),
+        exclude_totals=list(raw_totals),
+        period_column_selection=_text_or_none(
+            parsed.get("period_column_selection"), "period_column_selection"
+        ),
+        classification_rules=_classification_rules(parsed.get("classification_rules")),
         comparison_basis=comparison_basis,
     )

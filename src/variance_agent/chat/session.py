@@ -22,8 +22,6 @@ class Phase(StrEnum):
     """Conversation phases in the guided intake flow."""
 
     AWAITING_FILE = "awaiting_file"
-    AWAITING_SHEET_CHOICE = "awaiting_sheet_choice"
-    AWAITING_HEADER_CHOICE = "awaiting_header_choice"
     AWAITING_BLANK_BUDGET_CONFIRMATION = "awaiting_blank_budget_confirmation"
     AWAITING_PERIOD_CHOICE = "awaiting_period_choice"
     AWAITING_INTAKE_CONFIRMATION = "awaiting_intake_confirmation"

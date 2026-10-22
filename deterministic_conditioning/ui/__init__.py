@@ -1,5 +1,5 @@
 """Visualizer UI for deterministic conditioning."""
 
-from deterministic_conditioning.ui.__main__ import VisualizerRequestHandler, run_server
+from deterministic_conditioning.ui.server import VisualizerRequestHandler, make_server, run_server
 
-__all__ = ["VisualizerRequestHandler", "run_server"]
+__all__ = ["VisualizerRequestHandler", "make_server", "run_server"]

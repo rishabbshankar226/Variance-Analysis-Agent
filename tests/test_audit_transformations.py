@@ -91,17 +91,6 @@ def test_chat_audit_records_confirmed_assisted_intake_transformations() -> None:
     _validator(CURRENT_SCHEMA_VERSION).validate(record)
 
 
-def test_chat_audit_records_kept_blank_budgets_as_no_zero_reads() -> None:
-    session = Session()
-    _analyze_in_chat(session, TITLE_BLOCK_CSV, "Keep blank budgets")
-
-    transformations = _export_audit(session)["transformations"]
-
-    assert isinstance(transformations, dict)
-    assert transformations["zero_reads"] == {"accounting_dashes": 0, "blank_budgets": 0}
-    assert transformations["unit_scale"] == "1000"
-
-
 def test_chat_audit_records_saved_layout_mapping_digest() -> None:
     session = Session()
     _analyze_in_chat(session, TITLE_BLOCK_CSV, "Treat blank budgets as 0 (unbudgeted)")
@@ -153,8 +142,8 @@ def _old_cli_assisted(intake_res: IntakeResult) -> dict[str, object]:
         "flipped_line_items": intake_res.negative_revenue_items if intake_res.detected_signed_ledger else [],
         "unit_scale": str(intake_res.detected_unit_multiplier) if intake_res.detected_unit_multiplier != Decimal("1") else None,
         "zero_reads": {
-            "accounting_dashes": 0,
-            "blank_budgets": len(intake_res.blank_budget_items),
+            "accounting_dashes": intake_res.dash_count,
+            "blank_budgets": len(intake_res.blank_budget_items) if intake_res.blank_budgets_as_zero else 0,
         },
         "excluded_totals": intake_res.detected_totals,
         "period_selection": None,
@@ -163,19 +152,14 @@ def _old_cli_assisted(intake_res: IntakeResult) -> dict[str, object]:
     }
 
 
-def _old_cli_mapping(mapping_obj: LayoutMapping, intake_res: IntakeResult) -> dict[str, object]:
+def _cli_mapping_dict(mapping_obj: LayoutMapping, intake_res: IntakeResult) -> dict[str, object]:
+    """What the CLI records on a --mapping replay: intake's facts plus what only the mapping decides.
+
+    (Before the 2026-10 bug hunt this echoed the mapping's own header row, columns, scale, flip
+    and exclusions, which misreported the run whenever the file or the mapping disagreed.)
+    """
     return {
-        "header_row_number": mapping_obj.header_row_number,
-        "column_mapping": mapping_obj.column_mapping,
-        "ignored_columns": intake_res.ignored_columns,
-        "sign_flip": mapping_obj.flip_signs,
-        "flipped_line_items": intake_res.negative_revenue_items if mapping_obj.flip_signs else [],
-        "unit_scale": mapping_obj.unit_scale if mapping_obj.unit_scale != "1" else None,
-        "zero_reads": {
-            "accounting_dashes": 0,
-            "blank_budgets": len(intake_res.blank_budget_items) if mapping_obj.treat_blank_budgets_as_zero else 0,
-        },
-        "excluded_totals": mapping_obj.exclude_totals,
+        **_old_cli_assisted(intake_res),
         "period_selection": mapping_obj.period_column_selection,
         "classification_rules": mapping_obj.classification_rules,
         "mapping_file_sha256": mapping_sha256(mapping_obj),
@@ -216,7 +200,7 @@ def test_helper_matches_cli_mapping_dict() -> None:
                 data, suffix, treat_blank_budgets_as_zero=mapping.treat_blank_budgets_as_zero,
             )
             assert not intake_res.has_fatal_errors, name
-            assert audit_transformations(intake_res, mapping) == _old_cli_mapping(mapping, intake_res), name
+            assert audit_transformations(intake_res, mapping) == _cli_mapping_dict(mapping, intake_res), name
 
 
 @pytest.mark.parametrize("name", CONTRACT_CASES)

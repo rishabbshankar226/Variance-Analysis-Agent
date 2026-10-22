@@ -61,6 +61,14 @@ Numeric cells use the stored XML decimal text directly rather than openpyxl's
 binary float conversion. This preserves stored fractional cents but cannot
 recover precision discarded by the workbook's producer.
 
+## Layout mapping files (--mapping)
+
+`--mapping` replays a mapping saved from the chat. It is read as a small JSON file (at most 1 MiB) and checked before use: `header_row_number` a whole number of 1 or more, `column_mapping` an object of column names, `unit_scale` a positive number, `flip_signs` and `treat_blank_budgets_as_zero` true or false, `exclude_totals` a list of names, and `classification_rules` limited to `gl_ranges` (`min`, `max`, `type` Revenue or Expense), `keywords` and `bulk_default`, with types spelled Revenue, Expense or Unclassified in any letter case. A malformed mapping exits 2 with a message that starts "Mapping file", never a traceback. When `--type-map` is also given it is used and the mapping's `classification_rules` are not applied, which is announced on stderr.
+
+## Period labels
+
+Column headers that name periods are ordered newest first when the labels can be trusted. Two-digit years use the usual pivot (`FY69`-`FY99` are 1969-1999, `FY00`-`FY68` are 2000-2068), so `FY99` comes before `FY00`. `FY2025`, `FY 2025`, `Q3 2026`, `Q3-26`, `Sep 2026`, `Sept 2026`, `September 2026` and `2026-09` are recognized.
+
 ## Period and resource limits
 
 The reporting period must be nonblank text. An optional Period column declares
@@ -93,7 +101,13 @@ Passing `--assisted` enables intelligent intake for real-world files:
   - Prior Period comparison: `Prior Year`, `PY`, `Last Year`, `Prior Period`.
   - Actual: `Actual YTD`, `YTD Actual`, `Act`, `Actual Amt`.
   - Ignored computed columns: `Var $`, `Var %`, `Variance`, `% of Budget` (ignored with visible provenance).
-- **Number normalization**: Reads accounting dashes (`"-"`, `"–"`, `"—"`) as zero and treats blank budgets as 0 (unbudgeted).
+- **Number normalization**: Reads accounting dashes (`"-"`, `"–"`, `"—"`) as zero and treats blank budgets as 0 (unbudgeted). A trailing minus (`500.00-`, as ERP exports write it), the typographic minus U+2212, full-width digits and non-breaking spaces are read as the number they stand for; each trailing or typographic minus is counted in the notes. `5-5`, `5--` and `(5)-` are not guessed.
+- **Amounts that cannot be read stop the run.** Text such as `TBD` or `1.234,56`, and a blank Actual, are never read as 0. Intake stops (CLI exit 2) and lists up to ten rows and columns to fix ("...and N more"), so a revenue line can no longer show a false 100% shortfall. Only a blank Budget keeps its confirmation (read as 0, unbudgeted).
+- **Text encoding.** CSV/TSV files are read as UTF-8 (a byte-order mark is fine) or UTF-16 with a byte-order mark. A file that is not valid UTF-8 is read as Windows-1252, the usual Excel "CSV" encoding on Windows, with a note to check accents and currency symbols; bytes that fit no encoding stop with advice to save as CSV UTF-8. Replacement characters are never substituted. JSON may start with a byte-order mark.
+- **CSV layout.** The delimiter (`,`, `;`, tab or `|`) is detected from the first lines (European Excel uses `;`). Quoted cells may contain line breaks. Blank lines are kept, so row numbers in messages are the file's own. The row, column and cell limits above apply here too.
+- **Columns that repeat.** More than one Actual column (`Actual`, `Actual YTD`) or an exact repeat of a Budget/Forecast/Prior Period header stops intake and names the columns with their positions (`Actual (column D)`); it never takes the first silently. Different names for one basis (`Budget` and `Plan`) are still not ambiguous: the first is used. A `Category` column does not beat a column that names the accounts (`Account Description`). Header words are matched whole, so `Contract Value` is not an Actual column.
+- **Worksheets.** Hidden worksheets rank after visible ones, so a hidden draft is not chosen automatically; `--sheet` can still name one. A sheet named only like a cover or notes page (`Index`, `Cover Page`, `Notes`) is ranked lower; `Price Index` is not.
+- **Subtotal detection** finds block subtotals and formula totals in near-linear time (8,000 rows take well under a second).
 - **Provenance**: In `--assisted` mode, all inferred adjustments are printed to stderr so report and audit stdout streams remain clean.
 
 ```sh
@@ -114,7 +128,7 @@ Each run compares Actual against exactly one amount: Budget (default), Forecast,
   - periods cannot be ordered (for example `FY2025` with `Q3 2024`).
 
   The CLI exits 2 and ends the message with "Rerun with --compare-to budget|forecast|prior-period." where `--compare-to` can settle the choice; chat offers one "Compare to …" reply per such basis. `--compare-to budget` or `forecast` picks the named column (with no `Actual` column, the newest period column is Actual); `--compare-to prior-period` reads the period columns.
-- **Same basis twice.** Two columns of the same basis (for example `Budget` and `Plan`) are not ambiguous: the first column is used, as before this feature. Naming that basis with `--compare-to` while it appears twice stops with "keep one and rerun".
+- **Same basis twice.** Two columns of the same basis under different names (for example `Budget` and `Plan`) are not ambiguous: the first column is used, as before this feature. An exact repeat of one header (two `Budget` columns), or naming that basis with `--compare-to` while it appears twice, stops with "keep one and try again" / "keep one and rerun" and the columns involved.
 - **Unchanged.** Wide Budget/Actual period-pair layouts remain Budget, including headers that use a budget synonym as a word (`Jan 2026 Bgt` / `Jan 2026 Actual`).
 - **Saved mappings.** A layout mapping saved from chat records `comparison_basis` when a basis was chosen or a non-Budget basis was detected; `--mapping` replays it, and an explicit `--compare-to` wins. Mappings without the field (all earlier files and Budget mappings) load and run as before.
 - **Strict mode.** Without `--assisted` or `--mapping`, nothing is detected. Pass `--compare-to {budget,forecast,prior-period}` to use a forecast or prior-period column; a basis with no matching column is an input error (exit 2) naming the columns found. A file with Forecast or Prior Year columns but no Budget column, run without `--compare-to`, fails with the missing-Budget error plus the same "Rerun with --compare-to …" hint.

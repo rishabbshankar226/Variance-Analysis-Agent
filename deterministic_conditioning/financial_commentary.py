@@ -182,8 +182,15 @@ STRICT GROUNDING LOCK:
             detail = f"Its unfavorable variance reached {amount(variance)}" if name and variance is not None else ""
             shortfall = f"net operating shortfall of {amount(net)} across {audit.period}"
             sentences.append(f"{detail}, against a {shortfall}." if detail else f"Results show a {shortfall}.")
-            if audit.actual_operating_profit is not None and audit.actual_operating_profit < 0:
-                sentences.append("Operating profit turned negative.")
+            profit, compared = audit.actual_operating_profit, audit.budget_operating_profit
+            if profit is not None and profit < 0:
+                # "Turned negative" is only true when the comparison was not already a loss.
+                if compared is not None and compared >= 0:
+                    sentences.append("Operating profit turned negative.")
+                elif compared is not None and profit < compared:
+                    sentences.append(f"The operating loss widened versus {against}.")
+                else:
+                    sentences.append("Operating profit is negative.")
             elif margin == "down":
                 sentences.append(
                     f"Operating margin narrowed from {audit.budget_margin_percent:.1f}% "
@@ -221,11 +228,17 @@ STRICT GROUNDING LOCK:
             else:
                 position = "exactly on budget" if on_budget else f"exactly in line with {against}"
             sentences = [f"Across {audit.period}, net operating impact finished {position}."]
-            if material == 0:
+            if material == 0 and net == 0:
                 sentences += [
                     "Balanced performance.",
                     "Material line items remained within the established tolerance boundaries, "
                     "leaving no unresolved variances.",
+                ]
+            elif material == 0:
+                # A non-zero net is a variance even when no single line crossed the thresholds.
+                sentences += [
+                    "Within tolerance.",
+                    "No line item crossed the materiality thresholds, so none is flagged for review.",
                 ]
             else:
                 plural = "s" if material != 1 else ""

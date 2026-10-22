@@ -118,7 +118,7 @@ def test_check_only_preserves_unclassified_warning_behavior(tmp_path, capsys):
     assert main(args(source) + ["--check-only"]) == 0
     output = capsys.readouterr().out
     assert "1 Unclassified" in output
-    assert "1 warnings" in output
+    assert "1 warning" in output and "1 warnings" not in output
 
 
 def test_check_only_rejects_invalid_numeric_input_without_artifacts(tmp_path):

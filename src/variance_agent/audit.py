@@ -185,6 +185,7 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
     }
 
 
+@financial_context()
 def build_audit_record(
     result: AnalysisResult,
     *,

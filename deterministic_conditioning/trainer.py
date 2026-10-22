@@ -56,7 +56,7 @@ def main() -> None:
     parser.add_argument(
         "--data",
         type=Path,
-        default=Path(__file__).parent / "data" / "dpo_pairs.jsonl",
+        default=Path(__file__).parent / "data" / "dpo_expanded.jsonl",
         help="Path to JSONL DPO dataset.",
     )
     args = parser.parse_args()

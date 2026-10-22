@@ -6,7 +6,7 @@ import io
 import re
 from collections.abc import Iterator
 from decimal import Decimal
-from typing import BinaryIO, Protocol
+from typing import IO, BinaryIO, Protocol
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
@@ -22,6 +22,30 @@ from .limits import (
 
 _CELL_REFERENCE = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})")
 _SHEET_NAMESPACE = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+# Only worksheets can legitimately be large. Shared strings, styles and the rest are far smaller
+# in real workbooks, and openpyxl loads shared strings whole, so a bigger one is not a file this
+# tool should expand on a small host.
+_MAX_AUXILIARY_PART_BYTES = 16 * 1024 * 1024
+_SNIFF_BYTES = 4096
+_WORKSHEET_ROOT = re.compile(rb"<(?:[A-Za-z_][\w.-]*:)?worksheet[\s>]")
+
+
+def _interleaved(word: bytes) -> bytes:
+    """A pattern for `word` that also matches it spread across UTF-16/UTF-32 NUL bytes."""
+    return rb"\x00{0,3}".join(re.escape(bytes([byte])) for byte in word)
+
+
+# DTDs and entity declarations are refused wherever they sit in the prolog and in any encoding;
+# the search runs over 256 KiB reads, so no copy of the whole member is ever held.
+_DECLARATION = re.compile(
+    _interleaved(b"<!") + rb"\x00{0,3}(?:" + _interleaved(b"doctype") + rb"|"
+    + _interleaved(b"entity") + rb")",
+    re.IGNORECASE,
+)
+_SCAN_STEP = 256 * 1024
+# Longest a declaration can be across a read boundary: 14 UTF-32 characters.
+_SCAN_OVERLAP = 64
 
 
 class ExcelCell(Protocol):
@@ -54,16 +78,15 @@ class WorkbookLoader(Protocol):
     ) -> ExcelWorkbook: ...
 
 
-def _worksheet_numbers(xml: bytes) -> dict[str, str]:
+def _worksheet_numbers(xml: IO[bytes]) -> dict[str, str]:
     numbers: dict[str, str] = {}
     row_index = 0
     column_index = 0
     coordinate = ""
     numeric = False
-    seen: set[str] = set()
     cells = 0
     depth = 0
-    for event, element in ElementTree.iterparse(io.BytesIO(xml), events=("start", "end")):
+    for event, element in ElementTree.iterparse(xml, events=("start", "end")):
         if event == "start":
             depth += 1
             if depth > MAX_XML_DEPTH:
@@ -100,9 +123,7 @@ def _worksheet_numbers(xml: bytes) -> dict[str, str]:
                                  f"{MAX_COLUMNS} columns.")
             if column_index <= previous_column:
                 raise ValueError("Excel physical cell columns must be strictly increasing.")
-            if coordinate in seen:
-                raise ValueError("Excel worksheet contains duplicate cell coordinates.")
-            seen.add(coordinate)
+            # Rows and columns only ever increase above, so a coordinate cannot repeat.
             numeric = element.get("t", "n") == "n"
         elif event == "end" and element.tag == f"{_SHEET_NAMESPACE}v" and numeric:
             if element.text is not None:
@@ -115,6 +136,22 @@ def _worksheet_numbers(xml: bytes) -> dict[str, str]:
             element.clear()
             depth -= 1
     return numbers
+
+
+def _drain(source: IO[bytes], *, check_declarations: bool) -> tuple[int, bool]:
+    """Read a member in steps, returning its size and whether it declares a DTD or entity."""
+    size = 0
+    declares = False
+    tail = b""
+    while chunk := source.read(_SCAN_STEP):
+        size += len(chunk)
+        if size > MAX_ARCHIVE_BYTES:
+            break
+        if check_declarations and not declares:
+            window = tail + chunk
+            declares = _DECLARATION.search(window) is not None
+            tail = window[-_SCAN_OVERLAP:]
+    return size, declares
 
 
 def inspect_archive(data: bytes) -> dict[str, dict[str, str]]:
@@ -131,17 +168,26 @@ def inspect_archive(data: bytes) -> dict[str, dict[str, str]]:
             worksheet_numbers: dict[str, dict[str, str]] = {}
             total_bytes = 0
             for member in members:
+                is_xml = member.filename.lower().endswith((".xml", ".rels"))
                 with archive.open(member) as source:
-                    content = source.read(MAX_ARCHIVE_BYTES - total_bytes + 1)
-                total_bytes += len(content)
+                    head = source.read(_SNIFF_BYTES)
+                # Removing NULs also sniffs worksheets written as UTF-16/UTF-32.
+                is_worksheet = is_xml and bool(_WORKSHEET_ROOT.search(head.replace(b"\x00", b"")))
+                if is_xml and not is_worksheet and member.file_size > _MAX_AUXILIARY_PART_BYTES:
+                    raise ValueError(
+                        f"Excel part {member.filename} exceeds "
+                        f"{_MAX_AUXILIARY_PART_BYTES // (1024 * 1024)} MiB."
+                    )
+                with archive.open(member) as source:
+                    size, declares = _drain(source, check_declarations=is_xml)
+                total_bytes += size
                 if total_bytes > MAX_ARCHIVE_BYTES:
                     raise ValueError("Excel archive exceeds the 64 MiB expanded size limit.")
-                if member.filename.lower().endswith((".xml", ".rels")):
-                    # Removing NULs also detects declarations in UTF-16/UTF-32 XML.
-                    declaration_text = content.replace(b"\x00", b"").lower()
-                    if b"<!doctype" in declaration_text or b"<!entity" in declaration_text:
-                        raise ValueError("Excel XML DTD and entity declarations are forbidden.")
-                    worksheet_numbers[member.filename] = _worksheet_numbers(content)
+                if declares:
+                    raise ValueError("Excel XML DTD and entity declarations are forbidden.")
+                if is_worksheet:
+                    with archive.open(member) as source:
+                        worksheet_numbers[member.filename] = _worksheet_numbers(source)
             return worksheet_numbers
     except (BadZipFile, KeyError, SyntaxError, NotImplementedError, RuntimeError) as exc:
         raise ValueError(f"Invalid Excel archive: {exc}") from exc

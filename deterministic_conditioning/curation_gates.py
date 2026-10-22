@@ -35,16 +35,18 @@ class PairValidationReport:
 class CurationGates:
     """Binary pass/fail validation gates for synthetic SFT and DPO datasets."""
 
+    # A trailing ``\b`` after ``,`` or ``!`` needs a word character next, so phrases that end in
+    # punctuation are matched with the punctuation inside the pattern and no boundary after it.
     BANNED_ATTRACTORS = [
-        re.compile(r"\b(Certainly|Great question|I'd be happy to|Sure thing|Of course|Hello!|Good day)\b", re.IGNORECASE),
-        re.compile(r"\b(Here is a breakdown|Here is what you need to know|Let's dive in|Below are the steps|Here is how to think about this)\b", re.IGNORECASE),
-        re.compile(r"\b(Furthermore,|Moreover,|Additionally,|In addition,|Consequently,|Therefore,|To begin with,)\b", re.IGNORECASE),
-        re.compile(r"\b(In summary,|In conclusion,|Overall,|Hope this helps!|Let me know if you have any questions|Feel free to ask)\b", re.IGNORECASE),
-        re.compile(r"(\n\s*[-*]\s*\*\*[^*]+:\*\*)"),  # Symmetrical bold bullet template
+        re.compile(r"\b(?:Certainly|Great question|I'd be happy to|Sure thing|Of course|Good day)\b|\bHello!", re.IGNORECASE),
+        re.compile(r"\b(?:Here is a breakdown|Here is what you need to know|Let's dive in|Below are the steps|Here is how to think about this)\b", re.IGNORECASE),
+        re.compile(r"\b(?:Furthermore|Moreover|Additionally|In addition|Consequently|Therefore|To begin with),", re.IGNORECASE),
+        re.compile(r"\b(?:In summary|In conclusion|Overall),|\b(?:Let me know if you have any questions|Feel free to ask)\b|\bHope this helps!", re.IGNORECASE),
+        re.compile(r"^[ \t]*[-*]\s*\*\*[^*]+:\*\*", re.MULTILINE),  # Symmetrical bold bullet template
     ]
 
     SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
-    BULLET_PATTERN = re.compile(r"\n\s*([-*]|\d+\.)\s+")
+    BULLET_PATTERN = re.compile(r"^[ \t]*(?:[-*]|\d+\.)\s+", re.MULTILINE)
 
     @staticmethod
     def _tokenize_words(text: str) -> list[str]:
@@ -76,11 +78,8 @@ class CurationGates:
 
     def check_gate_2_attractor_audit(self, chosen: str) -> GateResult:
         """Gate 2: Greedy Attractor Regex Audit (zero tolerance)."""
-        violations: list[str] = []
-        for pattern in self.BANNED_ATTRACTORS:
-            match = pattern.search(chosen)
-            if match:
-                violations.append(match.group(0).strip())
+        violations = [match.group(0).strip() for pattern in self.BANNED_ATTRACTORS
+                      for match in pattern.finditer(chosen)]
 
         passed = len(violations) == 0
         return GateResult(
@@ -148,18 +147,19 @@ class CurationGates:
             if len(words) >= 2:
                 bigrams.append((words[0], words[1]))
 
-        if not bigrams:
+        if len(bigrams) < 2:
+            # One opening has no diversity to measure; the scaled threshold below would be 0 bits.
             return GateResult(
                 gate_name="Gate 4: First-Bigram Entropy",
                 passed=False,
                 metric_value=0.0,
                 threshold=f">= {min_entropy_bits}",
-                details="No bigrams found.",
+                details=f"Need at least 2 samples with an opening bigram, found {len(bigrams)}.",
             )
 
         total = len(bigrams)
         counts = Counter(bigrams)
-        entropy = -sum((cnt / total) * math.log2(cnt / total) for cnt in counts.values())
+        entropy = max(0.0, -sum((cnt / total) * math.log2(cnt / total) for cnt in counts.values()))
 
         # For smaller benchmark sets (e.g. 5 samples), max theoretical entropy is log2(5) = 2.32 bits.
         # Scaled threshold handles sample size gracefully.

@@ -342,16 +342,11 @@ def test_welcome_chips_are_answered() -> None:
 # Escaping: the UI escapes once, so server text must decode cleanly
 # ---------------------------------------------------------------------------
 
-def test_chat_html_copies_stay_identical() -> None:
-    packaged = ROOT / "src" / "variance_agent" / "static" / "chat.html"
-    assert (ROOT / "static" / "chat.html").read_bytes() == packaged.read_bytes()
-
-
 def test_chat_ui_decodes_server_escapes_before_rendering() -> None:
-    html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
-    assert "function plainText(" in html
-    assert "renderMarkdown(text) {\n    let html = escapeHtml(decodeServerEscapes(text));" in html
-    assert "td.textContent = plainText(val);" in html
+    script = (ROOT / "src" / "variance_agent" / "static" / "chat.js").read_text(encoding="utf-8")
+    assert "export function plainText(" in script
+    assert "let html = escapeHtml(decodeServerEscapes(text));" in script
+    assert "td.textContent = plainText(val);" in script
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +380,7 @@ def test_message_rejects_non_object_json_with_400(server: HTTPServer, body: byte
 
 def test_invalid_content_length_gets_400(server: HTTPServer) -> None:
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as sock:
-        sock.sendall(b"POST /message HTTP/1.1\r\nHost: x\r\nContent-Length: abc\r\n\r\n")
+        sock.sendall(b"POST /message HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: abc\r\n\r\n")
         assert b" 400 " in sock.recv(200)
 
 
@@ -393,7 +388,7 @@ def test_slow_client_cannot_block_the_server(server: HTTPServer, monkeypatch: py
     assert _ChatHandler.timeout is not None and 0 < _ChatHandler.timeout <= 30
     monkeypatch.setattr(_ChatHandler, "timeout", 1)
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as sock:
-        sock.sendall(b"POST /message HTTP/1.1\r\nHost: x\r\nContent-Length: 500\r\n\r\n{\"te")
+        sock.sendall(b"POST /message HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"te")
         conn = HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
         conn.request("GET", "/status")
         assert conn.getresponse().status == 200
@@ -410,10 +405,10 @@ def test_visualizer_routes_typed_input_through_the_router() -> None:
 
 
 def test_table_row_click_sends_the_drill_down_question() -> None:
-    # sendMessage() reads the input box and ignores arguments, so rows must post directly.
-    html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
-    assert "sendMessage(`Why" not in html
-    assert "addUserMessage(question);\n              postMessage(question);" in html
+    # sendMessage() reads the input box and ignores arguments, so rows must send their text directly.
+    script = (ROOT / "src" / "variance_agent" / "static" / "chat.js").read_text(encoding="utf-8")
+    assert "sendMessage(`Why" not in script
+    assert "const question = `Why ${name}?`;\n              sendText(question);" in script
 
 
 def test_download_header_does_not_reflect_raw_period(server: HTTPServer) -> None:
@@ -469,7 +464,7 @@ def test_zero_baseline_percentages_show_na(csv: bytes, message: str) -> None:
 def test_zero_revenue_budget_margin_is_na_in_memo() -> None:
     session, _ = start_csv(ZERO_REVENUE_BUDGET)
     memo = handle_message(session, "memo").text
-    assert "EBITDA margin **moved** from N/A to **76.0%** (N/A)" in memo
+    assert "Operating margin **moved** from N/A to **76.0%** (N/A)" in memo
 
 
 def test_memo_unbudgeted_percent_has_no_plus_sign() -> None:
@@ -703,7 +698,7 @@ def test_summary_tldr_and_profitability_match_oracle(name: str, steps: tuple[str
     session = _explore_any(name, steps)
     tldr = handle_message(session, "tldr").text
     assert f"Operating Profit finished at **{_fmt(totals['actual_operating_profit'], key, sym)}**" in tldr
-    assert f"EBITDA margin standing at **{totals['actual_margin_pct']}%**" in tldr
+    assert f"operating margin standing at **{totals['actual_margin_pct']}%**" in tldr
     profit = handle_message(session, "profitability").text
     in_black = Decimal(totals["actual_operating_profit"]) >= 0
     assert ("in the black" in profit) == in_black and ("in the red" in profit) == (not in_black)

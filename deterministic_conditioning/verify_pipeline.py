@@ -15,6 +15,12 @@ from deterministic_conditioning.curation_gates import CurationGates
 from deterministic_conditioning.router import DynamicPromptRouter
 
 
+# The curated dataset that dataset_generator writes and that train_dpo_hf, train_unsloth_dpo and the
+# Axolotl config read. ``data/dpo_pairs.jsonl`` is an older five-pair export without ``rule_id`` (only
+# ``trainer.py`` still defaults to it); it is no longer audited here.
+DATA_FILE = Path(__file__).parent / "data" / "dpo_expanded.jsonl"
+
+
 def run_gate_audit(data_path: Path) -> bool:
     """Run full 5-gate audit on the DPO dataset."""
     print("\n>>> RUNNING 5-GATE SFT/DPO DATASET AUDIT...")
@@ -54,27 +60,42 @@ def run_gate_audit(data_path: Path) -> bool:
 
 
 def run_router_tests() -> bool:
-    """Test dynamic router signal extraction and context state inversion."""
+    """Test dynamic router signal extraction and context state inversion.
+
+    Every check is recorded rather than asserted: ``assert`` statements disappear under
+    ``python -O`` and an exception would skip the remaining checks and the final verdict.
+    """
     print("\n>>> TESTING DYNAMIC PROMPT ROUTER & STATE INVERSION...")
     router = DynamicPromptRouter()
     all_passed = True
 
+    def check(condition: bool, passed_message: str, failed_message: str) -> None:
+        nonlocal all_passed
+        if condition:
+            print(f"  ✓ PASS | {passed_message}")
+        else:
+            all_passed = False
+            print(f"  ✗ FAIL | {failed_message}")
+
     # Test Case 1: Frustration signal (Rule R1)
     res_r1 = router.route("My pipeline keeps crashing on deploy and it is completely broken!")
-    assert res_r1.rule_id == "R1", f"Expected R1, got {res_r1.rule_id}"
-    assert "Imperative" in res_r1.required_first_token_pos
-    print("  ✓ PASS | Rule R1: Frustration signal correctly routed to Imperative opener.")
+    check(res_r1.rule_id == "R1" and "Imperative" in res_r1.required_first_token_pos,
+          "Rule R1: Frustration signal correctly routed to Imperative opener.",
+          f"Rule R1: expected R1 with an Imperative opener, got {res_r1.rule_id} "
+          f"({res_r1.required_first_token_pos}).")
 
     # Test Case 2: Terse casual signal (Rule R2)
     res_r2 = router.route("hey what's good")
-    assert res_r2.rule_id == "R2", f"Expected R2, got {res_r2.rule_id}"
-    assert "Fragment" in res_r2.required_first_token_pos
-    print("  ✓ PASS | Rule R2: Terse casual input correctly routed to Fragment opener.")
+    check(res_r2.rule_id == "R2" and "Fragment" in res_r2.required_first_token_pos,
+          "Rule R2: Terse casual input correctly routed to Fragment opener.",
+          f"Rule R2: expected R2 with a Fragment opener, got {res_r2.rule_id} "
+          f"({res_r2.required_first_token_pos}).")
 
     # Test Case 3: Direct question (Rule R3)
     res_r3 = router.route("What is Raft consensus?")
-    assert res_r3.rule_id == "R3", f"Expected R3, got {res_r3.rule_id}"
-    print("  ✓ PASS | Rule R3: Direct interrogative correctly routed.")
+    check(res_r3.rule_id == "R3",
+          "Rule R3: Direct interrogative correctly routed.",
+          f"Rule R3: expected R3, got {res_r3.rule_id}.")
 
     # Test Case 4: Long analytical query (Rule R4)
     long_query = (
@@ -83,9 +104,10 @@ def run_router_tests() -> bool:
         "write loads across multiple cloud regions."
     )
     res_r4 = router.route(long_query)
-    assert res_r4.rule_id == "R4", f"Expected R4, got {res_r4.rule_id}"
-    assert "Subordinate" in res_r4.required_first_token_pos
-    print("  ✓ PASS | Rule R4: Complex architectural prompt routed to Subordinate clause.")
+    check(res_r4.rule_id == "R4" and "Subordinate" in res_r4.required_first_token_pos,
+          "Rule R4: Complex architectural prompt routed to Subordinate clause.",
+          f"Rule R4: expected R4 with a Subordinate opener, got {res_r4.rule_id} "
+          f"({res_r4.required_first_token_pos}).")
 
     # Test Case 5: State Inversion over history
     history = [
@@ -99,16 +121,16 @@ def run_router_tests() -> bool:
     inversions = " ".join(res_inv.inversion_constraints)
 
     # Prior opened with "Check" (Verb), ended with "." and used an em-dash
-    assert "FORBID opener: Active Verb" in inversions
-    assert "Invert declarative closure" in inversions
-    assert "Forbid em-dashes" in inversions
-    print("  ✓ PASS | Last-Assistant-Turn Inversion: Detected prior Verb opener, declarative period, and em-dash.")
+    expected_inversions = ("FORBID opener: Active Verb", "Invert declarative closure", "Forbid em-dashes")
+    missing = [constraint for constraint in expected_inversions if constraint not in inversions]
+    check(not missing,
+          "Last-Assistant-Turn Inversion: Detected prior Verb opener, declarative period, and em-dash.",
+          f"Last-Assistant-Turn Inversion: missing {missing}.")
 
     return all_passed
 
 
 def main() -> None:
-    data_file = Path(__file__).parent / "data" / "dpo_pairs.jsonl"
     config = DeterministicDecodingConfig()
 
     print("=================================================================")
@@ -116,7 +138,7 @@ def main() -> None:
     print("=================================================================")
     print(f"Decoding Config: {config.to_dict()}")
 
-    gates_ok = run_gate_audit(data_file)
+    gates_ok = run_gate_audit(DATA_FILE)
     router_ok = run_router_tests()
 
     print("\n=================================================================")

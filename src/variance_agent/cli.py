@@ -4,12 +4,14 @@ import argparse
 import csv
 import os
 import sys
+import unicodedata
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
+from .classification import explicit_line_type
 from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
@@ -52,6 +54,10 @@ def _intake_error(intake_res: IntakeResult) -> str:
         # Chat offers chips for this choice; the CLI names the flag that makes it.
         message = f"{message} {COMPARE_TO_HINT}"
     return message
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def _unit_name(scale: Decimal) -> str:
@@ -104,16 +110,18 @@ def _load_type_map(path: str | None) -> dict[str, LineType]:
 def _parse_type_map(data: bytes) -> dict[str, LineType]:
     payload = load_json_value(data.decode("utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense.")
+        raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense/Unclassified.")
     output: dict[str, LineType] = {}
     for item, value in payload.items():
-        text = str(value).strip().lower()
-        if text in {"revenue", "income", "sales"}:
-            output[item] = LineType.REVENUE
-        elif text in {"expense", "expenses", "cost", "costs"}:
-            output[item] = LineType.EXPENSE
+        line_type = explicit_line_type(value)
+        if line_type is not None:
+            output[item] = line_type
+        elif str(value).strip().lower() == "unclassified":
+            output[item] = LineType.UNCLASSIFIED
         else:
-            raise ValueError(f"Type map value for {item!r} must be Revenue or Expense.")
+            raise ValueError(
+                f"Type map value for {item!r} must be Revenue, Expense or Unclassified."
+            )
     return output
 
 
@@ -186,8 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _fold(path: Path) -> str:
+    """Case- and Unicode-form-insensitive spelling: macOS and Windows treat these as one file."""
+    return unicodedata.normalize("NFC", str(path.resolve())).casefold()
+
+
 def _same_path(first: Path, second: Path) -> bool:
-    return first.resolve() == second.resolve() or (
+    return _fold(first) == _fold(second) or (
         first.exists() and second.exists() and first.samefile(second)
     )
 
@@ -216,10 +229,14 @@ def _run(args: Arguments) -> int:
                 "--chat cannot be combined with --check-only, --output, --audit-json, or --xlsx."
             )
         from .chat.server import run_chat_server
-        is_hosted = args.hosted or "RENDER" in os.environ or ("PORT" in os.environ and os.environ.get("PORT", "").isdigit())
-        if is_hosted:
+        # Hosting is asked for (--hosted) or announced by the platform (Render sets RENDER). A
+        # stray PORT variable alone must not expose a local chat on every network interface.
+        if args.hosted or "RENDER" in os.environ:
+            port_text = os.environ.get("PORT", "10000")
+            if not (port_text.isascii() and port_text.isdigit() and 0 < int(port_text) < 65536):
+                raise ValueError(f"PORT must be a port number between 1 and 65535, not {port_text!r}.")
             return run_chat_server(
-                host="0.0.0.0", port=int(os.environ.get("PORT", "10000")),
+                host="0.0.0.0", port=int(port_text),
                 initial_input=args.input, initial_sheet=args.sheet,
                 open_browser=False, hosted=True,
             )
@@ -261,7 +278,7 @@ def _run(args: Arguments) -> int:
             scale_rows_by_unit,
         )
         mapping_path = Path(mapping_arg)
-        mapping_obj = load_mapping(mapping_path.read_text(encoding="utf-8"))
+        mapping_obj = load_mapping(read_input_bytes(mapping_path))
 
         intake_res = read_input_assisted(
             source_bytes,
@@ -279,6 +296,11 @@ def _run(args: Arguments) -> int:
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
             rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+            # The audit records every exclusion that was applied, the mapping's included.
+            intake_res.detected_totals = [
+                *intake_res.detected_totals,
+                *(name for name in mapping_obj.exclude_totals if name not in intake_res.detected_totals),
+            ]
         # Intake already applied any unit scale and revenue sign flip it detected (as the chat
         # does), so the mapping only adds what the file itself did not say.
         if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
@@ -286,6 +308,7 @@ def _run(args: Arguments) -> int:
             detected_scale = intake_res.detected_unit_multiplier
             if detected_scale == Decimal("1"):
                 rows = scale_rows_by_unit(rows, target_scale)
+                intake_res.detected_unit_multiplier = target_scale
             elif detected_scale != target_scale:
                 raise ValueError(
                     f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
@@ -293,11 +316,16 @@ def _run(args: Arguments) -> int:
                     "in the mapping."
                 )
         if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
-            rows, _ = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
+            rows, flipped = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
+            intake_res.negative_revenue_items = flipped
+            intake_res.detected_signed_ledger = bool(flipped)
 
         type_map: dict[str, LineType] = {}
         if type_map_bytes is not None:
             type_map = _parse_type_map(type_map_bytes)
+            if mapping_obj.classification_rules:
+                print("[mapping] --type-map is used; the mapping's classification_rules were not applied.",
+                      file=sys.stderr)
         elif mapping_obj.classification_rules:
             gl_rules_data = cast(list[dict[str, object]], mapping_obj.classification_rules.get("gl_ranges", []))
             gl_rules = [
@@ -378,9 +406,9 @@ def _run(args: Arguments) -> int:
         raise
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
-        print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "
-              f"variances, {unclassified} Unclassified, {len(result.warnings)} warnings; "
-              f"reporting currency {config.currency}.")
+        print(f"Validation passed: {_count(len(result.rows), 'row')}, "
+              f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
+              f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
     report = render_markdown(result)
     if args.commentary:
@@ -434,7 +462,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _run(args)
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
-        parser.error(display_text(str(exc)))
+        # A problem with the data, not with the command line: one clear line, no usage banner.
+        parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
 
 
 if __name__ == "__main__":
