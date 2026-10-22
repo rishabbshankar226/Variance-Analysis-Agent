@@ -341,17 +341,35 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
     )
 
 
+def _blank_wording(basis: ComparisonBasis) -> str:
+    return "blank budgets" if basis is ComparisonBasis.BUDGET else f"blank {basis_noun(basis)} values"
+
+
 def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
-    """Handle confirmation of whether blank budgets should be treated as 0."""
-    lower = text.strip().lower()
-    treat_as_zero = "0" in lower or "unbudgeted" in lower or "treat" in lower or "yes" in lower
+    """Confirm that blank comparison amounts are read as 0 (the only reading the engine has)."""
+    lower = normalize_for_routing(text).lower()
+    basis = session.intake_result.comparison_basis if session.intake_result is not None else ComparisonBasis.BUDGET
+    blanks = _blank_wording(basis)
+    treat = f"Treat {blanks} as 0 ({zero_comparison_phrase(basis)})"
+    confirmed = "0" in lower or "unbudgeted" in lower or "treat" in lower or "yes" in lower
+    if not confirmed:
+        refused = lower.startswith(("keep", "leave", "no", "don't", "dont")) or "blank" in lower
+        return Response(
+            text=(
+                f"{blanks.capitalize()} cannot stay blank in the analysis: a line with no amount "
+                f"is read as 0 ({zero_comparison_phrase(basis)}). "
+                if refused else "Please choose how to read the blank amounts. "
+            ) + f"Choose **{treat}** to continue, or upload a corrected file.",
+            chips=[treat, "Upload a different file"],
+            phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
+        )
     if session.source_bytes is not None and session.source_suffix is not None:
         intake_res = read_input_assisted(
             session.source_bytes,
             session.source_suffix,
             filename=session.source_name or "input",
             sheet=session.worksheet,
-            treat_blank_budgets_as_zero=treat_as_zero,
+            treat_blank_budgets_as_zero=True,
             compare_to=session.compare_to,
         )
         session.parsed_rows = intake_res.rows
@@ -605,17 +623,18 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
         count = len(intake_res.blank_budget_items)
         sample = intake_res.blank_budget_items[0]
         basis = intake_res.comparison_basis
-        # Budget keeps its wording; the chips must still match the confirmation reply
-        # handler ("treat" / "0" means yes, "Keep ..." means no).
-        blanks = "blank budgets" if basis is ComparisonBasis.BUDGET else f"blank {basis_noun(basis)} values"
+        # The analysis needs a number, so a blank can only be read as 0: the one choice offered
+        # (besides fixing the file) is to confirm that, and the summary then records it.
+        blanks = _blank_wording(basis)
         treat = f"Treat {blanks} as 0 ({zero_comparison_phrase(basis)})"
         return Response(
             text=(
                 f"Found **{count}** line item{'s' if count != 1 else ''} with {blanks} "
                 f"(such as {safe_inline(sample)}).\n\n"
+                f"Blank amounts cannot stay blank in the analysis, so they are read as 0.\n\n"
                 f"{treat}?"
             ),
-            chips=[treat, f"Keep {blanks}", "Upload a different file"],
+            chips=[treat, "Upload a different file"],
             phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
         )
 
