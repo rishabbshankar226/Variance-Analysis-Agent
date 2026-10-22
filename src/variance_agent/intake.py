@@ -1105,7 +1105,7 @@ def detect_comparison_columns(
     if len(actual_headers) > 1 and not detect_period_pairs([s for _, s in headers]):
         # Which one is the Actual (this month, year to date, ...) is the user's call.
         return _stop(
-            f"Found more than one Actual column ({', '.join(actual_headers)}); keep one and rerun.",
+            f"Found more than one Actual column ({', '.join(actual_headers)}); keep one and try again.",
             actual_column=actual_col,
             candidates=actual_headers,
         )
@@ -1168,7 +1168,7 @@ def detect_comparison_columns(
             col_names = [f"{c[1]} ({_column_name(c[0])})" for c in named]
             return _stop(
                 f"Found more than one {basis_noun(named_bases[0])} column ({', '.join(col_names)}); "
-                "keep one and rerun.",
+                "keep one and try again.",
                 actual_column=actual_col,
                 candidates=col_names,
             )
@@ -1631,11 +1631,22 @@ def _read_pdf_bytes(
 _MAX_LISTED_CELLS = 10
 
 
+def _plain_cell_detail(detail: str, field_label: str) -> str:
+    """Say what is wrong with a cell the way a person would, not in parser terms."""
+    if match := re.search(r"has an unrecognized number format: (.*)\.$", detail):
+        return f"'{match.group(1)}' is not an amount I can read."
+    if match := re.search(r"is missing \(marked (.+)\)\.$", detail):
+        return f"the amount is marked {match.group(1)}."
+    if detail.startswith("required value in") and "is missing" in detail:
+        return "the amount is blank."
+    return detail
+
+
 def _cell_problem(
     row: int, line_item: str, column: str | None, field_label: str, exc: ValueError,
 ) -> IntakeProblem:
     """A problem for one amount that could not be read, worded for the person who must fix it."""
-    detail = str(exc).removeprefix(f"{line_item}: ")
+    detail = _plain_cell_detail(str(exc).removeprefix(f"{line_item}: "), field_label)
     return IntakeProblem(
         row=row,
         column=column,

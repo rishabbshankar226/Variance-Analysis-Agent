@@ -229,10 +229,14 @@ def _run(args: Arguments) -> int:
                 "--chat cannot be combined with --check-only, --output, --audit-json, or --xlsx."
             )
         from .chat.server import run_chat_server
-        is_hosted = args.hosted or "RENDER" in os.environ or ("PORT" in os.environ and os.environ.get("PORT", "").isdigit())
-        if is_hosted:
+        # Hosting is asked for (--hosted) or announced by the platform (Render sets RENDER). A
+        # stray PORT variable alone must not expose a local chat on every network interface.
+        if args.hosted or "RENDER" in os.environ:
+            port_text = os.environ.get("PORT", "10000")
+            if not (port_text.isascii() and port_text.isdigit() and 0 < int(port_text) < 65536):
+                raise ValueError(f"PORT must be a port number between 1 and 65535, not {port_text!r}.")
             return run_chat_server(
-                host="0.0.0.0", port=int(os.environ.get("PORT", "10000")),
+                host="0.0.0.0", port=int(port_text),
                 initial_input=args.input, initial_sheet=args.sheet,
                 open_browser=False, hosted=True,
             )

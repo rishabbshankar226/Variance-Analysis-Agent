@@ -27,7 +27,21 @@ row must supply that reporting period; missing or conflicting periods fail.
 ## Classification and summaries
 
 Type-map entries take precedence, then a recognized explicit Type, then conservative
-label inference. An unrecognized populated Type remains Unclassified. Profit
+label inference. Type maps and the Type column accept the same words: Revenue, Income,
+Sales, Rev; Expense, Expenses, Cost, Costs, Opex, COGS; and in a type map also
+Unclassified (an explicit decision to leave a line out of the totals).
+
+Label inference is deliberately narrow. A cost noun (tax, commission, salary/wages,
+compensation, provision, returns, bonus, discount, allowance, rebate, refund) makes a
+line an Expense even when a revenue word only qualifies it: `Sales Commissions`,
+`Income Taxes` and `Sales Returns and Allowances` are expenses, so an overrun is
+unfavorable and stays out of Total Revenue. Revenue stated net of such a cost
+(`Revenue, net of returns`) stays Revenue. Profit measures and subtotals are never
+additive and stay Unclassified: net, operating and gross income/profit/earnings/loss/
+margin, income or profit before/after anything, pre-tax income, income from operations,
+comprehensive income, EBIT, EBITDA, NOPAT. Labels with both a revenue and an expense
+word (`Sales and Marketing`) remain Unclassified. Assisted intake's signed-ledger
+detection uses the same classifier. An unrecognized populated Type remains Unclassified. Profit
 measures are not treated as additive Revenue. Audit 1.3 records the actual source
 of these decisions for material rows; public API records constructed manually may
 have `unavailable` decision metadata.
