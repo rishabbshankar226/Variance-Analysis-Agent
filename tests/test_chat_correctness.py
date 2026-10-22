@@ -224,3 +224,38 @@ def test_a_year_that_is_not_a_position_still_matches_by_name() -> None:
     session = analysed(_workbook({"Alpha": 1100, "FY 2025": 1200}), "w.xlsx")
     ask(session, "sheet 2025")
     assert session.worksheet == "FY 2025"
+
+
+def test_switching_sheets_while_classifying_re_runs_the_analysis() -> None:
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    first = book.active
+    assert first is not None
+    first.title = "One"
+    first.append(["Line Item", "Type", "Budget", "Actual"])
+    first.append(["Sales", "Revenue", 1000, 1200])
+    first.append(["Mystery One", None, 500, 700])
+    second = book.create_sheet("Two")
+    second.append(["Line Item", "Type", "Budget", "Actual"])
+    second.append(["Sales", "Revenue", 2000, 2500])
+    second.append(["Mystery Two", None, 300, 100])
+    buffer = io.BytesIO()
+    book.save(buffer)
+
+    from variance_agent.chat.handlers import handle_message as send
+    from variance_agent.chat.handlers import handle_upload as upload
+
+    session = Session()
+    upload(session, buffer.getvalue(), "w.xlsx")
+    for message in ("Q3 2026", "$10 or 5%", "USD"):
+        send(session, message)
+    assert session.phase == Phase.RESOLVE_UNCLASSIFIED
+    assert session.unclassified_queue == ["Mystery One"]
+    response = send(session, "sheet Two")
+    assert session.worksheet == "Two"
+    assert session.unclassified_queue == ["Mystery Two"]
+    assert "Mystery Two" in response.text
+    assert "Mystery One" not in response.text

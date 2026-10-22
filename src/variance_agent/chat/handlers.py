@@ -942,9 +942,13 @@ def _items_named_in(text: str, items: list[str]) -> list[str]:
     return sorted(named, key=len, reverse=True)
 
 
-def _item_in_sentence(text: str, items: list[str]) -> str | None:
-    """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'."""
-    named = _items_named_in(text, items)
+def _item_in_sentence(text: str, items: list[str], named: list[str] | None = None) -> str | None:
+    """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'.
+
+    ``named`` is the result of ``_items_named_in`` when the caller already has it.
+    """
+    if named is None:
+        named = _items_named_in(text, items)
     if named:
         return named[0]
     words = set(_WORD_RE.findall(normalize_for_routing(text).lower()))
@@ -956,16 +960,25 @@ def _item_in_sentence(text: str, items: list[str]) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
+# Spelling suggestions compare the query with every account name, so both sides are bounded:
+# real account names are short, and a file can have a hundred thousand lines.
+_SUGGEST_MAX_QUERY = 40
+_SUGGEST_MAX_ITEMS = 2000
+
+
 def _suggest_items(query: str, items: list[str], limit: int = 3) -> list[str]:
     """Close spellings of a line item (whole name or any word of it); deterministic."""
-    q = query.strip().lower()
-    if len(q) < 3:
+    q = normalize_for_routing(query).lower()
+    if not 3 <= len(q) <= _SUGGEST_MAX_QUERY:
         return []
     scored: list[tuple[float, str]] = []
-    for item in dict.fromkeys(items):
-        name = item.lower()
-        score = max([difflib.SequenceMatcher(None, q, name).ratio()]
-                    + [difflib.SequenceMatcher(None, q, word).ratio() for word in name.split()])
+    for item in list(dict.fromkeys(items))[:_SUGGEST_MAX_ITEMS]:
+        name = normalize_for_routing(item).lower()[:200]
+        score = 0.0
+        for candidate in [name, *name.split()]:
+            matcher = difflib.SequenceMatcher(None, q, candidate)
+            if matcher.real_quick_ratio() >= 0.75 and matcher.quick_ratio() >= 0.75:
+                score = max(score, matcher.ratio())
         if score >= 0.75:
             scored.append((-score, item))
     return [item for _, item in sorted(scored)[:limit]]
@@ -992,7 +1005,7 @@ def _not_found(display_q: str, query: str, items: list[str], verb: str) -> Respo
 
 def _handle_thresholds(session: Session, text: str) -> Response:
     """Parse and set materiality thresholds."""
-    parsed = _parse_threshold_text(text)
+    parsed = _parse_threshold_text(normalize_for_routing(text))
     if parsed is None:
         return Response(
             text="I couldn't parse those thresholds. Please enter them as: `$10,000 or 5%`",
@@ -1142,7 +1155,7 @@ def _run_analysis(session: Session) -> Response:
 
 def _handle_classify(session: Session, text: str) -> Response:
     """Handle classification of an unclassified line item."""
-    text_lower = text.strip().lower()
+    text_lower = normalize_for_routing(text).lower()
 
     if text_lower in ("skip all", "done", "skip remaining"):
         session.skipped_items.update(session.unclassified_queue)
@@ -1469,7 +1482,7 @@ def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
 
 def _handle_exploring(session: Session, text: str) -> Response:
     """Route a message through the intent parser during the EXPLORING phase."""
-    if "save layout mapping" in text.lower() or "save mapping" in text.lower():
+    if normalize_for_routing(text).lower() in ("save layout mapping", "save mapping"):
         return _handle_save_mapping(session)
 
     intent = parse_intent(text)
@@ -3465,8 +3478,12 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     if intake_res.available_sheets:
         session.available_sheets = intake_res.available_sheets
 
+    session.last_table_items = []
+    session.last_focused_item = None
+    session.unclassified_queue = []
+    session.pending_gl_rules = []
     if (
-        session.phase == Phase.EXPLORING
+        session.phase in (Phase.EXPLORING, Phase.RESOLVE_UNCLASSIFIED)
         and session.period is not None
         and session.dollar_threshold is not None
         and session.percent_threshold is not None
@@ -4428,6 +4445,7 @@ def _handle_unknown(session: Session, text: str) -> Response:
     text_lower = normalize_for_routing(text).lower()
 
     # An account named in full ("Profit Sharing looks high") outranks the keywords below.
+    named: list[str] = []
     if session.result is not None:
         named = _items_named_in(text, [r.line_item for r in session.result.rows])
         if named:
@@ -4458,7 +4476,7 @@ def _handle_unknown(session: Session, text: str) -> Response:
         resolved = _resolve_item_query(text, session)
         matches = find_line_item(resolved, line_items)
         if not matches:
-            named_item = _item_in_sentence(text, line_items)
+            named_item = _item_in_sentence(text, line_items, named)
             matches = [named_item] if named_item else []
         if matches:
             return _describe_item_reply(session, matches[0])

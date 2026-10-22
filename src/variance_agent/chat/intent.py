@@ -32,6 +32,8 @@ def normalize_for_routing(text: str) -> str:
     ASCII, invisible format characters dropped, whitespace collapsed. It is never stored or
     shown back: periods, labels and file names keep the user's exact characters.
     """
+    if text.isascii() and text.isprintable() and "  " not in text and text == text.strip():
+        return text  # nothing to fold: the common case for account names
     folded = unicodedata.normalize("NFKC", text).translate(_ROUTING_FOLDS)
     visible = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
     return " ".join(visible.split())

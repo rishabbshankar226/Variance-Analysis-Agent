@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
 from tests.chat_helpers import SAMPLE_CSV, analysed
+from variance_agent.analysis import analyze_rows
 from variance_agent.chat.handlers import handle_message, handle_upload
 from variance_agent.chat import intent as intent_module
 from variance_agent.chat.intent import parse_intent
 from variance_agent.chat.session import Phase, Session
+from variance_agent.models import AnalysisConfig
 
 HOSTILE_LENGTH = 20_000
 HOSTILE_MESSAGES = {
@@ -164,3 +168,69 @@ def test_period_keeps_the_typed_text_not_the_routing_copy() -> None:
     assert session.phase == Phase.AWAITING_PERIOD
     handle_message(session, f"FY{NBSP}2026.")
     assert session.period == f"FY{NBSP}2026"
+
+
+# ---- a big file must not make every unmatched question slow ---------------------------------
+
+
+def _big_session(lines: int = 20_000) -> Session:
+    rows: list[dict[str, object]] = [
+        {"line_item": f"Account {i:06d} operating cost centre",
+         "type": "Expense" if i % 3 else "Revenue", "budget": str(1000 + i), "actual": str(1100 + i)}
+        for i in range(lines)
+    ]
+    result = analyze_rows(rows, AnalysisConfig(
+        period="Q3", dollar_threshold=Decimal("50"), percent_threshold=Decimal("0.05"),
+    ))
+    session = Session()
+    session.phase = Phase.EXPLORING
+    session.result = result
+    return session
+
+
+@pytest.mark.parametrize("prompt", [
+    "why " + "x" * 300,
+    "why account 99",
+    "why accout 000099",
+    "details on how zebra is doing",
+    "show me banana",
+    "tell me something about zebra crossing nothing",
+    "profit sharing looks high",
+], ids=["long-query", "partial-name", "typo", "sentence", "show-me", "unknown-sentence", "keyword"])
+def test_unmatched_questions_on_a_big_file_stay_fast(prompt: str) -> None:
+    session = _big_session()
+    start = time.perf_counter()
+    response = handle_message(session, prompt)
+    assert time.perf_counter() - start < 0.5
+    assert response.text
+
+
+def test_a_typo_still_gets_a_suggestion_on_a_big_file() -> None:
+    response = handle_message(_big_session(), "why accout 000099 operating cost centre")
+    assert "Did you mean" in response.text
+    assert "Account 000099 operating cost centre" in response.text
+
+
+# ---- typed answers go through the same folding as commands -----------------------------------
+
+
+def test_typed_threshold_in_full_width_digits_is_understood() -> None:
+    session = Session()
+    handle_upload(session, SAMPLE_CSV, "a.csv")
+    handle_message(session, "Q3 2026")
+    fullwidth = "".join(chr(ord(c) + 0xFEE0) if c.isdigit() else c for c in "$10,000 or 5%")
+    handle_message(session, fullwidth)
+    assert session.phase == Phase.AWAITING_CURRENCY
+    assert session.dollar_threshold == Decimal(10000)
+
+
+def test_classification_answer_with_a_non_breaking_space_is_understood() -> None:
+    csv = b"Line Item,Type,Budget,Actual\nSales,Revenue,100,120\nMystery,,50,70\n"
+    session = Session()
+    handle_upload(session, csv, "a.csv")
+    handle_message(session, "Q3 2026")
+    handle_message(session, "$10 or 5%")
+    handle_message(session, "USD")
+    assert session.phase == Phase.RESOLVE_UNCLASSIFIED
+    handle_message(session, f"Skip{NBSP}all")
+    assert session.phase == Phase.EXPLORING
