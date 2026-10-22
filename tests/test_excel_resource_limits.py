@@ -68,7 +68,7 @@ def _worksheet_coordinate(data: bytes, case: str) -> bytes:
     assert len(rows) == 2
     if case == "physical_row_index":
         rows[1].set("r", str(MAX_ROWS + 1))
-        for column, cell in zip("ABC", rows[1]):
+        for column, cell in zip("ABC", rows[1], strict=False):
             cell.set("r", f"{column}{MAX_ROWS + 1}")
     elif case == "physical_cell_row_index":
         # The row tag remains small; cell coordinates must be checked as well.

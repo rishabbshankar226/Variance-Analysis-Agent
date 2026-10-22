@@ -706,7 +706,9 @@ def test_summary_tldr_and_profitability_match_oracle(name: str, steps: tuple[str
         summary = handle_message(session, "summary").text
         net = _fmt(totals["net_operating_impact"], key, sym)
         assert f"**Net Operating Impact:** {net}" in summary
-        assert f"**Total Revenue:** {_fmt(totals['revenue']['actual'], key, sym)} vs. {_fmt(totals['revenue']['budget'], key, sym)}" in summary
+        revenue_actual = _fmt(totals["revenue"]["actual"], key, sym)
+        revenue_budget = _fmt(totals["revenue"]["budget"], key, sym)
+        assert f"**Total Revenue:** {revenue_actual} vs. {revenue_budget}" in summary
 
 
 @pytest.mark.parametrize(("name", "steps"), ORACLE_CASES)

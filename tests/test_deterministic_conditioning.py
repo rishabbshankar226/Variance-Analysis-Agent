@@ -109,7 +109,10 @@ class TestCurationGates:
 
     def test_gate_1_length_symmetry_pass(self, gates: CurationGates) -> None:
         chosen = "This is a twenty word test string designed to verify that the length symmetry algorithm properly passes valid inputs."
-        rejected = "This is another twenty word test string created specifically to verify that the length ratio algorithm properly passes candidates."
+        rejected = (
+            "This is another twenty word test string created specifically to verify that the length ratio "
+            "algorithm properly passes candidates."
+        )
         res = gates.check_gate_1_length_symmetry(chosen, rejected, max_delta=0.15)
         assert res.passed is True
 

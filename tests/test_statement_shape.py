@@ -14,7 +14,7 @@ def _shape(rows: list[list[object]]):  # type: ignore[no-untyped-def]
 def _net(shaped) -> list[Decimal]:  # type: ignore[no-untyped-def]
     """Revenue minus expense per period, from the shaped rows."""
     totals = [Decimal(0), Decimal(0)]
-    for label, *values, kind in shaped.rows[2:]:
+    for _label, *values, kind in shaped.rows[2:]:
         for i, value in enumerate(values):
             text = str(value).replace(",", "").replace("—", "0")
             amount = -Decimal(text[1:-1]) if text.startswith("(") else Decimal(text)

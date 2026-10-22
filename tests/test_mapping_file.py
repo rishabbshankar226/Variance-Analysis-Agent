@@ -98,7 +98,9 @@ def test_cli_mapping_and_chat_produce_identical_financial_values(tmp_path: Path)
     # Compare totals and material variances
     assert cli_audit["totals"] == chat_audit["totals"]
     assert len(cli_audit["material_variances"]) == len(chat_audit["material_variances"])
-    for cli_row, chat_row in zip(cli_audit["material_variances"], chat_audit["material_variances"]):
+    for cli_row, chat_row in zip(
+        cli_audit["material_variances"], chat_audit["material_variances"], strict=True
+    ):
         assert cli_row["line_item"] == chat_row["line_item"]
         assert cli_row["budget"] == chat_row["budget"]
         assert cli_row["actual"] == chat_row["actual"]
@@ -226,7 +228,9 @@ def test_chat_saved_mapping_replays_to_chat_amounts(tmp_path: Path) -> None:
     assert _amounts(chat_audit) == expected
     assert _amounts(cli_audit) == expected
     assert cli_audit["totals"] == chat_audit["totals"]
-    for cli_row, chat_row in zip(cli_audit["material_variances"], chat_audit["material_variances"]):
+    for cli_row, chat_row in zip(
+        cli_audit["material_variances"], chat_audit["material_variances"], strict=True
+    ):
         assert cli_row["variance_dollars"] == chat_row["variance_dollars"]
         assert cli_row["status"] == chat_row["status"]
 

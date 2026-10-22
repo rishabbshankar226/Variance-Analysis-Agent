@@ -198,9 +198,9 @@ def _driver_evidence(
 
         residuals: list[Decimal | None] = []
         calculations: tuple[Callable[[], Decimal], ...] = (
-            lambda: modeled_budget - budget,
-            lambda: modeled_actual - actual,
-            lambda: quantity_effect + rate_effect - variance,
+            lambda: modeled_budget - budget,  # noqa: B023 (each is called below, in this iteration)
+            lambda: modeled_actual - actual,  # noqa: B023
+            lambda: quantity_effect + rate_effect - variance,  # noqa: B023
         )
         for calculation in calculations:
             with localcontext():
@@ -210,7 +210,7 @@ def _driver_evidence(
                     residuals.append(None)
         failures = []
         for name, residual, allowed in zip(("budget", "actual", "components"), residuals,
-                                           (tolerance, tolerance, variance_tolerance)):
+                                           (tolerance, tolerance, variance_tolerance), strict=True):
             if residual is None:
                 failures.append(f"{name}_residual_unavailable")
             elif abs(residual) > allowed:
@@ -453,8 +453,8 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     )
 
     # Validate threshold precision/range even if no row reaches a comparison.
-    +config.dollar_threshold
-    +config.percent_threshold
+    _ = +config.dollar_threshold
+    _ = +config.percent_threshold
 
     analyzed: list[AnalyzedRow] = []
     warnings: list[str] = []

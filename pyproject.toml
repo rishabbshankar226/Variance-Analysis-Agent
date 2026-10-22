@@ -44,10 +44,20 @@ pythonpath = ["src", "."]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 140
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+# B (bugbear) catches real mistakes such as zip() silently truncating; E501 keeps lines to 140 columns.
+select = ["E4", "E7", "E9", "E501", "F", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# These files are mostly long single-line reply, prompt, report and training-text templates, where the
+# line is the content. They are also the files other work is editing, so they are wrapped when next touched.
+"src/variance_agent/chat/handlers.py" = ["E501"]
+"src/variance_agent/chat/knowledge.py" = ["E501"]
+"deterministic_conditioning/dataset_generator.py" = ["E501"]
+"deterministic_conditioning/router.py" = ["E501"]
+"deterministic_conditioning/benchmark.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

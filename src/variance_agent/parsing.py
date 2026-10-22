@@ -51,7 +51,7 @@ def _require_finite(number: Decimal, *, field: str, line_item: str) -> Decimal:
     if number.is_zero() and isinstance(exponent, int) and abs(exponent) > 999:
         return Decimal("-0") if number.is_signed() else Decimal("0")
     with financial_context():
-        +number
+        _ = +number  # raises if the value cannot be held under the financial policy
     return number
 
 
@@ -165,9 +165,9 @@ def load_csv_text(text: str) -> list[dict[str, object]]:
             continue
         if len(values) != len(headers):
             raise ValueError(f"CSV row {reader.line_num}: column count does not match header.")
-        if any(value and not header for header, value in zip(normalized_headers, values)):
+        if any(value and not header for header, value in zip(normalized_headers, values, strict=True)):
             raise ValueError(f"CSV row {reader.line_num}: data appears under a blank header.")
-        output.append({header: value for header, value in zip(normalized_headers, values) if header})
+        output.append({header: value for header, value in zip(normalized_headers, values, strict=True) if header})
         if len(output) > MAX_ROWS or len(output) * len(headers) > MAX_CELLS:
             raise ValueError("CSV exceeds the supported row or cell count.")
     return output
@@ -247,7 +247,7 @@ def _excel_loader() -> WorkbookLoader:
         raise ValueError(
             "Excel input requires the optional dependency: pip install 'variance-analysis-agent[excel]'"
         ) from exc
-    return cast(WorkbookLoader, getattr(module, "load_workbook"))
+    return cast(WorkbookLoader, getattr(module, "load_workbook"))  # noqa: B009 (dynamic optional import)
 
 
 def validate_input_format(suffix: str, *, assisted: bool = False) -> None:
@@ -338,11 +338,11 @@ def load_input(
                         raise ValueError(f"Excel row {row_number}: data appears under a blank "
                                          "header beyond the header row.")
                     if any(value is not None and value != "" and not header
-                           for header, value in zip(headers, values)):
+                           for header, value in zip(headers, values, strict=False)):
                         raise ValueError(f"Excel row {row_number}: data appears under a blank header.")
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
-                    output.append({h: v for h, v in zip(headers, padded) if h})
+                    output.append({h: v for h, v in zip(headers, padded, strict=False) if h})
                 return ParsedInput(output, ws.title, tuple(wb.sheetnames))
             except (BadZipFile, KeyError, SyntaxError) as exc:
                 raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc

@@ -59,7 +59,7 @@ def _case(rng: random.Random, *, true_places: int, printed_places: int) -> _Case
         rows.append([label, *(_text(v, printed_places) for v in value)])
 
     def add(a: list[Fraction], b: list[Fraction], sign: int = 1) -> list[Fraction]:
-        return [x + sign * y for x, y in zip(a, b)]
+        return [x + sign * y for x, y in zip(a, b, strict=True)]
 
     zero = [Fraction(0)] * periods
     revenue = zero
@@ -119,15 +119,15 @@ def _check(case: _Case, *, exact: bool, unit: Fraction) -> bool:
         assert kind == expected, label
         amounts = [_amount(str(c)) for c in cells]
         printed_effect = amounts if kind == "Revenue" else [-a for a in amounts]
-        for got, true in zip(printed_effect, effect):
+        for got, true in zip(printed_effect, effect, strict=True):
             # The shaped amount is the printed figure with the sign settled: exact when
             # printing is exact, within half a printed unit when the filing rounded.
             assert got == true if exact else abs(got - true) <= unit / 2, label
-        shaped_net = [n + e for n, e in zip(shaped_net, printed_effect)]
+        shaped_net = [n + e for n, e in zip(shaped_net, printed_effect, strict=True)]
     if shaped.unlabeled:
         return False
     tolerance = Fraction(0) if exact else unit * case.printed_figures / 2
-    for got, true in zip(shaped_net, case.net):
+    for got, true in zip(shaped_net, case.net, strict=True):
         assert abs(got - true) <= tolerance
     return True
 

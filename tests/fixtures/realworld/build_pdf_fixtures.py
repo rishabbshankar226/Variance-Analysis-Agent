@@ -32,7 +32,7 @@ def _statement(
 ) -> float:
     for label, values, indent in rows:
         page.text(LABEL_X + indent, y, label)
-        for x_right, value in zip(columns, values or ()):
+        for x_right, value in zip(columns, values or (), strict=False):
             if label in dollar_rows:
                 page.text(x_right - 52, y, "$")
             page.right(x_right, y, value)
@@ -70,7 +70,7 @@ def build_fixture_o() -> None:
     mdna.center(306, 40, FICTIONAL, size=7)
     mdna.text(LABEL_X, 60, "MANAGEMENT'S DISCUSSION AND ANALYSIS", size=10)
     mdna.text(LABEL_X, 80, "Revenue increased 12% compared with the prior year.")
-    for x_right, head in zip([400, 470, 540], ["2025", "2024", "% Change"]):
+    for x_right, head in zip([400, 470, 540], ["2025", "2024", "% Change"], strict=False):
         mdna.right(x_right, 100, head)
     _statement(mdna, 114, [400, 470, 540], [
         ("Total revenue", ("1,661.0", "1,488.3", "12 %"), 0),
@@ -82,7 +82,7 @@ def build_fixture_o() -> None:
                  "(In millions, except per share amounts)")
     cols = [380, 460, 540]
     income.center(445, 112, "Year Ended December 31,")
-    for x_right, year in zip(cols, ["2025", "2024", "2023"]):
+    for x_right, year in zip(cols, ["2025", "2024", "2023"], strict=False):
         income.right(x_right, 125, year)
     end = _statement(income, 145, cols, [
         ("Revenue:", None, 0),
@@ -116,7 +116,7 @@ def build_fixture_o() -> None:
     assets = Page()
     _title_block(assets, "CONSOLIDATED BALANCE SHEETS", "(In millions)")
     assets.center(465, 112, "December 31,")
-    for x_right, year in zip(cols, ["2025", "2024"]):
+    for x_right, year in zip(cols, ["2025", "2024"], strict=False):
         assets.right(x_right, 125, year)
     _statement(assets, 145, cols, [
         ("Cash and cash equivalents", ("820.5", "610.2"), 0),
@@ -130,7 +130,7 @@ def build_fixture_o() -> None:
     liabilities = Page()
     _title_block(liabilities, "CONSOLIDATED BALANCE SHEETS (Continued)", "(In millions)")
     liabilities.center(465, 112, "December 31,")
-    for x_right, year in zip(cols, ["2025", "2024"]):
+    for x_right, year in zip(cols, ["2025", "2024"], strict=False):
         liabilities.right(x_right, 125, year)
     _statement(liabilities, 145, cols, [
         ("Accounts payable", ("120.3", "110.0"), 0),
@@ -154,7 +154,7 @@ def build_fixture_p() -> None:
     page.center(342, 118, "September 30,")
     page.center(522, 106, "Nine Months Ended")
     page.center(522, 118, "September 30,")
-    for x_right, year in zip(cols, ["2026", "2025", "2026", "2025"]):
+    for x_right, year in zip(cols, ["2026", "2025", "2026", "2025"], strict=False):
         page.right(x_right, 131, year)
     _statement(page, 150, cols, [
         ("Revenue", ("52,310", "48,120", "150,880", "139,400"), 0),
@@ -209,7 +209,7 @@ def build_fixture_r() -> None:
     chrome(income, "42")
     income.text(LABEL_X, 70, "Consolidated Statements of Operations", size=10)
     income.text(LABEL_X, 88, "(millions, except per share data)")
-    for x_right, year in zip(cols, ["2025", "2024", "2023"]):
+    for x_right, year in zip(cols, ["2025", "2024", "2023"], strict=False):
         income.right(x_right - 18, 88, year)
     end = _statement(income, 104, cols, [
         ("Net sales", ("6,566", "6,412", "6,120"), 0),
@@ -263,7 +263,7 @@ def build_fixture_s() -> None:
         page.text(330, 104, "Three Months Ended June 30,")
         page.text(470, 104, "Six Months Ended June 30,")
         cols = [380, 440, 510, 574]
-        for x_right, year in zip(cols, ["2026", "2025", "2026", "2025"]):
+        for x_right, year in zip(cols, ["2026", "2025", "2026", "2025"], strict=False):
             page.right(x_right, 117, year)
         end = _statement(page, 133, cols, [
             ("Operating revenue:", None, 0),
@@ -328,7 +328,7 @@ def build_fixture_s() -> None:
     heading(cash, parent, "CONDENSED STATEMENTS OF CONSOLIDATED CASH FLOWS (UNAUDITED)", "(In millions)")
     cash.center(530, 104, "Six Months Ended June 30,")
     cols = [490, 574]
-    for x_right, year in zip(cols, ["2026", "2025"]):
+    for x_right, year in zip(cols, ["2026", "2025"], strict=False):
         cash.right(x_right, 117, year)
     y = _statement(cash, 133, cols, [
         ("Net cash provided by operating activities", ("2,409", "1,927"), 0),

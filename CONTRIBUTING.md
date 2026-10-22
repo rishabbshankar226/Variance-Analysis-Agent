@@ -13,6 +13,8 @@ python -m venv .venv
 ```
 
 On Windows, use `.venv\Scripts\python.exe` and the corresponding Ruff executable.
+Ruff enforces bugbear and a 140-column line limit; the few template-heavy files exempt from the limit are listed in
+`pyproject.toml`.
 The runtime needs no third-party packages for CSV/JSON. Excel and PDF are optional extras;
 without `pdf` the PDF tests are skipped, so install it before changing intake.
 Schema validators and build tools are development/release dependencies only.
