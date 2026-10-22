@@ -285,6 +285,34 @@ def test_hosted_server_accepts_the_proxys_forwarded_host(hosted_httpd: HTTPServe
     assert status == 403
 
 
+def test_hosted_server_accepts_the_platforms_external_hostname(
+    hosted_httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Render documents RENDER_EXTERNAL_HOSTNAME (e.g. myapp.onrender.com) for web services.
+    monkeypatch.setattr(_ChatHandler, "public_hosts", frozenset({"chat.onrender.com"}))
+    internal = {"Host": "10.1.2.3:10000"}
+    status, _ = _post_message(hosted_httpd, {**internal, "Origin": "https://chat.onrender.com"})
+    assert status == 200
+    status, _ = _post_message(hosted_httpd, {**internal, "Origin": "https://evil.example"})
+    assert status == 403
+
+
+def test_run_chat_server_reads_the_external_hostname_only_when_hosted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(HTTPServer, "serve_forever", lambda self: None)
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "Chat.OnRender.com")
+    try:
+        server_module.run_chat_server(host="0.0.0.0", port=0, open_browser=False, hosted=True)
+        assert _ChatHandler.public_hosts == frozenset({"chat.onrender.com"})
+        server_module.run_chat_server(host="127.0.0.1", port=0, open_browser=False)
+        assert _ChatHandler.public_hosts == frozenset()
+    finally:
+        _ChatHandler.hosted = False
+        _ChatHandler.public_hosts = frozenset()
+        _ChatHandler.local_hosts = server_module._LOOPBACK_HOSTS
+
+
 def test_local_server_ignores_a_forwarded_host(httpd: HTTPServer) -> None:
     status, _ = _post_message(
         httpd, {"X-Forwarded-Host": "evil.example", "Origin": "http://evil.example"}

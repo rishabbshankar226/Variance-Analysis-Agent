@@ -7,6 +7,7 @@ provides and disables exports to server paths.
 
 import importlib.resources
 import json
+import os
 import re
 import sys
 import traceback
@@ -181,6 +182,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # Hosted servers answer to their platform's public name, so only Origin is checked there.
     hosted: ClassVar[bool] = False
     local_hosts: ClassVar[frozenset[str]] = _LOOPBACK_HOSTS
+    # The platform's public name (Render sets RENDER_EXTERNAL_HOSTNAME), valid for Origin even if
+    # its proxy rewrites Host.
+    public_hosts: ClassVar[frozenset[str]] = frozenset()
     # The server is single-threaded and its session is shared, so a client that stalls
     # mid-request is dropped after this many seconds instead of blocking everyone.
     timeout = 15
@@ -206,11 +210,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
             origin_host = urllib.parse.urlsplit(origin).netloc.lower()
             own_hosts = {host.strip().lower()}
             if self.hosted:
-                # Behind a proxy that rewrites Host, the public name is in X-Forwarded-Host. A
-                # web page cannot send that header: it is not CORS-safelisted and this server
-                # never answers a preflight.
+                # Behind a proxy that rewrites Host, the public name is the platform's own
+                # hostname or X-Forwarded-Host. A web page cannot send that header: it is not
+                # CORS-safelisted and this server never answers a preflight.
                 forwarded = self.headers.get("X-Forwarded-Host", "").split(",")[0]
-                own_hosts.add(forwarded.strip().lower())
+                own_hosts |= {forwarded.strip().lower()} | self.public_hosts
             if not origin_host or origin_host not in own_hosts:
                 self._json_error("Cross-origin requests are not allowed.", HTTPStatus.FORBIDDEN)
                 return False
@@ -467,6 +471,8 @@ def run_chat_server(
     _ChatHandler.initial_response = None
     _ChatHandler.hosted = hosted
     _ChatHandler.local_hosts = _LOOPBACK_HOSTS | ({_hostname(host)} - {"", "0.0.0.0", "::"})
+    external = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip().lower()
+    _ChatHandler.public_hosts = frozenset({external}) if hosted and external else frozenset()
 
     if initial_input is not None:
         input_path = Path(initial_input)
