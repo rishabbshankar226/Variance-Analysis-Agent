@@ -283,12 +283,14 @@ def test_blank_comparison_prompt_names_the_basis(data: bytes, noun: str, zero_wo
     assert any(r["budget"] == Decimal("0") for r in session.parsed_rows)
 
 
-def test_keep_blank_forecast_chip_keeps_blanks() -> None:
+def test_blank_forecast_cannot_be_kept_blank() -> None:
     session = Session()
     response = handle_upload(session, FORECAST_BLANK, "blank.csv")
-    assert response.chips is not None and response.chips[1] == "Keep blank forecast values"
-    confirmed = _ask(session, response.chips[1])
-    assert "Treated blank" not in confirmed.text
+    assert response.chips is not None and len(response.chips) == 2
+    assert not any(chip.startswith("Keep") for chip in response.chips)
+    refused = _ask(session, "Keep blank forecast values")
+    assert session.phase == Phase.AWAITING_BLANK_BUDGET_CONFIRMATION
+    assert "cannot stay blank" in refused.text
 
 
 def test_bad_forecast_cell_problem_names_forecast() -> None:

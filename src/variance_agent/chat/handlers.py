@@ -50,11 +50,21 @@ from variance_agent.mapping import (
 from variance_agent.report import render_markdown
 from variance_agent.xlsx import render_xlsx
 
-from .intent import KNOWLEDGE_INTENTS, ParsedIntent, find_line_item, parse_intent
+from . import knowledge
+from .intent import (
+    KNOWLEDGE_INTENTS,
+    MAX_ROUTING_CHARS,
+    ParsedIntent,
+    find_line_item,
+    normalize_for_routing,
+    parse_intent,
+)
 from .responses import (
     Response,
     format_money,
     format_pct,
+    format_threshold_amount,
+    format_threshold_pct,
     report_places,
     row_to_table_dict,
     safe_inline,
@@ -158,7 +168,22 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if not text:
         return Response(text="Please type a message or upload a file.")
 
+    # A table pasted from a spreadsheet is thousands of characters; it is data, not a command,
+    # so it is read before the message-length cap that protects intent parsing.
+    if session.phase == Phase.AWAITING_FILE and _looks_like_pasted_table(text):
+        return _load_file(
+            session, text.encode("utf-8"), "pasted_data.tsv", None, first_visit, pasted=True,
+        )
+
     intent = parse_intent(text)
+    if intent.intent_id == "too_long":
+        return Response(
+            text=f"That message is too long for me to read as a question (limit {MAX_ROUTING_CHARS} "
+                 "characters). Ask a shorter question. To load data, paste a table before any file is "
+                 "loaded, or type `new` and use the drop zone.",
+            phase=session.phase,
+        )
+    routing_key = normalize_for_routing(text).lower()
     if intent.intent_id == "reset":
         return _handle_reset(session)
     if intent.intent_id == "greeting":
@@ -178,7 +203,7 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if intent.intent_id == "set_comparison":
         return _handle_set_comparison(session, intent)
 
-    if text.lower() in ("show technical details", "technical details"):
+    if routing_key in ("show technical details", "technical details"):
         detail = session.last_technical_detail or "No technical details recorded for the current step."
         return Response(
             text=f"**Technical Details:**\n```\n{detail}\n```",
@@ -186,26 +211,17 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=session.phase,
         )
 
+    if routing_key in _UPLOAD_ANOTHER_FILE:
+        # The page shows its drop zone for a reply in the awaiting_file phase. The session itself
+        # is left alone: the new file replaces it only once it has been read successfully.
+        return Response(
+            text="Choose the new file in the drop zone below. It replaces the current one once it "
+                 "has been read successfully; until then you can keep working with the current file.",
+            chips=["Help"],
+            phase=Phase.AWAITING_FILE,
+        )
+
     if session.phase == Phase.AWAITING_FILE:
-        if "\t" in text and ("\n" in text or "\r" in text):
-            intake_res = read_input_assisted(
-                text.encode("utf-8"), suffix=".tsv", filename="pasted_data.tsv",
-                compare_to=session.compare_to,
-            )
-            if not intake_res.has_fatal_errors and intake_res.rows:
-                session.source_bytes = text.encode("utf-8")
-                session.source_name = "pasted_data.tsv"
-                session.source_suffix = ".tsv"
-                session.parsed_rows = intake_res.rows
-                session.intake_result = intake_res
-                session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
-                summary_text = format_intake_summary(intake_res)
-                summary_text += "\n\nDoes this look right?"
-                return _with_first_upload_intro(session, Response(
-                    text=summary_text,
-                    chips=["Looks right", "Change something"],
-                    phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-                ), intake_res.comparison_basis, first_visit)
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
             phase=session.phase,
@@ -236,9 +252,36 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     return _handle_exploring(session, text)
 
 
+_UPLOAD_ANOTHER_FILE = frozenset({
+    "upload a different file", "upload different file", "upload another file", "upload a new file",
+})
+
+
+def _looks_like_pasted_table(text: str) -> bool:
+    return "\t" in text and ("\n" in text or "\r" in text)
+
+
+_PERIOD_HINT = re.compile(
+    r"\b(q[1-4]|fy\s*\d{2,4}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b",
+)
+_QUESTION_OPENERS = re.compile(
+    r"^(?:can|could|may|might|would|should|will|what|why|how|is|are|do|does|did|please|i|we)\b",
+)
+
+
+def _looks_like_typed_period(lower: str) -> bool:
+    """A short label such as 'Q3 2026', not a question that happens to contain 'may' or 'sep'."""
+    return (
+        len(lower) <= 40
+        and "?" not in lower
+        and _QUESTION_OPENERS.match(lower) is None
+        and _PERIOD_HINT.search(lower) is not None
+    )
+
+
 def _handle_intake_confirmation(session: Session, text: str) -> Response:
     """Handle confirmation of the 'Here's how I read your file' summary."""
-    lower = text.strip().lower()
+    lower = normalize_for_routing(text).lower()
     if lower in ("looks right", "yes", "confirm", "looks good", "correct", "proceed", "looks_right", "1"):
         if session.period is not None:
             if session.dollar_threshold is not None and session.percent_threshold is not None:
@@ -277,10 +320,15 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
         sheet_target = text.split(" ", 1)[1] if lower.startswith(("sheet ", "statement ")) else text
         return _handle_switch_sheet(session, ParsedIntent("switch_sheet", captures={"sheet": sheet_target}))
 
-    # If Maya directly typed the period instead of clicking 'Looks right'
+    # The user may type the period instead of clicking 'Looks right'.
     if not lower.startswith("upload") and len(text.strip()) > 1:
-        period_match = re.search(r"\b(q[1-4]|fy\s*\d{2,4}|\d{4}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b", lower)
-        if period_match:
+        if session.detected_period_pairs:
+            # The columns were read for one chosen period, so a typed period must be another one
+            # found in the file; anything else would disagree with the data on screen.
+            wanted = normalize_for_routing(_clean_period_input(text)).lower()
+            if any(normalize_for_routing(p.period).lower() == wanted for p in session.detected_period_pairs):
+                return _handle_period_choice(session, text)
+        elif _looks_like_typed_period(lower):
             session.period = text.strip()
             session.phase = Phase.AWAITING_THRESHOLDS
             return Response(
@@ -299,17 +347,35 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
     )
 
 
+def _blank_wording(basis: ComparisonBasis) -> str:
+    return "blank budgets" if basis is ComparisonBasis.BUDGET else f"blank {basis_noun(basis)} values"
+
+
 def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
-    """Handle confirmation of whether blank budgets should be treated as 0."""
-    lower = text.strip().lower()
-    treat_as_zero = "0" in lower or "unbudgeted" in lower or "treat" in lower or "yes" in lower
+    """Confirm that blank comparison amounts are read as 0 (the only reading the engine has)."""
+    lower = normalize_for_routing(text).lower()
+    basis = session.intake_result.comparison_basis if session.intake_result is not None else ComparisonBasis.BUDGET
+    blanks = _blank_wording(basis)
+    treat = f"Treat {blanks} as 0 ({zero_comparison_phrase(basis)})"
+    confirmed = "0" in lower or "unbudgeted" in lower or "treat" in lower or "yes" in lower
+    if not confirmed:
+        refused = lower.startswith(("keep", "leave", "no", "don't", "dont")) or "blank" in lower
+        return Response(
+            text=(
+                f"{blanks.capitalize()} cannot stay blank in the analysis: a line with no amount "
+                f"is read as 0 ({zero_comparison_phrase(basis)}). "
+                if refused else "Please choose how to read the blank amounts. "
+            ) + f"Choose **{treat}** to continue, or upload a corrected file.",
+            chips=[treat, "Upload a different file"],
+            phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
+        )
     if session.source_bytes is not None and session.source_suffix is not None:
         intake_res = read_input_assisted(
             session.source_bytes,
             session.source_suffix,
             filename=session.source_name or "input",
             sheet=session.worksheet,
-            treat_blank_budgets_as_zero=treat_as_zero,
+            treat_blank_budgets_as_zero=True,
             compare_to=session.compare_to,
         )
         session.parsed_rows = intake_res.rows
@@ -360,18 +426,20 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
 
 def _handle_period_choice(session: Session, text: str) -> Response:
     """Handle user selection of which period to analyze from multi-period columns."""
-    chosen_period = _clean_period_input(text)
-    if not chosen_period:
-        chips = [p.period for p in session.detected_period_pairs] if session.detected_period_pairs else []
+    options = [p.period for p in session.detected_period_pairs]
+    wanted = normalize_for_routing(_clean_period_input(text)).lower()
+    chosen_period = next((o for o in options if normalize_for_routing(o).lower() == wanted), None)
+    if chosen_period is None:
         return Response(
-            text="Please choose which period you would like to analyze.",
-            chips=chips,
+            text="Please choose which period you would like to analyze. "
+                 "Pick one of the periods found in your file.",
+            chips=options,
             phase=Phase.AWAITING_PERIOD_CHOICE,
         )
+    if session.source_bytes is None or session.source_suffix is None:
+        return _file_is_gone(session)
 
     session.period = chosen_period
-    assert session.source_bytes is not None
-    assert session.source_suffix is not None
 
     intake_res = read_input_assisted(
         session.source_bytes,
@@ -395,6 +463,16 @@ def _handle_period_choice(session: Session, text: str) -> Response:
         text=summary_text,
         chips=chips,
         phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+    )
+
+
+def _file_is_gone(session: Session) -> Response:
+    """The stored file is missing, so a question that needs it restarts at the upload."""
+    session.phase = Phase.AWAITING_FILE
+    return Response(
+        text="I no longer have your file. Please upload it again using the drop zone above.",
+        chips=["Help"],
+        phase=Phase.AWAITING_FILE,
     )
 
 
@@ -427,26 +505,70 @@ def handle_upload(
     *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
-    suffix = Path(filename).suffix.lower()
-    if session.source_bytes is not None:
-        # A comparison choice belongs to the file it was made for; a replacement file is
-        # detected afresh. A choice made before the first upload still applies to it.
-        session.compare_to = None
-    session.source_bytes = file_bytes
-    session.source_name = filename
-    session.source_suffix = suffix
+    return _load_file(session, file_bytes, filename, sheet, first_visit)
 
+
+def _load_file(
+    session: Session, file_bytes: bytes, filename: str, sheet: str | None,
+    first_visit: bool | None, *, pasted: bool = False,
+) -> Response:
+    """Read a file first, and replace the session's file only once it was read.
+
+    A successful read starts a fresh session for that file: everything the user said about
+    an earlier file (period, thresholds, currency, type choices, ...) is dropped, and only
+    deployment policy survives. A failed read leaves the earlier file, analysis and phase as
+    they were, except when the file stopped on a question its chips answer (which comparison
+    to use, which sheet to read); that file becomes the session's file so the answer has
+    something to re-read.
+    """
+    suffix = Path(filename).suffix.lower()
+    # A comparison choice belongs to the file it was made for; a replacement file is
+    # detected afresh. A choice made before the first upload still applies to it.
+    compare_to = None if session.source_bytes is not None else session.compare_to
     intake_res = read_input_assisted(
         file_bytes,
         suffix,
         filename=filename,
         sheet=sheet,
         treat_blank_budgets_as_zero=False,
-        compare_to=session.compare_to,
+        compare_to=compare_to,
     )
+    failed = intake_res.has_fatal_errors or not intake_res.rows
+    awaiting_answer = bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+    if failed and not awaiting_answer:
+        return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
+
+    session.reset()
+    session.compare_to = compare_to
+    session.source_bytes = file_bytes
+    session.source_name = filename
+    session.source_suffix = suffix
+    if failed:
+        return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
     return _with_first_upload_intro(
         session, _intake_response(session, intake_res, filename), intake_res.comparison_basis, first_visit,
     )
+
+
+def _fatal_upload_response(
+    session: Session, intake_res: IntakeResult, filename: str, *, pasted: bool = False,
+) -> Response:
+    """Explain why a file could not be read, in the phase the session is still in."""
+    technical = intake_res.fatal_error_message or (
+        f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
+        f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
+    )
+    session.last_technical_detail = technical
+    chips = _comparison_chips(intake_res.comparison_choices)
+    if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
+        for s in intake_res.available_sheets[:3]:
+            chips.append(_sheet_chip(session, s))
+    chips.extend(["Upload a different file", "Show technical details"])
+
+    text = f"⚠️ {plain_analysis_error(technical)}"
+    if pasted:
+        text += "\n\nPaste a table with a header row (such as Line Item, Budget, Actual), or upload a file."
+    return Response(text=text, chips=chips, phase=session.phase)
 
 
 def _first_upload_intro(basis: ComparisonBasis) -> str:
@@ -496,25 +618,7 @@ def _with_first_upload_intro(
 def _intake_response(session: Session, intake_res: IntakeResult, filename: str) -> Response:
     """Continue the conversation from a fresh read of the uploaded file."""
     if intake_res.has_fatal_errors or not intake_res.rows:
-        technical = intake_res.fatal_error_message or (
-            f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
-            f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
-        )
-        session.last_technical_detail = technical
-        chips = _comparison_chips(intake_res.comparison_choices)
-        if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
-            for s in intake_res.available_sheets[:3]:
-                chips.append(_sheet_chip(session, s))
-        chips.append("Upload a different file")
-        if session.last_technical_detail:
-            chips.append("Show technical details")
-
-        err_msg = plain_analysis_error(technical)
-        return Response(
-            text=f"⚠️ {err_msg}",
-            chips=chips,
-            phase=Phase.AWAITING_FILE,
-        )
+        return _fatal_upload_response(session, intake_res, filename)
 
     # Check for blank budgets needing confirmation
     if intake_res.blank_budget_items:
@@ -525,17 +629,18 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
         count = len(intake_res.blank_budget_items)
         sample = intake_res.blank_budget_items[0]
         basis = intake_res.comparison_basis
-        # Budget keeps its wording; the chips must still match the confirmation reply
-        # handler ("treat" / "0" means yes, "Keep ..." means no).
-        blanks = "blank budgets" if basis is ComparisonBasis.BUDGET else f"blank {basis_noun(basis)} values"
+        # The analysis needs a number, so a blank can only be read as 0: the one choice offered
+        # (besides fixing the file) is to confirm that, and the summary then records it.
+        blanks = _blank_wording(basis)
         treat = f"Treat {blanks} as 0 ({zero_comparison_phrase(basis)})"
         return Response(
             text=(
                 f"Found **{count}** line item{'s' if count != 1 else ''} with {blanks} "
                 f"(such as {safe_inline(sample)}).\n\n"
+                f"Blank amounts cannot stay blank in the analysis, so they are read as 0.\n\n"
                 f"{treat}?"
             ),
-            chips=[treat, f"Keep {blanks}", "Upload a different file"],
+            chips=[treat, "Upload a different file"],
             phase=Phase.AWAITING_BLANK_BUDGET_CONFIRMATION,
         )
 
@@ -609,12 +714,22 @@ def _clean_period_input(text: str) -> str:
     return cleaned or text.strip()
 
 
+_MAX_PERIOD_CHARS = 100
+
+
 def _handle_period(session: Session, text: str) -> Response:
     """Accept the reporting period."""
     period = _clean_period_input(text)
     if not period:
         return Response(
             text="The reporting period cannot be blank. Please enter a period (e.g., Q3 2026).",
+            phase=Phase.AWAITING_PERIOD,
+        )
+    if len(period) > _MAX_PERIOD_CHARS:
+        return Response(
+            text=f"Please enter a short period label of up to {_MAX_PERIOD_CHARS} characters "
+                 "(e.g., Q3 2026, October 2026, FY2026).",
+            chips=["Q3 2026", "FY2026", "October 2026"],
             phase=Phase.AWAITING_PERIOD,
         )
     if parse_intent(text).intent_id != "unknown":
@@ -821,31 +936,63 @@ _GENERIC_ITEM_WORDS = frozenset({
 })
 
 
-def _item_in_sentence(text: str, items: list[str]) -> str | None:
-    """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'."""
-    lower = text.lower()
-    named = sorted((item for item in items if item.strip() and item.lower() in lower), key=len, reverse=True)
+# Words that are never an account name when they stand alone in a sentence ("is it over budget").
+_SENTENCE_STOPWORDS = frozenset({
+    "it", "is", "a", "an", "the", "and", "or", "of", "to", "in", "on", "at", "we", "us", "our", "up",
+})
+_WORD_RE = re.compile(r"[\w&]+")
+
+
+def _items_named_in(text: str, items: list[str]) -> list[str]:
+    """Line items whose whole name appears in the sentence as whole words, longest name first."""
+    padded = f" {' '.join(_WORD_RE.findall(normalize_for_routing(text).lower()))} "
+    named: list[str] = []
+    for item in dict.fromkeys(items):
+        words = _WORD_RE.findall(normalize_for_routing(item).lower())
+        if not words or (len(words) == 1 and words[0] in _SENTENCE_STOPWORDS):
+            continue
+        if f" {' '.join(words)} " in padded:
+            named.append(item)
+    return sorted(named, key=len, reverse=True)
+
+
+def _item_in_sentence(text: str, items: list[str], named: list[str] | None = None) -> str | None:
+    """Find the one line item a free-form sentence names, e.g. 'is marketing bad?'.
+
+    ``named`` is the result of ``_items_named_in`` when the caller already has it.
+    """
+    if named is None:
+        named = _items_named_in(text, items)
     if named:
         return named[0]
-    words = set(re.findall(r"[\w&]+", lower))
+    words = set(_WORD_RE.findall(normalize_for_routing(text).lower()))
     hits = [
         item for item in dict.fromkeys(items)
         if any(len(word) >= 4 and word not in _GENERIC_ITEM_WORDS and word in words
-               for word in re.findall(r"[\w&]+", item.lower()))
+               for word in _WORD_RE.findall(normalize_for_routing(item).lower()))
     ]
     return hits[0] if len(hits) == 1 else None
 
 
+# Spelling suggestions compare the query with every account name, so both sides are bounded:
+# real account names are short, and a file can have a hundred thousand lines.
+_SUGGEST_MAX_QUERY = 40
+_SUGGEST_MAX_ITEMS = 2000
+
+
 def _suggest_items(query: str, items: list[str], limit: int = 3) -> list[str]:
     """Close spellings of a line item (whole name or any word of it); deterministic."""
-    q = query.strip().lower()
-    if len(q) < 3:
+    q = normalize_for_routing(query).lower()
+    if not 3 <= len(q) <= _SUGGEST_MAX_QUERY:
         return []
     scored: list[tuple[float, str]] = []
-    for item in dict.fromkeys(items):
-        name = item.lower()
-        score = max([difflib.SequenceMatcher(None, q, name).ratio()]
-                    + [difflib.SequenceMatcher(None, q, word).ratio() for word in name.split()])
+    for item in list(dict.fromkeys(items))[:_SUGGEST_MAX_ITEMS]:
+        name = normalize_for_routing(item).lower()[:200]
+        score = 0.0
+        for candidate in [name, *name.split()]:
+            matcher = difflib.SequenceMatcher(None, q, candidate)
+            if matcher.real_quick_ratio() >= 0.75 and matcher.quick_ratio() >= 0.75:
+                score = max(score, matcher.ratio())
         if score >= 0.75:
             scored.append((-score, item))
     return [item for _, item in sorted(scored)[:limit]]
@@ -872,7 +1019,7 @@ def _not_found(display_q: str, query: str, items: list[str], verb: str) -> Respo
 
 def _handle_thresholds(session: Session, text: str) -> Response:
     """Parse and set materiality thresholds."""
-    parsed = _parse_threshold_text(text)
+    parsed = _parse_threshold_text(normalize_for_routing(text))
     if parsed is None:
         return Response(
             text="I couldn't parse those thresholds. Please enter them as: `$10,000 or 5%`",
@@ -886,8 +1033,8 @@ def _handle_thresholds(session: Session, text: str) -> Response:
     session.phase = Phase.AWAITING_CURRENCY
 
     return Response(
-        text=f"Thresholds set: **{CURRENCY_SYMBOLS.get(session.currency, '$')}"
-             f"{dollar:,.2f}** or **{pct_ratio * 100:.1f}%**\n\n"
+        text=f"Thresholds set: **{format_threshold_amount(dollar, session.currency)}** "
+             f"or **{format_threshold_pct(pct_ratio)}**\n\n"
              "What is the reporting currency?",
         chips=["USD", "EUR", "GBP"],
         phase=Phase.AWAITING_CURRENCY,
@@ -913,7 +1060,7 @@ def _clean_currency_input(text: str) -> str:
 
 def _handle_currency(session: Session, text: str) -> Response:
     """Set the reporting currency and run the initial analysis."""
-    currency = _clean_currency_input(text)
+    currency = _clean_currency_input(normalize_for_routing(text))
     try:
         validate_currency(currency)
     except ValueError:
@@ -929,10 +1076,22 @@ def _handle_currency(session: Session, text: str) -> Response:
 
 def _run_analysis(session: Session) -> Response:
     """Run the deterministic analysis engine and handle classification."""
-    assert session.parsed_rows is not None
-    assert session.period is not None
-    assert session.dollar_threshold is not None
-    assert session.percent_threshold is not None
+    if session.parsed_rows is None:
+        return _file_is_gone(session)
+    if session.period is None:
+        session.phase = Phase.AWAITING_PERIOD
+        return Response(
+            text="What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+            phase=Phase.AWAITING_PERIOD,
+        )
+    if session.dollar_threshold is None or session.percent_threshold is None:
+        session.phase = Phase.AWAITING_THRESHOLDS
+        return Response(
+            text="I need your materiality thresholds first. Enter a dollar amount and a percentage, "
+                 "for example: `$10,000 or 5%`",
+            chips=["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"],
+            phase=Phase.AWAITING_THRESHOLDS,
+        )
 
     intake = session.intake_result
     config = AnalysisConfig(
@@ -1010,7 +1169,7 @@ def _run_analysis(session: Session) -> Response:
 
 def _handle_classify(session: Session, text: str) -> Response:
     """Handle classification of an unclassified line item."""
-    text_lower = text.strip().lower()
+    text_lower = normalize_for_routing(text).lower()
 
     if text_lower in ("skip all", "done", "skip remaining"):
         session.skipped_items.update(session.unclassified_queue)
@@ -1138,14 +1297,13 @@ def _build_analysis_summary(session: Session) -> Response:
     assert result is not None
     cfg = result.config
     places = report_places(result)
-    symbol = CURRENCY_SYMBOLS[cfg.currency]
 
     lines = [
         "✅ **Analysis Complete**\n",
         f"**Period:** {safe_inline(cfg.period)}",
         f"**Currency:** {cfg.currency}",
-        f"**Thresholds:** {symbol}{cfg.dollar_threshold:,.2f} or "
-        f"{cfg.percent_threshold * 100:.1f}%\n",
+        f"**Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+        f"{format_threshold_pct(cfg.percent_threshold)}\n",
     ]
 
     # Revenue summary
@@ -1307,6 +1465,11 @@ def _pct_text(value: Decimal | None, spec: str = ".1f", suffix: str = "%") -> st
     return "N/A" if value is None else f"{value:{spec}}{suffix}"
 
 
+def _variance_percent(variance: Decimal, comparison: Decimal) -> Decimal | None:
+    """Variance as a percent of the absolute comparison amount (the engine's rule), None if it is 0."""
+    return None if comparison == 0 else ratio(variance, abs(comparison)) * Decimal(100)
+
+
 def _pct_change(new: Decimal | None, old: Decimal | None) -> Decimal | None:
     return None if new is None or old is None else new - old
 
@@ -1320,6 +1483,12 @@ def _unclassified_note(result: AnalysisResult) -> str:
             "classify them for complete figures.")
 
 
+def _with_unclassified_note(text: str, result: AnalysisResult) -> str:
+    """Append the unclassified-rows caveat to an answer built from category totals."""
+    note = _unclassified_note(result)
+    return f"{text}\n\n{note}" if note else text
+
+
 def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
     """Line items without reconciled subtotal/total rows, which would double count."""
     return [row for row in result.rows if not row.excluded_from_aggregation]
@@ -1327,63 +1496,16 @@ def _detail_rows(result: AnalysisResult) -> list[AnalyzedRow]:
 
 def _handle_exploring(session: Session, text: str) -> Response:
     """Route a message through the intent parser during the EXPLORING phase."""
-    if "save layout mapping" in text.lower() or "save mapping" in text.lower():
+    if normalize_for_routing(text).lower() in ("save layout mapping", "save mapping"):
         return _handle_save_mapping(session)
 
     intent = parse_intent(text)
-    result = session.result
-    assert result is not None
+    if session.result is None:
+        return _file_is_gone(session)
 
-    handler_map: dict[str, Callable[[], Response]] = {
-        "help": lambda: _handle_help(session),
-        "reset": lambda: _handle_reset(session),
-        "summary": lambda: _handle_summary(session),
-        "material": lambda: _handle_material(session),
-        "filter_status_u": lambda: _handle_filter_status(session, Status.UNFAVORABLE),
-        "filter_status_f": lambda: _handle_filter_status(session, Status.FAVORABLE),
-        "filter_type_rev": lambda: _handle_filter_type(session, LineType.REVENUE),
-        "filter_type_exp": lambda: _handle_filter_type(session, LineType.EXPENSE),
-        "filter_type_unc": lambda: _handle_filter_type(session, LineType.UNCLASSIFIED),
-        "top_n": lambda: _handle_top_n(session, intent),
-        "explain": lambda: _handle_explain(session, intent),
-        "detail": lambda: _handle_detail(session, intent),
-        "set_threshold": lambda: _handle_set_threshold(session, intent),
-        "warnings": lambda: _handle_warnings(session),
-        "recommendations": lambda: _handle_recommendations(session),
-        "totals": lambda: _handle_totals(session),
-        "full_report": lambda: _handle_full_report(session),
-        "export_report": lambda: _handle_export_report(session, intent),
-        "export_audit": lambda: _handle_export_audit(session, intent),
-        "export_csv": lambda: _handle_export_csv(session, intent),
-        "export_xlsx": lambda: _handle_export_xlsx(session, intent),
-        # ── Advanced Analytics ──
-        "waterfall": lambda: _handle_waterfall(session),
-        "what_if": lambda: _handle_what_if(session, intent),
-        "sensitivity": lambda: _handle_sensitivity(session),
-        "run_rate": lambda: _handle_run_rate(session, intent),
-        "biggest_risks": lambda: _handle_biggest_risks(session),
-        "biggest_wins": lambda: _handle_biggest_wins(session),
-        "revenue_status": lambda: _handle_revenue_status(session),
-        "expense_status": lambda: _handle_expense_status(session),
-        "budget_utilization": lambda: _handle_budget_utilization(session),
-        "top_percent": lambda: _handle_top_percent(session),
-        "metrics_count": lambda: _handle_metrics_count(session),
-        "variance_concentration": lambda: _handle_concentration(session),
-        "unbudgeted_spend": lambda: _handle_unbudgeted(session),
-        "cost_savings": lambda: _handle_cost_savings(session),
-        "revenue_misses": lambda: _handle_revenue_misses(session),
-        "compare_items": lambda: _handle_compare(session, intent),
-        "executive_memo": lambda: _handle_executive_memo(session),
-        "driver_summary": lambda: _handle_driver_summary(session),
-        "tldr": lambda: _handle_tldr(session),
-        "profitability": lambda: _handle_profitability(session),
-        "list_sheets": lambda: _handle_list_sheets(session),
-        "switch_sheet": lambda: _handle_switch_sheet(session, intent),
-    }
-
-    handler = handler_map.get(intent.intent_id)
+    handler = _EXPLORING_HANDLERS.get(intent.intent_id)
     if handler is not None:
-        return handler()
+        return handler(session, intent)
 
     return _handle_unknown(session, text)
 
@@ -1413,7 +1535,7 @@ def _handle_help(session: Session) -> Response:
         "• `sheets` / `sheet <name>` — View and switch between Excel worksheets or PDF statements\n"
         "• `metrics` — Total accounts, materiality rate, and portfolio breakdown\n\n"
         "**Financial Concepts & Education (Ask Anytime):**\n"
-        "• `what is materiality?` — Dual-threshold noise reduction logic\n"
+        "• `what is materiality?` — The dollar-or-percent test for what needs explaining\n"
         "• `favorable vs unfavorable` — Sign conventions for revenue vs. expense\n"
         "• `what is net impact?` — Net operating income formula\n"
         "• `budget vs forecast` — AOP vs. Latest Estimate baseline principles\n"
@@ -1421,7 +1543,7 @@ def _handle_help(session: Session) -> Response:
         "• `operating leverage` — Fixed vs. variable costs and drop-through\n"
         "• `what are financial kpis?` — Key variance performance indicators\n"
         "• `what is driver decomposition?` — Price vs. volume causal analysis\n"
-        "• `audit trail` — Cryptographic SHA-256 provenance standards\n\n"
+        "• `audit trail` — SHA-256 source fingerprints and what the audit file records\n\n"
         "**Standard Exploration:**\n"
         "• `summary` — Executive summary with net operating impact\n"
         "• `material` — Show all material variances\n"
@@ -1447,7 +1569,7 @@ def _handle_help(session: Session) -> Response:
     return Response(
         text=text,
         chips=["Summary", "Biggest risks", "Biggest wins", "Material"],
-        phase=Phase.EXPLORING,
+        phase=session.phase,
     )
 
 
@@ -1494,8 +1616,8 @@ def _handle_material(session: Session) -> Response:
     chips.extend(["Unfavorable", "Favorable", "Export report"])
 
     return Response(
-        text=f"**Material Variances** (Threshold: {CURRENCY_SYMBOLS[cfg.currency]}"
-             f"{cfg.dollar_threshold:,.2f} or {cfg.percent_threshold * 100:.1f}%)",
+        text=f"**Material Variances** (Threshold: {format_threshold_amount(cfg.dollar_threshold, cfg.currency)}"
+             f" or {format_threshold_pct(cfg.percent_threshold)})",
         table=table,
         chips=chips,
         phase=Phase.EXPLORING,
@@ -1581,9 +1703,29 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     places = report_places(result)
 
     count = int(intent.captures.get("count", "5"))
-    count = max(1, min(count, len(_detail_rows(result))))
+    if count < 1:
+        return Response(
+            text="Please ask for at least 1 line, for example `top 3`.",
+            chips=["Top 3", "Top 5", "Summary"],
+            phase=Phase.EXPLORING,
+        )
 
-    sorted_rows = sorted(_detail_rows(result), key=lambda r: abs(r.variance_dollars), reverse=True)
+    kind = intent.captures.get("kind", "").lower()
+    line_type = (
+        LineType.EXPENSE if kind.startswith(("expense", "cost"))
+        else LineType.REVENUE if kind.startswith(("revenue", "sales", "income"))
+        else None
+    )
+    rows = [row for row in _detail_rows(result) if line_type is None or row.line_type == line_type]
+    if not rows:
+        return Response(
+            text=f"No {line_type.value if line_type else 'line item'} rows found.",
+            chips=["Summary", "Material"],
+            phase=Phase.EXPLORING,
+        )
+    count = min(count, len(rows))
+
+    sorted_rows = sorted(rows, key=lambda r: abs(r.variance_dollars), reverse=True)
     top = sorted_rows[:count]
     session.last_table_items = [row.line_item for row in top]
     if session.last_table_items:
@@ -1592,42 +1734,20 @@ def _handle_top_n(session: Session, intent: ParsedIntent) -> Response:
     table = [row_to_table_dict(row, cfg.currency, places, _heading(cfg)) for row in top]
 
     return Response(
-        text=f"**Top {count} Variances by Absolute Amount**",
+        text=f"**Top {count} {line_type.value + ' ' if line_type else ''}Variances by Absolute Amount**",
         table=table,
         chips=[f"Why {top[0].line_item}?", "Material", "Summary"],
         phase=Phase.EXPLORING,
     )
 
 
-def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
-    """Explain the driver decomposition for a specific line item."""
-    result = session.result
-    assert result is not None
-    cfg = result.config
-    places = report_places(result)
+def _rows_named(result: AnalysisResult, name: str) -> list[AnalyzedRow]:
+    """Every row with this exact line-item name (a name can repeat, e.g. one per department)."""
+    return [row for row in result.rows if row.line_item == name]
 
-    raw_query = intent.captures.get("item", "")
-    item_query = _resolve_item_query(raw_query, session)
-    all_items = [row.line_item for row in result.rows]
-    matches = find_line_item(item_query, all_items)
 
-    if not matches:
-        display_q = safe_inline(raw_query or item_query or "unspecified item")
-        return _not_found(display_q, item_query, all_items, "Why")
-
-    if len(matches) > 1:
-        chips = [f"Why {m}?" for m in matches[:5]]
-        return Response(
-            text="Multiple matches found. Which one?\n\n"
-                 + "\n".join(f"• {safe_inline(m)}" for m in matches),
-            chips=chips,
-            phase=Phase.EXPLORING,
-        )
-
-    matched_name = matches[0]
-    session.last_focused_item = matched_name
-    row = next(r for r in result.rows if r.line_item == matched_name)
-
+def _explain_lines(cfg: AnalysisConfig, row: AnalyzedRow, places: int) -> list[str]:
+    """The driver-evidence answer for one row."""
     lines = [
         f"**Driver Evidence: {safe_inline(row.line_item)}**\n",
         f"{_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}",
@@ -1661,6 +1781,46 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
             f"**Status: No driver data provided.**\n\n"
             f"To support a causal claim, provide: {likely_metrics}."
         )
+    return lines
+
+
+def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
+    """Explain the driver decomposition for a specific line item."""
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+
+    raw_query = intent.captures.get("item", "")
+    item_query = _resolve_item_query(raw_query, session)
+    all_items = [row.line_item for row in result.rows]
+    matches = find_line_item(item_query, all_items)
+    if not matches and raw_query:
+        named = _item_in_sentence(raw_query, all_items)  # "why is marketing over budget?"
+        matches = [named] if named else []
+
+    if not matches:
+        display_q = safe_inline(raw_query or item_query or "unspecified item")
+        return _not_found(display_q, item_query, all_items, "Why")
+
+    if len(matches) > 1:
+        chips = [f"Why {m}?" for m in matches[:5]]
+        return Response(
+            text="Multiple matches found. Which one?\n\n"
+                 + "\n".join(f"• {safe_inline(m)}" for m in matches),
+            chips=chips,
+            phase=Phase.EXPLORING,
+        )
+
+    matched_name = matches[0]
+    session.last_focused_item = matched_name
+    named_rows = _rows_named(result, matched_name)
+
+    sections = ["\n".join(_explain_lines(cfg, row, places)) for row in named_rows]
+    lines = [sections[0]] if len(sections) == 1 else [
+        f"{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.\n",
+        *[f"**Row {i} of {len(named_rows)}**\n\n{section}" for i, section in enumerate(sections, 1)],
+    ]
 
     chips = ["Material", "Summary"]
     # Suggest explaining the next material item
@@ -1673,7 +1833,7 @@ def _handle_explain(session: Session, intent: ParsedIntent) -> Response:
         pass
 
     return Response(
-        text="\n".join(lines),
+        text="\n\n".join(lines),
         chips=chips,
         phase=Phase.EXPLORING,
     )
@@ -1690,6 +1850,9 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
     item_query = _resolve_item_query(raw_query, session)
     all_items = [row.line_item for row in result.rows]
     matches = find_line_item(item_query, all_items)
+    if not matches and raw_query:
+        named = _item_in_sentence(raw_query, all_items)  # "details on how marketing is doing"
+        matches = [named] if named else []
 
     if not matches:
         display_q = safe_inline(raw_query or item_query or "unspecified item")
@@ -1705,7 +1868,15 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
 
     matched_name = matches[0]
     session.last_focused_item = matched_name
-    row = next(r for r in result.rows if r.line_item == matched_name)
+    named_rows = _rows_named(result, matched_name)
+    if len(named_rows) > 1:
+        return Response(
+            text=f"{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.",
+            table=[row_to_table_dict(r, cfg.currency, places, _heading(cfg)) for r in named_rows],
+            chips=[f"Why {matched_name}?", "Material", "Summary"],
+            phase=Phase.EXPLORING,
+        )
+    row = named_rows[0]
 
     lines = [
         f"**{safe_inline(row.line_item)}**\n",
@@ -1952,6 +2123,56 @@ def _handle_full_report(session: Session) -> Response:
     )
 
 
+def _export_response(
+    session: Session, intent: ParsedIntent, content: str | bytes, filename: str, *,
+    written: str, ready: str, retry_chip: str, written_chips: list[str], ready_chips: list[str],
+) -> Response:
+    """Write an export to the path the user named, or hand it over as a download.
+
+    A path is only honoured where the deployment allows it (not on the hosted server).
+    """
+    path = _export_path(intent)
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
+    if path:
+        try:
+            write_text_outputs({Path(path): content})
+            return Response(
+                text=f"✅ {written} written to `{safe_inline(path)}`.",
+                chips=written_chips,
+                phase=Phase.EXPLORING,
+            )
+        except (ValueError, OSError) as exc:
+            return Response(
+                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
+                chips=[retry_chip],
+                phase=Phase.EXPLORING,
+            )
+    return Response(
+        text=ready,
+        download={filename: content},
+        chips=ready_chips,
+        phase=Phase.EXPLORING,
+    )
+
+
+def _period_slug(period: str) -> str:
+    """The period as a file-name fragment: letters, digits, '-' and '_' only."""
+    return re.sub(r"[^a-z0-9-]+", "_", normalize_for_routing(period).lower()).strip("_") or "period"
+
+
+_PATH_CHARACTERS = re.compile(r"[/\\.~]")
+
+
+def _export_path(intent: ParsedIntent) -> str | None:
+    """The file path an export asked for, if the words after 'export report' are one.
+
+    "download report now" names no file; a path has a separator, an extension or a '~'.
+    """
+    path = intent.captures.get("path", "").strip().strip("'\"`")
+    return path if path and _PATH_CHARACTERS.search(path) else None
+
+
 def _path_export_disabled(path: str, intent: ParsedIntent) -> Response:
     """Refuse a server-side write on hosted deployments and point to the download."""
     chip = {
@@ -1973,32 +2194,13 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     assert result is not None
 
     report = render_markdown(result)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_report_{period_slug}.md"
 
-    path = intent.captures.get("path")
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): report})
-            return Response(
-                text=f"✅ Report written to `{safe_inline(path)}`.",
-                chips=["Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export report"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📄 Markdown report ready for download.",
-        download={filename: report},
-        chips=["Export excel", "Export audit", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, report, filename,
+        written="Report", ready="📄 Markdown report ready for download.", retry_chip="Export report",
+        written_chips=["Export audit", "Summary"], ready_chips=["Export excel", "Export audit", "Summary"],
     )
 
 
@@ -2024,33 +2226,25 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
                          if session.intake_result is not None else None),
     )
     audit_json = serialize_audit_json(record)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_audit_{period_slug}.json"
 
-    path = intent.captures.get("path")
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): audit_json})
-            return Response(
-                text=f"✅ Audit JSON written to `{safe_inline(path)}`.",
-                chips=["Export report", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export audit"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📋 Audit JSON ready for download.",
-        download={filename: audit_json},
-        chips=["Export report", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, audit_json, filename,
+        written="Audit JSON", ready="📋 Audit JSON ready for download.", retry_chip="Export audit",
+        written_chips=["Export report", "Summary"], ready_chips=["Export report", "Summary"],
     )
+
+
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_text(value: str) -> str:
+    """Keep a text cell from being run as a formula when the CSV is opened in a spreadsheet.
+
+    Applied to label cells only; the numeric columns are written as numbers ('-100' stays one).
+    """
+    return f"'{value}" if value.startswith(_FORMULA_STARTS) else value
 
 
 def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
@@ -2087,7 +2281,7 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
             driver_desc = f"{row.driver_evidence.label} ({rec_str}): {comp_str}"
 
         writer.writerow([
-            row.line_item,
+            _csv_text(row.line_item),
             row.line_type.value,
             str(row.budget),
             str(row.actual),
@@ -2096,37 +2290,18 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
             row.status.value,
             "Yes" if row.material else "No",
             "Yes" if row.excluded_from_aggregation else "No",
-            row.classification_source,
-            driver_desc,
+            _csv_text(row.classification_source),
+            _csv_text(driver_desc),
         ])
 
     csv_text = output.getvalue()
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_data_{period_slug}.csv"
 
-    path = intent.captures.get("path")
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): csv_text})
-            return Response(
-                text=f"✅ Analysis CSV written to `{safe_inline(path)}`.",
-                chips=["Export report", "Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export csv"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📊 Analysis CSV ready for download.",
-        download={filename: csv_text},
-        chips=["Export excel", "Export report", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, csv_text, filename,
+        written="Analysis CSV", ready="📊 Analysis CSV ready for download.", retry_chip="Export csv",
+        written_chips=["Export report", "Export audit", "Summary"], ready_chips=["Export excel", "Export report", "Summary"],
     )
 
 
@@ -2136,81 +2311,20 @@ def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
     assert result is not None
 
     workbook = render_xlsx(result)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_workbook_{period_slug}.xlsx"
 
-    path = intent.captures.get("path")
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): workbook})
-            return Response(
-                text=f"✅ Excel workbook written to `{safe_inline(path)}`.",
-                chips=["Export report", "Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export excel"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text=("📗 Excel workbook ready for download: Summary, Material Variances, "
-              "Root Causes & Actions, and All Rows sheets."),
-        download={filename: workbook},
-        chips=["Export report", "Export audit", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, workbook, filename,
+        written="Excel workbook", ready=("📗 Excel workbook ready for download: Summary, Material Variances, "
+              "Root Causes & Actions, and All Rows sheets."), retry_chip="Export excel",
+        written_chips=["Export report", "Export audit", "Summary"], ready_chips=["Export report", "Export audit", "Summary"],
     )
 
 
 def _handle_knowledge(session: Session, intent_id: str) -> Response:
     """Answer financial domain questions with FP&A precision."""
-    from .knowledge import (
-        explain_audit_trail,
-        explain_budget_vs_forecast,
-        explain_budgeting_methods,
-        explain_comparison_types,
-        explain_drivers,
-        explain_favorable_unfavorable,
-        explain_kpis,
-        explain_materiality,
-        explain_mitigation_actions,
-        explain_net_impact,
-        explain_operating_leverage,
-        explain_supported_formats,
-        explain_timing_vs_permanent,
-        explain_unclassified,
-        explain_variance_analysis,
-        explain_ebitda_margin,
-        explain_variance_bridge,
-    )
-
-    explanations: dict[str, str] = {
-        "concept_variance": explain_variance_analysis(),
-        "concept_f_vs_u": explain_favorable_unfavorable(),
-        "concept_fav": explain_favorable_unfavorable(),
-        "concept_unfav": explain_favorable_unfavorable(),
-        "concept_materiality": explain_materiality(),
-        "concept_net_impact": explain_net_impact(),
-        "concept_drivers": explain_drivers(),
-        "concept_unclassified": explain_unclassified(),
-        "concept_audit": explain_audit_trail(),
-        "concept_actions": explain_mitigation_actions(),
-        "concept_formats": explain_supported_formats(),
-        "concept_budget_forecast": explain_budget_vs_forecast(),
-        "concept_timing_permanent": explain_timing_vs_permanent(),
-        "concept_operating_leverage": explain_operating_leverage(),
-        "concept_kpis": explain_kpis(),
-        "concept_budgeting_methods": explain_budgeting_methods(),
-        "concept_ebitda_margin": explain_ebitda_margin(),
-        "concept_bridge": explain_variance_bridge(),
-        "comparison_types": explain_comparison_types(),
-    }
-
-    text = explanations.get(intent_id, explain_variance_analysis())
+    text = _KNOWLEDGE_TEXTS.get(intent_id, knowledge.explain_variance_analysis)()
 
     # If currently in a guided setup phase, provide a helpful prompt to continue
     chips = ["Summary", "Material", "Biggest risks", "Help"]
@@ -2269,8 +2383,8 @@ def _handle_biggest_risks(session: Session) -> Response:
         return Response(
             text="✅ **No Material Risks Detected**\n\n"
                  "There are zero material unfavorable variances exceeding your thresholds "
-                 f"({CURRENCY_SYMBOLS.get(cfg.currency, '$')}{cfg.dollar_threshold:,.2f} or "
-                 f"{cfg.percent_threshold * 100:.1f}%). "
+                 f"({format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+                 f"{format_threshold_pct(cfg.percent_threshold)}). "
                  + ("All revenue targets and expense allocations " if _is_budget(cfg)
                     else "All revenue and expense lines ")
                  + f"performed within {_noun(cfg)} tolerance.",
@@ -2397,9 +2511,11 @@ def _handle_revenue_status(session: Session) -> Response:
         f"• **{_planned(cfg)} Revenue:** {format_money(rev.budget, cfg.currency, places)}",
         f"• **Actual Revenue:** {format_money(rev.actual, cfg.currency, places)}",
     ]
-    if rev.budget != 0:
+    if rev.budget > 0:
         rate = ratio(rev.actual, rev.budget) * Decimal("100")
         lines.append(f"• **Achievement Rate:** {rate:.1f}% of {_noun(cfg)}")
+    elif rev.budget < 0:
+        lines.append(f"• **Achievement Rate:** N/A (the {_noun(cfg)} is negative, so a ratio is not meaningful)")
     lines.append(f"• **Status:** {status_label(rev.status)}\n")
     lines.append("**Revenue Breakdown:**")
 
@@ -2457,13 +2573,18 @@ def _handle_expense_status(session: Session) -> Response:
         f"• **{_planned(cfg)} Expenses:** {format_money(exp.budget, cfg.currency, places)}",
         f"• **Actual Expenses:** {format_money(exp.actual, cfg.currency, places)}",
     ]
-    if exp.budget != 0:
+    utilization = "Budget Utilization" if _is_budget(cfg) else f"Spend vs. {_heading(cfg)}"
+    if exp.budget > 0:
         burn = ratio(exp.actual, exp.budget) * Decimal("100")
-        utilization = "Budget Utilization" if _is_budget(cfg) else f"Spend vs. {_heading(cfg)}"
         lines.append(f"• **{utilization}:** {burn:.1f}%")
+    elif exp.budget < 0:
+        lines.append(f"• **{utilization}:** N/A (the {_noun(cfg)} is negative, so a ratio is not meaningful)")
     lines.append(f"• **Status:** {status_label(exp.status)}\n")
 
-    overspent = [r for r in expense_rows if r.actual > r.budget]
+    overspent = sorted(
+        (r for r in expense_rows if r.actual > r.budget),
+        key=lambda r: r.variance_dollars, reverse=True,
+    )
     if overspent:
         over_heading = "Over-Budget Accounts" if _is_budget(cfg) else f"Accounts Over {_heading(cfg)}"
         lines.append(f"**{over_heading}:**")
@@ -2501,7 +2622,9 @@ def _handle_budget_utilization(session: Session) -> Response:
         zero_note = f"zero {noun} expenses"
     lines = [f"📊 **{title}**\n"]
 
-    if result.expenses.budget != 0:
+    if result.expenses.budget < 0:
+        lines.append(f"• **{utilization}:** N/A (negative {noun} expenses; a utilization ratio is not meaningful)")
+    elif result.expenses.budget != 0:
         util = ratio(result.expenses.actual, result.expenses.budget) * Decimal("100")
         diff = result.expenses.actual - result.expenses.budget
         status_text = f"over {noun} by {format_money(diff, cfg.currency, places)}" if diff > 0 else f"under {noun} by {format_money(abs(diff), cfg.currency, places)}"
@@ -2509,7 +2632,7 @@ def _handle_budget_utilization(session: Session) -> Response:
     else:
         lines.append(f"• **{utilization}:** N/A ({zero_note})")
 
-    if result.revenue.budget != 0:
+    if result.revenue.budget > 0:
         achieve = ratio(result.revenue.actual, result.revenue.budget) * Decimal("100")
         diff = result.revenue.actual - result.revenue.budget
         status_text = f"beat by {format_money(diff, cfg.currency, places)}" if diff >= 0 else f"shortfall of {format_money(abs(diff), cfg.currency, places)}"
@@ -2528,7 +2651,7 @@ def _handle_budget_utilization(session: Session) -> Response:
         )
 
     chips = ["Summary", "Biggest risks", "Biggest wins"]
-    return Response(text="\n".join(lines), chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note("\n".join(lines), result), chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_top_percent(session: Session) -> Response:
@@ -2573,17 +2696,18 @@ def _handle_metrics_count(session: Session) -> Response:
     result = session.result
     assert result is not None
 
-    total_rows = len(result.rows)
+    rows = _detail_rows(result)
+    total_rows = len(rows)
     mat_rows = len(result.material_rows)
     mat_pct = (mat_rows / total_rows * 100) if total_rows > 0 else 0
 
-    f_count = sum(1 for r in result.rows if r.status == Status.FAVORABLE)
-    u_count = sum(1 for r in result.rows if r.status == Status.UNFAVORABLE)
-    n_count = sum(1 for r in result.rows if r.status == Status.NEUTRAL)
+    f_count = sum(1 for r in rows if r.status == Status.FAVORABLE)
+    u_count = sum(1 for r in rows if r.status == Status.UNFAVORABLE)
+    n_count = sum(1 for r in rows if r.status == Status.NEUTRAL)
 
-    rev_count = sum(1 for r in result.rows if r.line_type == LineType.REVENUE)
-    exp_count = sum(1 for r in result.rows if r.line_type == LineType.EXPENSE)
-    unc_count = sum(1 for r in result.rows if r.line_type == LineType.UNCLASSIFIED)
+    rev_count = sum(1 for r in rows if r.line_type == LineType.REVENUE)
+    exp_count = sum(1 for r in rows if r.line_type == LineType.EXPENSE)
+    unc_count = sum(1 for r in rows if r.line_type == LineType.UNCLASSIFIED)
 
     lines = [
         "🔢 **Portfolio Metrics Breakdown**\n",
@@ -2630,7 +2754,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
                     "Actual": format_money(result.revenue.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(rev_var, cfg.currency, places),
-                    "Variance (%)": f"{(ratio(rev_var, result.revenue.budget) * 100):+.1f}%" if result.revenue.budget != 0 else "N/A",
+                    "Variance (%)": _pct_text(_variance_percent(rev_var, result.revenue.budget), "+.1f"),
                     "Status": "F" if rev_var >= 0 else "U",
                 },
                 {
@@ -2638,7 +2762,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(result.expenses.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(exp_var, cfg.currency, places),
-                    "Variance (%)": f"{(ratio(exp_var, result.expenses.budget) * 100):+.1f}%" if result.expenses.budget != 0 else "N/A",
+                    "Variance (%)": _pct_text(_variance_percent(exp_var, result.expenses.budget), "+.1f"),
                     "Status": "F" if exp_var <= 0 else "U",
                 },
                 {
@@ -2653,10 +2777,11 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
         status_word = "beat" if net_impact >= 0 else "shortfall"
         target = "budget target" if _is_budget(cfg) else _noun(cfg)
         return Response(
-            text=f"⚖️ **Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
-                 f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, representing a "
-                 f"**{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against the {target} of "
-                 f"{format_money(base_profit, cfg.currency, places)}.",
+            text=_with_unclassified_note(
+                f"⚖️ **Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
+                f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, representing a "
+                f"**{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against the {target} of "
+                f"{format_money(base_profit, cfg.currency, places)}.", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -2688,7 +2813,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "% of Revenue": _pct_text(cost_ratio),
                 },
                 {
-                    "Category": "Operating Profit (EBITDA)",
+                    "Category": "Operating Profit",
                     _heading(cfg): format_money(result.revenue.budget - result.expenses.budget, cfg.currency, places),
                     "Actual": format_money(actual_profit, cfg.currency, places),
                     "Operating Flow": "Net Retained Margin",
@@ -2696,10 +2821,11 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                 },
             ]
         return Response(
-            text=f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
-                 f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
-                 f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
-                 f"({_pct_text(margin)} EBITDA margin; cost-to-income ratio of {_pct_text(cost_ratio)}).",
+            text=_with_unclassified_note(
+                f"⚖️ **Macro Financial Comparison: Revenue vs. Expenses**\n\n"
+                f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
+                f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
+                f"({_pct_text(margin)} operating margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -3177,6 +3303,11 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
             if s.lower() == target_sheet.lower():
                 matched_sheet = s
                 break
+    if matched_sheet is None and target_sheet.isdigit() and len(target_sheet) <= 6:
+        # "sheet 2" is the second one in the numbered list, not a name that happens to contain a 2
+        position = int(target_sheet)
+        if 1 <= position <= len(sheets):
+            matched_sheet = sheets[position - 1]
     if matched_sheet is None:
         candidates = [s for s in sheets if target_sheet.lower() in s.lower()]
         if len(candidates) == 1:
@@ -3234,8 +3365,12 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     if intake_res.available_sheets:
         session.available_sheets = intake_res.available_sheets
 
+    session.last_table_items = []
+    session.last_focused_item = None
+    session.unclassified_queue = []
+    session.pending_gl_rules = []
     if (
-        session.phase == Phase.EXPLORING
+        session.phase in (Phase.EXPLORING, Phase.RESOLVE_UNCLASSIFIED)
         and session.period is not None
         and session.dollar_threshold is not None
         and session.percent_threshold is not None
@@ -3386,6 +3521,14 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         amount_dec = abs(amount_dec)
         is_negative = True
 
+    if is_negative and is_percent and amount_dec > Decimal(100):
+        return Response(
+            text=f"A drop of more than 100% would take {safe_inline(target_clean)} below zero, "
+                 "which is not a meaningful scenario. Try a smaller percentage or a dollar amount.",
+            chips=["What if revenue drops 5%?", "What if expenses drop 10%?", "Sensitivity analysis"],
+            phase=Phase.EXPLORING,
+        )
+
     # Identify target: aggregate revenue, aggregate expense, or specific line item
     is_rev_agg = target_clean.lower() in ("revenue", "revenues", "sales", "topline", "top line")
     is_exp_agg = target_clean.lower() in ("expense", "expenses", "costs", "spend", "opex")
@@ -3407,6 +3550,15 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
                 chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Summary"],
                 phase=Phase.EXPLORING,
             )
+
+    if matched_row is not None and matched_row.line_type == LineType.UNCLASSIFIED:
+        return Response(
+            text=f"**{safe_inline(matched_row.line_item)}** is not classified as Revenue or Expense, so I "
+                 "cannot tell whether a change helps or hurts profit. Classify it first: type `new`, "
+                 "upload the file again and label it when asked, or add a Type column to your file.",
+            chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Summary"],
+            phase=Phase.EXPLORING,
+        )
 
     with financial_context() as context:
         context.traps[Inexact] = False
@@ -3487,7 +3639,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
         f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
         f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
-        f"• **Simulated EBITDA Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
+        f"• **Simulated Operating Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
         f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. {'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
     )
 
@@ -3530,7 +3682,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
     ]
 
     chips = ["Sensitivity analysis", "Run rate", "Waterfall", "What if expenses drop 5%?"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_sensitivity(session: Session) -> Response:
@@ -3572,7 +3724,7 @@ def _handle_sensitivity(session: Session) -> Response:
                 "Expenses": format_money(s_exp, cur, places),
                 "Operating Profit": format_money(s_profit, cur, places),
                 f"Var vs {_heading(cfg)} ({sym})": format_money(s_var_budget, cur, places),
-                "EBITDA Margin": _pct_text(s_margin),
+                "Operating Margin": _pct_text(s_margin),
                 "Status": status,
             })
 
@@ -3588,39 +3740,52 @@ def _handle_sensitivity(session: Session) -> Response:
     )
 
     chips = ["What if revenue drops 5%?", "What if expenses increase 5%?", "Run rate", "Waterfall"]
-    return Response(text=text, table=table_rows, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table_rows, chips=chips, phase=Phase.EXPLORING)
 
 
 _UNRECOGNISED_PERIOD = "Quarterly (3 months assumed)"
 
 
-def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
-    """Detect elapsed months and period label from session period text."""
-    p = period.lower()
-    if "q1" in p:
-        return 3, "Q1 (3 months elapsed)"
-    if "q2" in p:
-        return 6, "Q2 (6 months elapsed)"
-    if "q3" in p:
-        return 9, "Q3 (9 months elapsed)"
-    if "q4" in p or "fy" in p or "full year" in p or "annual" in p:
-        return 12, "Full Year (12 months)"
-    if "h1" in p or "first half" in p:
-        return 6, "H1 (6 months elapsed)"
-    if "h2" in p or "second half" in p:
-        return 12, "H2 (12 months)"
+_MONTH_NUMBERS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_MONTH_NAME = re.compile(r"\b(" + "|".join(sorted(_MONTH_NUMBERS, key=len, reverse=True)) + r")\b")
+_QUARTER = re.compile(r"(?<![a-z\d])q([1-4])(?!\d)")
+_HALF = re.compile(r"(?<![a-z\d])h([12])(?!\d)")
 
-    months = {
-        "jan": 1, "january": 1, "feb": 2, "february": 2,
-        "mar": 3, "march": 3, "apr": 4, "april": 4,
-        "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-        "aug": 8, "august": 8, "sep": 9, "september": 9,
-        "oct": 10, "october": 10, "nov": 11, "november": 11,
-        "dec": 12, "december": 12,
-    }
-    for m_name, m_num in months.items():
-        if re.search(rf"\b{m_name}\b", p):
-            return m_num, f"{m_name.capitalize()} ({m_num} month{'s' if m_num != 1 else ''} elapsed)"
+
+def _detect_period_elapsed_months(period: str) -> tuple[int, str]:
+    """Detect elapsed months and period label from session period text.
+
+    The period names the end of the year-to-date span: a quarter or half by its number, a
+    month (or the last month of a range such as 'Jan-Jun 2026') by its position in the year.
+    """
+    p = normalize_for_routing(period).lower()
+    quarter = _QUARTER.search(p)
+    if quarter:
+        number = int(quarter.group(1))
+        if number == 4:
+            return 12, "Full Year (12 months)"
+        return 3 * number, f"Q{number} ({3 * number} months elapsed)"
+    half = _HALF.search(p)
+    if half or "first half" in p or "second half" in p:
+        if (half is not None and half.group(1) == "2") or "second half" in p:
+            return 12, "H2 (12 months)"
+        return 6, "H1 (6 months elapsed)"
+    if re.search(r"\b(?:fy|fiscal\s+year|year)\s+end", p):
+        return 12, "Full Year (12 months)"
+
+    month_hits = _MONTH_NAME.findall(p)
+    if month_hits:
+        m_name = month_hits[-1]
+        m_num = _MONTH_NUMBERS[m_name]
+        return m_num, f"{m_name.capitalize()} ({m_num} month{'s' if m_num != 1 else ''} elapsed)"
+
+    if re.search(r"\bfy|full\s+year|annual", p):
+        return 12, "Full Year (12 months)"
 
     m_match = re.search(r"\bm(?:onth)?\s*([1-9]|1[0-2])\b", p)
     if m_match:
@@ -3689,7 +3854,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         f"• **Corporate Latest Estimate (LE = Actuals + {remaining_label})**: **{format_money(le_profit, cur, places)}**\n"
         f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at {format_money(le_profit, cur, places)} "
         f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n"
-        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (EBITDA Margin: {_pct_text(rr_margin)})\n"
+        f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (Operating Margin: {_pct_text(rr_margin)})\n"
         f"• **Annualized Expense Run-Rate**: {format_money(rr_exp, cur, places)}"
     )
 
@@ -3700,7 +3865,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(actual_exp, cur, places),
             "Operating Profit": format_money(actual_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(actual_profit - budget_profit, cur, places),
-            "EBITDA Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
+            "Operating Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
             "Status": "F" if (actual_profit - budget_profit) >= 0 else "U",
         },
         {
@@ -3709,7 +3874,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(rr_exp, cur, places),
             "Operating Profit": format_money(rr_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(rr_var, cur, places),
-            "EBITDA Margin": _pct_text(rr_margin),
+            "Operating Margin": _pct_text(rr_margin),
             "Status": "F" if rr_var >= 0 else "U",
         },
         {
@@ -3718,7 +3883,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(le_exp, cur, places),
             "Operating Profit": format_money(le_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(le_var, cur, places),
-            "EBITDA Margin": _pct_text(le_margin),
+            "Operating Margin": _pct_text(le_margin),
             "Status": "F" if le_var >= 0 else "U",
         },
         {
@@ -3727,13 +3892,13 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(budget_exp * multiplier, cur, places),
             "Operating Profit": format_money(annual_budget_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(Decimal(0), cur, places),
-            "EBITDA Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
+            "Operating Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
             "Status": "Neutral",
         },
     ]
 
     chips = ["Sensitivity analysis", "What if revenue drops 5%?", "Waterfall", "Summary"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
 
 
 def _handle_executive_memo(session: Session) -> Response:
@@ -3750,12 +3915,12 @@ def _handle_executive_memo(session: Session) -> Response:
         rev_budget = result.revenue.budget
         rev_actual = result.revenue.actual
         rev_var = rev_actual - rev_budget
-        rev_pct = (ratio(rev_var, rev_budget) * Decimal(100)) if rev_budget != 0 else None
+        rev_pct = _variance_percent(rev_var, rev_budget)
 
         exp_budget = result.expenses.budget
         exp_actual = result.expenses.actual
         exp_var = exp_actual - exp_budget
-        exp_pct = (ratio(exp_var, exp_budget) * Decimal(100)) if exp_budget != 0 else None
+        exp_pct = _variance_percent(exp_var, exp_budget)
 
         budget_profit = rev_budget - exp_budget
         actual_profit = rev_actual - exp_actual
@@ -3791,7 +3956,7 @@ def _handle_executive_memo(session: Session) -> Response:
         "# 📑 Executive Management Briefing & Variance Commentary",
         f"**Reporting Period:** {cfg.period}  ",
         f"**Currency:** {cfg.currency}  ",
-        f"**Materiality Thresholds:** {format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%  \n",
+        f"**Materiality Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}  \n",
         "---",
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
@@ -3799,7 +3964,7 @@ def _handle_executive_memo(session: Session) -> Response:
         f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
         f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) "
         f"against the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(budget_profit, cur, places)}**. "
-        f"EBITDA margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
+        f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
         "### 2. Top-Line Performance (Revenue)",
         f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(rev_budget, cur, places)}** "
         f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'Favorable' if rev_var >= 0 else 'Unfavorable'}).",
@@ -3823,7 +3988,7 @@ def _handle_executive_memo(session: Session) -> Response:
 
     memo_lines.extend([
         "\n### 4. Governance & Material Variances",
-        f"• **{len(result.material_rows)}** line items breached the materiality hurdle ({format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%).",
+        f"• **{len(result.material_rows)}** line items breached the materiality hurdle ({format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}).",
         f"• **Net Flow-Through:** {format_money(net_impact, cur, places)} retained in net operating profit.",
         f"• **Driver Evidence Coverage:** {reconciled_count} of {len(result.material_rows)} material items verified by mathematical driver decomposition.",
         "\n### 5. Prioritized Management Action Items",
@@ -3850,7 +4015,7 @@ def _handle_executive_memo(session: Session) -> Response:
         memo_lines.append("3. **Audit Verification:** All material drivers mathematically reconciled and signed off.")
 
     memo_text = "\n".join(memo_lines)
-    period_slug = cfg.period.replace(" ", "_").lower()
+    period_slug = _period_slug(cfg.period)
     filename = f"executive_memo_{period_slug}.md"
 
     table_overview = [
@@ -3942,7 +4107,7 @@ def _handle_greeting(session: Session) -> Response:
 
         text = (
             f"👋 **Hello!** I am ready to explore your **{cfg.period}** financial results.\n\n"
-            f"Currently tracking **{cur}** with materiality set at **{format_money(cfg.dollar_threshold, cur, places)} or {cfg.percent_threshold * 100:.1f}%**. "
+            f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. "
             f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n"
             f"What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
         )
@@ -3995,15 +4160,22 @@ def _handle_gratitude(session: Session) -> Response:
 
 def _handle_identity(session: Session) -> Response:
     """Explain agent identity, institutional purpose, and deterministic guarantees."""
+    where = (
+        "On this shared hosted version your file is processed on the host's server, so do not "
+        "upload confidential data; run the app locally for sensitive files."
+        if not session.path_exports_enabled
+        else "Run locally, your file is read on your own machine."
+    )
     text = (
         "🤖 **Institutional Variance Analysis Agent**\n\n"
         "I am an intelligent, deterministic financial analysis assistant built specifically for FP&A teams, "
         "controllers, and CFO organizations.\n\n"
         "**How I differ from a non-deterministic LLM:**\n"
         "• **100% Deterministic Calculations**: Zero hallucination. Every variance, percentage, and waterfall step is computed with 50-digit exact Decimal precision.\n"
-        "• **Cryptographic Provenance**: Every analysis produces a SHA-256 fingerprint for complete auditability.\n"
+        "• **Source Fingerprints**: Every analysis produces a SHA-256 fingerprint of the file it came from, for traceability.\n"
         "• **Conversational Fluency**: I interpret natural business queries, multi-turn follow-ups, and scenarios, giving you the ease of a conversational AI with the trustworthiness of an audited ledger.\n"
-        "• **Zero External Dependencies**: Standard library Python only; your sensitive financial data never leaves your environment."
+        "• **No AI Model In The Loop**: The calculations use standard-library Python and no language model sees or computes your numbers. "
+        + where
     )
     chips = ["Summary", "Executive memo", "What is materiality?", "Help"] if session.phase == Phase.EXPLORING else ["Supported file formats", "Help"]
     return Response(text=text, chips=chips, phase=session.phase)
@@ -4058,7 +4230,7 @@ def _handle_tldr(session: Session) -> Response:
     text = (
         f"⚡ **The Executive TL;DR for {cfg.period}:**\n\n"
         f"Operating Profit finished at **{format_money(actual_profit, cur, places)}**, delivering a **{format_money(abs(net_impact), cur, places)} {beat_word}** "
-        f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with EBITDA margin standing at **{_pct_text(margin)}**. "
+        f"({_pct_text(impact_pct, '+.1f')} vs. {'planned budget' if _is_budget(cfg) else _noun(cfg)} of {format_money(budget_profit, cur, places)}) with operating margin standing at **{_pct_text(margin)}**. "
         f"Top-line revenue {rev_word} {'plan' if _is_budget(cfg) else 'the ' + _noun(cfg)} by {format_money(abs(rev_var), cur, places)}, while operating expenses {exp_word} {format_money(abs(exp_var), cur, places)}.{driver_context}"
     )
 
@@ -4091,7 +4263,7 @@ def _handle_profitability(session: Session) -> Response:
     text = (
         f"📊 **Profitability Standing: {cfg.period}**\n\n"
         f"Operations are {stance}!\n\n"
-        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (EBITDA margin: **{_pct_text(actual_margin)}**)\n"
+        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (operating margin: **{_pct_text(actual_margin)}**)\n"
         f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} ({'Planned' if _is_budget(cfg) else _heading(cfg)} margin: {_pct_text(budget_margin)})\n"
         f"• **Variance vs. {_heading(cfg)}:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {_pct_text(margin_delta, '+.1f', ' pts')})\n\n"
         f"Operating profit reflects gross commercial revenues ({format_money(result.revenue.actual, cur, places)}) "
@@ -4123,16 +4295,52 @@ def _handle_profitability(session: Session) -> Response:
     ]
 
     chips = ["Waterfall", "Run rate", "Executive memo", "Summary"]
-    return Response(text=text, table=table, chips=chips, phase=Phase.EXPLORING)
+    return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING)
+
+
+def _describe_item_reply(session: Session, matched_name: str) -> Response:
+    """Conversational reply for a line item the user mentioned in passing."""
+    assert session.result is not None
+    session.last_focused_item = matched_name
+    row = next(r for r in session.result.rows if r.line_item == matched_name)
+    cfg = session.result.config
+    places = report_places(session.result)
+    if row.status == Status.FAVORABLE:
+        status_desc = "favorable beat"
+    elif row.status == Status.UNFAVORABLE:
+        status_desc = ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE
+                       else "unfavorable revenue shortfall")
+    elif row.status == Status.NEUTRAL:
+        status_desc = "in line with budget" if _is_budget(cfg) else f"in line with the {_noun(cfg)}"
+    else:
+        status_desc = "unclassified, so no favorable/unfavorable direction"
+    return Response(
+        text=f"Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}:\n\n"
+             f"• **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)}\n"
+             f"• **Actual:** {format_money(row.actual, cfg.currency, places)}\n"
+             f"• **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** "
+             f"({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc})\n\n"
+             f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what if {safe_inline(row.line_item)} drops 5%`)?",
+        table=[row_to_table_dict(row, cfg.currency, places, _heading(cfg))],
+        chips=[f"Why {row.line_item}?", f"Detail {row.line_item}?", "Waterfall", "Summary"],
+        phase=Phase.EXPLORING,
+    )
 
 
 def _handle_unknown(session: Session, text: str) -> Response:
     """Fallback for unrecognized queries with intelligent financial keyword detection and conversational guidance."""
-    text_lower = text.strip().lower()
+    text_lower = normalize_for_routing(text).lower()
+
+    # An account named in full ("Profit Sharing looks high") outranks the keywords below.
+    named: list[str] = []
+    if session.result is not None:
+        named = _items_named_in(text, [r.line_item for r in session.result.rows])
+        if named:
+            return _describe_item_reply(session, named[0])
 
     if any(k in text_lower for k in ("margin", "ebitda", "profit", "operating income")):
         return _handle_profitability(session) if (session.phase == Phase.EXPLORING and session.result is not None) else Response(
-            text="💡 **FP&A Note:** Net operating impact measures the overall variance contribution toward operating income / EBITDA. "
+            text="💡 **FP&A Note:** Net operating impact measures the overall variance contribution toward operating profit. "
                  "Under standard financial rules, profit measures are not treated as additive revenue to prevent double-counting. "
                  "Try asking: `summary`, `what is net impact?`, or `totals`.",
             chips=["Summary", "Net impact", "Totals"],
@@ -4155,34 +4363,10 @@ def _handle_unknown(session: Session, text: str) -> Response:
         resolved = _resolve_item_query(text, session)
         matches = find_line_item(resolved, line_items)
         if not matches:
-            named = _item_in_sentence(text, line_items)
-            matches = [named] if named else []
+            named_item = _item_in_sentence(text, line_items, named)
+            matches = [named_item] if named_item else []
         if matches:
-            matched_name = matches[0]
-            session.last_focused_item = matched_name
-            row = next(r for r in session.result.rows if r.line_item == matched_name)
-            cfg = session.result.config
-            places = report_places(session.result)
-            if row.status == Status.FAVORABLE:
-                status_desc = "favorable beat"
-            elif row.status == Status.UNFAVORABLE:
-                status_desc = ("unfavorable cost overrun" if row.line_type == LineType.EXPENSE
-                               else "unfavorable revenue shortfall")
-            elif row.status == Status.NEUTRAL:
-                status_desc = "in line with budget" if _is_budget(cfg) else f"in line with the {_noun(cfg)}"
-            else:
-                status_desc = "unclassified, so no favorable/unfavorable direction"
-            return Response(
-                text=f"Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}:\n\n"
-                     f"• **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)}\n"
-                     f"• **Actual:** {format_money(row.actual, cfg.currency, places)}\n"
-                     f"• **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** "
-                     f"({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc})\n\n"
-                     f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what if {safe_inline(row.line_item)} drops 5%`)?",
-                table=[row_to_table_dict(row, cfg.currency, places, _heading(cfg))],
-                chips=[f"Why {row.line_item}?", f"Detail {row.line_item}?", "Waterfall", "Summary"],
-                phase=Phase.EXPLORING,
-            )
+            return _describe_item_reply(session, matches[0])
 
     first_item = session.result.rows[0].line_item if (session.result and session.result.rows) else "Marketing"
     return Response(
@@ -4195,3 +4379,76 @@ def _handle_unknown(session: Session, text: str) -> Response:
         chips=["Summary", "Waterfall", "Biggest risks", "Help"],
         phase=session.phase,
     )
+
+
+# Intent id -> the explanation it asks for; each is built only when asked.
+_KNOWLEDGE_TEXTS: dict[str, Callable[[], str]] = {
+    "concept_variance": knowledge.explain_variance_analysis,
+    "concept_f_vs_u": knowledge.explain_favorable_unfavorable,
+    "concept_fav": knowledge.explain_favorable_unfavorable,
+    "concept_unfav": knowledge.explain_favorable_unfavorable,
+    "concept_materiality": knowledge.explain_materiality,
+    "concept_net_impact": knowledge.explain_net_impact,
+    "concept_drivers": knowledge.explain_drivers,
+    "concept_unclassified": knowledge.explain_unclassified,
+    "concept_audit": knowledge.explain_audit_trail,
+    "concept_actions": knowledge.explain_mitigation_actions,
+    "concept_formats": knowledge.explain_supported_formats,
+    "concept_budget_forecast": knowledge.explain_budget_vs_forecast,
+    "concept_timing_permanent": knowledge.explain_timing_vs_permanent,
+    "concept_operating_leverage": knowledge.explain_operating_leverage,
+    "concept_kpis": knowledge.explain_kpis,
+    "concept_budgeting_methods": knowledge.explain_budgeting_methods,
+    "concept_ebitda_margin": knowledge.explain_ebitda_margin,
+    "concept_bridge": knowledge.explain_variance_bridge,
+    "comparison_types": knowledge.explain_comparison_types,
+}
+
+
+# Intent id -> handler for the exploring phase, built once rather than on every message.
+_EXPLORING_HANDLERS: dict[str, Callable[[Session, ParsedIntent], Response]] = {
+    "help": lambda session, intent: _handle_help(session),
+    "reset": lambda session, intent: _handle_reset(session),
+    "summary": lambda session, intent: _handle_summary(session),
+    "material": lambda session, intent: _handle_material(session),
+    "filter_status_u": lambda session, intent: _handle_filter_status(session, Status.UNFAVORABLE),
+    "filter_status_f": lambda session, intent: _handle_filter_status(session, Status.FAVORABLE),
+    "filter_type_rev": lambda session, intent: _handle_filter_type(session, LineType.REVENUE),
+    "filter_type_exp": lambda session, intent: _handle_filter_type(session, LineType.EXPENSE),
+    "filter_type_unc": lambda session, intent: _handle_filter_type(session, LineType.UNCLASSIFIED),
+    "top_n": lambda session, intent: _handle_top_n(session, intent),
+    "explain": lambda session, intent: _handle_explain(session, intent),
+    "detail": lambda session, intent: _handle_detail(session, intent),
+    "set_threshold": lambda session, intent: _handle_set_threshold(session, intent),
+    "warnings": lambda session, intent: _handle_warnings(session),
+    "recommendations": lambda session, intent: _handle_recommendations(session),
+    "totals": lambda session, intent: _handle_totals(session),
+    "full_report": lambda session, intent: _handle_full_report(session),
+    "export_report": lambda session, intent: _handle_export_report(session, intent),
+    "export_audit": lambda session, intent: _handle_export_audit(session, intent),
+    "export_csv": lambda session, intent: _handle_export_csv(session, intent),
+    "export_xlsx": lambda session, intent: _handle_export_xlsx(session, intent),
+    # ── Advanced Analytics ──
+    "waterfall": lambda session, intent: _handle_waterfall(session),
+    "what_if": lambda session, intent: _handle_what_if(session, intent),
+    "sensitivity": lambda session, intent: _handle_sensitivity(session),
+    "run_rate": lambda session, intent: _handle_run_rate(session, intent),
+    "biggest_risks": lambda session, intent: _handle_biggest_risks(session),
+    "biggest_wins": lambda session, intent: _handle_biggest_wins(session),
+    "revenue_status": lambda session, intent: _handle_revenue_status(session),
+    "expense_status": lambda session, intent: _handle_expense_status(session),
+    "budget_utilization": lambda session, intent: _handle_budget_utilization(session),
+    "top_percent": lambda session, intent: _handle_top_percent(session),
+    "metrics_count": lambda session, intent: _handle_metrics_count(session),
+    "variance_concentration": lambda session, intent: _handle_concentration(session),
+    "unbudgeted_spend": lambda session, intent: _handle_unbudgeted(session),
+    "cost_savings": lambda session, intent: _handle_cost_savings(session),
+    "revenue_misses": lambda session, intent: _handle_revenue_misses(session),
+    "compare_items": lambda session, intent: _handle_compare(session, intent),
+    "executive_memo": lambda session, intent: _handle_executive_memo(session),
+    "driver_summary": lambda session, intent: _handle_driver_summary(session),
+    "tldr": lambda session, intent: _handle_tldr(session),
+    "profitability": lambda session, intent: _handle_profitability(session),
+    "list_sheets": lambda session, intent: _handle_list_sheets(session),
+    "switch_sheet": lambda session, intent: _handle_switch_sheet(session, intent),
+}

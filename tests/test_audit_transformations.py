@@ -91,17 +91,6 @@ def test_chat_audit_records_confirmed_assisted_intake_transformations() -> None:
     _validator(CURRENT_SCHEMA_VERSION).validate(record)
 
 
-def test_chat_audit_records_kept_blank_budgets_as_no_zero_reads() -> None:
-    session = Session()
-    _analyze_in_chat(session, TITLE_BLOCK_CSV, "Keep blank budgets")
-
-    transformations = _export_audit(session)["transformations"]
-
-    assert isinstance(transformations, dict)
-    assert transformations["zero_reads"] == {"accounting_dashes": 0, "blank_budgets": 0}
-    assert transformations["unit_scale"] == "1000"
-
-
 def test_chat_audit_records_saved_layout_mapping_digest() -> None:
     session = Session()
     _analyze_in_chat(session, TITLE_BLOCK_CSV, "Treat blank budgets as 0 (unbudgeted)")

@@ -469,7 +469,7 @@ def test_zero_baseline_percentages_show_na(csv: bytes, message: str) -> None:
 def test_zero_revenue_budget_margin_is_na_in_memo() -> None:
     session, _ = start_csv(ZERO_REVENUE_BUDGET)
     memo = handle_message(session, "memo").text
-    assert "EBITDA margin **moved** from N/A to **76.0%** (N/A)" in memo
+    assert "Operating margin **moved** from N/A to **76.0%** (N/A)" in memo
 
 
 def test_memo_unbudgeted_percent_has_no_plus_sign() -> None:
@@ -703,7 +703,7 @@ def test_summary_tldr_and_profitability_match_oracle(name: str, steps: tuple[str
     session = _explore_any(name, steps)
     tldr = handle_message(session, "tldr").text
     assert f"Operating Profit finished at **{_fmt(totals['actual_operating_profit'], key, sym)}**" in tldr
-    assert f"EBITDA margin standing at **{totals['actual_margin_pct']}%**" in tldr
+    assert f"operating margin standing at **{totals['actual_margin_pct']}%**" in tldr
     profit = handle_message(session, "profitability").text
     in_black = Decimal(totals["actual_operating_profit"]) >= 0
     assert ("in the black" in profit) == in_black and ("in the red" in profit) == (not in_black)
