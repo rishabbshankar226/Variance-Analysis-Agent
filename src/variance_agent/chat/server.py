@@ -7,8 +7,11 @@ provides and disables exports to server paths.
 
 import json
 import re
+import sys
+import traceback
 import urllib.parse
 import webbrowser
+from collections.abc import Callable
 from email.message import Message
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -179,9 +182,30 @@ class _ChatHandler(BaseHTTPRequestHandler):
                 return False
         return True
 
+    def _guarded(self, route: Callable[[], None]) -> None:
+        """Run a route so that a failure becomes a logged JSON 500, never a dropped connection."""
+        try:
+            if self._request_is_allowed():
+                route()
+        except (ConnectionError, TimeoutError):
+            # The client went away or stalled mid-request; there is nobody to answer.
+            self.close_connection = True
+        except Exception:
+            print(f"Unhandled error serving {self.command} {self.path}:", file=sys.stderr)
+            traceback.print_exc()
+            try:
+                self._json_error(
+                    "Something went wrong while handling that request. "
+                    "Please try again, or type reset to start over.",
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            except OSError:
+                self.close_connection = True
+
     def do_GET(self) -> None:
-        if not self._request_is_allowed():
-            return
+        self._guarded(self._route_get)
+
+    def _route_get(self) -> None:
         if self.path in {"/", "/index.html", "/chat.html"}:
             self._serve_static("chat.html", "text/html; charset=utf-8")
         elif self.path in {"/status", "/health", "/healthz"}:
@@ -223,8 +247,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def do_POST(self) -> None:
-        if not self._request_is_allowed():
-            return
+        self._guarded(self._route_post)
+
+    def _route_post(self) -> None:
         if self.path == "/upload":
             self._handle_upload()
         elif self.path == "/message":
@@ -327,12 +352,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
             return None
         return self.rfile.read(length)
 
-    def _send_response(self, response: object) -> None:
+    def _send_response(self, response: Response) -> None:
         """Serialize a Response dataclass to JSON and send it."""
-        from .responses import Response
-
-        assert isinstance(response, Response)
-
         payload: dict[str, object] = {
             "text": response.text,
             "phase": response.phase or self.session.phase,
@@ -351,7 +372,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
         self._json_response(payload)
 
     def _json_response(self, data: object, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        # ASCII-only on the wire: a lone surrogate in user text would not encode as UTF-8.
+        body = json.dumps(data, ensure_ascii=True).encode("ascii")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

@@ -29,7 +29,9 @@ def httpd() -> Iterator[HTTPServer]:
     _ChatHandler.initial_response = None
     server_module._downloads.clear()
     server = HTTPServer(("127.0.0.1", 0), _ChatHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
     thread.start()
     yield server
     server.shutdown()
@@ -311,3 +313,80 @@ def test_run_chat_server_wires_hosted_mode_and_the_bound_host(
     finally:
         _ChatHandler.hosted = False
         _ChatHandler.local_hosts = server_module._LOOPBACK_HOSTS
+
+
+# ---------------------------------------------------------------------------
+# A handler failure is an answer, not a dropped connection
+# ---------------------------------------------------------------------------
+
+def test_a_failing_message_handler_gets_a_json_500_and_a_stderr_traceback(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def explode(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("kaboom-secret")
+
+    monkeypatch.setattr(server_module, "handle_message", explode)
+    response, data = _request(httpd, "POST", "/message", b'{"text": "help"}',
+                              {"Content-Type": "application/json"})
+    assert response.status == 500
+    payload = json.loads(data)
+    assert payload["error"]
+    assert "kaboom-secret" not in payload["error"]  # details go to the log, not the visitor
+    assert "kaboom-secret" in capsys.readouterr().err
+
+
+def test_a_failing_upload_handler_gets_a_json_500(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def explode(*args: object, **kwargs: object) -> object:
+        raise ValueError("bad internals")
+
+    monkeypatch.setattr(server_module, "handle_upload", explode)
+    body, headers = _multipart(b'filename="a.csv"')
+    response, data = _request(httpd, "POST", "/upload", body, headers)
+    assert response.status == 500
+    assert "error" in json.loads(data)
+
+
+def test_a_failing_get_gets_a_json_500(httpd: HTTPServer) -> None:
+    class BrokenSession:
+        @property
+        def phase(self) -> Phase:
+            raise RuntimeError("no phase")
+
+    _ChatHandler.session = BrokenSession()  # type: ignore[assignment]
+    response, data = _request(httpd, "GET", "/status")
+    assert response.status == 500
+    assert "error" in json.loads(data)
+
+
+def test_the_server_keeps_serving_after_a_handler_failure(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = server_module.handle_message
+    calls = {"n": 0}
+
+    def flaky(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("first call fails")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(server_module, "handle_message", flaky)
+    assert _post_message(httpd, {})[0] == 500
+    assert _post_message(httpd, {})[0] == 200
+
+
+def test_a_lone_surrogate_in_a_reply_does_not_crash_serialisation(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from variance_agent.chat.responses import Response
+
+    monkeypatch.setattr(
+        server_module, "handle_message", lambda *a, **k: Response(text="odd \ud800 text")
+    )
+    response, data = _request(httpd, "POST", "/message", b'{"text": "help"}',
+                              {"Content-Type": "application/json"})
+    assert response.status == 200
+    assert json.loads(data)["text"] == "odd \ud800 text"
+    data.decode("ascii")  # escaped on the wire, so the reply is plain ASCII
