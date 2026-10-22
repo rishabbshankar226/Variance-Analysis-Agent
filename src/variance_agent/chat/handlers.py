@@ -2231,6 +2231,17 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
     )
 
 
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_text(value: str) -> str:
+    """Keep a text cell from being run as a formula when the CSV is opened in a spreadsheet.
+
+    Applied to label cells only; the numeric columns are written as numbers ('-100' stays one).
+    """
+    return f"'{value}" if value.startswith(_FORMULA_STARTS) else value
+
+
 def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
     """Generate RFC 4180 compliant CSV export of the analysis data rows."""
     result = session.result
@@ -2265,7 +2276,7 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
             driver_desc = f"{row.driver_evidence.label} ({rec_str}): {comp_str}"
 
         writer.writerow([
-            row.line_item,
+            _csv_text(row.line_item),
             row.line_type.value,
             str(row.budget),
             str(row.actual),
@@ -2274,8 +2285,8 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
             row.status.value,
             "Yes" if row.material else "No",
             "Yes" if row.excluded_from_aggregation else "No",
-            row.classification_source,
-            driver_desc,
+            _csv_text(row.classification_source),
+            _csv_text(driver_desc),
         ])
 
     csv_text = output.getvalue()
@@ -3361,6 +3372,11 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
             if s.lower() == target_sheet.lower():
                 matched_sheet = s
                 break
+    if matched_sheet is None and target_sheet.isdigit() and len(target_sheet) <= 6:
+        # "sheet 2" is the second one in the numbered list, not a name that happens to contain a 2
+        position = int(target_sheet)
+        if 1 <= position <= len(sheets):
+            matched_sheet = sheets[position - 1]
     if matched_sheet is None:
         candidates = [s for s in sheets if target_sheet.lower() in s.lower()]
         if len(candidates) == 1:

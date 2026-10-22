@@ -173,3 +173,54 @@ def test_an_unrecognised_period_is_flagged_not_guessed_silently(period: str) -> 
     session = analysed()
     session.period = period
     assert "was not recognised" in ask(session, "run rate").text
+
+
+# ---- "sheet 2" means the second sheet in the list -------------------------------------
+
+
+def _workbook(sheets: dict[str, int]) -> bytes:
+    """One small P&L per sheet; Sales actual is the sheet's number so each sheet is recognisable."""
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    first = True
+    for name, sales in sheets.items():
+        sheet = book.active if first else book.create_sheet()
+        assert sheet is not None
+        sheet.title = name
+        first = False
+        sheet.append(["Line Item", "Type", "Budget", "Actual"])
+        sheet.append(["Sales", "Revenue", 1000, sales])
+        sheet.append(["Rent", "Expense", 500, 500])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def test_sheet_number_picks_the_listed_position_not_a_name_containing_the_digit() -> None:
+    session = analysed(_workbook({"Alpha 2": 1100, "Beta": 1200, "Gamma": 1300}), "w.xlsx")
+    response = ask(session, "sheet 2")
+    assert session.worksheet == "Beta"
+    assert "Switched to worksheet **'Beta'**" in response.text
+    assert "Analysis Complete" in response.text
+    assert "$1,200.00" in response.text
+
+
+def test_a_sheet_literally_named_with_a_digit_still_wins() -> None:
+    session = analysed(_workbook({"Alpha": 1100, "2": 1200, "Gamma": 1300}), "w.xlsx")
+    ask(session, "sheet 2")
+    assert session.worksheet == "2"
+
+
+def test_sheet_number_out_of_range_is_not_found() -> None:
+    session = analysed(_workbook({"Alpha": 1100, "Beta": 1200}), "w.xlsx")
+    assert "was not found" in ask(session, "sheet 7").text
+    assert session.worksheet == "Alpha"
+
+
+def test_a_year_that_is_not_a_position_still_matches_by_name() -> None:
+    session = analysed(_workbook({"Alpha": 1100, "FY 2025": 1200}), "w.xlsx")
+    ask(session, "sheet 2025")
+    assert session.worksheet == "FY 2025"
