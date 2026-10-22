@@ -1,6 +1,6 @@
 """Local HTTP server for the deterministic chatbot.
 
-Uses only the Python standard library (http.server, json, email.parser).
+Uses only the Python standard library (http.server, json, importlib.resources).
 Binds to 127.0.0.1 by default; hosted mode binds the address the platform
 provides and disables exports to server paths.
 """
@@ -14,8 +14,8 @@ import urllib.parse
 import webbrowser
 from collections import OrderedDict
 from collections.abc import Callable
-from email.message import Message
 from dataclasses import dataclass
+from email.message import Message
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -204,7 +204,14 @@ class _ChatHandler(BaseHTTPRequestHandler):
             # A page's own requests carry an Origin equal to the Host it was loaded from; another
             # site (or an opaque "null" origin) cannot forge that match.
             origin_host = urllib.parse.urlsplit(origin).netloc.lower()
-            if not origin_host or origin_host != host.strip().lower():
+            own_hosts = {host.strip().lower()}
+            if self.hosted:
+                # Behind a proxy that rewrites Host, the public name is in X-Forwarded-Host. A
+                # web page cannot send that header: it is not CORS-safelisted and this server
+                # never answers a preflight.
+                forwarded = self.headers.get("X-Forwarded-Host", "").split(",")[0]
+                own_hosts.add(forwarded.strip().lower())
+            if not origin_host or origin_host not in own_hosts:
                 self._json_error("Cross-origin requests are not allowed.", HTTPStatus.FORBIDDEN)
                 return False
         return True

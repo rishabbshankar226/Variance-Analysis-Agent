@@ -271,6 +271,27 @@ def test_hosted_server_still_refuses_a_foreign_origin(hosted_httpd: HTTPServer) 
     assert status == 403
 
 
+def test_hosted_server_accepts_the_proxys_forwarded_host(hosted_httpd: HTTPServer) -> None:
+    # If the platform's proxy rewrote Host to an internal name, the public name still arrives in
+    # X-Forwarded-Host; a web page cannot add that header (it would need a CORS preflight).
+    headers = {"Host": "10.1.2.3:10000", "X-Forwarded-Host": "chat.onrender.com"}
+    status, _ = _post_message(hosted_httpd, {**headers, "Origin": "https://chat.onrender.com"})
+    assert status == 200
+    status, _ = _post_message(hosted_httpd, {**headers, "Origin": "https://evil.example"})
+    assert status == 403
+    status, _ = _post_message(
+        hosted_httpd, {"Host": "10.1.2.3:10000", "Origin": "https://chat.onrender.com"}
+    )
+    assert status == 403
+
+
+def test_local_server_ignores_a_forwarded_host(httpd: HTTPServer) -> None:
+    status, _ = _post_message(
+        httpd, {"X-Forwarded-Host": "evil.example", "Origin": "http://evil.example"}
+    )
+    assert status == 403
+
+
 def test_hosted_health_check_needs_no_origin_or_known_host(hosted_httpd: HTTPServer) -> None:
     response, data = _request(hosted_httpd, "GET", "/healthz", headers={"Host": "10.1.2.3:10000"})
     assert response.status == 200
