@@ -34,7 +34,7 @@ packages = ["src/variance_agent", "deterministic_conditioning"]
 path = "src/variance_agent/version.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/deterministic_conditioning", "/static", "/tests", "/schemas", "/examples", "/docs", "/scripts",
+include = ["/src", "/deterministic_conditioning", "/tests", "/schemas", "/examples", "/docs", "/scripts",
            "/README.md", "/pyproject.toml", "/requirements-typecheck.txt", "/LICENSE", "/CHANGELOG.md",
            "/CONTRIBUTING.md", "/SECURITY.md"]
 

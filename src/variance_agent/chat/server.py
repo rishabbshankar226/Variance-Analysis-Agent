@@ -5,6 +5,7 @@ Binds to 127.0.0.1 by default; hosted mode binds the address the platform
 provides and disables exports to server paths.
 """
 
+import importlib.resources
 import json
 import re
 import sys
@@ -28,8 +29,10 @@ from .responses import Response
 from .session import Phase, Session
 
 
-_STATIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static"
-_PKG_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+# The only files served from the package's static/ directory, by exact name.
+_STATIC_TYPES = {
+    "chat.html": "text/html; charset=utf-8",
+}
 
 # Staged downloads keyed by filename, oldest first. They are sensitive (reports, memos) and the
 # service is small, so they are bounded and dropped when the analysis they belong to ends.
@@ -227,7 +230,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     def _route_get(self) -> None:
         if self.path in {"/", "/index.html", "/chat.html"}:
-            self._serve_static("chat.html", "text/html; charset=utf-8")
+            self._serve_static("chat.html")
         elif self.path in {"/status", "/health", "/healthz"}:
             payload: dict[str, object] = {"phase": self.session.phase.value, "status": "ok"}
             if self.initial_response is not None:
@@ -408,14 +411,15 @@ class _ChatHandler(BaseHTTPRequestHandler):
     def _json_error(self, message: str, status: HTTPStatus) -> None:
         self._json_response({"error": message}, status)
 
-    def _serve_static(self, filename: str, content_type: str) -> None:
-        filepath = _STATIC_DIR / filename
-        if not filepath.is_file():
-            filepath = _PKG_STATIC_DIR / filename
-        if not filepath.is_file():
+    def _serve_static(self, filename: str) -> None:
+        content_type = _STATIC_TYPES[filename]
+        try:
+            content = (
+                importlib.resources.files("variance_agent").joinpath("static", filename).read_bytes()
+            )
+        except OSError:
             self._json_error(f"Static file not found: {filename}", HTTPStatus.NOT_FOUND)
             return
-        content = filepath.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))

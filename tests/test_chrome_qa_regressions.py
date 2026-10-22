@@ -342,11 +342,6 @@ def test_welcome_chips_are_answered() -> None:
 # Escaping: the UI escapes once, so server text must decode cleanly
 # ---------------------------------------------------------------------------
 
-def test_chat_html_copies_stay_identical() -> None:
-    packaged = ROOT / "src" / "variance_agent" / "static" / "chat.html"
-    assert (ROOT / "static" / "chat.html").read_bytes() == packaged.read_bytes()
-
-
 def test_chat_ui_decodes_server_escapes_before_rendering() -> None:
     html = (ROOT / "src" / "variance_agent" / "static" / "chat.html").read_text(encoding="utf-8")
     assert "function plainText(" in html
