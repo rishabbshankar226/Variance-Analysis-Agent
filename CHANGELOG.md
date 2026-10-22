@@ -23,7 +23,8 @@ Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/B
   `Phase.AWAITING_SHEET_CHOICE` and `Phase.AWAITING_HEADER_CHOICE` are removed. Chat messages over 500
   characters get a friendly reply; pasted tables are unaffected.
 - **Behavior change (server).** The chat server refuses cross-origin and DNS-rebound requests (a POST's
-  `Origin` must equal `Host`; local mode answers only loopback hosts), requires `application/json` for
+  `Origin` must equal `Host`; local mode answers only loopback hosts; hosted mode compares hostnames, so a port a
+  proxy appends to `Host` is fine), requires `application/json` for
   `/message`, no longer sends `Access-Control-Allow-Origin: *`, and sends a strict Content-Security-Policy.
   The page is served from the package (root `static/` is gone) as `chat.html`, `chat.js` and `chat.css`.
 - **Behavior change (CLI).** `--chat` binds all interfaces only with `--hosted` or `RENDER` set, no longer

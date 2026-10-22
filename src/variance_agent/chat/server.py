@@ -212,9 +212,14 @@ class _ChatHandler(BaseHTTPRequestHandler):
             if self.hosted:
                 # Behind a proxy that rewrites Host, the public name is the platform's own
                 # hostname or X-Forwarded-Host. A web page cannot send that header: it is not
-                # CORS-safelisted and this server never answers a preflight.
+                # CORS-safelisted and this server never answers a preflight. The site is identified
+                # by its hostname: the proxy may append its internal port to Host while the browser's
+                # Origin has none. (Local mode keeps the port: another dev server on localhost is a
+                # different origin.)
                 forwarded = self.headers.get("X-Forwarded-Host", "").split(",")[0]
-                own_hosts |= {forwarded.strip().lower()} | self.public_hosts
+                own_hosts = {_hostname(name) for name in (host, forwarded) if name.strip()}
+                own_hosts |= self.public_hosts
+                origin_host = _hostname(origin_host)
             if not origin_host or origin_host not in own_hosts:
                 self._json_error("Cross-origin requests are not allowed.", HTTPStatus.FORBIDDEN)
                 return False

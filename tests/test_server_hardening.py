@@ -285,6 +285,32 @@ def test_hosted_server_accepts_the_proxys_forwarded_host(hosted_httpd: HTTPServe
     assert status == 403
 
 
+def test_hosted_server_ignores_a_port_a_proxy_appends_to_host(hosted_httpd: HTTPServer) -> None:
+    # Behind a platform proxy the public name has no port, while the Host the app sees may carry the
+    # internal one ("chat.onrender.com:10000"); the hostname is what identifies the site.
+    headers = {"Host": "chat.onrender.com:10000"}
+    status, _ = _post_message(hosted_httpd, {**headers, "Origin": "https://chat.onrender.com"})
+    assert status == 200
+    status, _ = _post_message(hosted_httpd, {**headers, "Origin": "https://evil.example"})
+    assert status == 403
+    status, _ = _post_message(hosted_httpd, {**headers, "Origin": "https://evil.example:10000"})
+    assert status == 403
+    # An Origin that merely contains the name is not the name.
+    status, _ = _post_message(
+        hosted_httpd, {**headers, "Origin": "https://chat.onrender.com.evil.example"}
+    )
+    assert status == 403
+
+
+def test_local_server_still_treats_the_port_as_part_of_the_origin(httpd: HTTPServer) -> None:
+    # Another page on localhost (a different dev server) is a different origin.
+    host = f"127.0.0.1:{httpd.server_address[1]}"
+    status, _ = _post_message(httpd, {"Host": host, "Origin": f"http://{host}"})
+    assert status == 200
+    status, _ = _post_message(httpd, {"Host": host, "Origin": "http://127.0.0.1:3000"})
+    assert status == 403
+
+
 def test_hosted_server_accepts_the_platforms_external_hostname(
     hosted_httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
