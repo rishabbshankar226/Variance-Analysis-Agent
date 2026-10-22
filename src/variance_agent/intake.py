@@ -18,7 +18,7 @@ import csv
 import io
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from enum import StrEnum
 from typing import cast
@@ -850,6 +850,11 @@ def detect_header_row(
     return None, {}, []
 
 
+_COVER_SHEET_WORDS = frozenset({
+    "cover", "page", "sheet", "contents", "table", "of", "readme", "read", "me", "notes", "index", "summary",
+})
+
+
 def rank_workbook_sheets(
     sheets: list[tuple[str, list[list[object]]]],
     *,
@@ -888,7 +893,7 @@ def rank_workbook_sheets(
             score += min(len(rows), 10)
 
         lower_name = name.lower()
-        if any(term in lower_name for term in ("cover", "contents", "readme", "notes", "index", "summary_cover")):
+        if set(re.findall(r"[a-z]+", lower_name)) <= _COVER_SHEET_WORDS:  # "Index", not "Price Index"
             score -= 15
             reasons.append("title suggests cover page or notes")
 
@@ -1411,6 +1416,14 @@ def _read_json_bytes(
         )
 
 
+def _hidden_sheets_last(ranked: list[SheetScore], hidden: set[str]) -> list[SheetScore]:
+    """Visible worksheets first (a hidden draft must not win automatically), order otherwise kept."""
+    marked = [
+        replace(s, rationale=f"{s.rationale}; hidden worksheet") if s.name in hidden else s for s in ranked
+    ]
+    return sorted(marked, key=lambda s: s.name in hidden)
+
+
 def _read_excel_bytes(
     data: bytes,
     filename: str,
@@ -1458,6 +1471,9 @@ def _read_excel_bytes(
                 all_sheets_raw.append((name, sheet_rows))
 
             ranked = rank_workbook_sheets(all_sheets_raw)
+            hidden = {n for n in sheetnames if getattr(wb[n], "sheet_state", "visible") != "visible"}
+            if hidden:
+                ranked = _hidden_sheets_last(ranked, hidden)
 
             # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
             chosen_sheet = sheet
@@ -1495,6 +1511,8 @@ def _read_excel_bytes(
                 ranked = rank_workbook_sheets(
                     all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
                 )
+                if hidden:
+                    ranked = _hidden_sheets_last(ranked, hidden)
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
             if chosen_sheet != sheetnames[0] and ranked:
@@ -1908,7 +1926,8 @@ def _process_raw_table(
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
         unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
         visible_transformations.append(
-            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit ($)."
+            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit "
+            "(full currency units, not thousands)."
         )
 
     # 2. Signed ledger check
@@ -2051,6 +2070,11 @@ def format_intake_summary(result: IntakeResult) -> str:
     return "\n".join(lines)
 
 
+_INTERNAL_FIELD_NAMES = frozenset(_ROLE_ALIAS_KEYS | {
+    "row_kind", "account_id", "budget_amount", "actual_amount", "line_type", "revenue_expense_type",
+})
+
+
 def plain_analysis_error(error_text: str) -> str:
     """Rewrite any technical or exception error message into plain accounting language for Maya."""
     text = error_text.strip()
@@ -2083,10 +2107,12 @@ def plain_analysis_error(error_text: str) -> str:
         return "The workbook file appears to be damaged or could not be read. Please try saving it again in Excel and re-uploading."
 
     # 6. Unreconciled summaries
-    m_reconcile = re.search(r"Summary\s+([^ ]+)\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE)
+    m_reconcile = re.search(
+        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE
+    )
     if m_reconcile:
-        summary_name = m_reconcile.group(1).strip("'\"`")
-        line_type = m_reconcile.group(2).strip()
+        summary_name = m_reconcile.group(1) or m_reconcile.group(2) or m_reconcile.group(3)
+        line_type = m_reconcile.group(4).strip()
         return f"Summary total for '{summary_name}' does not match the sum of its {line_type} detail rows. Please check for missing or overlapping line items."
 
     # 7. Ambiguous summary label / Row Kind
@@ -2097,11 +2123,15 @@ def plain_analysis_error(error_text: str) -> str:
     if "unclassified" in text.lower():
         text = re.sub(r"\bunclassified\b", "not yet labeled revenue or expense", text, flags=re.IGNORECASE)
 
-    # 9. CLI flags
-    text = re.sub(r"--[a-z0-9\-]+", "setting", text)
+    # 9. CLI flags (only a flag standing alone, never "--" inside a line-item name)
+    text = re.sub(r"(?<![\w-])--[a-z][a-z0-9\-]*", "setting", text)
 
-    # 10. Snake_case keys in quotes
-    text = re.sub(r"'([a-z0-9]+)_([a-z0-9_]+)'", r"'\1 \2'", text)
+    # 10. Internal field names in quotes; the user's own snake_case names stay as written
+    text = re.sub(
+        r"'([a-z0-9]+_[a-z0-9_]+)'",
+        lambda m: f"'{m.group(1).replace('_', ' ')}'" if m.group(1) in _INTERNAL_FIELD_NAMES else m.group(0),
+        text,
+    )
 
     # 11. Forbidden words
     text = re.sub(r"\bnormalize[sd]?\b", "standardize", text, flags=re.IGNORECASE)

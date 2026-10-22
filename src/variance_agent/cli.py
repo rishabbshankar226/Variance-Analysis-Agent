@@ -4,12 +4,14 @@ import argparse
 import csv
 import os
 import sys
+import unicodedata
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
 from .analysis import analyze_rows
+from .classification import explicit_line_type
 from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
@@ -52,6 +54,10 @@ def _intake_error(intake_res: IntakeResult) -> str:
         # Chat offers chips for this choice; the CLI names the flag that makes it.
         message = f"{message} {COMPARE_TO_HINT}"
     return message
+
+
+def _count(number: int, noun: str) -> str:
+    return f"{number} {noun}{'' if number == 1 else 's'}"
 
 
 def _unit_name(scale: Decimal) -> str:
@@ -104,16 +110,18 @@ def _load_type_map(path: str | None) -> dict[str, LineType]:
 def _parse_type_map(data: bytes) -> dict[str, LineType]:
     payload = load_json_value(data.decode("utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense.")
+        raise ValueError("Type map must be a JSON object of line item -> Revenue/Expense/Unclassified.")
     output: dict[str, LineType] = {}
     for item, value in payload.items():
-        text = str(value).strip().lower()
-        if text in {"revenue", "income", "sales"}:
-            output[item] = LineType.REVENUE
-        elif text in {"expense", "expenses", "cost", "costs"}:
-            output[item] = LineType.EXPENSE
+        line_type = explicit_line_type(value)
+        if line_type is not None:
+            output[item] = line_type
+        elif str(value).strip().lower() == "unclassified":
+            output[item] = LineType.UNCLASSIFIED
         else:
-            raise ValueError(f"Type map value for {item!r} must be Revenue or Expense.")
+            raise ValueError(
+                f"Type map value for {item!r} must be Revenue, Expense or Unclassified."
+            )
     return output
 
 
@@ -186,8 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _fold(path: Path) -> str:
+    """Case- and Unicode-form-insensitive spelling: macOS and Windows treat these as one file."""
+    return unicodedata.normalize("NFC", str(path.resolve())).casefold()
+
+
 def _same_path(first: Path, second: Path) -> bool:
-    return first.resolve() == second.resolve() or (
+    return _fold(first) == _fold(second) or (
         first.exists() and second.exists() and first.samefile(second)
     )
 
@@ -389,9 +402,9 @@ def _run(args: Arguments) -> int:
         raise
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
-        print(f"Validation passed: {len(result.rows)} rows, {len(result.material_rows)} material "
-              f"variances, {unclassified} Unclassified, {len(result.warnings)} warnings; "
-              f"reporting currency {config.currency}.")
+        print(f"Validation passed: {_count(len(result.rows), 'row')}, "
+              f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
+              f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
     report = render_markdown(result)
     if args.commentary:
@@ -445,7 +458,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _run(args)
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
-        parser.error(display_text(str(exc)))
+        # A problem with the data, not with the command line: one clear line, no usage banner.
+        parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
 
 
 if __name__ == "__main__":

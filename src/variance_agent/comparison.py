@@ -99,7 +99,7 @@ def zero_comparison_phrase(basis: ComparisonBasis) -> str:
 
 _ACTUAL_SUFFIX = re.compile(r"\s+actuals?$", re.IGNORECASE)
 _YEAR = r"(\d{4}|\d{2})"
-_FY_RE = re.compile(rf"^fy{_YEAR}$", re.IGNORECASE)
+_FY_RE = re.compile(rf"^fy\s?{_YEAR}$", re.IGNORECASE)
 _BARE_YEAR_RE = re.compile(r"^(\d{4})$")
 _QUARTER_RE = re.compile(rf"^q([1-4])[\s-]{_YEAR}$", re.IGNORECASE)
 _MONTH_NAME_RE = re.compile(r"^([a-z]+)\s+(\d{4})$", re.IGNORECASE)
@@ -111,14 +111,17 @@ _MONTHS = (
 
 
 def _year(text: str) -> int:
+    """Four-digit years as written; two-digit years use the strptime pivot (69-99 -> 1969-1999)."""
     value = int(text)
-    return 2000 + value if len(text) == 2 else value
+    if len(text) != 2:
+        return value
+    return 1900 + value if value >= 69 else 2000 + value
 
 
 def _month_index(name: str) -> int | None:
     name = name.lower()
     for i, full in enumerate(_MONTHS, start=1):
-        if name == full or (len(name) == 3 and full.startswith(name)):
+        if name == full or (len(name) == 3 and full.startswith(name)) or (name == "sept" and i == 9):
             return i
     return None
 

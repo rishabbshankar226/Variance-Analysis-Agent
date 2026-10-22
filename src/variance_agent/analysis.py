@@ -17,7 +17,7 @@ from .models import (
     Status,
     SummaryVerification,
 )
-from .classification import infer_line_type
+from .classification import explicit_line_type, infer_line_type
 from .comparison import comparison_heading, zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
@@ -88,17 +88,6 @@ def _required_value(
     return found[1]
 
 
-def _classify_explicit(value: object) -> LineType | None:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if text in {"revenue", "income", "sales", "rev"}:
-        return LineType.REVENUE
-    if text in {"expense", "expenses", "cost", "costs", "opex", "cogs"}:
-        return LineType.EXPENSE
-    return None
-
-
 def _summary_candidate(line_item: str, row: dict[str, object]) -> tuple[bool, str]:
     if "row_kind" in row and not is_missing(row["row_kind"]):
         kind = str(row["row_kind"]).strip().casefold()
@@ -126,7 +115,7 @@ def _classify(
         raise ValueError(f"{line_item}: multiple classification aliases: {', '.join(type_keys)}.")
     type_field = first_present(row, _TYPE_KEYS)
     if type_field:
-        explicit = _classify_explicit(type_field[1])
+        explicit = explicit_line_type(type_field[1])
         if explicit:
             return explicit, "explicit_type"
         if type_field[1] is not None and str(type_field[1]).strip():

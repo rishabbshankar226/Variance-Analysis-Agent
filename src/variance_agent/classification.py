@@ -44,6 +44,18 @@ _PROFIT_RES = tuple(
 )
 
 
+def explicit_line_type(value: object) -> LineType | None:
+    """Revenue/Expense for the words a Type column or type map may use; None if unrecognised."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"revenue", "income", "sales", "rev"}:
+        return LineType.REVENUE
+    if text in {"expense", "expenses", "cost", "costs", "opex", "cogs"}:
+        return LineType.EXPENSE
+    return None
+
+
 def is_profit_measure(label: str) -> bool:
     return any(pattern.search(label) for pattern in _PROFIT_RES)
 
