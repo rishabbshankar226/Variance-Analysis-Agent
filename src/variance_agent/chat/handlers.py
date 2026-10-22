@@ -50,7 +50,14 @@ from variance_agent.mapping import (
 from variance_agent.report import render_markdown
 from variance_agent.xlsx import render_xlsx
 
-from .intent import KNOWLEDGE_INTENTS, ParsedIntent, find_line_item, parse_intent
+from .intent import (
+    KNOWLEDGE_INTENTS,
+    MAX_ROUTING_CHARS,
+    ParsedIntent,
+    find_line_item,
+    normalize_for_routing,
+    parse_intent,
+)
 from .responses import (
     Response,
     format_money,
@@ -158,7 +165,21 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if not text:
         return Response(text="Please type a message or upload a file.")
 
+    # A table pasted from a spreadsheet is thousands of characters; it is data, not a command,
+    # so it is read before the message-length cap that protects intent parsing.
+    if session.phase == Phase.AWAITING_FILE and _looks_like_pasted_table(text):
+        return _load_file(
+            session, text.encode("utf-8"), "pasted_data.tsv", None, first_visit, pasted=True,
+        )
+
     intent = parse_intent(text)
+    if intent.intent_id == "too_long":
+        return Response(
+            text=f"That message is too long for me to read as a question (limit {MAX_ROUTING_CHARS} "
+                 "characters). Ask a shorter question, or upload your data with the drop zone above.",
+            phase=session.phase,
+        )
+    routing_key = normalize_for_routing(text).lower()
     if intent.intent_id == "reset":
         return _handle_reset(session)
     if intent.intent_id == "greeting":
@@ -178,7 +199,7 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if intent.intent_id == "set_comparison":
         return _handle_set_comparison(session, intent)
 
-    if text.lower() in ("show technical details", "technical details"):
+    if routing_key in ("show technical details", "technical details"):
         detail = session.last_technical_detail or "No technical details recorded for the current step."
         return Response(
             text=f"**Technical Details:**\n```\n{detail}\n```",
@@ -186,26 +207,15 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=session.phase,
         )
 
+    if routing_key in _UPLOAD_ANOTHER_FILE:
+        return Response(
+            text="Use the drop zone above to choose another file. It replaces the current one "
+                 "once it has been read successfully.",
+            chips=["Help"],
+            phase=session.phase,
+        )
+
     if session.phase == Phase.AWAITING_FILE:
-        if "\t" in text and ("\n" in text or "\r" in text):
-            intake_res = read_input_assisted(
-                text.encode("utf-8"), suffix=".tsv", filename="pasted_data.tsv",
-                compare_to=session.compare_to,
-            )
-            if not intake_res.has_fatal_errors and intake_res.rows:
-                session.source_bytes = text.encode("utf-8")
-                session.source_name = "pasted_data.tsv"
-                session.source_suffix = ".tsv"
-                session.parsed_rows = intake_res.rows
-                session.intake_result = intake_res
-                session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
-                summary_text = format_intake_summary(intake_res)
-                summary_text += "\n\nDoes this look right?"
-                return _with_first_upload_intro(session, Response(
-                    text=summary_text,
-                    chips=["Looks right", "Change something"],
-                    phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-                ), intake_res.comparison_basis, first_visit)
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
             phase=session.phase,
@@ -234,6 +244,15 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
 
     # Phase.EXPLORING
     return _handle_exploring(session, text)
+
+
+_UPLOAD_ANOTHER_FILE = frozenset({
+    "upload a different file", "upload different file", "upload another file", "upload a new file",
+})
+
+
+def _looks_like_pasted_table(text: str) -> bool:
+    return "\t" in text and ("\n" in text or "\r" in text)
 
 
 def _handle_intake_confirmation(session: Session, text: str) -> Response:
@@ -427,26 +446,70 @@ def handle_upload(
     *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
-    suffix = Path(filename).suffix.lower()
-    if session.source_bytes is not None:
-        # A comparison choice belongs to the file it was made for; a replacement file is
-        # detected afresh. A choice made before the first upload still applies to it.
-        session.compare_to = None
-    session.source_bytes = file_bytes
-    session.source_name = filename
-    session.source_suffix = suffix
+    return _load_file(session, file_bytes, filename, sheet, first_visit)
 
+
+def _load_file(
+    session: Session, file_bytes: bytes, filename: str, sheet: str | None,
+    first_visit: bool | None, *, pasted: bool = False,
+) -> Response:
+    """Read a file first, and replace the session's file only once it was read.
+
+    A successful read starts a fresh session for that file: everything the user said about
+    an earlier file (period, thresholds, currency, type choices, ...) is dropped, and only
+    deployment policy survives. A failed read leaves the earlier file, analysis and phase as
+    they were, except when the file stopped on a question its chips answer (which comparison
+    to use, which sheet to read); that file becomes the session's file so the answer has
+    something to re-read.
+    """
+    suffix = Path(filename).suffix.lower()
+    # A comparison choice belongs to the file it was made for; a replacement file is
+    # detected afresh. A choice made before the first upload still applies to it.
+    compare_to = None if session.source_bytes is not None else session.compare_to
     intake_res = read_input_assisted(
         file_bytes,
         suffix,
         filename=filename,
         sheet=sheet,
         treat_blank_budgets_as_zero=False,
-        compare_to=session.compare_to,
+        compare_to=compare_to,
     )
+    failed = intake_res.has_fatal_errors or not intake_res.rows
+    awaiting_answer = bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+    if failed and not awaiting_answer:
+        return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
+
+    session.reset()
+    session.compare_to = compare_to
+    session.source_bytes = file_bytes
+    session.source_name = filename
+    session.source_suffix = suffix
+    if failed:
+        return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
     return _with_first_upload_intro(
         session, _intake_response(session, intake_res, filename), intake_res.comparison_basis, first_visit,
     )
+
+
+def _fatal_upload_response(
+    session: Session, intake_res: IntakeResult, filename: str, *, pasted: bool = False,
+) -> Response:
+    """Explain why a file could not be read, in the phase the session is still in."""
+    technical = intake_res.fatal_error_message or (
+        f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
+        f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
+    )
+    session.last_technical_detail = technical
+    chips = _comparison_chips(intake_res.comparison_choices)
+    if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
+        for s in intake_res.available_sheets[:3]:
+            chips.append(_sheet_chip(session, s))
+    chips.extend(["Upload a different file", "Show technical details"])
+
+    text = f"⚠️ {plain_analysis_error(technical)}"
+    if pasted:
+        text += "\n\nPaste a table with a header row (such as Line Item, Budget, Actual), or upload a file."
+    return Response(text=text, chips=chips, phase=session.phase)
 
 
 def _first_upload_intro(basis: ComparisonBasis) -> str:
@@ -496,25 +559,7 @@ def _with_first_upload_intro(
 def _intake_response(session: Session, intake_res: IntakeResult, filename: str) -> Response:
     """Continue the conversation from a fresh read of the uploaded file."""
     if intake_res.has_fatal_errors or not intake_res.rows:
-        technical = intake_res.fatal_error_message or (
-            f"The uploaded file '{safe_inline(filename)}' contains no data rows. "
-            f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
-        )
-        session.last_technical_detail = technical
-        chips = _comparison_chips(intake_res.comparison_choices)
-        if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
-            for s in intake_res.available_sheets[:3]:
-                chips.append(_sheet_chip(session, s))
-        chips.append("Upload a different file")
-        if session.last_technical_detail:
-            chips.append("Show technical details")
-
-        err_msg = plain_analysis_error(technical)
-        return Response(
-            text=f"⚠️ {err_msg}",
-            chips=chips,
-            phase=Phase.AWAITING_FILE,
-        )
+        return _fatal_upload_response(session, intake_res, filename)
 
     # Check for blank budgets needing confirmation
     if intake_res.blank_budget_items:

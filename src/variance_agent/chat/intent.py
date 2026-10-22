@@ -7,7 +7,34 @@ match wins.  No ML, no fuzzy matching -- every resolution is reproducible.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
+
+# Longest message the intent patterns see. Real commands are a few dozen characters; anything
+# past this is pasted text, and long inputs are what make regex matching slow.
+MAX_ROUTING_CHARS = 500
+# The message as typed may carry padding (blanks, invisible characters) that routing drops, but
+# no more than this, so nothing long is ever stored or echoed back.
+MAX_RAW_MESSAGE_CHARS = 4 * MAX_ROUTING_CHARS
+
+_ROUTING_FOLDS = str.maketrans({
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"',
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+    "\u2212": "-",
+})
+
+
+def normalize_for_routing(text: str) -> str:
+    """The copy of a message that intent parsing and item matching work on.
+
+    NFKC (full-width letters, NBSP and other odd spaces), curly quotes and dashes folded to
+    ASCII, invisible format characters dropped, whitespace collapsed. It is never stored or
+    shown back: periods, labels and file names keep the user's exact characters.
+    """
+    folded = unicodedata.normalize("NFKC", text).translate(_ROUTING_FOLDS)
+    visible = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    return " ".join(visible.split())
 
 
 @dataclass(frozen=True)
@@ -130,19 +157,19 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
     (re.compile(
         r"^(?:(?:why|explain|what\s+is|difference\s+between)\s+)?"
-        r"(?:favorable\s+(?:vs\.?|versus|and|or)\s+unfavorable|f\s+(?:vs\.?|versus|and|or)\s+u"
-        r"|positive\s+(?:cost|expense)?\s*variance\s+unfavorable"
-        r"|unfavorable\s+when\s+positive)\??$",
+        r"(?:favou?rable\s+(?:vs\.?|versus|and|or)\s+unfavou?rable|f\s+(?:vs\.?|versus|and|or)\s+u"
+        r"|positive\s+(?:cost|expense)?\s*variance\s+unfavou?rable"
+        r"|unfavou?rable\s+when\s+positive)\??$",
         re.IGNORECASE,
     ), "concept_f_vs_u"),
 
     (re.compile(
-        r"^(?:what\s+(?:does|is)|explain|define|meaning\s+of)\s+favorable(?:\s+variance)?(?:\s+mean)?\??$",
+        r"^(?:what\s+(?:does|is)|explain|define|meaning\s+of)\s+favou?rable(?:\s+variance)?(?:\s+mean)?\??$",
         re.IGNORECASE,
     ), "concept_fav"),
 
     (re.compile(
-        r"^(?:what\s+(?:does|is)|explain|define|meaning\s+of)\s+unfavorable(?:\s+variance)?(?:\s+mean)?\??$",
+        r"^(?:what\s+(?:does|is)|explain|define|meaning\s+of)\s+unfavou?rable(?:\s+variance)?(?:\s+mean)?\??$",
         re.IGNORECASE,
     ), "concept_unfav"),
 
@@ -177,7 +204,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
     (re.compile(
         r"^(?:(?:how\s+to\s+handle|what\s+actions?\s+to\s+take|playbook\s+for|how\s+to\s+mitigate)\s+"
-        r"unfavorable(?:\s+variances?)?|(?:action\s+)?playbook)\??$",
+        r"unfavou?rable(?:\s+variances?)?|(?:action\s+)?playbook)\??$",
         re.IGNORECASE,
     ), "concept_actions"),
 
@@ -250,7 +277,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
     (re.compile(
         r"^(?:(?:what\s+(?:is|are)\s+(?:our\s+)?|show\s+(?:me\s+)?(?:the\s+|our\s+)?)?"
-        r"(?:biggest\s+wins?|what\s+went\s+well|what\s+went\s+right|where\s+did\s+we\s+beat(?:\s+budget)?|top\s+(?:positive|favorable)\s+variances?|best\s+performers?)"
+        r"(?:biggest\s+wins?|what\s+went\s+well|what\s+went\s+right|where\s+did\s+we\s+beat(?:\s+budget)?|top\s+(?:positive|favou?rable)\s+variances?|best\s+performers?)"
         r"|where\s+are\s+we\s+winning|where\s+did\s+we\s+outperform)\??$",
         re.IGNORECASE,
     ), "biggest_wins"),
@@ -291,17 +318,17 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "unbudgeted_spend"),
 
     (re.compile(
-        r"^(?:where\s+did\s+we\s+save(?:\s+money)?|cost\s+savings?|expense\s+savings?|favorable\s+expenses?|show\s+savings)\??$",
+        r"^(?:where\s+did\s+we\s+save(?:\s+money)?|cost\s+savings?|expense\s+savings?|favou?rable\s+expenses?|show\s+savings)\??$",
         re.IGNORECASE,
     ), "cost_savings"),
 
     (re.compile(
-        r"^(?:where\s+did\s+revenue\s+(?:fall\s+short|miss)|revenue\s+(?:misses|shortfall)|unfavorable\s+revenue|show\s+revenue\s+misses)\??$",
+        r"^(?:where\s+did\s+revenue\s+(?:fall\s+short|miss)|revenue\s+(?:misses|shortfall)|unfavou?rable\s+revenue|show\s+revenue\s+misses)\??$",
         re.IGNORECASE,
     ), "revenue_misses"),
 
     (re.compile(
-        r"^compare\s+(?P<item1>.+?)\s+(?:and|with|vs\.?|to)\s+(?P<item2>.+?)\s*\??$",
+        r"^compare\s+(?P<item1>.+?)\s+(?:and|with|vs\.?|to)\s+(?P<item2>.+)$",
         re.IGNORECASE,
     ), "compare_items"),
 
@@ -321,7 +348,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"(?P<direction>increase|increased|raise|grow|cut|cuts|reduce|reduced|drop|drops|boost|expand|shrink)\s+"
         r"(?P<target>.+?)\s+"
         r"(?:by\s+)?"
-        r"(?P<amount>[$€£]?[0-9,_.]+\s*(?:%|[kKmMbB])?)\s*"
+        r"(?P<amount>[$€£]?[0-9,_.]{1,30}\s*(?:%|[kKmMbB])?)\s*"
         r"(?P<suffix>higher|lower|up|down|more|less)?\s*\??$",
         re.IGNORECASE,
     ), "what_if"),
@@ -332,7 +359,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"(?:is\s+|are\s+|goes\s+|moves\s+)?"
         r"(?P<direction>increases?|increased?|rises?|drop(?:s|ped)?|decreases?|decreased?|falls?|grows?|growth|grow|climbs?|jumps?|higher|lower|up|down|cuts?|cut|\+|\-)?\s*"
         r"(?:by\s+)?"
-        r"(?P<amount>[$€£]?[0-9,_.]+\s*(?:%|[kKmMbB])?)\s*"
+        r"(?P<amount>[$€£]?[0-9,_.]{1,30}\s*(?:%|[kKmMbB])?)\s*"
         r"(?P<suffix>higher|lower|up|down|more|less)?\s*\??$",
         re.IGNORECASE,
     ), "what_if"),
@@ -365,18 +392,18 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "list_sheets"),
 
     (re.compile(
-        r"^(?:switch\s+(?:to\s+)?)?(?:(?:work)?sheet|statement)\s+(?:to\s+)?(?P<sheet>.+?)\s*\??$",
+        r"^(?:switch\s+(?:to\s+)?)?(?:(?:work)?sheet|statement)\s+(?:to\s+)?(?P<sheet>.+)$",
         re.IGNORECASE,
     ), "switch_sheet"),
 
     (re.compile(
-        r"^(?:show\s+)?(?:all\s+)?(?:unfavorable|unfav|adverse|red\s*flags?)"
+        r"^(?:show\s+)?(?:all\s+)?(?:unfavou?rable|unfav|adverse|red\s*flags?)"
         r"(?:\s+(?:variances?|items?))?$",
         re.IGNORECASE,
     ), "filter_status_u"),
 
     (re.compile(
-        r"^(?:show\s+)?(?:all\s+)?(?:favorable|fav|good\s*news)"
+        r"^(?:show\s+)?(?:all\s+)?(?:favou?rable|fav|good\s*news)"
         r"(?:\s+(?:variances?|items?))?$",
         re.IGNORECASE,
     ), "filter_status_f"),
@@ -400,21 +427,21 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "filter_type_unc"),
 
     (re.compile(
-        r"^(?:show\s+)?top\s+(?P<count>\d+)(?:\s+(?:variances?|items?|rows?))?"
+        r"^(?:show\s+)?top\s+(?P<count>\d{1,9})(?:\s+(?:variances?|items?|rows?))?"
         r"(?:\s+by\s+(?:dollars?|amount|value|\$))?$", re.IGNORECASE,
     ), "top_n"),
 
     (re.compile(
         r"^(?:(?:can\s+you\s+)?(?:why|explain|tell\s+me\s+about|give\s+me\s+(?:more\s+)?color\s+on|dive\s+into|what\s+about)|drivers?|breakdown|decompos\w*|what\s+happened(?:\s+(?:to|with|there|here))?|how\s+come)"
-        r"(?:\s+(?:for\s+)?(?:the\s+)?(?P<item>.+?))?\s*\??$",
+        r"(?:\s+(?:for\s+)?(?:the\s+)?(?P<item>.+))?\s*\??$",
         re.IGNORECASE,
     ), "explain"),
 
     (re.compile(
         r"^(?:details?|more\s+details?|row|info)"
-        r"(?:\s+(?:for\s+)?(?:the\s+)?(?P<item>.+?))?\s*\??$"
+        r"(?:\s+(?:for\s+)?(?:the\s+)?(?P<item>.+))?\s*\??$"
         r"|"
-        r"^(?:show)\s+(?:for\s+)?(?:the\s+)?(?P<item2>.+?)\s*\??$",
+        r"^(?:show)\s+(?!(?:me|us)\b)(?:for\s+)?(?:the\s+)?(?P<item2>.+)$",
         re.IGNORECASE,
     ), "detail"),
 
@@ -445,23 +472,51 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 _TRAILING_FILLER = re.compile(r"(?:[\s,]+(?:please|pls|plz|thanks|thank\s+you))+[\s.!?]*$", re.IGNORECASE)
 _TRAILING_PUNCTUATION = re.compile(r"(?<=[\w%])[.!?]+$")
+# "show me the summary", "can you give us all the expenses": a polite lead-in before a command.
+_POLITE_LEAD = re.compile(
+    r"^(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?(?P<verb>show|give|get|pull\s+up|bring\s+up)"
+    r"\s+(?:me|us)\s+(?:the\s+|our\s+|all\s+(?:the\s+|of\s+the\s+)?)?(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+_CLEANED_CAPTURES = frozenset({"item", "item1", "item2", "sheet"})
 
 
 def parse_intent(text: str) -> ParsedIntent:
     """Match user text against ordered patterns and return the first hit.
 
-    Trailing filler ("please", "thanks") is always ignored; unmatched text is retried
-    once without trailing punctuation, so "summary please" and "Summary?!" resolve.
+    The text is normalised first (see ``normalize_for_routing``); a message longer than
+    ``MAX_ROUTING_CHARS`` (or one padded past ``MAX_RAW_MESSAGE_CHARS``) is the ``too_long``
+    intent and is never matched. Trailing filler
+    ("please", "thanks") is always ignored; unmatched text is retried without trailing
+    punctuation and without a polite lead-in, so "summary please", "Summary?!" and
+    "show me the summary" all resolve.
     """
-    text = _TRAILING_FILLER.sub("", text.strip()).strip() or text.strip()
+    if len(text) > MAX_RAW_MESSAGE_CHARS:
+        return ParsedIntent(intent_id="too_long", captures={})
+    text = normalize_for_routing(text)
+    if len(text) > MAX_ROUTING_CHARS:
+        return ParsedIntent(intent_id="too_long", captures={})
+    text = _TRAILING_FILLER.sub("", text).strip() or text
     parsed = _match_intent(text)
-    if parsed.intent_id == "unknown":
-        relaxed = _TRAILING_PUNCTUATION.sub("", text).strip()
-        if relaxed and relaxed != text:
-            retry = _match_intent(relaxed)
-            if retry.intent_id != "unknown":
-                return retry
+    if parsed.intent_id != "unknown":
+        return parsed
+    for variant in _retry_variants(text):
+        retry = _match_intent(variant)
+        if retry.intent_id != "unknown":
+            return retry
     return parsed
+
+
+def _retry_variants(text: str) -> list[str]:
+    relaxed = _TRAILING_PUNCTUATION.sub("", text).strip()
+    variants = [relaxed] if relaxed and relaxed != text else []
+    lead = _POLITE_LEAD.match(relaxed or text)
+    if lead is not None:
+        rest = lead.group("rest").strip()
+        variants.append(rest)
+        if lead.group("verb").lower() == "show":
+            variants.append(f"show {rest}")  # "show me Marketing" -> detail on Marketing
+    return variants
 
 
 def _match_intent(text: str) -> ParsedIntent:
@@ -469,14 +524,24 @@ def _match_intent(text: str) -> ParsedIntent:
         match = pattern.match(text)
         if match is not None:
             captures = {
-                key: value
+                key: _clean_capture(key, value)
                 for key, value in match.groupdict().items()
                 if value is not None
             }
+            captures = {key: value for key, value in captures.items() if value or key not in _CLEANED_CAPTURES}
             if "item2" in captures and "item1" not in captures:
                 captures["item"] = captures.pop("item2")
             return ParsedIntent(intent_id=intent_id, captures=captures)
     return ParsedIntent(intent_id="unknown", captures={"text": text})
+
+
+def _clean_capture(key: str, value: str) -> str:
+    """Item and sheet captures are the rest of the message; drop its trailing '?' and spaces."""
+    return value.rstrip("? \t") if key in _CLEANED_CAPTURES else value
+
+
+def _match_key(value: str) -> str:
+    return normalize_for_routing(value).lower()
 
 
 def find_line_item(
@@ -487,25 +552,21 @@ def find_line_item(
     Strips surrounding quotes, brackets, and trailing question marks.
     Returns a list of matches (empty if none, multiple if ambiguous).
     """
-    query_cleaned = query.strip().rstrip("?.!").strip("'\"`[]").strip()
+    query_cleaned = _match_key(query).rstrip("?.!").strip("'\"`[]").strip()
     if not query_cleaned:
         return []
 
-    query_lower = query_cleaned.lower()
+    keyed = [(_match_key(item), item) for item in dict.fromkeys(line_items)]
 
     # 1. Exact match (case-insensitive)
-    exact = [item for item in line_items if item.strip().lower() == query_lower]
+    exact = [item for key, item in keyed if key == query_cleaned]
     if exact:
         return exact
 
     # 2. Prefix match
-    prefix = [item for item in line_items if item.strip().lower().startswith(query_lower)]
+    prefix = [item for key, item in keyed if key.startswith(query_cleaned)]
     if prefix:
         return prefix
 
     # 3. Substring containment
-    substring = [item for item in line_items if query_lower in item.strip().lower()]
-    if substring:
-        return substring
-
-    return []
+    return [item for key, item in keyed if query_cleaned in key]
