@@ -10,7 +10,7 @@ import re
 import urllib.parse
 import webbrowser
 from email.message import Message
-from email.parser import BytesParser
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -35,6 +35,100 @@ _DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
 # Request bodies beyond these sizes are refused before they are read.
 _MAX_UPLOAD_BODY = MAX_INPUT_BYTES + 1024 * 1024  # file plus multipart framing
 _MAX_MESSAGE_BODY = 2 * MAX_TEXT_LENGTH
+# A real upload has a file plus two small fields; anything near this many parts is hostile.
+_MAX_FORM_PARTS = 8
+
+_DISPOSITION_PARAM = re.compile(r';\s*([A-Za-z][A-Za-z0-9*-]*)\s*=\s*(?:"([^"]*)"|([^;\s]*))')
+
+
+@dataclass(frozen=True)
+class _FormPart:
+    name: str
+    filename: str | None
+    content: bytes
+
+
+def _boundary_of(content_type: str) -> bytes | None:
+    header = Message()
+    header["Content-Type"] = content_type
+    boundary = header.get_param("boundary")
+    if not isinstance(boundary, str) or not boundary or len(boundary) > 200:
+        return None
+    return boundary.encode("utf-8")
+
+
+def _disposition_params(header_block: bytes) -> dict[str, str]:
+    """The Content-Disposition parameters of one part, read the way browsers write them.
+
+    A browser escapes only '"', CR and LF in a multipart filename (as %22, %0D, %0A) and leaves
+    backslashes alone, so quoted values are taken literally rather than with e-mail unescaping.
+    """
+    text = header_block.decode("utf-8", errors="replace")
+    params: dict[str, str] = {}
+    for line in text.split("\n"):  # not splitlines(): U+2028 and friends may sit in a filename
+        field, _, value = line.partition(":")
+        if field.strip().lower() != "content-disposition":
+            continue
+        for match in _DISPOSITION_PARAM.finditer(";" + value.partition(";")[2]):
+            quoted = match[2] if match[2] is not None else match[3]
+            params[match[1].lower()] = quoted.replace("%22", '"')
+    return params
+
+
+def _filename_of(params: dict[str, str]) -> str | None:
+    """The file name a part declares, reduced to its last path component."""
+    raw: str | None
+    extended = params.get("filename*")
+    if extended is not None:
+        charset, _, rest = extended.partition("'")
+        encoded = rest.partition("'")[2]
+        try:
+            raw = urllib.parse.unquote(encoded, encoding=charset or "utf-8", errors="replace")
+        except LookupError:
+            raw = urllib.parse.unquote(encoded, errors="replace")
+    else:
+        raw = params.get("filename")
+    if raw is None:
+        return None
+    return raw.replace("\\", "/").split("/")[-1] or None
+
+
+def _split_form_data(body: bytes, boundary: bytes) -> list[_FormPart] | str:
+    """Split a multipart/form-data body into its parts, or return the reason it was refused."""
+    delimiter = b"--" + boundary
+    # Splitting stops after the cap, so a body of hundreds of thousands of empty parts costs one
+    # pass and no per-part objects; the unsplit remainder shows up as one extra chunk.
+    chunks = body.split(delimiter, _MAX_FORM_PARTS + 1)
+    parts: list[_FormPart] = []
+    for index in range(1, len(chunks)):
+        chunk = chunks[index]
+        if chunk.startswith(b"--"):  # the closing delimiter
+            return parts
+        if len(parts) == _MAX_FORM_PARTS:
+            return "The upload has too many form fields."
+        # A delimiter only counts at the start of a line (RFC 7578).
+        if index > 1 and not chunks[index - 1].endswith(b"\n"):
+            return "Malformed multipart body."
+        part = _parse_part(chunk)
+        if part is None:
+            return "Malformed multipart body."
+        parts.append(part)
+    return parts
+
+
+def _parse_part(chunk: bytes) -> _FormPart | None:
+    chunk = chunk.lstrip(b" \t")
+    crlf = chunk.startswith(b"\r\n")
+    if not crlf and not chunk.startswith(b"\n"):
+        return None
+    newline = b"\r\n" if crlf else b"\n"
+    headers, found, content = chunk[len(newline):].partition(newline * 2)
+    if not found:
+        return None
+    if content.endswith(newline):
+        content = content[: -len(newline)]
+    params = _disposition_params(headers)
+    return _FormPart(params.get("name", ""), _filename_of(params), content)
 
 
 class _ChatHandler(BaseHTTPRequestHandler):
@@ -114,42 +208,30 @@ class _ChatHandler(BaseHTTPRequestHandler):
         if body is None:
             return
 
-        # Parse multipart using email.parser
-        header_bytes = f"Content-Type: {content_type}\r\n\r\n".encode("utf-8")
-        msg = BytesParser().parsebytes(header_bytes + body)
+        boundary = _boundary_of(content_type)
+        if boundary is None:
+            self._json_error("The upload has no multipart boundary.", HTTPStatus.BAD_REQUEST)
+            return
+        form = _split_form_data(body, boundary)
+        if isinstance(form, str):
+            self._json_error(form, HTTPStatus.BAD_REQUEST)
+            return
 
         file_bytes: bytes | None = None
         filename: str | None = None
         sheet: str | None = None
         first_visit: bool | None = None
 
-        if msg.is_multipart():
-            parts = msg.get_payload()
-            if isinstance(parts, list):
-                for part in parts:
-                    if not isinstance(part, Message):
-                        continue
-                    disposition = part.get("Content-Disposition", "")
-                    if 'name="file"' in disposition:
-                        payload = part.get_payload(decode=True)
-                        if isinstance(payload, bytes):
-                            file_bytes = payload
-                        # Extract filename from Content-Disposition
-                        for token in disposition.split(";"):
-                            token = token.strip()
-                            if token.startswith("filename="):
-                                raw_fn = token.split("=", 1)[1].strip('"').strip("'")
-                                filename = raw_fn.replace("\\", "/").split("/")[-1]
-                    elif 'name="sheet"' in disposition:
-                        payload = part.get_payload(decode=True)
-                        if isinstance(payload, bytes):
-                            sheet_text = payload.decode("utf-8", errors="replace").strip()
-                            if sheet_text:
-                                sheet = sheet_text
-                    elif 'name="first_visit"' in disposition:
-                        payload = part.get_payload(decode=True)
-                        if isinstance(payload, bytes):
-                            first_visit = payload.strip() == b"1"
+        for part in form:
+            if part.name == "file":
+                file_bytes = part.content
+                filename = part.filename
+            elif part.name == "sheet":
+                sheet_text = part.content.decode("utf-8", errors="replace").strip()
+                if sheet_text:
+                    sheet = sheet_text
+            elif part.name == "first_visit":
+                first_visit = part.content.strip() == b"1"
 
         if file_bytes is None or filename is None:
             self._json_error(
