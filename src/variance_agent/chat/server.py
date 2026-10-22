@@ -38,6 +38,10 @@ _MAX_MESSAGE_BODY = 2 * MAX_TEXT_LENGTH
 # A real upload has a file plus two small fields; anything near this many parts is hostile.
 _MAX_FORM_PARTS = 8
 
+# Names a non-hosted server answers to. A page on another host that rebinds its DNS name to
+# 127.0.0.1 reaches the server with its own name in Host, so anything else is refused.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
 _DISPOSITION_PARAM = re.compile(r';\s*([A-Za-z][A-Za-z0-9*-]*)\s*=\s*(?:"([^"]*)"|([^;\s]*))')
 
 
@@ -46,6 +50,14 @@ class _FormPart:
     name: str
     filename: str | None
     content: bytes
+
+
+def _hostname(host_header: str) -> str:
+    """The lower-cased host of a Host header, without its port (IPv6 literals keep brackets)."""
+    host = host_header.strip().lower()
+    if host.startswith("["):
+        return host[: host.find("]") + 1] if "]" in host else host
+    return host.partition(":")[0]
 
 
 def _boundary_of(content_type: str) -> bytes | None:
@@ -136,6 +148,9 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     session: ClassVar[Session]
     initial_response: ClassVar[Response | None] = None
+    # Hosted servers answer to their platform's public name, so only Origin is checked there.
+    hosted: ClassVar[bool] = False
+    local_hosts: ClassVar[frozenset[str]] = _LOOPBACK_HOSTS
     # The server is single-threaded and its session is shared, so a client that stalls
     # mid-request is dropped after this many seconds instead of blocking everyone.
     timeout = 15
@@ -148,7 +163,25 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # GET routes
     # ------------------------------------------------------------------
 
+    def _request_is_allowed(self) -> bool:
+        """Refuse DNS-rebound hosts (local mode) and cross-origin POSTs; reply 403 if refused."""
+        host = self.headers.get("Host", "")
+        if not self.hosted and _hostname(host) not in self.local_hosts:
+            self._json_error("Unexpected Host header.", HTTPStatus.FORBIDDEN)
+            return False
+        origin = self.headers.get("Origin")
+        if self.command == "POST" and origin is not None:
+            # A page's own requests carry an Origin equal to the Host it was loaded from; another
+            # site (or an opaque "null" origin) cannot forge that match.
+            origin_host = urllib.parse.urlsplit(origin).netloc.lower()
+            if not origin_host or origin_host != host.strip().lower():
+                self._json_error("Cross-origin requests are not allowed.", HTTPStatus.FORBIDDEN)
+                return False
+        return True
+
     def do_GET(self) -> None:
+        if not self._request_is_allowed():
+            return
         if self.path in {"/", "/index.html", "/chat.html"}:
             self._serve_static("chat.html", "text/html; charset=utf-8")
         elif self.path in {"/status", "/health", "/healthz"}:
@@ -190,6 +223,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
 
     def do_POST(self) -> None:
+        if not self._request_is_allowed():
+            return
         if self.path == "/upload":
             self._handle_upload()
         elif self.path == "/message":
@@ -245,6 +280,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
     def _handle_message(self) -> None:
         """Process a text message through the intent router."""
+        # A cross-site form can send text/plain without a preflight; only the page's own
+        # fetch() sends JSON.
+        if self.headers.get_content_type() != "application/json":
+            self._json_error("Expected application/json.", HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+            return
         body = self._read_body(_MAX_MESSAGE_BODY)
         if body is None:
             return
@@ -315,7 +355,6 @@ class _ChatHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -354,6 +393,8 @@ def run_chat_server(
     session = Session(path_exports_enabled=not hosted)
     _ChatHandler.session = session
     _ChatHandler.initial_response = None
+    _ChatHandler.hosted = hosted
+    _ChatHandler.local_hosts = _LOOPBACK_HOSTS | ({_hostname(host)} - {"", "0.0.0.0", "::"})
 
     if initial_input is not None:
         input_path = Path(initial_input)

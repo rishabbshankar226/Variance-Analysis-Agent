@@ -385,7 +385,7 @@ def test_message_rejects_non_object_json_with_400(server: HTTPServer, body: byte
 
 def test_invalid_content_length_gets_400(server: HTTPServer) -> None:
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as sock:
-        sock.sendall(b"POST /message HTTP/1.1\r\nHost: x\r\nContent-Length: abc\r\n\r\n")
+        sock.sendall(b"POST /message HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: abc\r\n\r\n")
         assert b" 400 " in sock.recv(200)
 
 
@@ -393,7 +393,7 @@ def test_slow_client_cannot_block_the_server(server: HTTPServer, monkeypatch: py
     assert _ChatHandler.timeout is not None and 0 < _ChatHandler.timeout <= 30
     monkeypatch.setattr(_ChatHandler, "timeout", 1)
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as sock:
-        sock.sendall(b"POST /message HTTP/1.1\r\nHost: x\r\nContent-Length: 500\r\n\r\n{\"te")
+        sock.sendall(b"POST /message HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 500\r\n\r\n{\"te")
         conn = HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
         conn.request("GET", "/status")
         assert conn.getresponse().status == 200
