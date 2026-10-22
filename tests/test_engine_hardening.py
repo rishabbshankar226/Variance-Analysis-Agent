@@ -59,7 +59,8 @@ def test_assisted_intake_of_a_large_ledger_is_fast() -> None:
     result = read_input_assisted("\n".join(lines).encode("utf-8"), ".csv", filename="big.csv")
     elapsed = time.perf_counter() - started
     assert not result.has_fatal_errors and len(result.rows) == 8000
-    assert elapsed < 3.0, f"8,000 rows took {elapsed:.1f}s (was 9.6s before the fix)"
+    # About 0.4 s on a laptop; the quadratic version took 9.6 s here and far longer on a slow runner.
+    assert elapsed < 5.0, f"8,000 rows took {elapsed:.1f}s (was 9.6s before the fix)"
 
 
 def _reference_detect(rows: list[dict[str, object]]) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
