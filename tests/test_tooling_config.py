@@ -38,3 +38,23 @@ def test_contributor_docs_use_the_ci_commands() -> None:
         install = re.search(r"pip install -c requirements-typecheck\.txt -e '\.\[([^\]]+)\]'", text)
         assert install is not None, name
         assert {"dev", "excel", "pdf"} <= set(install.group(1).split(",")), name
+
+
+# Markdown files owned by the tooling and docs workstream. Absolute `file:///` links point at one
+# machine's checkout and break everywhere else; relative links must resolve.
+DOCS = ("README.md", "CONTRIBUTING.md", "deterministic_conditioning/README.md", "docs/releasing.md",
+        "docs/roadmap.md")
+
+
+def test_docs_have_no_machine_specific_links() -> None:
+    for name in DOCS:
+        assert "file:///" not in (ROOT / name).read_text(encoding="utf-8"), name
+
+
+def test_relative_doc_links_resolve() -> None:
+    for name in DOCS:
+        path = ROOT / name
+        for target in re.findall(r"\]\(([^)#\s]+)(?:#[^)\s]*)?\)", path.read_text(encoding="utf-8")):
+            if re.match(r"[a-z][a-z0-9+.-]*:", target):
+                continue
+            assert (path.parent / target).exists(), f"{name} links to missing {target}"
