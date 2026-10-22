@@ -390,3 +390,85 @@ def test_a_lone_surrogate_in_a_reply_does_not_crash_serialisation(
     assert response.status == 200
     assert json.loads(data)["text"] == "odd \ud800 text"
     data.decode("ascii")  # escaped on the wire, so the reply is plain ASCII
+
+
+# ---------------------------------------------------------------------------
+# Staged downloads
+# ---------------------------------------------------------------------------
+
+def _stub_download(monkeypatch: pytest.MonkeyPatch, files: dict[str, str | bytes]) -> None:
+    from variance_agent.chat.responses import Response
+
+    monkeypatch.setattr(
+        server_module, "handle_message", lambda *a, **k: Response(text="ok", download=files)
+    )
+
+
+@pytest.mark.parametrize("filename", ["memo q3 #2 ?.md", "a%20b.md", "q3/2026.md", "r&d=1;x.md"])
+def test_download_url_round_trips_awkward_filenames(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch, filename: str
+) -> None:
+    _stub_download(monkeypatch, {filename: "body text"})
+    status, data = _post_message(httpd, {})
+    assert status == 200
+    assert data["download_filename"] == filename
+    assert "#" not in data["download_url"] and "?" not in data["download_url"]
+    response, content = _request(httpd, "GET", data["download_url"])
+    assert response.status == 200
+    assert content == b"body text"
+
+
+def test_reset_discards_staged_downloads(httpd: HTTPServer) -> None:
+    _ChatHandler.session.phase = Phase.EXPLORING
+    server_module._downloads["executive_memo_q3_2026.md"] = "confidential memo"
+    status, data = _post_message(httpd, {}, b'{"text": "reset"}')
+    assert status == 200 and data["phase"] == Phase.AWAITING_FILE
+    response, _ = _request(httpd, "GET", "/download/executive_memo_q3_2026.md")
+    assert response.status == 404
+    assert not server_module._downloads
+
+
+def test_a_new_upload_discards_downloads_of_the_previous_file(httpd: HTTPServer) -> None:
+    server_module._downloads["variance_report_old.md"] = "old report"
+    status, _ = _upload(httpd, b'filename="new.csv"')
+    assert status == 200
+    assert "variance_report_old.md" not in server_module._downloads
+
+
+def test_other_messages_keep_staged_downloads(httpd: HTTPServer) -> None:
+    _ChatHandler.session.phase = Phase.EXPLORING
+    server_module._downloads["report.md"] = "report"
+    _post_message(httpd, {}, b'{"text": "help"}')
+    assert "report.md" in server_module._downloads
+
+
+def test_staged_downloads_are_bounded_in_count_and_oldest_go_first(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    counter = {"n": 0}
+    from variance_agent.chat.responses import Response
+
+    def stage(*args: object, **kwargs: object) -> Response:
+        counter["n"] += 1
+        return Response(text="ok", download={f"export_{counter['n']}.md": "x"})
+
+    monkeypatch.setattr(server_module, "handle_message", stage)
+    for _ in range(server_module._MAX_STAGED_DOWNLOADS + 5):
+        _post_message(httpd, {})
+    names = list(server_module._downloads)
+    assert len(names) == server_module._MAX_STAGED_DOWNLOADS
+    assert names[-1] == f"export_{server_module._MAX_STAGED_DOWNLOADS + 5}.md"
+    assert "export_1.md" not in names
+
+
+def test_staged_downloads_are_bounded_in_bytes_but_keep_the_newest(
+    httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_module, "_MAX_STAGED_BYTES", 1000)
+    for name in ("a.md", "b.md", "c.md"):
+        _stub_download(monkeypatch, {name: "x" * 600})
+        _post_message(httpd, {})
+    assert list(server_module._downloads) == ["c.md"]
+    _stub_download(monkeypatch, {"huge.md": "x" * 5000})
+    _post_message(httpd, {})
+    assert list(server_module._downloads) == ["huge.md"]

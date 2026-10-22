@@ -11,6 +11,7 @@ import sys
 import traceback
 import urllib.parse
 import webbrowser
+from collections import OrderedDict
 from collections.abc import Callable
 from email.message import Message
 from dataclasses import dataclass
@@ -24,14 +25,17 @@ from variance_agent.xlsx import XLSX_MEDIA_TYPE
 
 from .handlers import handle_message, handle_upload
 from .responses import Response
-from .session import Session
+from .session import Phase, Session
 
 
 _STATIC_DIR = Path(__file__).resolve().parent.parent.parent.parent / "static"
 _PKG_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
-# Staged downloads keyed by filename
-_downloads: dict[str, str | bytes] = {}
+# Staged downloads keyed by filename, oldest first. They are sensitive (reports, memos) and the
+# service is small, so they are bounded and dropped when the analysis they belong to ends.
+_downloads: OrderedDict[str, str | bytes] = OrderedDict()
+_MAX_STAGED_DOWNLOADS = 16
+_MAX_STAGED_BYTES = 48 * 1024 * 1024
 
 _DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
 
@@ -53,6 +57,17 @@ class _FormPart:
     name: str
     filename: str | None
     content: bytes
+
+
+def _stage_download(filename: str, content: str | bytes) -> None:
+    """Keep an export for download, evicting the oldest ones beyond the count and byte caps."""
+    _downloads.pop(filename, None)
+    _downloads[filename] = content
+    while len(_downloads) > 1 and (
+        len(_downloads) > _MAX_STAGED_DOWNLOADS
+        or sum(len(staged) for staged in _downloads.values()) > _MAX_STAGED_BYTES
+    ):
+        _downloads.popitem(last=False)
 
 
 def _hostname(host_header: str) -> str:
@@ -300,6 +315,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
             )
             return
 
+        _downloads.clear()  # exports of the previous file must not outlive it
         response = handle_upload(self.session, file_bytes, filename, sheet, first_visit=first_visit)
         self._send_response(response)
 
@@ -331,7 +347,10 @@ class _ChatHandler(BaseHTTPRequestHandler):
 
         raw_first_visit = data.get("first_visit")
         first_visit = raw_first_visit if isinstance(raw_first_visit, bool) else None
+        phase_before = self.session.phase
         response = handle_message(self.session, text, first_visit=first_visit)
+        if phase_before is not Phase.AWAITING_FILE and self.session.phase is Phase.AWAITING_FILE:
+            _downloads.clear()  # the session was reset; its exports go with it
         self._send_response(response)
 
     # ------------------------------------------------------------------
@@ -365,8 +384,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
         if response.download is not None:
             # Stage the download and return a URL
             for filename, content in response.download.items():
-                _downloads[filename] = content
-                payload["download_url"] = f"/download/{filename}"
+                _stage_download(filename, content)
+                payload["download_url"] = "/download/" + urllib.parse.quote(filename, safe="")
                 payload["download_filename"] = filename
 
         self._json_response(payload)
