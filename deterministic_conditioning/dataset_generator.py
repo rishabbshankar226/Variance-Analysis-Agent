@@ -112,7 +112,7 @@ EXPANDED_DATASET_SPECS: list[DPOPairSpec] = [
 def generate_and_filter_dataset(output_path: Path) -> tuple[int, int]:
     """Validate all candidate specs through CurationGates and export passing samples."""
     gates = CurationGates()
-    passed_records: list[dict] = []
+    passed_records: list[dict[str, object]] = []
     chosen_texts: list[str] = []
 
     print(f"\nEvaluating {len(EXPANDED_DATASET_SPECS)} candidate pairs through SFT/DPO Curation Gates...")

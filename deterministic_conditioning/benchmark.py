@@ -50,6 +50,9 @@ class BenchmarkEvaluator:
         re.IGNORECASE,
     )
     SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+    # Inclusive word-count ranges; the report rows and README label them "3–6w" and "18–28w".
+    SHORT_WORDS = (3, 6)
+    LONG_WORDS = (18, 28)
 
     @classmethod
     def evaluate(cls, corpus: list[str]) -> LinguisticMetrics:
@@ -64,16 +67,17 @@ class BenchmarkEvaluator:
             sentences = [s.strip() for s in cls.SENTENCE_SPLIT.split(text.strip()) if s.strip()]
 
             for s in sentences:
-                words = [re.sub(r"[^\w]", "", w).lower() for w in s.split() if w]
+                cleaned = (re.sub(r"[^\w]", "", w).lower() for w in s.split())
+                words = [w for w in cleaned if w]  # a spaced dash or bare symbol is not a word
                 if not words:
                     continue
                 w_len = len(words)
                 sentence_lens.append(w_len)
                 all_words.extend(words)
 
-                if 2 <= w_len <= 7:
+                if cls.SHORT_WORDS[0] <= w_len <= cls.SHORT_WORDS[1]:
                     short_count += 1
-                elif 17 <= w_len <= 30:
+                elif cls.LONG_WORDS[0] <= w_len <= cls.LONG_WORDS[1]:
                     long_count += 1
 
         total_words = len(all_words)
@@ -106,6 +110,16 @@ class BenchmarkEvaluator:
         )
 
 
+# A money token that shows zero: "$0.00", "€0", "£0.00", or the "USD 0.00" form of the default formatter.
+_ZERO_MONEY = r"(?:[$€£]|\b(?-i:[A-Z]{3}) )0(?:\.0+)?(?![\d,]|\.\d)"
+_OUTCOME_CLAIM = (r"(?:outperform\w*|underperform\w*|\bbeats?\b|shortfall|surplus|savings?|overspen[dt]|"
+                  r"overrun|ahead of|behind)")
+_ZERO_OUTCOME = re.compile(
+    rf"{_OUTCOME_CLAIM}[^$€£\d]{{0,30}}{_ZERO_MONEY}|{_ZERO_MONEY}[^$€£\d]{{0,12}}{_OUTCOME_CLAIM}",
+    re.IGNORECASE,
+)
+
+
 def commentary_contradictions(text: str, result: AnalysisResult) -> list[str]:
     """Claims in ``text`` that the analysis result does not support (empty when truthful)."""
     from variance_agent.models import Status
@@ -113,6 +127,7 @@ def commentary_contradictions(text: str, result: AnalysisResult) -> list[str]:
     lower = text.lower()
     net = result.revenue.variance_dollars - result.expenses.variance_dollars
     actual_profit = result.revenue.actual - result.expenses.actual
+    budget_profit = result.revenue.budget - result.expenses.budget
     status = {row.line_item: row.status for row in result.rows}
     problems: list[str] = []
     if net < 0:
@@ -120,10 +135,18 @@ def commentary_contradictions(text: str, result: AnalysisResult) -> list[str]:
                      for word in ("outpaced", "beat", "surplus", "widening", "improving") if word in lower]
     if net > 0 and "shortfall" in lower:
         problems.append("claims a shortfall on a net-favourable period")
-    if actual_profit >= Decimal(0) and ("negative territory" in lower or "turned negative" in lower):
+    if net != 0 and "balanced performance" in lower:
+        problems.append("claims balanced performance on a period that is "
+                        + ("ahead of" if net > 0 else "behind") + " the comparison")
+    went_negative = "negative territory" in lower or "turned negative" in lower
+    if actual_profit >= Decimal(0) and went_negative:
         problems.append("claims negative operating profit")
-    if result.material_rows and "no unresolved variances" in lower:
-        problems.append("claims no unresolved variances while material items exist")
+    elif budget_profit < Decimal(0) and went_negative:
+        problems.append("claims operating profit turned negative although the comparison already was a loss")
+    if "no unresolved variances" in lower and (result.material_rows or net != 0):
+        problems.append("claims no unresolved variances while material items or a net variance exist")
+    if _ZERO_OUTCOME.search(text):
+        problems.append("claims an outperformance or shortfall of a zero amount")
     if "cash" in lower:
         problems.append("mentions cash, which is not an input field")
     review = re.match(r"Review (.+?) immediately", text)

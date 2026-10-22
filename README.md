@@ -108,11 +108,11 @@ Source labels and periods are untrusted data. Reports escape Markdown/HTML and r
 ## Verification
 
 ```sh
-python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,release]'
+python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,pdf,release]'
 python -m pytest -q
 python -m ruff check .
-python -m mypy --strict src/variance_agent scripts
-python -m compileall -q src tests scripts
+python -m mypy --strict src/variance_agent scripts deterministic_conditioning
+python -m compileall -q src tests scripts deterministic_conditioning
 python -m pip check
 python -m build --outdir dist
 python -m twine check dist/*
@@ -121,6 +121,6 @@ python scripts/check_distribution.py dist
 
 Tests include exact Fraction-oracle accounting/materiality properties, financial/reporting regressions, immutable audit schemas and reviewed reports, hostile workbook preflight, CLI output preservation, and distribution installation checks. `scripts/check_installation.py --without-excel` must run in a separate non-editable installation without the Excel extra.
 
-Strict source and script typing is configured in `pyproject.toml`, including bans on explicit and unimported `Any`. The development extra includes mypy 2.4.0, and CI enforces the same command on each supported Python version.
+Strict typing covers `src/variance_agent`, `scripts` and the auxiliary `deterministic_conditioning` package. It is configured in `pyproject.toml` (`[tool.mypy] files`), including bans on explicit and unimported `Any`, and CI runs the command above on each supported Python version. List the package explicitly: when the checkout is also the editable-install target, mypy treats an unlisted package as installed and hides its errors, so a run from a different directory reports errors that CI never showed. Without the `pdf` extra the PDF tests are skipped.
 
 See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.

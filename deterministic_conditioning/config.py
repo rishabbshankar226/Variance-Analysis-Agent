@@ -7,7 +7,6 @@ while eliminating greedy argmax loops and degenerate token basins.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -32,7 +31,7 @@ class DeterministicDecodingConfig:
     presence_penalty: float = 0.15
     no_repeat_ngram_size: int = 4
 
-    def to_huggingface_dict(self) -> dict[str, Any]:
+    def to_huggingface_dict(self) -> dict[str, object]:
         """Convert to Hugging Face transformers GenerationConfig parameter dictionary."""
         return {
             "do_sample": False,
@@ -41,7 +40,7 @@ class DeterministicDecodingConfig:
             "no_repeat_ngram_size": self.no_repeat_ngram_size,
         }
 
-    def to_vllm_dict(self) -> dict[str, Any]:
+    def to_vllm_dict(self) -> dict[str, object]:
         """Convert to vLLM SamplingParams parameter dictionary."""
         return {
             "temperature": 0.0,
@@ -50,6 +49,6 @@ class DeterministicDecodingConfig:
             "presence_penalty": self.presence_penalty,
         }
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Export as standard dictionary."""
         return asdict(self)
