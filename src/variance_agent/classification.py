@@ -12,7 +12,7 @@ import re
 
 from .models import LineType
 
-REVENUE_RE = re.compile(r"\b(revenue|sales|income)\b", re.IGNORECASE)
+REVENUE_RE = re.compile(r"\b(revenues?|sales|income)\b", re.IGNORECASE)
 EXPENSE_RE = re.compile(
     r"\b(expense|expenses|cost|costs|cogs|opex|payroll|rent|marketing|freight|utilities)\b",
     re.IGNORECASE,

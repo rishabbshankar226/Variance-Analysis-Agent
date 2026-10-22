@@ -36,11 +36,16 @@ _ACTUAL_KEYS = ("actual", "actual_amount", "actuals")
 _TYPE_KEYS = ("type", "line_type", "revenue_expense_type", "classification")
 
 _SUMMARY_RE = re.compile(r"\b(grand\s+total|sub\s*total|subtotal|total)\b", re.IGNORECASE)
+# A summary row names a whole category: "Total Revenue(s)", "Total Operating Expenses", "Total Costs and
+# Expenses", "Revenues Total". "Income" counts only bare ("Total Income"): "Total Operating Income" is a
+# profit measure, not a category, and still needs a Row Kind.
+_TOTAL_WORD = r"(?:grand\s+total|sub\s*total|total)"
+_CATEGORY_NAME = (
+    r"(?:(?:(?:operating|net|other)\s+)?(?:revenues?|sales|expenses?|costs?(?:\s+and\s+expenses?)?|cogs|opex)"
+    r"|income)"
+)
 _CATEGORY_SUMMARY_RE = re.compile(
-    r"(?:(?:grand\s+total|sub\s*total|total)\s+"
-    r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)|"
-    r"(?:revenue|sales|income|expenses?|costs?|cogs|opex)\s+"
-    r"(?:grand\s+total|sub\s*total|total)|grand\s+total|sub\s*total|total)",
+    rf"(?:{_TOTAL_WORD}\s+{_CATEGORY_NAME}|{_CATEGORY_NAME}\s+{_TOTAL_WORD}|grand\s+total|sub\s*total|total)",
     re.IGNORECASE,
 )
 
