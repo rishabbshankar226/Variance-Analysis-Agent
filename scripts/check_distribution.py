@@ -17,6 +17,10 @@ def main() -> None:
     with zipfile.ZipFile(wheels[0]) as wheel:
         names = wheel.namelist()
         assert "variance_agent/version.py" in names
+        # The chat server reads its page from the package; a wheel without these serves a 404.
+        for asset in ("chat.html", "chat.js", "chat.css"):
+            assert f"variance_agent/static/{asset}" in names, asset
+        assert not any(name.startswith("static/") for name in names), "stray top-level static/"
         assert any(name.endswith("/licenses/LICENSE") for name in names)
         metadata = BytesParser().parsebytes(wheel.read(next(
             name for name in names if name.endswith(".dist-info/METADATA"))))
@@ -28,6 +32,8 @@ def main() -> None:
         names = source.getnames()
         for required in ("LICENSE", "pyproject.toml", "requirements-typecheck.txt",
                          "src/variance_agent/version.py",
+                         "src/variance_agent/static/chat.html",
+                         "src/variance_agent/static/chat.js", "src/variance_agent/static/chat.css",
                          "schemas/audit-1.0.schema.json", "schemas/audit-1.3.schema.json",
                          "schemas/audit-1.4.schema.json",
                          "tests/fixtures/contracts/complete.report.md", "docs/audit-contract.md",
