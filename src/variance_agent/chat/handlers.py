@@ -710,12 +710,22 @@ def _clean_period_input(text: str) -> str:
     return cleaned or text.strip()
 
 
+_MAX_PERIOD_CHARS = 100
+
+
 def _handle_period(session: Session, text: str) -> Response:
     """Accept the reporting period."""
     period = _clean_period_input(text)
     if not period:
         return Response(
             text="The reporting period cannot be blank. Please enter a period (e.g., Q3 2026).",
+            phase=Phase.AWAITING_PERIOD,
+        )
+    if len(period) > _MAX_PERIOD_CHARS:
+        return Response(
+            text=f"Please enter a short period label of up to {_MAX_PERIOD_CHARS} characters "
+                 "(e.g., Q3 2026, October 2026, FY2026).",
+            chips=["Q3 2026", "FY2026", "October 2026"],
             phase=Phase.AWAITING_PERIOD,
         )
     if parse_intent(text).intent_id != "unknown":
@@ -2156,6 +2166,44 @@ def _handle_full_report(session: Session) -> Response:
     )
 
 
+def _export_response(
+    session: Session, intent: ParsedIntent, content: str | bytes, filename: str, *,
+    written: str, ready: str, retry_chip: str, written_chips: list[str], ready_chips: list[str],
+) -> Response:
+    """Write an export to the path the user named, or hand it over as a download.
+
+    A path is only honoured where the deployment allows it (not on the hosted server).
+    """
+    path = _export_path(intent)
+    if path and not session.path_exports_enabled:
+        return _path_export_disabled(path, intent)
+    if path:
+        try:
+            write_text_outputs({Path(path): content})
+            return Response(
+                text=f"✅ {written} written to `{safe_inline(path)}`.",
+                chips=written_chips,
+                phase=Phase.EXPLORING,
+            )
+        except (ValueError, OSError) as exc:
+            return Response(
+                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
+                chips=[retry_chip],
+                phase=Phase.EXPLORING,
+            )
+    return Response(
+        text=ready,
+        download={filename: content},
+        chips=ready_chips,
+        phase=Phase.EXPLORING,
+    )
+
+
+def _period_slug(period: str) -> str:
+    """The period as a file-name fragment: letters, digits, '-' and '_' only."""
+    return re.sub(r"[^a-z0-9-]+", "_", normalize_for_routing(period).lower()).strip("_") or "period"
+
+
 _PATH_CHARACTERS = re.compile(r"[/\\.~]")
 
 
@@ -2189,32 +2237,13 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     assert result is not None
 
     report = render_markdown(result)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_report_{period_slug}.md"
 
-    path = _export_path(intent)
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): report})
-            return Response(
-                text=f"✅ Report written to `{safe_inline(path)}`.",
-                chips=["Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export report"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📄 Markdown report ready for download.",
-        download={filename: report},
-        chips=["Export excel", "Export audit", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, report, filename,
+        written="Report", ready="📄 Markdown report ready for download.", retry_chip="Export report",
+        written_chips=["Export audit", "Summary"], ready_chips=["Export excel", "Export audit", "Summary"],
     )
 
 
@@ -2240,32 +2269,13 @@ def _handle_export_audit(session: Session, intent: ParsedIntent) -> Response:
                          if session.intake_result is not None else None),
     )
     audit_json = serialize_audit_json(record)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_audit_{period_slug}.json"
 
-    path = _export_path(intent)
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): audit_json})
-            return Response(
-                text=f"✅ Audit JSON written to `{safe_inline(path)}`.",
-                chips=["Export report", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export audit"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📋 Audit JSON ready for download.",
-        download={filename: audit_json},
-        chips=["Export report", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, audit_json, filename,
+        written="Audit JSON", ready="📋 Audit JSON ready for download.", retry_chip="Export audit",
+        written_chips=["Export report", "Summary"], ready_chips=["Export report", "Summary"],
     )
 
 
@@ -2328,32 +2338,13 @@ def _handle_export_csv(session: Session, intent: ParsedIntent) -> Response:
         ])
 
     csv_text = output.getvalue()
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_data_{period_slug}.csv"
 
-    path = _export_path(intent)
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): csv_text})
-            return Response(
-                text=f"✅ Analysis CSV written to `{safe_inline(path)}`.",
-                chips=["Export report", "Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export csv"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text="📊 Analysis CSV ready for download.",
-        download={filename: csv_text},
-        chips=["Export excel", "Export report", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, csv_text, filename,
+        written="Analysis CSV", ready="📊 Analysis CSV ready for download.", retry_chip="Export csv",
+        written_chips=["Export report", "Export audit", "Summary"], ready_chips=["Export excel", "Export report", "Summary"],
     )
 
 
@@ -2363,33 +2354,14 @@ def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
     assert result is not None
 
     workbook = render_xlsx(result)
-    period_slug = result.config.period.replace(" ", "_").lower()
+    period_slug = _period_slug(result.config.period)
     filename = f"variance_workbook_{period_slug}.xlsx"
 
-    path = _export_path(intent)
-    if path and not session.path_exports_enabled:
-        return _path_export_disabled(path, intent)
-    if path:
-        try:
-            write_text_outputs({Path(path): workbook})
-            return Response(
-                text=f"✅ Excel workbook written to `{safe_inline(path)}`.",
-                chips=["Export report", "Export audit", "Summary"],
-                phase=Phase.EXPLORING,
-            )
-        except (ValueError, OSError) as exc:
-            return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
-                chips=["Export excel"],
-                phase=Phase.EXPLORING,
-            )
-
-    return Response(
-        text=("📗 Excel workbook ready for download: Summary, Material Variances, "
-              "Root Causes & Actions, and All Rows sheets."),
-        download={filename: workbook},
-        chips=["Export report", "Export audit", "Summary"],
-        phase=Phase.EXPLORING,
+    return _export_response(
+        session, intent, workbook, filename,
+        written="Excel workbook", ready=("📗 Excel workbook ready for download: Summary, Material Variances, "
+              "Root Causes & Actions, and All Rows sheets."), retry_chip="Export excel",
+        written_chips=["Export report", "Export audit", "Summary"], ready_chips=["Export report", "Export audit", "Summary"],
     )
 
 
@@ -4128,7 +4100,7 @@ def _handle_executive_memo(session: Session) -> Response:
         memo_lines.append("3. **Audit Verification:** All material drivers mathematically reconciled and signed off.")
 
     memo_text = "\n".join(memo_lines)
-    period_slug = cfg.period.replace(" ", "_").lower()
+    period_slug = _period_slug(cfg.period)
     filename = f"executive_memo_{period_slug}.md"
 
     table_overview = [
