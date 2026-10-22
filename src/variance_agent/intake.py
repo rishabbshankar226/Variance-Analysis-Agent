@@ -1559,7 +1559,8 @@ def _read_pdf_bytes(
         treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
         selected_period=selected_period,
         compare_to=compare_to,
-        signs_resolved=True,
+        signs_resolved=shaped.shaped,
+        from_pdf=True,
     )
     result.source_kind = "pdf"
     result.source_pages = chosen.page_numbers
@@ -1591,12 +1592,19 @@ def _cell_problem(
     )
 
 
-def _unreadable_cells_message(filename: str, cells: list[IntakeProblem]) -> str:
+def _unreadable_cells_message(filename: str, cells: list[IntakeProblem], *, from_pdf: bool = False) -> str:
     """Stop-and-fix message for amounts that cannot be read (never read as 0)."""
-    lines = [
-        f"I could not read every amount in '{filename}', so I stopped instead of guessing. "
-        "Fix these cells and upload the file again:"
-    ]
+    if from_pdf:
+        lines = [
+            f"I could not read every figure in the PDF '{filename}' as a number, so I stopped "
+            "instead of guessing. A footnote marker or stray symbol next to a figure is the usual "
+            "cause. Upload an Excel or CSV copy of the statement, or check these figures:"
+        ]
+    else:
+        lines = [
+            f"I could not read every amount in '{filename}', so I stopped instead of guessing. "
+            "Fix these cells and upload the file again:"
+        ]
     lines.extend(f"- {cell.message}" for cell in cells[:_MAX_LISTED_CELLS])
     if len(cells) > _MAX_LISTED_CELLS:
         lines.append(f"- ...and {len(cells) - _MAX_LISTED_CELLS} more.")
@@ -1611,6 +1619,7 @@ def _process_raw_table(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
     signs_resolved: bool = False,
+    from_pdf: bool = False,
 ) -> IntakeResult:
     """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
     financial statement: their signs are settled and their subtotals already removed, so the
@@ -1825,7 +1834,7 @@ def _process_raw_table(
     if unreadable_cells:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=_unreadable_cells_message(filename, unreadable_cells),
+            fatal_error_message=_unreadable_cells_message(filename, unreadable_cells, from_pdf=from_pdf),
             problems=problems,
             sheet_name=sheet_name,
             header_row_number=header_row_number,
@@ -1925,25 +1934,14 @@ def _process_raw_table(
 def audit_transformations(
     intake_res: IntakeResult, mapping: LayoutMapping | None = None,
 ) -> dict[str, object]:
-    """The audit's transformations record for an assisted read, replayed from a mapping if given.
+    """The audit's transformations record: what assisted intake did to the file.
 
-    Shared by the CLI (--assisted, --mapping) and the chat's audit export.
+    Shared by the CLI (--assisted, --mapping) and the chat's audit export. A mapping adds only
+    what it alone decides (period selection, classification rules, its own digest); the header
+    row, columns, scale, sign flips and exclusions are what intake actually applied. The CLI
+    folds the mapping's own scale, flips and exclusions into ``intake_res`` first.
     """
     blank_budgets = len(intake_res.blank_budget_items) if intake_res.blank_budgets_as_zero else 0
-    if mapping is not None:
-        return {
-            "header_row_number": mapping.header_row_number,
-            "column_mapping": mapping.column_mapping,
-            "ignored_columns": intake_res.ignored_columns,
-            "sign_flip": mapping.flip_signs,
-            "flipped_line_items": intake_res.negative_revenue_items if mapping.flip_signs else [],
-            "unit_scale": mapping.unit_scale if mapping.unit_scale != "1" else None,
-            "zero_reads": {"accounting_dashes": intake_res.dash_count, "blank_budgets": blank_budgets},
-            "excluded_totals": mapping.exclude_totals,
-            "period_selection": mapping.period_column_selection,
-            "classification_rules": mapping.classification_rules,
-            "mapping_file_sha256": mapping_sha256(mapping),
-        }
     return {
         "header_row_number": intake_res.header_row_number,
         "column_mapping": {role.value: name for role, name in intake_res.column_mapping.items()},
@@ -1956,9 +1954,9 @@ def audit_transformations(
         ),
         "zero_reads": {"accounting_dashes": intake_res.dash_count, "blank_budgets": blank_budgets},
         "excluded_totals": intake_res.detected_totals,
-        "period_selection": None,
-        "classification_rules": None,
-        "mapping_file_sha256": None,
+        "period_selection": mapping.period_column_selection if mapping is not None else None,
+        "classification_rules": mapping.classification_rules if mapping is not None else None,
+        "mapping_file_sha256": mapping_sha256(mapping) if mapping is not None else None,
     }
 
 

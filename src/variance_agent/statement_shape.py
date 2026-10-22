@@ -48,6 +48,9 @@ class ShapedStatement:
     flipped: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)  # shown to the user
     audit_notes: list[str] = field(default_factory=list)  # subtotals, notes and every label
+    # False when the statement could not be checked (no header row, or an unreadable figure):
+    # the rows are the input unchanged, so their signs and subtotals are still unresolved.
+    shaped: bool = True
 
 
 @dataclass
@@ -112,12 +115,15 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     """Label each line of an income statement by how the statement's subtotals add up."""
     header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
     if header_at is None:
-        return ShapedStatement(rows=raw_rows)
+        return ShapedStatement(rows=raw_rows, shaped=False)
     header, data = raw_rows[header_at], raw_rows[header_at + 1:]
     periods = len(header) - 1
-    parsed = [[_amount(cell) for cell in row[1:1 + periods]] for row in data]
+    # Parsing runs in the policy context: an unreadable figure raises InvalidOperation, and
+    # that flag must not stay behind in the caller's Decimal context.
+    with financial_context():
+        parsed = [[_amount(cell) for cell in row[1:1 + periods]] for row in data]
     if any(value is None for values in parsed for value in values):
-        return ShapedStatement(rows=raw_rows)
+        return ShapedStatement(rows=raw_rows, shaped=False)
     amounts = [[value for value in values if value is not None] for values in parsed]
     unit = min((Decimal(1).scaleb(min(v.as_tuple().exponent, 0))  # type: ignore[arg-type]
                 for values in amounts for v in values), default=Decimal(1))

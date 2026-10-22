@@ -279,6 +279,11 @@ def _run(args: Arguments) -> int:
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
             rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+            # The audit records every exclusion that was applied, the mapping's included.
+            intake_res.detected_totals = [
+                *intake_res.detected_totals,
+                *(name for name in mapping_obj.exclude_totals if name not in intake_res.detected_totals),
+            ]
         # Intake already applied any unit scale and revenue sign flip it detected (as the chat
         # does), so the mapping only adds what the file itself did not say.
         if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
@@ -286,6 +291,7 @@ def _run(args: Arguments) -> int:
             detected_scale = intake_res.detected_unit_multiplier
             if detected_scale == Decimal("1"):
                 rows = scale_rows_by_unit(rows, target_scale)
+                intake_res.detected_unit_multiplier = target_scale
             elif detected_scale != target_scale:
                 raise ValueError(
                     f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
@@ -293,7 +299,9 @@ def _run(args: Arguments) -> int:
                     "in the mapping."
                 )
         if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
-            rows, _ = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
+            rows, flipped = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
+            intake_res.negative_revenue_items = flipped
+            intake_res.detected_signed_ledger = bool(flipped)
 
         type_map: dict[str, LineType] = {}
         if type_map_bytes is not None:
