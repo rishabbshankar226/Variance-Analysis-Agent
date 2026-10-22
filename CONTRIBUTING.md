@@ -4,16 +4,17 @@ Use Python 3.11-3.14 and a virtual environment:
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,release]'
+.venv/bin/python -m pip install -c requirements-typecheck.txt -e '.[dev,excel,pdf,release]'
 .venv/bin/python -m pytest
 .venv/bin/ruff check .
-.venv/bin/python -m mypy --strict src/variance_agent scripts
-.venv/bin/python -m compileall -q src tests scripts
+.venv/bin/python -m mypy --strict src/variance_agent scripts deterministic_conditioning
+.venv/bin/python -m compileall -q src tests scripts deterministic_conditioning
 .venv/bin/python -m pip check
 ```
 
 On Windows, use `.venv\Scripts\python.exe` and the corresponding Ruff executable.
-The runtime needs no third-party packages for CSV/JSON. Excel is an optional extra.
+The runtime needs no third-party packages for CSV/JSON. Excel and PDF are optional extras;
+without `pdf` the PDF tests are skipped, so install it before changing intake.
 Schema validators and build tools are development/release dependencies only.
 
 For behavior changes, add a regression demonstrating the failure first. Run the
@@ -34,10 +35,11 @@ CI tests every declared Python version, schemas/goldens, an installation without
 Excel, wheel/sdist installations, and portable output behavior on Windows.
 Repository owners can require the stable `Required checks` job on main. Action
 SHAs must be verified against their upstream repository when updating pins.
-The source and verification scripts have a strict mypy configuration, including
-explicit/unimported Any bans. The development extra includes the pinned checker;
-CI runs `python -m mypy --strict src/variance_agent scripts` on every supported
-Python version. Executed results are recorded in the institutional audit ledger. Do not hide
+The source, verification scripts and the auxiliary `deterministic_conditioning`
+package have a strict mypy configuration, including explicit/unimported Any bans.
+The development extra includes the pinned checker; CI runs
+`python -m mypy --strict src/variance_agent scripts deterministic_conditioning`
+on every supported Python version. Executed results are recorded in the institutional audit ledger. Do not hide
 errors behind blanket ignores or introduce new third-party dependencies without
 the repository owner's approval.
 

@@ -38,7 +38,7 @@ class DeterministicChatClient:
     ) -> None:
         self.config = config or DeterministicDecodingConfig()
         self.router = router or DynamicPromptRouter()
-        self.api_base = api_base or os.getenv("LLM_API_BASE", "http://localhost:8000/v1")
+        self.api_base: str = api_base or os.getenv("LLM_API_BASE") or "http://localhost:8000/v1"
         self.model_name = model_name
         self.api_key = os.getenv("LLM_API_KEY", "")
         self.history: list[dict[str, str]] = []

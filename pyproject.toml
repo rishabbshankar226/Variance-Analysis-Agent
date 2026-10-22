@@ -51,7 +51,7 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/variance_agent", "scripts"]
+files = ["src/variance_agent", "scripts", "deterministic_conditioning"]
 strict = true
 disallow_any_explicit = true
 disallow_any_unimported = true
