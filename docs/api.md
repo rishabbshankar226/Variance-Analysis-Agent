@@ -123,3 +123,8 @@ Higher. A per-share override beats a preset default. Count/EPS amounts remain
 independent of currency-caption scaling. `TableAnalysis.source_document` and
 `source_transformations` retain the statement/pages and applied reader policies;
 comparison audit building uses them by default.
+
+Explicit `--surprise-window` and `--entity` choices also apply when supplied
+estimate dispersion enables statistics without a history file. In the file API,
+explicit column mappings and detected header rows are retained as transformations
+and copied intake notes remain visible in each available comparison audit.

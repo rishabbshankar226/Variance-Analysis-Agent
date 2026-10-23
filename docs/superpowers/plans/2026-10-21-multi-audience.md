@@ -1737,3 +1737,52 @@ Legacy sample report SHA-256: 63f5d2d61de895f715d8270d948fb1b6d54208fa582f461c95
 Legacy sample audit SHA-256: 3420b6d4e77dab921dfb683feb7241f8cece1c298d86c2c9f01f951d2c829c7c (matches baseline)
 Legacy sample xlsx SHA-256: 11db3182fb2f5b377e7973016e9b51fc0780e96fd80d6b3471e1c6633025ee43 (matches baseline)
 ```
+
+## Phase 8 complete — Maya, Priya, Dan and Wei; STOP 4
+
+The final report is `docs/MULTI_AUDIENCE_2026-10.md`. It contains actual command/output per reader, phase commits and test additions, the 19-contract byte command and extended legacy sample hashes, every final verification command/output, both measured throughput runs and the machine, all Differences and remaining untested boundaries. README has one runnable scenario command per reader and the corrected absolute denominator. Changelog, roadmap, API and final 1.8 field delta are updated. Both optional phases shipped; none was dropped.
+
+The final source code is in `803b1b3` plus preceding phase commits. Documentation links passed after the completed report was written. Wheel/sdist were rebuilt, checked and the refreshed sdist was separately installed and smoke-tested without Excel/PDF. Results below are from the documentation refresh; the full suite remains the measured 1,964 passed in 40.32s, with 526 chat/frontend fallback cases passed in 20.78s. No source code changed after that full gate.
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**distribution**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**refreshed sdist installation**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
+
+**documentation links**
+
+```text
+.....                                                                    [100%]
+5 passed in 0.02s
+```
+
+**whitespace**
+
+```text
+Completed successfully with no output.
+```
+
+STOP 4: the owner brief says “Before any merge or push. Present the final report.” All work remains local on feat/multi-audience. No push, merge, tag, release or hosted publication is performed. Await owner authorization after presenting the report.

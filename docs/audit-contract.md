@@ -104,7 +104,7 @@ legacy record keeps its bytes. Declared measures/Better or new measure settings
 select 1.8 automatically; explicitly choosing 1.0–1.7 for those facts is refused
 before output publication. Published schemas 1.0–1.7 are unchanged.
 
-1.8 adds three closed sibling groups:
+1.8 introduces these foundational closed sibling groups:
 
 - `audience`: exact nullable `per_share_threshold`, `count_threshold`,
   `bps_threshold`, and `percent_values` (points/fractions/null).
@@ -119,8 +119,8 @@ The existing money-oriented `material_variances` contains Currency rows only;
 Currency completeness consider Currency rows, while material variance counts
 cover all kinds. The effective audience settings enter configuration identity;
 all new row facts and notes enter analysis and public payload identities. Every
-1.8 object rejects unknown properties. This schema is unreleased and will gain
-the remaining approved comparison/panel facts before publication.
+1.8 record shape rejects unknown properties. The complete unreleased extension
+is described below; published schemas 1.0–1.7 remain immutable.
 
 ### Unreleased 1.8 comparison additions
 
@@ -152,6 +152,14 @@ default. In-memory API results leave source identity null. Long panel outputs
 carry the CLI capture hash or null for in-memory calls; the batch itself is not a
 new audit schema kind. Every comparison audit remains independently verifiable.
 
+Mapped file intake records its explicit role-to-source-column map and detected
+header row in `transformations`. Intake and period notes are copied into every
+available child record's `inferences`, including a single-basis wrapper. These
+facts enter the payload digest and analysis fingerprint. A mapping-file digest
+identifies canonical validated mapping choices, rather than the original file's
+whitespace. Effective audience/statistic configuration enters
+`configuration_sha256`; mapping provenance is covered by the record identities.
+
 ### Statistics in audit 1.8
 
 Comparison-wrapper records optionally add `statistics_configuration` (window,
@@ -182,3 +190,40 @@ The current and comparison period labels are preserved from the statement.
 Currency-only shaping excludes the same supplied computed subtotals; retained
 EPS/count rows do not affect monetary reconciliation or totals. New comparison
 wrappers use 1.8 and include these fields in their fingerprints.
+
+### Final 1.8 field delta
+
+The schema is the authoritative closed contract. The implemented fields replace
+the preliminary shape proposed in the implementation plan. Existing 1.7 groups
+retain their meanings for representable Currency results.
+
+| Path | Implemented values and meaning |
+|---|---|
+| `schema_version` | `1.8`; legacy default remains `1.7` |
+| `audience` cutoffs | `per_share_threshold`, `count_threshold`, `bps_threshold`: exact decimal strings or null; `percent_values`: points/fractions/null |
+| `audience` period/header choices | `actual_label`, `comparison_title`, `extended_headers`; comparison label remains in `comparison.label` |
+| `audience` presentation | `preset`, effective `layout`, effective `per_share_lines`, ordered `headline_items` |
+| `audience` existing configuration | `currency`, `dollar_threshold`, ratio `percent_threshold`, sorted `type_map` entries with `line_item` and `type` |
+| `inferences[]` | Strings describing basis, measure, direction/default, rate scale, segment source, period and layout/intake decisions |
+| `measure_rows[]` identity/direction | `line_item`, `segment`, `measure`, `type`, `better`, `direction_source` |
+| `measure_rows[]` amounts | `comparison`, `actual`, `variance`, nullable ratio `variance_percent`, nullable `variance_bps`, `percent_label` |
+| `measure_rows[]` outcomes | `status`, `material`, `materiality_reason`, `display_label`, `excluded_from_aggregation` |
+| `comparison_details[]` | `line_item`, nullable `consensus_low`, `consensus_high`, `dispersion`, `estimator_count`, `consensus_range_position`, `guidance_low`, `guidance_high`, `guidance_midpoint`, `guidance_position` |
+| `unavailable_comparisons[]` | `line_item`, `segment`, `measure`, exact `actual`, null `comparison`/`status`/`display_label`, `reason`, supplied `comparison_details` |
+| `segments[]` | `segment`, scoped `revenue`, `expenses`, `summary_verifications`; no synthesized consolidation |
+| `comparisons[]` | Empty on single records; ordered independently valid single/unavailable records on sets |
+| Set root | `kind: comparison_set`, `comparison_order`, `estimate_vs_consensus`, `inferences`, source, period and both digests |
+| `estimate_vs_consensus[]` | `line_item`, `segment`, `measure`, supplied `estimate`, `consensus`, `variance`, nullable `variance_percent`/`variance_bps` |
+| Unavailable-only root | `kind: comparison_unavailable`, period, source, comparison, effective audience, unavailable rows, empty comparisons and both digests |
+| `statistics_configuration` | `window`, nullable `entity`, `history_source`, `history_sha256` |
+| `statistics[]` identity/history | `entity`, `line_item`, `segment`, `measure`, `surprise`, `history_sha256`, ordered `prior_periods`/`prior_surprises`, `prior_count`, `window` |
+| `statistics[]` results | Nullable `sample_variance`, `sample_stddev`, `standardized_surprise`/`standardized_reason`, `dispersion_surprise`/`dispersion_reason` |
+| `source` / `transformations` | Existing captured-byte, worksheet and PDF-document fields plus explicit mapping/header facts; no raw row dictionaries |
+| Integrity | Effective audience/statistic options enter configuration identity; all public facts enter the payload digest and analysis fingerprint, including each child |
+
+There is no separate row identifier or structured inference object. Row identity
+is line item, segment and measure, with deterministic array order. There is no
+panel audit root: group keys and captured source identity are in long output.
+The long-format number contract uses strings even for counts; audit metadata
+counts remain JSON integers as the schema specifies. Missing comparisons never
+occupy an analyzed row's numeric comparison field with a fabricated zero.

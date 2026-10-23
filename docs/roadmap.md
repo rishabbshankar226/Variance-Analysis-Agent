@@ -18,6 +18,22 @@ The financial rules remain deterministic Python/Decimal. Published audit version
 are selectable and their archived fixtures retained. See the changelog for input
 and report migrations. Version 0.3.0 is development metadata, not a published release.
 
+## Approved multi-audience scope (October 2026)
+
+The owner-approved brief permits supplied Consensus, Estimate and Guidance
+bases, explicit comparison sets, Per Share/Percent/Count measures, one flat
+segment dimension, typed panels and descriptive surprise statistics. These
+are implemented as opt-in extensions of the deterministic single-basis engine.
+The earnings and quant presets serve the new readers; the FP&A default retains
+its existing contracts. See [the implementation report](MULTI_AUDIENCE_2026-10.md)
+for commands, verification and the boundary of this decision.
+
+The decision does not permit nested hierarchy, FX conversion, valuation, price
+targets, investment ratings, budget creation, forecasting or scenario modeling.
+Metric definitions, vendor mappings and fiscal/calendar alignment remain explicit
+user choices. No live vendor integration, model call or runtime dependency was
+added. Larger panels must be split to retain existing capture/table limits.
+
 ## Next focused work
 
 - **I09 / Optional consumers:** an offline, bounded, schema-validated LLM commentary
