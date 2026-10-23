@@ -18,6 +18,7 @@ from .models import AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis
 from .numeric import financial_context, ratio
 from .parsing import is_missing, normalize_key, normalize_row
 from .classification import infer_line_type
+from .segments import SEGMENT_KEYS, read_segment
 from .report import _pct, _safe_inline
 
 
@@ -135,6 +136,14 @@ def analyze_comparisons(
     cfg = audience_config(config, extended_headers=True)
     validate_audience_config(cfg)
     canonical = _canonical_rows(rows, raw_headers)
+    for row in canonical:
+        segment, declared = read_segment(row, cfg)
+        if declared:
+            source = next(key for key in SEGMENT_KEYS if key in row)
+            row["segment_source"] = source
+            if source != "segment":
+                del row[source]
+            row["segment"] = segment
     keys = list(dict.fromkeys(key for row in canonical for key in row))
     actual_key = _one_column(keys, ["actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"], "Actual", required=False)
     original_headers = raw_headers or tuple(dict.fromkeys(k for row in rows for k in row))
@@ -214,7 +223,7 @@ def analyze_comparisons(
 
 
 def _identity(row: AnalyzedRow) -> tuple[str, str, MeasureKind]:
-    return (row.line_item.strip().casefold(), str(row.raw.get("segment", "")).strip().casefold(), row.measure)
+    return (row.line_item.strip().casefold(), row.segment.casefold(), row.measure)
 
 
 @financial_context()
@@ -233,7 +242,7 @@ def _estimate_gaps(comparisons: tuple[ComparisonAnalysis, ...]) -> tuple[Estimat
         is_rate = row.measure is MeasureKind.PERCENT
         output.append(EstimateGap(row.line_item, row.measure, row.budget, match.budget, delta,
                                   ratio(delta, abs(match.budget)) if match.budget != 0 and not is_rate else None,
-                                  delta * Decimal("100") if is_rate else None, str(row.raw.get("segment", ""))))
+                                  delta * Decimal("100") if is_rate else None, row.segment))
     return tuple(output)
 
 
@@ -295,9 +304,9 @@ def render_comparisons(table: TableAnalysis) -> str:
     if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
         from .report import render_markdown
         return render_markdown(table.comparisons[0].result)
-    headings = ["Line Item", "Measure"]
+    headings = ["Line Item", "Measure", "Segment"]
     maps = []
-    order: dict[tuple[str, str, MeasureKind], tuple[str, MeasureKind]] = {}
+    order: dict[tuple[str, str, MeasureKind], tuple[str, MeasureKind, str]] = {}
     for comparison in table.comparisons:
         name = (extended_heading(comparison.result.config) if comparison.result is not None
                 else comparison_heading(comparison.basis, comparison.label))
@@ -306,19 +315,20 @@ def render_comparisons(table: TableAnalysis) -> str:
         for row in comparison.result.rows if comparison.result is not None else ():
             key = _identity(row)
             mapping[key] = row
-            order.setdefault(key, (row.line_item, row.measure))
+            order.setdefault(key, (row.line_item, row.measure, row.segment))
         for missing in comparison.unavailable:
             key = (missing.line_item.casefold(), missing.segment.casefold(), missing.measure)
             mapping[key] = missing
-            order.setdefault(key, (missing.line_item, missing.measure))
+            order.setdefault(key, (missing.line_item, missing.measure, missing.segment))
         maps.append(mapping)
     if table.estimate_vs_consensus:
         headings.extend(["Estimate - Consensus", "Estimate - Consensus % / bps"])
     gaps = {(g.line_item.casefold(), g.segment.casefold(), g.measure): g for g in table.estimate_vs_consensus}
     lines = [f"# Comparison Review: {_safe_inline(table.config.period)}", "", "| " + " | ".join(_safe_inline(h) for h in headings) + " |",
              "|" + "|".join("---" for _ in headings) + "|"]
-    for key, (name, kind) in order.items():
-        cells = [_safe_inline(name), str(kind)]
+    segment_order = list(dict.fromkeys(key[1] for key in order))
+    for key, (name, kind, segment) in sorted(order.items(), key=lambda item: segment_order.index(item[0][1])):
+        cells = [_safe_inline(name), str(kind), _safe_inline(segment)]
         for comparison, mapping in zip(table.comparisons, maps, strict=True):
             entry = mapping.get(key)
             if entry is None:
@@ -498,6 +508,7 @@ def _mapped_headers(headers: tuple[str, ...], mapping: Mapping[str, str]) -> tup
         raise ValueError("Mapping file: one source column cannot supply multiple roles.")
     inverse = {source: role for role, source in mapping.items()}
     aliases = {"actual": {"actual", "actual_amount", "actuals", "act", "actual_ytd"},
+               "segment": set(SEGMENT_KEYS),
                "line_item": {"line_item", "account_description", "account_name", "account", "category", "item"}}
     output, notes = [], []
     for header in headers:

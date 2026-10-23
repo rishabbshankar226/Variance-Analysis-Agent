@@ -1,7 +1,7 @@
 {
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Variance Analysis Agent audit 1.7",
+  "title": "Variance Analysis Agent audit 1.8",
   "properties": {
     "schema_version": {},
     "period": {},
@@ -25,7 +25,8 @@
     "comparison_details": {},
     "kind": {},
     "comparison_order": {},
-    "estimate_vs_consensus": {}
+    "estimate_vs_consensus": {},
+    "segments": {}
   },
   "required": [
     "schema_version",
@@ -1115,6 +1116,9 @@
               },
               "display_label": {
                 "type": "string"
+              },
+              "segment": {
+                "type": "string"
               }
             },
             "required": [
@@ -1133,7 +1137,8 @@
               "variance",
               "variance_percent",
               "variance_bps",
-              "display_label"
+              "display_label",
+              "segment"
             ],
             "additionalProperties": false
           }
@@ -1399,6 +1404,107 @@
             ],
             "additionalProperties": false
           }
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "segment",
+              "revenue",
+              "expenses",
+              "summary_verifications"
+            ],
+            "properties": {
+              "segment": {
+                "type": "string"
+              },
+              "revenue": {
+                "$ref": "#/$defs/aggregate"
+              },
+              "expenses": {
+                "$ref": "#/$defs/aggregate"
+              },
+              "summary_verifications": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "line_item": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "enum": [
+                        "Revenue",
+                        "Expense",
+                        "Unclassified"
+                      ]
+                    },
+                    "summary_source": {
+                      "enum": [
+                        "explicit_summary",
+                        "inferred_summary",
+                        "unavailable"
+                      ]
+                    },
+                    "outcome": {
+                      "enum": [
+                        "reconciled_and_excluded",
+                        "included_standalone",
+                        "unclassified"
+                      ]
+                    },
+                    "detail_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "budget_residual": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/decimal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "actual_residual": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/decimal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tolerance": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/decimal"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "line_item",
+                    "type",
+                    "summary_source",
+                    "outcome",
+                    "detail_count",
+                    "budget_residual",
+                    "actual_residual",
+                    "tolerance"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
         }
       },
       "required": [
@@ -1421,7 +1527,8 @@
         "measure_rows",
         "comparisons",
         "unavailable_comparisons",
-        "comparison_details"
+        "comparison_details",
+        "segments"
       ],
       "additionalProperties": false,
       "$schema": "https://json-schema.org/draft/2020-12/schema",

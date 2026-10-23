@@ -223,3 +223,7 @@ columns (for example `estimate: Model`) or choose a guidance point instead of a
 range. Ignored competing columns are named in intake notes. Raw header identity
 is retained before mapping, so `consensus: Est.` and `estimator_count: # Est.`
 can be resolved separately. Existing single-basis mapping bytes stay unchanged.
+
+### Flat segments (opt-in)
+
+With extended header recognition, Segment, Division, Region, Geography or Business Unit identifies one flat dimension. Choose competing columns with a mapping. Blank labels form an unsegmented bucket. Nested objects, parent columns and second levels are refused. Legacy uploads keep treating these names as metadata.

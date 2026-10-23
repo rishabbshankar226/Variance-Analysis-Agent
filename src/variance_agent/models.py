@@ -116,6 +116,8 @@ class AnalyzedRow:
     variance_bps: Decimal | None = None
     measure_declared: bool = False
     comparison_details: ComparisonDetails | None = None
+    segment: str = ""
+    segment_declared: bool = False
 
 
 @dataclass(frozen=True)

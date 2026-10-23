@@ -72,6 +72,10 @@ def confirm_layout(session: Session, bases: tuple[ComparisonBasis, ...]) -> Resp
              ", ".join(_safe_inline(h) for h in session.earnings_headers) + "."]
     for raw in session.parsed_rows or []:
         row = normalize_row(raw)
+        from variance_agent.segments import SEGMENT_KEYS
+        for column in SEGMENT_KEYS:
+            if column in row:
+                lines.append(f"- Read {_safe_inline(column)} as Segment {_safe_inline(row[column])} (one flat dimension).")
         if row.get("measure"):
             lines.append(f"- {_safe_inline(row.get('line_item', 'Row'))}: Measure {_safe_inline(row['measure'])}.")
     lines.extend("- " + _safe_inline(note) for note in session.earnings_notes)

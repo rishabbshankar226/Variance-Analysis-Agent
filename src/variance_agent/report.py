@@ -382,9 +382,22 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
 
 
 @financial_context()
-def render_measure_report(result: AnalysisResult) -> str:
+def render_measure_report(result: AnalysisResult, *, segment_view: bool = False) -> str:
     """Describe declared metrics without adding incompatible units."""
     cfg = result.config
+    if not segment_view and any(row.segment_declared for row in result.rows):
+        from dataclasses import replace
+        from .analysis import _aggregate
+        lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "",
+                 "Totals are scoped to each supplied segment; no consolidated total is synthesized.", ""]
+        for segment in dict.fromkeys(row.segment for row in result.rows):
+            rows = tuple(row for row in result.rows if row.segment == segment)
+            view = replace(result, rows=rows, material_rows=tuple(row for row in result.material_rows if row.segment == segment),
+                           revenue=_aggregate(list(rows), LineType.REVENUE, cfg.comparison_basis, segment=segment),
+                           expenses=_aggregate(list(rows), LineType.EXPENSE, cfg.comparison_basis, segment=segment))
+            lines.extend(["## Segment: " + (_safe_inline(segment) if segment else "Unsegmented"), "",
+                          "\n".join(render_measure_report(view, segment_view=True).splitlines()[4:])])
+        return "\n".join(lines)
     heading = _safe_inline(extended_heading(cfg))
     lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", ""]
     money = tuple(row for row in result.rows if currency_row(row))

@@ -83,6 +83,11 @@ def currency_row(row: AnalyzedRow) -> bool:
 def metric_inferences(rows: tuple[AnalyzedRow, ...], config: AnalysisConfig | None = None) -> list[str]:
     notes: list[str] = []
     for row in rows:
+        if row.segment_declared:
+            from .segments import SEGMENT_KEYS
+            column = next((key for key in SEGMENT_KEYS if key in row.raw), "segment")
+            column = str(row.raw.get("segment_source", column)).replace("_", " ").title()
+            notes.append(f"{row.line_item}: read {column} as Segment {row.segment or '(unsegmented)'!r}.")
         if row.measure_declared:
             notes.append(f"{row.line_item}: read Measure as {row.measure}.")
         if row.measure is MeasureKind.PERCENT and any(str(row.raw.get(k, "")).strip().endswith("%") for k in ("budget", "actual")):

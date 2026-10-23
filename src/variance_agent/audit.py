@@ -255,7 +255,8 @@ def build_audit_record(
         row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation and currency_row(row)
         for row in result.rows
     )
-    totals_complete = unclassified_count == 0 and has_revenue and has_expenses
+    totals_complete = (unclassified_count == 0 and has_revenue and has_expenses
+                       and not any(row.segment for row in result.rows))
     net_operating_available = totals_complete
     supported_driver_count = sum(
         bool(row.driver_evidence and row.driver_evidence.reconciles)
@@ -379,6 +380,7 @@ def build_audit_record(
         }
     if schema_version == "1.8":
         record["audience"] = audience_configuration(result.config)
+        record["segments"] = segment_records(result)
         record["inferences"] = list(metric_inferences(result.rows, result.config))
         record["measure_rows"] = [dict(_measure_record(row), display_label=display_outcome(row, result.config.comparison_basis))
                                   for row in result.rows]
@@ -413,7 +415,7 @@ def audience_configuration(cfg: AnalysisConfig) -> JSONObject:
 
 def _measure_record(row: AnalyzedRow) -> JSONObject:
     return {
-        "line_item": row.line_item, "measure": str(row.measure), "type": str(row.line_type),
+        "line_item": row.line_item, "segment": row.segment, "measure": str(row.measure), "type": str(row.line_type),
         "better": str(row.better) if row.better is not None else None, "direction_source": row.direction_source,
         "comparison": _decimal(row.budget), "actual": _decimal(row.actual), "variance": _decimal(row.variance_dollars),
         "variance_percent": _decimal(row.variance_percent), "variance_bps": _decimal(row.variance_bps),
@@ -450,3 +452,25 @@ def validate_source_identity(name: str | None, digest: str | None) -> None:
         validate_text(name, field="source_name")
     if digest is not None and (not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest)):
         raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")
+
+
+@financial_context()
+def segment_records(result: AnalysisResult) -> list[JSONValue]:
+    """Expose scoped Currency totals and reconciliation without a synthetic parent."""
+    from .analysis import _aggregate
+    if not any(row.segment_declared for row in result.rows):
+        return []
+    records: list[JSONValue] = []
+    for segment in dict.fromkeys(row.segment for row in result.rows):
+        rows = [row for row in result.rows if row.segment == segment]
+        money = [row for row in rows if currency_row(row)]
+        revenue = any(row.line_type is LineType.REVENUE for row in money)
+        expenses = any(row.line_type is LineType.EXPENSE for row in money)
+        complete = revenue and expenses and all(row.line_type is not LineType.UNCLASSIFIED for row in money)
+        records.append({"segment": segment,
+                        "revenue": _aggregate_record(_aggregate(rows, LineType.REVENUE, result.config.comparison_basis, segment=segment),
+                                                     present=revenue, complete=complete and revenue),
+                        "expenses": _aggregate_record(_aggregate(rows, LineType.EXPENSE, result.config.comparison_basis, segment=segment),
+                                                      present=expenses, complete=complete and expenses),
+                        "summary_verifications": [_summary_record(row) for row in rows if row.summary_verification is not None]})
+    return records

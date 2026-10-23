@@ -26,6 +26,7 @@ from .numeric import financial_context, ratio
 from .currencies import validate_currency
 from .limits import MAX_ROWS, validate_text
 
+from .segments import read_segment
 from .audience import validate_audience_config
 from .measures import absolute_cutoff, currency_row, direction, measure_kind, metric_inferences, parse_measure_amount
 
@@ -255,9 +256,13 @@ def _driver_evidence(
     return fallback
 
 
-def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
+def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> list[AnalyzedRow]:
+    if not scoped and any(row.segment_declared for row in rows):
+        groups = {segment: iter(_resolve_summary_rows([row for row in rows if row.segment == segment], scoped=True))
+                  for segment in dict.fromkeys(row.segment for row in rows)}
+        return [next(groups[row.segment]) for row in rows]
     if any(not currency_row(row) for row in rows):
-        money = iter(_resolve_summary_rows([row for row in rows if currency_row(row)]))
+        money = iter(_resolve_summary_rows([row for row in rows if currency_row(row)], scoped=True))
         return [next(money) if currency_row(row) else row for row in rows]
     verifications: dict[LineType, SummaryVerification] = {}
     detail_types = {
@@ -322,12 +327,12 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
 
 
 def _aggregate(
-    rows: list[AnalyzedRow], line_type: LineType, basis: ComparisonBasis
+    rows: list[AnalyzedRow], line_type: LineType, basis: ComparisonBasis, *, segment: str = ""
 ) -> Aggregate:
     included = [
         row
         for row in rows
-        if row.line_type == line_type and not row.excluded_from_aggregation and currency_row(row)
+        if row.line_type == line_type and not row.excluded_from_aggregation and currency_row(row) and row.segment == segment
     ]
     budget = sum((row.budget for row in included), Decimal("0"))
     actual = sum((row.actual for row in included), Decimal("0"))
@@ -362,6 +367,8 @@ def _verify_result(
     config: AnalysisConfig,
 ) -> None:
     for row in rows:
+        if (row.segment, row.segment_declared) != read_segment(row.raw, config):
+            raise _verification_failure(f"segment mismatch for {row.line_item!r}")
         if row.variance_dollars != row.actual - row.budget:
             raise _verification_failure(f"dollar variance mismatch for {row.line_item!r}")
         expected_percent, expected_label = _percent_variance(
@@ -414,12 +421,12 @@ def _verify_result(
     revenue_rows = [
         row
         for row in rows
-        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation and currency_row(row)
+        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation and currency_row(row) and not row.segment
     ]
     expense_rows = [
         row
         for row in rows
-        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation and currency_row(row)
+        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation and currency_row(row) and not row.segment
     ]
 
     checks = (
@@ -524,6 +531,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
 
         # Budget runs keep 'Budget'; other runs name the comparison and do not list the
         # internal budget column aliases.
+        segment, segment_declared = read_segment(row, config)
         kind = measure_kind(row.get("measure"), line_item)
         absolute_cutoff(config, kind, line_item)
         if "measure" in row or "better" in row:
@@ -574,6 +582,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 measure=kind, better=better, direction_source=direction_source,
                 measure_declared="measure" in row,
                 comparison_details=details,
+                segment=segment, segment_declared=segment_declared,
                 variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
                 classification_source=classification_source,
                 summary_source=summary_source,
@@ -587,14 +596,14 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     analyzed = _resolve_summary_rows(analyzed)
     warnings.extend(metric_inferences(tuple(analyzed), config))
 
-    normalized_names: dict[str, int] = {}
+    normalized_names: dict[tuple[str, str], int] = {}
     for analyzed_row in analyzed:
-        key = analyzed_row.line_item.strip().casefold()
+        key = (analyzed_row.line_item.strip().casefold(), analyzed_row.segment.casefold())
         normalized_names[key] = normalized_names.get(key, 0) + 1
     duplicates = sorted(
         row.line_item
         for row in analyzed
-        if normalized_names[row.line_item.strip().casefold()] > 1
+        if normalized_names[(row.line_item.strip().casefold(), row.segment.casefold())] > 1
     )
     duplicate_unique = list(dict.fromkeys(duplicates))
     if duplicate_unique:

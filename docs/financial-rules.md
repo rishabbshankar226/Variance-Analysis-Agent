@@ -147,3 +147,7 @@ end is Within range; strict crossings are Below range or Above range.
 Estimate against Consensus describes the difference between two supplied
 numbers, divided by absolute nonzero Consensus, or multiplied by 100 for a
 rate difference in bps. It does not generate an estimate or investment advice.
+
+### Segment scope
+
+Reconcile at most one supplied Currency summary per category within each segment, using the existing inclusive 0.01 reconciliation tolerance. Never reconcile across segments or synthesize consolidated totals. Unsegmented consolidated rows remain a separate bucket. Duplicate names across segments are distinct; duplicates within the same segment still warn. Labels containing slashes do not imply hierarchy.

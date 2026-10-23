@@ -1064,3 +1064,67 @@ Wheel/sdist contents, license, Python support, and entry point verified
 Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
 No broken requirements found.
 ```
+
+## Phase 3 complete — Priya and Dan
+
+One flat segment dimension is explicitly recognized by extended intake. Summaries reconcile within each segment with the unchanged 0.01 tolerance. No consolidated total is synthesized; supplied unsegmented rows remain separate. Reports group segments, comparison joins include segment, workbooks expose labels and audit 1.8 records scoped aggregates and verifications. Nested objects/parent levels are refused. Legacy Region/Division metadata is inert. Fourteen tests added, including both-sided tolerance straddles and joins. Baseline tests/fixtures/published schemas remain unchanged except the approved phase-2 test scope.
+
+**pytest**
+
+```text
+........................................................................ [ 99%]
+....                                                                     [100%]
+1876 passed in 41.59s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 56 source files
+```
+
+**compileall**
+
+```text
+
+```
+
+**pip-check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**package**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```

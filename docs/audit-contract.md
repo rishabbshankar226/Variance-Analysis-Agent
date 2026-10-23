@@ -139,3 +139,7 @@ across bases. Every child validates against 1.8 independently, has its own sourc
 and digests, and cannot itself contain a set. Closed conditional shapes refuse
 unknown or cross-kind fields. Wrapper metadata is included before both digests
 are recomputed; changing unavailable rows or supplied-estimate gaps changes them.
+
+### Segment records in 1.8
+
+`measure_rows[].segment` preserves the supplied flat label. `segments[]` carries scoped revenue/expense aggregates and summary verifications in first-seen segment order. These records do not imply a consolidated total; global completeness is false when named segments are present. Segment source columns appear in inferences. Prior schemas remain unchanged.
