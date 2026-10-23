@@ -96,3 +96,28 @@ the reviewed USD goldens; financial values are unchanged. EUR and GBP goldens
 exercise every report section. Mixing currency symbols is rejected; it is not an
 accepted financial rule.
 Run `pytest tests/test_contract_fixtures.py` after installing `.[dev,excel]`.
+
+## Unreleased 1.8: explicit measures and direction
+
+Schema 1.8 is selectable. The legacy default constant remains 1.7 and every
+legacy record keeps its bytes. Declared measures/Better or new measure settings
+select 1.8 automatically; explicitly choosing 1.0–1.7 for those facts is refused
+before output publication. Published schemas 1.0–1.7 are unchanged.
+
+1.8 adds three closed sibling groups:
+
+- `audience`: exact nullable `per_share_threshold`, `count_threshold`,
+  `bps_threshold`, and `percent_values` (points/fractions/null).
+- `inferences`: visible measure, direction/default, and percent-scale notes.
+- `measure_rows`: all analyzed rows, including nonmaterial ones, with line item,
+  measure, type, Better/direction source, comparison/actual/variance, nullable
+  variance percent/bps and percent label, status, materiality/reason, and
+  exclusion from currency aggregation. All financial values are decimal strings.
+
+The existing money-oriented `material_variances` contains Currency rows only;
+`measure_rows` is the complete heterogeneous table. Classification quality and
+Currency completeness consider Currency rows, while material variance counts
+cover all kinds. The effective audience settings enter configuration identity;
+all new row facts and notes enter analysis and public payload identities. Every
+1.8 object rejects unknown properties. This schema is unreleased and will gain
+the remaining approved comparison/panel facts before publication.

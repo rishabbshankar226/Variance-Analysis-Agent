@@ -3,7 +3,7 @@
 Prepared 2026-10-22 (America/Chicago), against `main` at
 `f5cd79c24b22197932c657edf3fd9a6a7dcefd4d` (`f5cd79c`).
 Branch: `feat/multi-audience`. Status: **Phase 0 complete;
-implementation awaits the owner's STOP 1 decision**.
+STOP 1 approved; implementation in progress**.
 
 ## Execution brief
 
@@ -785,3 +785,148 @@ it with the installed `.venv/bin/python` succeeded. This was an interpreter
 selection error, not a failed repository check. No other interpreter/OS/browser
 result is claimed. The scratch evidence is reproducible from this document;
 future implementation evidence belongs in the required final report.
+
+## Implementation record — Phase 1
+
+STOP 1 approved by the owner with “continue”. Add `tests/test_multi_audience_cli.py`
+to phase 1 for real CLI/intake/workbook boundary regressions. Phase-1 schema uses
+closed `audience`, `inferences`, `measure_rows` groups first; later unreleased
+phases extend it before final publication. No published schema changes.
+
+Phase 1 also adds `tests/test_multi_audience_mapping.py` for confirmed scale,
+direction and threshold replay, and malformed mapping rejection.
+
+Phase 1 adds `src/variance_agent/static/chat.js` to its files: the existing frontend
+contract requires a phase label and placeholder for the new measure-options state.
+The failing existing test is preserved; add only the two state-map entries.
+
+### Phase 1 completed — Priya, with Maya compatibility
+
+Implemented explicit kinds/Better, required cutoffs, exact bps, percentage scale,
+noncurrency isolation, typed opt-in config, new unit-aware report/workbook,
+closed unreleased audit 1.8, visible inferences, chat questions, and saved mapping
+replay. Original public signatures and legacy sample report/workbook hashes are
+pinned. Existing audit default constant remains 1.7. No dependency added.
+
+New tests were observed failing before implementation: missing audience module;
+unit-aware CLI/schema/workbook boundaries; direction/scale chat questions;
+mapping replay; forged direction; follow-up table units; malformed mapping
+threshold error. All were subsequently observed passing. A full regression caught
+the new session phase missing from frontend maps; two JS entries fixed the cause
+without editing the existing test.
+
+Local Chromium could not launch: Playwright's browser executable is absent.
+Used the brief's permitted chat/frontend-test fallback; 1280/375 screenshots were
+not taken. No hosted, Windows, or other-interpreter result is claimed.
+
+Measured final test result: **1,815 passed in 37.28s**, versus 1,772 baseline.
+Every pre-existing test/fixture and schema 1.0–1.7 was byte-compared to the base Git
+objects and is unchanged. No STOP 2 condition arose. Final verification outputs:
+
+**pytest**
+
+```text
+........................................................................ [  3%]
+........................................................................ [  7%]
+........................................................................ [ 11%]
+........................................................................ [ 15%]
+........................................................................ [ 19%]
+........................................................................ [ 23%]
+........................................................................ [ 27%]
+........................................................................ [ 31%]
+........................................................................ [ 35%]
+........................................................................ [ 39%]
+........................................................................ [ 43%]
+...........................................................----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 45806)
+............. [ 47%]
+........................................................................ [ 51%]
+........................................................................ [ 55%]
+........................................................................ [ 59%]
+........................................................................ [ 63%]
+........................................................................ [ 67%]
+........................................................................ [ 71%]
+........................................................................ [ 75%]
+........................................................................ [ 79%]
+........................................................................ [ 83%]
+........................................................................ [ 87%]
+........................................................................ [ 91%]
+........................................................................ [ 95%]
+........................................................................ [ 99%]
+...............                                                          [100%]
+1815 passed in 37.28s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**strict mypy**
+
+```text
+Success: no issues found in 53 source files
+```
+
+**compileall**
+
+```text
+(no output; exit 0)
+```
+
+**pip check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+* Creating isolated environment: venv+pip...
+* Installing packages in isolated environment:
+  - hatchling==1.32.4
+* Getting build dependencies for sdist...
+* Installed build dependency versions:
+  - hatchling==1.32.4
+* Building sdist...
+* Building wheel from sdist
+* Creating isolated environment: venv+pip...
+* Installing packages in isolated environment:
+  - hatchling==1.32.4
+* Getting build dependencies for wheel...
+* Installed build dependency versions:
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**distribution**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal install smoke**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+```
+
+**minimal pip check**
+
+```text
+No broken requirements found.
+```
+
+The compile/type/lint/pip commands were also rerun successfully after the final
+JS phase-map fix, as shown in the execution transcript. This commit is local;
+no push/merge is authorized. Next: phase 2 (Priya and Dan).

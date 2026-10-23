@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Iterable
 
 from .models import ComparisonBasis
+from .limits import validate_text
 
 
 @dataclass
@@ -32,6 +33,8 @@ class LayoutMapping:
     # Optional: the chosen comparison. Omitted from the file when unset, so Budget
     # mappings (and their SHA-256) are unchanged and older mappings still load.
     comparison_basis: ComparisonBasis | None = None
+    measure_options: dict[str, str] | None = None
+    better_directions: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -49,6 +52,10 @@ class LayoutMapping:
         }
         if self.comparison_basis is not None:
             data["comparison_basis"] = self.comparison_basis.value
+        if self.measure_options:
+            data["measure_options"] = dict(self.measure_options)
+        if self.better_directions:
+            data["better_directions"] = dict(self.better_directions)
         return data
 
 
@@ -212,6 +219,22 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
                 "Mapping comparison_basis must be budget, forecast or prior_period."
             ) from None
 
+    measure_options = parsed.get("measure_options")
+    allowed = {"percent_values", "per_share_threshold", "count_threshold", "bps_threshold"}
+    if measure_options is not None and (not isinstance(measure_options, dict)
+                                        or any(k not in allowed or not isinstance(v, str) for k, v in measure_options.items())):
+        raise _bad("measure_options", "an object of recognized scale/threshold text choices")
+    if isinstance(measure_options, dict) and "percent_values" in measure_options:
+        if measure_options["percent_values"] not in {"points", "fractions"}:
+            raise _bad("measure_options.percent_values", "points or fractions")
+    directions = parsed.get("better_directions", {})
+    if not isinstance(directions, dict) or any(not isinstance(k, str) or v not in ("Higher", "Lower")
+                                              for k, v in directions.items()):
+        raise _bad("better_directions", "an object of line-item names to Higher or Lower")
+    for label in directions:
+        validate_text(label, field="Mapping file direction label", nonblank=True)
+    for option in (measure_options or {}).values():
+        validate_text(option, field="Mapping file measure option", nonblank=True)
     return LayoutMapping(
         mapping_version=version,
         layout_fingerprint=fingerprint,
@@ -229,4 +252,5 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
         ),
         classification_rules=_classification_rules(parsed.get("classification_rules")),
         comparison_basis=comparison_basis,
+        measure_options=measure_options, better_directions=directions,
     )

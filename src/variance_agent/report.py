@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
+from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status, MeasureKind
+from .audience import is_audience_result
+from .measures import currency_row, format_measure
 from .numeric import financial_context
 from .currencies import CURRENCY_SYMBOLS
 from .analysis import verify_result
@@ -266,6 +268,8 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
+    if is_audience_result(result):
+        return render_measure_report(result)
     cfg = result.config
     places = _report_places(result)
     heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
@@ -375,3 +379,40 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+@financial_context()
+def render_measure_report(result: AnalysisResult) -> str:
+    """Describe declared metrics without adding incompatible units."""
+    cfg = result.config
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", ""]
+    money = tuple(row for row in result.rows if currency_row(row))
+    complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
+                and any(row.line_type is LineType.REVENUE for row in money)
+                and any(row.line_type is LineType.EXPENSE for row in money))
+    lines.extend(["## Currency totals", ""])
+    if complete:
+        lines.extend([_aggregate_line("Total Revenue", result.revenue, cfg.currency),
+                      _aggregate_line("Total Expenses", result.expenses, cfg.currency),
+                      "- Net operating variance: " + _money(result.revenue.variance_dollars -
+                                                             result.expenses.variance_dollars, cfg.currency)])
+    else:
+        lines.append("Currency totals are incomplete; net operating impact is unavailable.")
+    for label, rows in (("Currency variances", money),
+                        ("Other measures", tuple(row for row in result.rows if not currency_row(row)))):
+        if not rows:
+            continue
+        lines.extend(["", "## " + label, "", f"| Line Item | Measure | {heading} | Actual | Variance | Var (%) | Status | Material |",
+                      "|---|---|---:|---:|---:|---:|---|---|"])
+        for row in rows:
+            variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+            assert variance is not None
+            cells = [_safe_inline(row.line_item), str(row.measure), format_measure(row.budget, row.measure, cfg.currency),
+                     format_measure(row.actual, row.measure, cfg.currency),
+                     format_measure(variance, row.measure, cfg.currency, variance=True),
+                     _pct(row.budget, row.variance_dollars, row.percent_label), str(row.status), "Yes" if row.material else "No"]
+            lines.append("| " + " | ".join(cells) + " |")
+    if result.warnings:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    return "\n".join([*lines, ""])

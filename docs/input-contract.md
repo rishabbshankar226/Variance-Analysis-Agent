@@ -159,3 +159,27 @@ With the optional `[pdf]` extra (`pip install 'variance-analysis-agent[pdf]'`), 
 variance-agent filings/10-K-2025.pdf --assisted --period 'FY2025' \
   --dollar-threshold 100000 --percent-threshold 5 --audit-json audit.json
 ```
+
+## Explicit measure columns (opt-in)
+
+`Measure` enables unit-aware rows: Currency (default; aliases `currency`, `money`),
+Per Share (`per share`, `per-share`, `per_share`, `eps`), Percent (`percent`,
+`percentage`, `rate`), or Count (`count`, `units`). `Better` accepts Higher or
+Lower. Revenue/Expense classification controls Currency direction; a conflicting
+Better is rejected. Better can score an otherwise unclassified Currency profit
+metric without making it additive. Per Share defaults visibly to Higher;
+Percent and Count require Better. Noncurrency rows never enter currency totals.
+
+Provide `--per-share-threshold`, `--count-threshold`, or `--bps-threshold` for
+any corresponding kind present. All cutoffs are nonnegative, exact numbers, with
+strict greater-than materiality. No cutoff is inferred. Percent strings such as
+`41.2%` mean 41.2 percentage points. Bare Percent numbers require
+`--percent-values points` or `--percent-values fractions`; the latter reads
+`0.412` as 41.2 points. The chat proposes this choice and asks before analysis.
+New typed metric callers supply exact text, integers, or Decimal; floats and
+booleans are refused. Legacy undeclared Currency callers keep their contract.
+
+New mapping files can record `measure_options` with text-valued keys
+`percent_values`, `per_share_threshold`, `count_threshold`, and `bps_threshold`,
+and `better_directions` mapping line-item names to Higher/Lower. Explicit CLI
+scale/cutoff flags override the mapping. Old mapping serialization is unchanged.

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Mapping
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType
+from .audience import AudienceConfig, is_audience_result
+from .measures import currency_row, metric_inferences
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
@@ -16,7 +18,7 @@ from .limits import validate_text
 from .version import __version__
 
 CURRENT_SCHEMA_VERSION = "1.7"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7")
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -203,17 +205,20 @@ def build_audit_record(
     facts and selected source metadata; source text remains untrusted data.
     """
     verify_result(result)
-    schema_version = CURRENT_SCHEMA_VERSION if schema_version is None else schema_version
+    extended = is_audience_result(result)
+    schema_version = ("1.8" if extended else CURRENT_SCHEMA_VERSION) if schema_version is None else schema_version
+    if extended and schema_version != "1.8":
+        raise ValueError("Audit schema 1.8 is required to record measure and direction choices.")
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
-    if source_document is not None and schema_version != "1.7":
+    if source_document is not None and schema_version not in {"1.7", "1.8"}:
         raise ValueError(
             f"Audit schema {schema_version} cannot record how a PDF statement was read; "
             "use --audit-schema-version 1.7 for PDF input."
         )
-    if schema_version not in {"1.6", "1.7"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
+    if schema_version not in {"1.6", "1.7", "1.8"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
         raise ValueError(
             f"Audit schema {schema_version} records the comparison amount as a budget; "
             "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
@@ -230,10 +235,11 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}
 
-    row_count = len(result.rows)
-    unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
+    quality_rows = tuple(row for row in result.rows if currency_row(row))
+    row_count = len(quality_rows)
+    unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in quality_rows)
     classified_count = row_count - unclassified_count
     classification_coverage = (
         ratio(Decimal(classified_count) * Decimal("100"), Decimal(row_count))
@@ -241,11 +247,11 @@ def build_audit_record(
         else Decimal("0")
     )
     has_revenue = any(
-        row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
+        row.line_type == LineType.REVENUE and not row.excluded_from_aggregation and currency_row(row)
         for row in result.rows
     )
     has_expenses = any(
-        row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
+        row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation and currency_row(row)
         for row in result.rows
     )
     totals_complete = unclassified_count == 0 and has_revenue and has_expenses
@@ -301,7 +307,7 @@ def build_audit_record(
             ),
         },
         "material_variances": [_row_record(row, include_diagnostics=include_diagnostics)
-                               for row in result.material_rows],
+                               for row in result.material_rows if currency_row(row)],
         "trust_contract": {
             "source_derived_strings_are_data_only": True,
             "deterministic_financial_values_are_authoritative": True,
@@ -312,15 +318,15 @@ def build_audit_record(
         "basis": str(result.config.comparison_basis),
         "label": result.config.comparison_label,
     }
-    if schema_version in {"1.6", "1.7"}:
+    if schema_version in {"1.6", "1.7", "1.8"}:
         record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.4", "1.5", "1.6", "1.7"}:
+    if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
         source["worksheet"] = source_worksheet
-    if schema_version == "1.7":
+    if schema_version in {"1.7", "1.8"}:
         source["document"] = _document_record(source_document)
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -328,10 +334,12 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version in {"1.4", "1.5", "1.6", "1.7"}:
+        if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
             config_identity["worksheet"] = source_worksheet
-        if schema_version in {"1.6", "1.7"}:
+        if schema_version in {"1.6", "1.7", "1.8"}:
             config_identity["comparison"] = comparison
+        if schema_version == "1.8":
+            config_identity["audience"] = _audience_configuration(result)
         record["provenance"] = {
             "tool_version": __version__,
             "numeric_policy": NUMERIC_POLICY_ID,
@@ -347,7 +355,7 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
-    if schema_version in {"1.5", "1.6", "1.7"}:
+    if schema_version in {"1.5", "1.6", "1.7", "1.8"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
         zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
@@ -368,11 +376,39 @@ def build_audit_record(
             "classification_rules": _json_value(t_raw.get("classification_rules")),
             "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
         }
+    if schema_version == "1.8":
+        record["audience"] = _audience_configuration(result)
+        record["inferences"] = list(metric_inferences(result.rows, result.config))
+        record["measure_rows"] = [_measure_record(row) for row in result.rows]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
-            _row_record(row, include_diagnostics=include_diagnostics) for row in result.rows
+            (_measure_record(row) if schema_version == "1.8" else
+             _row_record(row, include_diagnostics=include_diagnostics)) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
         record["payload_sha256"] = payload_sha256(record)
     return record
+
+
+def _audience_configuration(result: AnalysisResult) -> JSONObject:
+    cfg = result.config
+    return {
+        "per_share_threshold": _decimal(cfg.per_share_threshold) if isinstance(cfg, AudienceConfig) else None,
+        "count_threshold": _decimal(cfg.count_threshold) if isinstance(cfg, AudienceConfig) else None,
+        "bps_threshold": _decimal(cfg.bps_threshold) if isinstance(cfg, AudienceConfig) else None,
+        "percent_values": cfg.percent_values if isinstance(cfg, AudienceConfig) else None,
+    }
+
+
+def _measure_record(row: AnalyzedRow) -> JSONObject:
+    return {
+        "line_item": row.line_item, "measure": str(row.measure), "type": str(row.line_type),
+        "better": str(row.better) if row.better is not None else None, "direction_source": row.direction_source,
+        "comparison": _decimal(row.budget), "actual": _decimal(row.actual), "variance": _decimal(row.variance_dollars),
+        "variance_percent": _decimal(row.variance_percent), "variance_bps": _decimal(row.variance_bps),
+        "percent_label": row.percent_label, "status": str(row.status), "material": row.material,
+        "materiality_reason": row.materiality_reason,
+        "excluded_from_aggregation": (row.excluded_from_aggregation or not currency_row(row)
+                                      or row.line_type is LineType.UNCLASSIFIED),
+    }

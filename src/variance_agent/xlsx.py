@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from decimal import Context, Decimal
 from xml.sax.saxutils import escape
 
+from .audience import is_audience_result
+from .measures import format_measure
+from .models import MeasureKind
 from .analysis import verify_result
 from .comparison import basis_noun, comparison_heading
 from .currencies import CURRENCY_SYMBOLS
@@ -654,6 +657,21 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
     places = _report_places(result)
+    if is_audience_result(result):
+        sheet = _Sheet("Measures", (34, 16, 20, 20, 20, 14, 14, 14), freeze_header=True, autofilter=True)
+        sheet.add(*(_Cell(text, S_HEADER) for text in
+                    ("Line Item", "Measure", _heading(result.config), "Actual", "Variance", "Var %", "Status", "Material")))
+        for row in result.rows:
+            variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+            assert variance is not None
+            from .report import _pct
+            sheet.add(_Cell(row.line_item, S_TEXT), _Cell(str(row.measure), S_TEXT),
+                      _Cell(format_measure(row.budget, row.measure, result.config.currency), S_TEXT_RIGHT),
+                      _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
+                      _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
+                      _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
+                      _status_cell(row.status), _Cell("Yes" if row.material else "No", S_TEXT))
+        return _package([sheet], places)
     sheets = [
         _summary_sheet(result, places),
         _material_sheet(result),

@@ -28,6 +28,7 @@ class Phase(StrEnum):
     AWAITING_PERIOD = "awaiting_period"
     AWAITING_THRESHOLDS = "awaiting_thresholds"
     AWAITING_CURRENCY = "awaiting_currency"
+    AWAITING_MEASURE_OPTIONS = "awaiting_measure_options"
     RESOLVE_UNCLASSIFIED = "resolve_unclassified"
     EXPLORING = "exploring"
 
@@ -57,6 +58,11 @@ class Session:
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
     compare_to: ComparisonBasis | None = None
+    per_share_threshold: Decimal | None = None
+    count_threshold: Decimal | None = None
+    bps_threshold: Decimal | None = None
+    percent_values: str | None = None
+    measure_pending: tuple[str, int] | None = None
 
     # Unclassified items pending resolution, and items the user chose to leave unclassified
     unclassified_queue: list[str] = field(default_factory=list)
@@ -97,6 +103,11 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.compare_to = None
+        self.per_share_threshold = None
+        self.count_threshold = None
+        self.bps_threshold = None
+        self.percent_values = None
+        self.measure_pending = None
         self.unclassified_queue = []
         self.pending_gl_rules = []
         self.skipped_items = set()

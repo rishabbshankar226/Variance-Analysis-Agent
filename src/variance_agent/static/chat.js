@@ -47,6 +47,7 @@ export const PHASE_LABELS = {
   awaiting_period:                    'Set Period',
   awaiting_thresholds:                'Set Thresholds',
   awaiting_currency:                  'Set Currency',
+  awaiting_measure_options:           'Confirm Measure',
   resolve_unclassified:               'Classify Items',
   exploring:                          'Exploring',
 };
@@ -62,6 +63,7 @@ export const PHASE_PLACEHOLDERS = {
   awaiting_period:                    'Enter the reporting period (e.g., Q3 2026)...',
   awaiting_thresholds:                'Set thresholds (e.g., $10,000 or 5%)...',
   awaiting_currency:                  'Enter currency (USD, EUR, GBP)...',
+  awaiting_measure_options:           'Choose a direction, scale, or threshold...',
   resolve_unclassified:               'Revenue, Expense, or Skip...',
   exploring:                          'Ask a question (e.g., "why marketing?", "biggest risks")...',
 };

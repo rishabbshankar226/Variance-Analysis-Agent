@@ -106,3 +106,27 @@ audit records retain the original labels and periods.
 Terminal and bidirectional formatting controls are shown as visible escapes in
 reports and CLI errors. Report and audit builders independently reverify derived
 financial identities before serializing results from Python callers.
+
+## Opted-in measure kinds
+
+Currency rules above are unchanged. Per Share and Count use Actual minus the
+supplied comparison and percentage variance against its absolute nonzero value.
+Per Share uses its per-share absolute cutoff OR the percentage cutoff; Count
+uses its count absolute cutoff OR the percentage cutoff. At zero comparison,
+only the absolute test applies. Their absolute cutoffs are required even when a
+particular row would pass the percentage test.
+
+Percent inputs represent percentage points. Basis-point variance is exactly
+`(Actual - comparison) * 100`. It has no relative percentage variance; display
+`N/A (rate)`. Only the required bps cutoff applies. Every cutoff test is strict
+`>`; equality is not material. Higher/Lower controls the status of noncurrency
+rows; absent Per Share direction defaults visibly to Higher. Missing Percent or
+Count direction needs a user choice. Revenue/Expense Type controls Currency;
+a contradictory Better is an error. Scored unclassified Currency rows remain
+non-additive. Noncurrency rows do not affect Currency completeness or net impact.
+
+Units are displayed as currency/share, bps, or units, following the existing
+ASCII minus/no-leading-plus conventions. Amount arithmetic remains exact in the
+financial context. Money scaling and subtotal inference never apply to a declared
+rate, per-share value, or count. A standalone count is in its supplied units;
+there is no inference that a caption about money also scales counts.

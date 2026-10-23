@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
+from .audience import AudienceConfig, is_audience_result
+from .measures import metric_inferences
 from .analysis import analyze_rows
 from .classification import explicit_line_type
-from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
+from .audit import (SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, ComparisonBasis, LineType
@@ -24,7 +26,7 @@ from .comparison import (
     parse_period_label,
     select_strict_comparison,
 )
-from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
+from .parsing import normalize_row, load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
@@ -88,6 +90,10 @@ class Arguments(Protocol):
     assisted: bool
     mapping: str | None
     compare_to: str | None
+    per_share_threshold: Decimal | None
+    count_threshold: Decimal | None
+    bps_threshold: Decimal | None
+    percent_values: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -149,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
-                        default=CURRENT_SCHEMA_VERSION, help="Audit JSON format version.")
+                        default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
     parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
     parser.add_argument("--xlsx", help="Write a formatted Excel workbook to this path.")
     parser.add_argument(
@@ -191,6 +197,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("budget", "forecast", "prior-period"),
         help="Comparison basis (default: detect from headers or budget).",
     )
+    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
+        parser.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
+    parser.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
     return parser
 
 
@@ -384,6 +393,28 @@ def _run(args: Arguments) -> int:
             comparison_basis = compare_to_basis
 
     type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
+    audience_args = {
+        "per_share_threshold": getattr(args, "per_share_threshold", None),
+        "count_threshold": getattr(args, "count_threshold", None),
+        "bps_threshold": getattr(args, "bps_threshold", None),
+        "percent_values": getattr(args, "percent_values", None),
+    }
+    if mapping_obj is not None:
+        for key, value in (mapping_obj.measure_options or {}).items():
+            if audience_args.get(key) is None:
+                try:
+                    audience_args[key] = value if key == "percent_values" else _decimal(value)
+                except argparse.ArgumentTypeError as exc:
+                    raise ValueError(f"Mapping file: {key} must be a non-negative numeric threshold.") from exc
+        if mapping_obj.better_directions:
+            selected_rows = []
+            for row in parsed_rows:
+                canonical = normalize_row(row)
+                label = str(canonical.get("line_item", ""))
+                if label in mapping_obj.better_directions:
+                    canonical["better"] = mapping_obj.better_directions[label]
+                selected_rows.append(canonical)
+            parsed_rows = selected_rows
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -393,6 +424,15 @@ def _run(args: Arguments) -> int:
         comparison_basis=comparison_basis,
         comparison_label=comparison_label,
     )
+    if any(value is not None for value in audience_args.values()):
+        config = AudienceConfig(
+            config.period, config.dollar_threshold, config.percent_threshold, type_map=config.type_map,
+            currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
+            per_share_threshold=cast(Decimal | None, audience_args["per_share_threshold"]),
+            count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
+            bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
+            percent_values=cast(str | None, audience_args["percent_values"]),
+        )
     try:
         result = analyze_rows(parsed_rows, config)
     except ValueError as exc:
@@ -404,6 +444,9 @@ def _run(args: Arguments) -> int:
             if year_hint is not None:
                 raise ValueError(f"{exc} {year_hint}") from exc
         raise
+    if is_audience_result(result):
+        for note in metric_inferences(result.rows, result.config):
+            print("[measure intake] " + display_text(note), file=sys.stderr)
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
         print(f"Validation passed: {_count(len(result.rows), 'row')}, "

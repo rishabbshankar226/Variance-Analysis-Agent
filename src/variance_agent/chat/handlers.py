@@ -17,6 +17,10 @@ from dataclasses import dataclass, replace
 from decimal import Decimal, Inexact, InvalidOperation
 from pathlib import Path
 
+from variance_agent.audience import AudienceConfig, is_audience_result
+from variance_agent.measures import currency_row, measure_kind
+from variance_agent.models import MeasureKind
+from variance_agent.parsing import normalize_row
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
 from variance_agent.comparison import (
@@ -241,6 +245,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
 
     if session.phase == Phase.AWAITING_THRESHOLDS:
         return _handle_thresholds(session, text)
+
+    if session.phase == Phase.AWAITING_MEASURE_OPTIONS:
+        return _handle_measure_option(session, text)
 
     if session.phase == Phase.AWAITING_CURRENCY:
         return _handle_currency(session, text)
@@ -1093,6 +1100,9 @@ def _run_analysis(session: Session) -> Response:
             phase=Phase.AWAITING_THRESHOLDS,
         )
 
+    measure_question = _next_measure_question(session)
+    if measure_question is not None:
+        return measure_question
     intake = session.intake_result
     config = AnalysisConfig(
         period=session.period,
@@ -1104,6 +1114,13 @@ def _run_analysis(session: Session) -> Response:
         comparison_label=intake.comparison_label if intake is not None else None,
     )
 
+    if any("measure" in normalize_row(row) or "better" in normalize_row(row) for row in session.parsed_rows):
+        config = AudienceConfig(
+            config.period, config.dollar_threshold, config.percent_threshold, type_map=config.type_map,
+            currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
+            per_share_threshold=session.per_share_threshold, count_threshold=session.count_threshold,
+            bps_threshold=session.bps_threshold, percent_values=session.percent_values,
+        )
     try:
         with financial_context():
             result = analyze_rows(session.parsed_rows, config)
@@ -1129,7 +1146,8 @@ def _run_analysis(session: Session) -> Response:
     # Ask only about unclassified rows the user has not already decided to skip
     unclassified = list(dict.fromkeys(
         row.line_item for row in result.rows
-        if row.line_type == LineType.UNCLASSIFIED and row.line_item not in session.skipped_items
+        if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and row.better is None
+        and row.line_item not in session.skipped_items
     ))
 
     if unclassified:
@@ -1295,6 +1313,8 @@ def _build_analysis_summary(session: Session) -> Response:
     """Build the initial analysis summary after successful analysis."""
     result = session.result
     assert result is not None
+    if is_audience_result(result):
+        return Response(text=render_markdown(result), chips=["Summary", "Export Excel", "Export audit"], phase=Phase.EXPLORING)
     cfg = result.config
     places = report_places(result)
 
@@ -1441,6 +1461,10 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
         period_column_selection=session.period,
         classification_rules=classification_rules,
         comparison_basis=_saved_comparison_basis(session),
+        measure_options={key: str(value) for key in ("per_share_threshold", "count_threshold", "bps_threshold", "percent_values")
+                         if (value := getattr(session, key)) is not None} or None,
+        better_directions={str(row.get("line_item", "")): str(row["better"])
+                           for raw in session.parsed_rows or [] if (row := normalize_row(raw)).get("better")},
     )
 
 
@@ -1503,6 +1527,11 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
+    if is_audience_result(session.result) and intent.intent_id not in {
+        "summary", "material", "filter_favorable", "filter_unfavorable", "export_report", "export_audit", "export_xlsx",
+    }:
+        return Response(text=render_markdown(session.result),
+                        chips=["Summary", "Material", "Export report", "Export Excel"], phase=Phase.EXPLORING)
     handler = _EXPLORING_HANDLERS.get(intent.intent_id)
     if handler is not None:
         return handler(session, intent)
@@ -4469,3 +4498,69 @@ _EXPLORING_HANDLERS: dict[str, Callable[[Session, ParsedIntent], Response]] = {
     "list_sheets": lambda session, intent: _handle_list_sheets(session),
     "switch_sheet": lambda session, intent: _handle_switch_sheet(session, intent),
 }
+
+
+@financial_context()
+def _next_measure_question(session: Session) -> Response | None:
+    for index, raw in enumerate(session.parsed_rows or []):
+        row = normalize_row(raw)
+        name = str(row.get("line_item", "Row"))
+        kind = measure_kind(row.get("measure"), name)
+        question: str | None = None
+        chips: list[str] | None = None
+        pending = ("", index)
+        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT} and not str(row.get("better") or "").strip():
+            question = f"For **{safe_inline(name)}**, is Higher or Lower better?"
+            chips, pending = ["Higher", "Lower"], ("better", index)
+        elif kind is MeasureKind.PERCENT and session.percent_values is None:
+            bare = [v for k, v in row.items() if k in {"budget", "actual"} and not str(v).strip().endswith("%")]
+            if bare:
+                example = parse_decimal(bare[0], field="Rate", line_item=name)
+                percent = format(example * Decimal("100"), "f")
+                if "." in percent:
+                    percent = percent.rstrip("0").rstrip(".")
+                question = (f"For **{safe_inline(name)}**, read {safe_inline(bare[0])} as {percent}%? "
+                            "Confirm fractions, or keep bare numbers as percentage points.")
+                chips = ["Read bare rates as fractions", "Read bare rates as percentage points"]
+                pending = ("percent_values", index)
+        if question is None:
+            flag = {MeasureKind.PER_SHARE: "per_share_threshold", MeasureKind.COUNT: "count_threshold",
+                    MeasureKind.PERCENT: "bps_threshold"}.get(kind)
+            if flag is not None and getattr(session, flag) is None:
+                unit = {MeasureKind.PER_SHARE: "currency per share", MeasureKind.COUNT: "units",
+                        MeasureKind.PERCENT: "basis points"}[kind]
+                question = f"What absolute threshold in {unit} should flag {kind} variances? Enter a non-negative number."
+                pending = (flag, index)
+        if question is not None:
+            session.phase, session.measure_pending = Phase.AWAITING_MEASURE_OPTIONS, pending
+            return Response(text=question, chips=chips, phase=session.phase)
+    return None
+
+
+def _handle_measure_option(session: Session, text: str) -> Response:
+    pending = session.measure_pending
+    assert pending is not None and session.parsed_rows is not None
+    choice, index = pending
+    lower = normalize_for_routing(text).lower()
+    if choice == "better":
+        if lower not in {"higher", "lower"}:
+            return Response(text="Choose Higher or Lower for this measure.", chips=["Higher", "Lower"], phase=session.phase)
+        row = normalize_row(session.parsed_rows[index])
+        row["better"] = lower.capitalize()
+        session.parsed_rows[index] = row
+    elif choice == "percent_values":
+        scales = {"read bare rates as fractions": "fractions", "read bare rates as percentage points": "points"}
+        if lower not in scales:
+            return Response(text="Choose how to read bare rates before the analysis.",
+                            chips=list(scales), phase=session.phase)
+        session.percent_values = scales[lower]
+    else:
+        try:
+            value = parse_decimal(text, field="Threshold", line_item="Materiality")
+            if value < 0:
+                raise ValueError("Threshold must be non-negative.")
+        except ValueError:
+            return Response(text="Enter a non-negative numeric threshold, such as 25.", phase=session.phase)
+        setattr(session, choice, value)
+    session.measure_pending = None
+    return _run_analysis(session)

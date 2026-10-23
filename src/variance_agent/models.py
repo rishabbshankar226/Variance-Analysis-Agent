@@ -18,6 +18,18 @@ class Status(StrEnum):
     UNCLASSIFIED = "Unclassified"
 
 
+class MeasureKind(StrEnum):
+    CURRENCY = "Currency"
+    PER_SHARE = "Per Share"
+    PERCENT = "Percent"
+    COUNT = "Count"
+
+
+class BetterDirection(StrEnum):
+    HIGHER = "Higher"
+    LOWER = "Lower"
+
+
 class ComparisonBasis(StrEnum):
     BUDGET = "budget"
     FORECAST = "forecast"
@@ -82,6 +94,11 @@ class AnalyzedRow:
     summary_source: str = "unavailable"
     materiality_reason: str = "unavailable"
     summary_verification: SummaryVerification | None = None
+    measure: MeasureKind = MeasureKind.CURRENCY
+    better: BetterDirection | None = None
+    direction_source: str = "type"
+    variance_bps: Decimal | None = None
+    measure_declared: bool = False
 
 
 @dataclass(frozen=True)
