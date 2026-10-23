@@ -20,7 +20,7 @@ from pathlib import Path
 from variance_agent.audience import AudienceConfig, is_audience_result
 from variance_agent.measures import currency_row, measure_kind
 from variance_agent.models import MeasureKind
-from variance_agent.parsing import normalize_row
+from variance_agent.parsing import normalize_row, is_missing
 from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
 from variance_agent.comparison import (
@@ -199,6 +199,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
         return _handle_identity(session)
     if intent.intent_id == "help":
         return _handle_help(session)
+    if intent.intent_id in {"earnings_consensus", "earnings_margins", "earnings_guidance"}:
+        from .earnings import handle_question
+        return handle_question(session, intent.intent_id)
     if intent.intent_id in KNOWLEDGE_INTENTS:
         return _handle_knowledge(session, intent.intent_id)
     if intent.intent_id == "list_sheets":
@@ -542,6 +545,9 @@ def _load_file(
     # A comparison choice belongs to the file it was made for; a replacement file is
     # detected afresh. A choice made before the first upload still applies to it.
     compare_to = None if session.source_bytes is not None else session.compare_to
+    if compare_to in {ComparisonBasis.CONSENSUS, ComparisonBasis.ESTIMATE, ComparisonBasis.GUIDANCE}:
+        from .earnings import review_upload
+        return review_upload(session, file_bytes, filename, compare_to, sheet)
     intake_res = read_input_assisted(
         file_bytes,
         suffix,
@@ -4461,6 +4467,12 @@ def _handle_unknown(session: Session, text: str) -> Response:
 
 # Intent id -> the explanation it asks for; each is built only when asked.
 _KNOWLEDGE_TEXTS: dict[str, Callable[[], str]] = {
+    "concept_consensus": knowledge.explain_consensus,
+    "concept_surprise": knowledge.explain_surprise,
+    "concept_beat_miss": knowledge.explain_beat_miss,
+    "concept_bps": knowledge.explain_bps,
+    "concept_guidance_range": knowledge.explain_guidance_ranges,
+    "concept_standardized_surprise": knowledge.explain_standardized_surprise,
     "concept_variance": knowledge.explain_variance_analysis,
     "concept_f_vs_u": knowledge.explain_favorable_unfavorable,
     "concept_fav": knowledge.explain_favorable_unfavorable,
@@ -4546,8 +4558,11 @@ def _next_measure_question(session: Session) -> Response | None:
             chips, pending = ["Higher", "Lower"], ("better", index)
         elif kind is MeasureKind.PERCENT and session.percent_values is None:
             bare = [v for k, v in row.items()
-                    if (k in {"budget", "actual"} or (session.earnings_mode and basis_for_header(k, extended=True) is not None))
-                    and not str(v).strip().endswith("%")]
+                    if (k in {"budget", "actual"} or (session.earnings_mode and (
+                        basis_for_header(k, extended=True) is not None or k in {
+                            "guidance_low", "guidance_high", "guide_low", "guide_high", "low", "high", "dispersion", "std_dev",
+                            "standard_deviation"})))
+                    and not is_missing(v) and not str(v).strip().endswith("%")]
             if bare:
                 example = parse_decimal(bare[0], field="Rate", line_item=name)
                 percent = format(example * Decimal("100"), "f")

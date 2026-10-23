@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from decimal import Context, Decimal
 from xml.sax.saxutils import escape
 
-from .audience import is_audience_result
+from .audience import is_audience_result, audience_config, effective_layout
 from .measures import format_measure
 from .models import MeasureKind
 from .analysis import verify_result
@@ -663,21 +663,7 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
         raise ValueError("top_root_causes must be a positive integer.")
     places = _report_places(result)
     if is_audience_result(result):
-        sheet = _Sheet("Measures", (34, 16, 20, 20, 20, 14, 14, 14, 24), freeze_header=True, autofilter=True)
-        sheet.add(*(_Cell(text, S_HEADER) for text in
-                    ("Line Item", "Measure", _heading(result.config), "Actual", "Variance", "Var %", "Status", "Material", "Segment")))
-        for row in result.rows:
-            variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
-            assert variance is not None
-            from .report import _pct
-            sheet.add(_Cell(row.line_item, S_TEXT), _Cell(str(row.measure), S_TEXT),
-                      _Cell(format_measure(row.budget, row.measure, result.config.currency), S_TEXT_RIGHT),
-                      _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
-                      _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
-                      _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
-                      _Cell(display_outcome(row, result.config.comparison_basis), _STATUS_STYLE[row.status]),
-                      _Cell("Yes" if row.material else "No", S_TEXT), _Cell(row.segment, S_TEXT))
-        return _package([sheet], places)
+        return _package(_audience_sheets(result), places)
     sheets = [
         _summary_sheet(result, places),
         _material_sheet(result),
@@ -692,7 +678,11 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
     from .comparisons import UnavailableComparison, _identity, verify_comparisons
     verify_comparisons(table)
     if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
-        return render_xlsx(table.comparisons[0].result)
+        result = table.comparisons[0].result
+        sheets = _audience_sheets(result)
+        if table.statistics:
+            sheets.append(_statistics_sheet(table))
+        return _package(sheets, _report_places(result))
     column_count = 5 * len(table.comparisons) + (2 if table.estimate_vs_consensus else 0)
     sheet = _Sheet("Comparisons", tuple([34, 16, 24] + [22] * column_count), freeze_header=True, autofilter=True)
     headers = ["Line Item", "Measure", "Segment"]
@@ -744,4 +734,63 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
                               _Cell(format_measure(gap.variance_bps, kind, variance=True) if gap.variance_bps is not None
                                     else _pct(gap.consensus, gap.variance, "N/A" if gap.consensus == 0 else None), S_TEXT_RIGHT)])
         sheet.add(*cells)
-    return _package([sheet], 2)
+    sheets = [sheet]
+    if effective_layout(table.config) == "earnings":
+        sheets.insert(0, _earnings_sheet(table))
+    if table.statistics:
+        sheets.append(_statistics_sheet(table))
+    return _package(sheets, 2)
+
+
+def _table_for_result(result: AnalysisResult) -> "TableAnalysis":
+    from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
+    return TableAnalysis(audience_config(result.config), (ComparisonAnalysis(result.config.comparison_basis, result),),
+                         metric_order=tuple(_identity(row) for row in result.rows))
+
+
+@financial_context()
+def _audience_sheets(result: AnalysisResult) -> list[_Sheet]:
+    sheet = _Sheet("Measures", (34, 16, 20, 20, 20, 14, 14, 14, 24), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(text, S_HEADER) for text in
+                ("Line Item", "Measure", _heading(result.config), "Actual", "Variance", "Var %", "Status", "Material", "Segment")))
+    for row in result.rows:
+        variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+        assert variance is not None
+        from .report import _pct
+        sheet.add(_Cell(row.line_item, S_TEXT), _Cell(str(row.measure), S_TEXT),
+                  _Cell(format_measure(row.budget, row.measure, result.config.currency), S_TEXT_RIGHT),
+                  _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
+                  _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
+                  _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
+                  _Cell(display_outcome(row, result.config.comparison_basis), _STATUS_STYLE[row.status]),
+                  _Cell("Yes" if row.material else "No", S_TEXT), _Cell(row.segment, S_TEXT))
+    sheets = [sheet]
+    if effective_layout(result.config) == "earnings":
+        sheets.insert(0, _earnings_sheet(_table_for_result(result)))
+    return sheets
+
+
+def _earnings_sheet(table: "TableAnalysis") -> _Sheet:
+    from .earnings import display_rows, headline_keys
+    rows = display_rows(table)
+    headline = headline_keys(table)
+    ordered = [row for row, key in zip(rows, table.metric_order, strict=True) if key in headline]
+    ordered.extend(row for row, key in zip(rows, table.metric_order, strict=True) if key not in headline)
+    columns = list(rows[0]) if rows else ["Line Item"]
+    sheet = _Sheet("Earnings", tuple([26] * len(columns)), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(column, S_HEADER) for column in columns))
+    for row in ordered:
+        sheet.add(*(_Cell(row[column], S_TEXT) for column in columns))
+    return sheet
+
+
+def _statistics_sheet(table: "TableAnalysis") -> _Sheet:
+    from .surprise import statistic_record
+    columns = ("entity", "line_item", "segment", "measure", "prior_count", "standardized_surprise", "dispersion_surprise",
+               "standardized_reason", "dispersion_reason")
+    sheet = _Sheet("Statistics", tuple([24] * len(columns)), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(column.replace("_", " ").title(), S_HEADER) for column in columns))
+    for statistic in table.statistics:
+        record = statistic_record(statistic)
+        sheet.add(*(_Cell(str(record[column]) if record[column] is not None else "", S_TEXT) for column in columns))
+    return sheet

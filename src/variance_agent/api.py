@@ -20,10 +20,15 @@ from .surprise import SurpriseOptions, attach_statistics, infer_entity, validate
 class AudienceOptions:
     """Explicit comparison order and file layout; no threshold defaults."""
     bases: tuple[ComparisonBasis, ...] = ()
+    extended_headers: bool = True
     assisted: bool = False
     sheet: str | None = None
     column_mapping: dict[str, str] = field(default_factory=dict)
     surprise: SurpriseOptions | None = None
+    preset: str | None = None
+    layout: str | None = None
+    per_share_lines: bool | None = None
+    headline_items: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -73,6 +78,8 @@ def _analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, option
         raise ValueError("Financial table values cannot be float; supply Decimal or exact numeric text.")
     headers = raw_headers or tuple(dict.fromkeys(key for row in rows for key in row))
     bases = options.bases
+    if not bases and not options.extended_headers:
+        bases = (config.comparison_basis,)
     if not bases:
         bases = detect_comparison_bases(headers)
         if len(bases) > 1:
@@ -80,7 +87,15 @@ def _analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, option
         if not bases:
             bases = (ComparisonBasis.PRIOR_PERIOD,)
     cfg = audience_config(config)
-    table = analyze_comparisons(rows, cfg, bases, raw_headers=headers)
+    if options.preset is not None:
+        cfg = replace(cfg, preset=options.preset)
+    if options.layout is not None:
+        cfg = replace(cfg, layout=options.layout)
+    if options.per_share_lines is not None:
+        cfg = replace(cfg, per_share_lines=options.per_share_lines)
+    if options.headline_items is not None:
+        cfg = replace(cfg, headline_items=options.headline_items)
+    table = analyze_comparisons(rows, cfg, bases, raw_headers=headers, extended_headers=options.extended_headers)
     if options.surprise is not None:
         selected = options.surprise
         if selected.entity is None:

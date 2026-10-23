@@ -1391,3 +1391,57 @@ Wheel/sdist contents, license, Python support, and entry point verified
 Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
 No broken requirements found.
 ```
+
+## Phase 6 implementation details
+
+The shared `earnings.py` presenter supplies one Actual column and one group per
+comparison, headline selection, YoY captions, guidance positions, segments and
+other KPIs. Explicit `--headline` names replace the visible default selection.
+The existing safe chat table widget is reused; no frontend HTML/CSS change is
+needed. Hosted exports keep the existing refusal response. Six knowledge routes
+and four narrow earnings phrases are added; “beat the plan” retains its route.
+The explicit pre-upload comparison path now handles unreadable files safely.
+
+Header activation is separate from layout/export requests: plain FP&A metadata
+stays inert even with long exports, a panel or a new layout. `AudienceOptions`
+adds an explicit header-recognition boolean (default true for the new API), and
+the CLI passes its approved activation source. This closes an integration gap
+introduced when long-output flags began sharing the advanced comparison path.
+Legacy paths and their bytes remain unchanged.
+
+## Phase 6 complete — Maya, Priya and Dan
+
+Preset defaults, explicit layout/headline/per-share overrides, earnings Markdown and workbook sheets, structured chat tables, six knowledge topics and narrow earnings routing are implemented. Scenario B runs through confirmed guidance, period/threshold choices, structured values and report/audit download. Hosted path refusal is unchanged. Bare guidance rates are confirmed and missing rate consensus is not parsed as an amount. Quant requires long output and emits Markdown only to an explicitly requested file. Header gates remain separate from presentation/export flags, including panels.
+
+Twenty-three new test cases plus six automatically expanded knowledge cases bring the full suite to 1,950. Existing test source and contract fixtures remain unchanged except the earlier approved one-line schema-1.6 scope. Browser executable is unavailable; the full chat/frontend tests are the expressly permitted fallback. The per-share preset default is recorded; phase 7 wires it through PDF extraction.
+
+**pytest**
+
+```text
+........................................................................ [ 99%]
+......                                                                   [100%]
+1950 passed in 42.72s
+```
+
+**ruff**
+
+```text
+E501 Line too long (146 > 140)
+   --> tests/test_multi_audience_presets.py:102:141
+    |
+100 | …
+101 | …
+102 | …Type,Region\nHALV.FAKE,3Q26,Revenue,100,999,888,110,Revenue,North\n")
+    |                                                                 ^^^^^^
+103 | …
+104 | …"budget", "--dollar-threshold", "10",
+    |
+
+Found 1 error.
+```
+
+**mypy**
+
+```text
+Success: no issues found in 62 source files
+```

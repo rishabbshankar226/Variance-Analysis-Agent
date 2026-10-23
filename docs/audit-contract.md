@@ -164,3 +164,11 @@ history has no claimed file hash. Only Consensus children carry statistics; each
 child and the complete set validate independently. These fields enter both
 public payload and analysis fingerprints; the effective statistic options also
 enter the child configuration identity. Published schemas 1.0–1.7 are unchanged.
+
+### Presentation choices in 1.8
+
+`audience` includes the effective preset, layout, per-share filing-line policy
+and explicit headline names. Defaulted choices and headline inference are
+visible. These values enter the configuration and public payload identities.
+Existing Status values are unchanged; an Earnings sheet or Beat label does not
+create a second financial calculation.

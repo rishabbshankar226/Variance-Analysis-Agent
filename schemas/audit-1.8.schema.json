@@ -987,6 +987,28 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "preset": {
+              "enum": [
+                "fpa",
+                "earnings",
+                "quant"
+              ]
+            },
+            "layout": {
+              "enum": [
+                "standard",
+                "earnings"
+              ]
+            },
+            "per_share_lines": {
+              "type": "boolean"
+            },
+            "headline_items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -1000,7 +1022,11 @@
             "currency",
             "dollar_threshold",
             "percent_threshold",
-            "type_map"
+            "type_map",
+            "preset",
+            "layout",
+            "per_share_lines",
+            "headline_items"
           ],
           "additionalProperties": false
         },
@@ -1898,6 +1924,28 @@
                 ],
                 "additionalProperties": false
               }
+            },
+            "preset": {
+              "enum": [
+                "fpa",
+                "earnings",
+                "quant"
+              ]
+            },
+            "layout": {
+              "enum": [
+                "standard",
+                "earnings"
+              ]
+            },
+            "per_share_lines": {
+              "type": "boolean"
+            },
+            "headline_items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -1911,7 +1959,11 @@
             "currency",
             "dollar_threshold",
             "percent_threshold",
-            "type_map"
+            "type_map",
+            "preset",
+            "layout",
+            "per_share_lines",
+            "headline_items"
           ],
           "additionalProperties": false
         },

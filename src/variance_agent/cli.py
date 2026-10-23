@@ -91,6 +91,9 @@ class Arguments(Protocol):
     mapping: str | None
     compare_to: str | None
     preset: str
+    layout: str | None
+    per_share_lines: bool | None
+    headline: list[str] | None
     per_share_threshold: Decimal | None
     count_threshold: Decimal | None
     bps_threshold: Decimal | None
@@ -142,7 +145,8 @@ def _parse_type_map(data: bytes) -> dict[str, LineType]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="variance-agent",
-        description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
+        description="Compare supplied actuals with budgets, consensus, estimates, guidance or prior periods "
+                    "in auditable reports and panels.",
     )
     parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
     parser.add_argument("--history", help="CSV/JSON supplied surprise history, keyed by entity, metric and period.")
@@ -212,8 +216,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=_comparison_argument,
         help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
     )
+    parser.add_argument("--layout", choices=("standard", "earnings"), help="Override the preset report layout.")
+    sharing = parser.add_mutually_exclusive_group()
+    sharing.add_argument("--per-share-lines", dest="per_share_lines", action="store_true", default=None,
+                         help="Keep EPS/share counts in assisted filing intake (earnings preset default).")
+    sharing.add_argument("--no-per-share-lines", dest="per_share_lines", action="store_false", help="Omit filing EPS/share counts.")
+    parser.add_argument("--headline", action="append", help="Headline line-item name; repeat to replace earnings defaults.")
     parser.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
-                        help="Header recognition: fpa preserves defaults; earnings/quant opt into new headers.")
+                        help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
+                             "quant: new headers, long output required, no Markdown stdout, per-share off. No thresholds supplied.")
     for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
         parser.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
     parser.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
@@ -275,6 +286,8 @@ def _run(args: Arguments) -> int:
                                open_browser=not args.no_browser)
 
     assert args.input is not None
+    if args.preset == "quant" and not (args.long_output or args.long_output_jsonl):
+        raise ValueError("--preset quant requires --long-output or --long-output-jsonl.")
     if args.group_by:
         from .panel_cli import run_panel
         _validate_output_paths(args)
@@ -311,7 +324,8 @@ def _run(args: Arguments) -> int:
         requested = (mapping_obj.comparison_basis,)
     mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
     if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
-            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history):
+            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
+            or args.layout is not None or args.headline or args.per_share_lines is not None):
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
@@ -585,6 +599,9 @@ def _run_comparisons(
         column_mapping=columns or None,
     )
     bases = requested
+    extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
+    if not bases and not extended:
+        bases = (ComparisonBasis.BUDGET,)
     if not bases:
         bases = detect_comparison_bases(headers)
         if len(bases) > 1:
@@ -610,8 +627,10 @@ def _run_comparisons(
     config = AudienceConfig(args.period, args.dollar_threshold, args.percent_threshold / Decimal("100"),
                             currency=args.currency, type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
                             per_share_threshold=option("per_share_threshold"), count_threshold=option("count_threshold"),
-                            bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True)
-    table = analyze_comparisons(rows, config, bases, raw_headers=headers)
+                            bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True,
+                            preset=args.preset, layout=args.layout, per_share_lines=args.per_share_lines,
+                            headline_items=tuple(args.headline or ()))
+    table = analyze_comparisons(rows, config, bases, raw_headers=headers, extended_headers=extended)
     if args.history:
         from .surprise import load_history, SurpriseOptions, attach_statistics, infer_entity
         table = attach_statistics(table, SurpriseOptions(history=load_history(args.history), window=args.surprise_window,
@@ -625,7 +644,7 @@ def _run_comparisons(
     if args.check_only:
         print(f"Validation passed: {len(rows)} rows, {len(bases)} comparison(s).")
         return 0
-    report = render_comparisons(table)
+    report = render_comparisons(table) if args.output or args.preset != "quant" else ""
     outputs: dict[Path, str | bytes] = {}
     if args.output:
         outputs[Path(args.output)] = report
@@ -650,7 +669,7 @@ def _run_comparisons(
         if args.long_output_jsonl:
             outputs[Path(args.long_output_jsonl)] = long_jsonl(batch)
     write_text_outputs(outputs)
-    if not args.output:
+    if not args.output and args.preset != "quant":
         print(report)
     return 0
 

@@ -145,3 +145,35 @@ measure cutoffs and ambiguous choices. With Period as a group key, omit
 `--period`; otherwise it is required. Inputs retain the 32 MiB, 100,000-row,
 256-column and 1,000,000-cell caps across the whole panel. Split larger universes
 into several files.
+
+### Earnings and quant presets
+
+Presets supply presentation/intake defaults; every explicit option wins and no
+preset supplies materiality thresholds.
+
+| Preset | Extended headers | Report | Filing EPS/count lines | Other defaults |
+|---|---|---|---|---|
+| `fpa` | Off | Existing report | Off | Identical to no preset |
+| `earnings` | On | Earnings headline table and Earnings workbook sheet | On | Revenue, EPS and margin headline rows |
+| `quant` | On | Markdown only with `-o` | Off | Requires `--long-output` or `--long-output-jsonl` |
+
+Override layout with `--layout standard` or `--layout earnings`. Use
+`--per-share-lines` or `--no-per-share-lines` for filing intake. Repeat
+`--headline 'Line Item'` to replace the default earnings headline selection.
+Earnings presentation shows supplied guidance position, prior-year change
+(`YoY %`), flat segments and remaining KPIs. Only Consensus uses Beat/Miss/In
+line; other comparisons retain F/U. New chat questions include “did we beat
+consensus”, “vs the street”, “margin in bps” and “where are we vs guide”. The
+review confirms how the supplied file is read; it makes no estimates.
+
+```sh
+variance-agent tests/fixtures/multi_audience/consensus.csv --preset earnings \
+  --period 3Q26 --dollar-threshold 10 --percent-threshold 2 \
+  --bps-threshold 25 --per-share-threshold 0.01 --count-threshold 1000 \
+  -o earnings.md --xlsx earnings.xlsx --audit-json earnings.audit.json
+```
+
+Export or layout flags alone keep existing FP&A metadata inert. Extended headers
+require an earnings/quant preset, a new comparison basis, an explicit mapping or
+confirmed earnings review. The new Python API itself is an explicit opt-in;
+`AudienceOptions.extended_headers=False` can preserve legacy header meanings.

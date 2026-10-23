@@ -18,11 +18,25 @@ class AudienceConfig(AnalysisConfig):
     actual_label: str | None = None
     comparison_title: str | None = None
     extended_headers: bool = False
+    preset: str = "fpa"
+    layout: str | None = None
+    per_share_lines: bool | None = None
+    headline_items: tuple[str, ...] = ()
 
 
 def validate_audience_config(config: AnalysisConfig) -> None:
     if not isinstance(config, AudienceConfig):
         return
+    if config.preset not in {"fpa", "earnings", "quant"} or config.layout not in {None, "standard", "earnings"}:
+        raise ValueError("Choose fpa, earnings or quant preset and standard or earnings layout.")
+    if config.per_share_lines is not None and not isinstance(config.per_share_lines, bool):
+        raise ValueError("Per-share filing lines must be an explicit boolean choice.")
+    if not isinstance(config.headline_items, tuple):
+        raise ValueError("Headline items must be a tuple of distinct line-item names.")
+    for item in config.headline_items:
+        validate_text(item, field="Headline item", nonblank=True)
+    if len({item.strip().casefold() for item in config.headline_items}) != len(config.headline_items):
+        raise ValueError("Headline items must be distinct line-item names.")
     if config.percent_values not in {None, "points", "fractions"}:
         raise ValueError("--percent-values must be points or fractions.")
     for name in ("dollar_threshold", "percent_threshold", "per_share_threshold", "count_threshold", "bps_threshold"):
@@ -70,3 +84,15 @@ def audience_config(config: AnalysisConfig, *, extended_headers: bool = True) ->
                                  type_map=config.type_map, currency=config.currency,
                                  comparison_basis=config.comparison_basis, comparison_label=config.comparison_label)
     return replace(current, extended_headers=extended_headers)
+
+
+def effective_layout(config: AnalysisConfig) -> str:
+    if isinstance(config, AudienceConfig):
+        return config.layout or ("earnings" if config.preset == "earnings" else "standard")
+    return "standard"
+
+
+def effective_per_share_lines(config: AnalysisConfig) -> bool:
+    if isinstance(config, AudienceConfig):
+        return config.per_share_lines if config.per_share_lines is not None else config.preset == "earnings"
+    return False

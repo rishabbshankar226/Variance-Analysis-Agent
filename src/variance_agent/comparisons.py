@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Mapping
 
 from .analysis import analyze_rows, verify_result
-from .audience import AudienceConfig, audience_config, validate_audience_config
+from .audience import AudienceConfig, audience_config, validate_audience_config, effective_layout
 from .audit import (build_audit_record, finalize_audience_record, audience_configuration,
                     validate_source_identity, comparison_details_record)
 from .comparison import (basis_for_header, comparison_heading, display_outcome, extended_heading,
@@ -68,7 +68,7 @@ class TableAnalysis:
     statistics: tuple[SurpriseStatistic, ...] = ()
 
 
-def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...]) -> list[dict[str, object]]:
+def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...], *, extended: bool = True) -> list[dict[str, object]]:
     if not isinstance(rows, list) or not rows:
         raise ValueError("Dataset contains no data rows.")
     if len(rows) > MAX_ROWS or sum(len(row) for row in rows) > MAX_CELLS:
@@ -77,14 +77,15 @@ def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...])
     for row in rows:
         normalized = normalize_row(row)
         headers = {normalize_key(header): header for header in (raw_headers or tuple(row))}
-        for key, original in headers.items():
+        for key, original in headers.items() if extended else ():
             if key in {"est", "estimate"}:
                 if original.strip().startswith("#") and key == "est":
                     normalized["estimator_count"] = normalized.pop(key, None)
                 else:
                     raise ValueError(f"Column {original!r} could mean consensus or your own model; map or name it explicitly.")
         for key, target in {"low": "consensus_low", "high": "consensus_high", "std_dev": "dispersion",
-                            "standard_deviation": "dispersion", "guide_low": "guidance_low", "guide_high": "guidance_high"}.items():
+                            "standard_deviation": "dispersion", "guide_low": "guidance_low",
+                            "guide_high": "guidance_high"}.items() if extended else ():
             if key in normalized:
                 if target in normalized:
                     raise ValueError(f"Columns {key} and {target} name the same field; map one explicitly.")
@@ -102,18 +103,18 @@ def _one_column(keys: list[str], candidates: list[str], name: str, *, required: 
     return matches[0] if matches else None
 
 
-def _period_columns(keys: list[str], raw_headers: tuple[str, ...]) -> tuple[list[str], dict[str, str]]:
+def _period_columns(keys: list[str], raw_headers: tuple[str, ...], *, extended: bool = True) -> tuple[list[str], dict[str, str]]:
     originals = {normalize_key(header): header for header in raw_headers}
     period_keys: dict[str, str] = {}
     for key in keys:
         original = originals.get(key, key.replace("_", " "))
         # Normalization loses the apostrophe: 3Q26 survives, Q3'26 needs its captured original.
         label = original.removesuffix(" Actual").removesuffix(" Actuals").strip()
-        if parse_period_label(label, extended=True) is not None:
+        if parse_period_label(label, extended=extended) is not None:
             period_keys[label] = key
     if len(period_keys) < 2:
         return [], period_keys
-    ordered = order_period_labels(list(period_keys), extended=True)
+    ordered = order_period_labels(list(period_keys), extended=extended)
     if ordered is None:
         raise ValueError(f"Could not order periods with mixed calendars, granularity, or duplicate labels: {', '.join(period_keys)}.")
     return ordered, period_keys
@@ -136,15 +137,17 @@ def _title(actual: str, previous: str) -> str | None:
 @financial_context()
 def analyze_comparisons(
     rows: list[dict[str, object]], config: AnalysisConfig, bases: tuple[ComparisonBasis, ...], *,
-    raw_headers: tuple[str, ...] = (),
+    raw_headers: tuple[str, ...] = (), extended_headers: bool = True,
 ) -> TableAnalysis:
     """Analyze supplied bases separately. Missing cells are never replaced by zero."""
     if not bases or len(set(bases)) != len(bases) or not all(isinstance(b, ComparisonBasis) for b in bases):
         raise ValueError("Choose a nonempty list of distinct comparison bases.")
-    cfg = audience_config(config, extended_headers=True)
+    cfg = audience_config(config, extended_headers=extended_headers)
     validate_audience_config(cfg)
-    canonical = _canonical_rows(rows, raw_headers)
+    canonical = _canonical_rows(rows, raw_headers, extended=extended_headers)
     for row in canonical:
+        if not extended_headers and "segment" in row:
+            row["ignored_source_segment"] = row.pop("segment")
         segment, declared = read_segment(row, cfg)
         if declared:
             source = next(key for key in SEGMENT_KEYS if key in row)
@@ -155,7 +158,7 @@ def analyze_comparisons(
     keys = list(dict.fromkeys(key for row in canonical for key in row))
     actual_key = _one_column(keys, ["actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"], "Actual", required=False)
     original_headers = raw_headers or tuple(dict.fromkeys(k for row in rows for k in row))
-    ordered, period_keys = _period_columns(keys, original_headers)
+    ordered, period_keys = _period_columns(keys, original_headers, extended=extended_headers)
     if actual_key is None and ordered:
         actual_key = period_keys[ordered[0]]
     if actual_key is None:
@@ -173,7 +176,7 @@ def analyze_comparisons(
                 raise ValueError(f"{row.get(line_key)}: comparison joins need a unique line item, segment, and measure.")
             identities.add(identity)
     for basis in bases:
-        selected = [key for key in keys if basis_for_header(key, extended=True) is basis]
+        selected = [key for key in keys if basis_for_header(key, extended=extended_headers) is basis]
         comparison_key = _one_column(keys, selected, comparison_heading(basis, None), required=False)
         label, title = None, None
         selected_cfg = replace(cfg, comparison_basis=basis, comparison_label=None, comparison_title=None)
@@ -229,7 +232,10 @@ def analyze_comparisons(
     gaps = _estimate_gaps(tuple(comparisons))
     metric_order = tuple((str(row.get(line_key, "")).strip().casefold(), str(row.get("segment", "")).strip().casefold(),
                           measure_kind(row.get("measure"), str(row.get(line_key, "Row")))) for row in canonical)
-    return attach_statistics(TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes), metric_order))
+    table = attach_statistics(TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes), metric_order))
+    from .earnings import layout_note
+    note = layout_note(table)
+    return replace(table, inferences=(*table.inferences, note)) if note is not None else table
 
 
 def _identity(row: AnalyzedRow) -> tuple[str, str, MeasureKind]:
@@ -318,6 +324,9 @@ def build_comparison_audit(
 @financial_context()
 def _render_comparisons(table: TableAnalysis) -> str:
     verify_comparisons(table)
+    if effective_layout(table.config) == "earnings":
+        from .earnings import render_earnings
+        return render_earnings(table)
     if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
         from .report import render_markdown
         return render_markdown(table.comparisons[0].result)

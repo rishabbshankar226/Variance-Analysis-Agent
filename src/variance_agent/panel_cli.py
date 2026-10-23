@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from .api import AudienceOptions, PanelOptions, analyze_panel
-from .audience import AudienceConfig
+from .audience import AudienceConfig, NEW_BASES
 from .audit import sha256_bytes
 from .cli import Arguments, _parse_type_map
 from .comparison import parse_compare_to
@@ -62,9 +62,12 @@ def run_panel(args: Arguments) -> int:
     cfg = AudienceConfig(args.period or "", args.dollar_threshold, args.percent_threshold / Decimal("100"),
                          currency=args.currency, type_map=_parse_type_map(read_input_bytes(args.type_map)) if args.type_map else {},
                          per_share_threshold=threshold("per_share_threshold"), bps_threshold=threshold("bps_threshold"),
-                         count_threshold=threshold("count_threshold"), percent_values=percent_values, extended_headers=True)
+                         count_threshold=threshold("count_threshold"), percent_values=percent_values, extended_headers=True,
+                         preset=args.preset, layout=args.layout, per_share_lines=args.per_share_lines,
+                         headline_items=tuple(args.headline or ()))
     batch = analyze_panel(rows, group_by=tuple(args.group_by.split(",")), options=PanelOptions(config=cfg,
-                           audience=AudienceOptions(bases=bases, surprise=(SurpriseOptions(history=load_history(args.history),
+                           audience=AudienceOptions(bases=bases, extended_headers=(args.preset != "fpa" or mapping is not None
+                               or any(basis in NEW_BASES for basis in bases)), surprise=(SurpriseOptions(history=load_history(args.history),
                                window=args.surprise_window, entity=args.entity) if args.history else None))))
     batch = replace(batch, source_sha256=sha256_bytes(data), source_name=source.name)
     outputs: dict[Path, str | bytes] = {Path(args.errors_output): errors_csv(batch)}

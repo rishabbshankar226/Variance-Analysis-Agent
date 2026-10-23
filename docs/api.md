@@ -94,3 +94,21 @@ non-Consensus rows have null statistic fields. An explicitly enabled all-failed
 panel retains these optional CSV headers. Statistic values never affect variance,
 Status or materiality. CLI equivalents are `--history`, `--surprise-window` and
 `--entity`; no threshold default is supplied by this option.
+
+## Presentation defaults
+
+`AudienceOptions` can optionally set `preset`, `layout`, `per_share_lines` and
+`headline_items`; otherwise the supplied AudienceConfig values apply.
+AudienceConfig adds the same fields with legacy presentation defaults. Effective
+layout/per-share choices derive from the preset only when no override is given.
+`preset="earnings"` selects the headline layout and Earnings sheet, while an
+explicit `layout="standard"` wins. No preset supplies a threshold. CLI quant
+mode requires a long-output destination and emits no Markdown to stdout.
+
+Headline items are explicit line-item names, or default Revenue rows, Per Share
+rows and Percent rows whose labels contain “margin”. Unknown explicit names are
+refused. Inferences appear in the report, CLI notes and audit. Comparisons still
+come from the same engine. Earnings chat tables use the existing safe text-cell
+widget; source strings remain data. New API calls recognize extended headers by
+default; `extended_headers=False` in AudienceOptions preserves legacy metadata
+interpretation. CLI export/layout flags alone do not enable extended headers.

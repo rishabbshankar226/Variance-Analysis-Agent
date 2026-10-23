@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status, MeasureKind
-from .audience import is_audience_result
+from .audience import is_audience_result, audience_config, effective_layout
 from .measures import currency_row, format_measure
 from .numeric import financial_context
 from .currencies import CURRENCY_SYMBOLS
@@ -268,6 +268,12 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
+    if effective_layout(result.config) == "earnings":
+        from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
+        from .earnings import render_earnings
+        table = TableAnalysis(audience_config(result.config), (ComparisonAnalysis(result.config.comparison_basis, result),),
+                              metric_order=tuple(_identity(row) for row in result.rows))
+        return render_earnings(table)
     if is_audience_result(result):
         return render_measure_report(result)
     cfg = result.config

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, ComparisonDetails, LineType
-from .audience import AudienceConfig, is_audience_result
+from .audience import AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
 from .measures import currency_row, metric_inferences
 from .comparison import display_outcome, extended_heading
 from .output import write_text_outputs
@@ -407,6 +407,9 @@ def audience_configuration(cfg: AnalysisConfig) -> JSONObject:
         "actual_label": cfg.actual_label if isinstance(cfg, AudienceConfig) else None,
         "comparison_title": extended_heading(cfg),
         "extended_headers": cfg.extended_headers if isinstance(cfg, AudienceConfig) else False,
+        "preset": cfg.preset if isinstance(cfg, AudienceConfig) else "fpa",
+        "layout": effective_layout(cfg), "per_share_lines": effective_per_share_lines(cfg),
+        "headline_items": list(cfg.headline_items) if isinstance(cfg, AudienceConfig) else [],
         "currency": cfg.currency, "dollar_threshold": _decimal(cfg.dollar_threshold),
         "percent_threshold": _decimal(cfg.percent_threshold),
         "type_map": [{"line_item": key, "type": str(value)} for key, value in sorted(cfg.type_map.items())],
