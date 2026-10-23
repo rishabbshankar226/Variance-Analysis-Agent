@@ -13,6 +13,7 @@ from .models import AnalysisConfig, ComparisonBasis
 from .parsing import normalize_row, read_input_bytes
 
 from .panel import BatchResult
+from .surprise import SurpriseOptions, attach_statistics, infer_entity, validate_options
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -22,6 +23,7 @@ class AudienceOptions:
     assisted: bool = False
     sheet: str | None = None
     column_mapping: dict[str, str] = field(default_factory=dict)
+    surprise: SurpriseOptions | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,7 +80,13 @@ def _analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, option
         if not bases:
             bases = (ComparisonBasis.PRIOR_PERIOD,)
     cfg = audience_config(config)
-    return analyze_comparisons(rows, cfg, bases, raw_headers=headers)
+    table = analyze_comparisons(rows, cfg, bases, raw_headers=headers)
+    if options.surprise is not None:
+        selected = options.surprise
+        if selected.entity is None:
+            selected = replace(selected, entity=infer_entity(rows))
+        table = attach_statistics(table, selected)
+    return table
 
 
 def analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, *,
@@ -113,6 +121,8 @@ def analyze_panel(rows: list[dict[str, object]], *, group_by: tuple[str, ...], o
     """Validate the capture, then isolate data errors within each declared group."""
     from .panel import analyze_groups
     validate_table(rows)
+    if options.audience.surprise is not None:
+        validate_options(options.audience.surprise)
     if options.audience.column_mapping:
         from .comparisons import _mapped_headers
         headers = tuple(dict.fromkeys(key for row in rows for key in row))

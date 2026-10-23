@@ -99,6 +99,9 @@ class Arguments(Protocol):
     long_output: str | None
     long_output_jsonl: str | None
     errors_output: str | None
+    history: str | None
+    surprise_window: int
+    entity: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -142,6 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
     )
     parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    parser.add_argument("--history", help="CSV/JSON supplied surprise history, keyed by entity, metric and period.")
+    parser.add_argument("--surprise-window", type=_surprise_window, default=8, help="Most recent prior surprises (default 8, minimum 4).")
+    parser.add_argument("--entity", help="Entity identity for a single history comparison; otherwise read Ticker/Entity.")
     parser.add_argument("--group-by", help="Panel keys, for example Ticker,Period. Mixed success exits 3; global errors exit 2.")
     parser.add_argument("--long-output", help="Write deterministic exact-number CSV.")
     parser.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
@@ -233,6 +239,9 @@ def _validate_output_paths(args: Arguments) -> None:
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         inputs.append(Path(mapping_arg))
+    history_arg = getattr(args, "history", None)
+    if isinstance(history_arg, str) and history_arg:
+        inputs.append(Path(history_arg))
     outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx,
                getattr(args, "long_output", None), getattr(args, "long_output_jsonl", None),
                getattr(args, "errors_output", None)) if value]
@@ -302,7 +311,7 @@ def _run(args: Arguments) -> int:
         requested = (mapping_obj.comparison_basis,)
     mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
     if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
-            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl):
+            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history):
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
@@ -516,7 +525,7 @@ def _run(args: Arguments) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = cast(Arguments, parser.parse_args(argv))
-    if args.chat and (args.group_by or args.long_output or args.long_output_jsonl or args.errors_output):
+    if args.chat and (args.group_by or args.long_output or args.long_output_jsonl or args.errors_output or args.history or args.entity):
         parser.error("panel/long-output flags cannot be combined with --chat.")
     if args.hosted and not args.chat:
         parser.error("--hosted requires --chat.")
@@ -603,6 +612,10 @@ def _run_comparisons(
                             per_share_threshold=option("per_share_threshold"), count_threshold=option("count_threshold"),
                             bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True)
     table = analyze_comparisons(rows, config, bases, raw_headers=headers)
+    if args.history:
+        from .surprise import load_history, SurpriseOptions, attach_statistics, infer_entity
+        table = attach_statistics(table, SurpriseOptions(history=load_history(args.history), window=args.surprise_window,
+                                                         entity=args.entity or infer_entity(rows)))
     for note in (*notes, *table.inferences):
         print("[comparison intake] " + display_text(note), file=sys.stderr)
     for comparison in table.comparisons:
@@ -612,9 +625,7 @@ def _run_comparisons(
     if args.check_only:
         print(f"Validation passed: {len(rows)} rows, {len(bases)} comparison(s).")
         return 0
-    only = table.comparisons[0]
-    report = (render_markdown(only.result) if len(bases) == 1 and only.result is not None and not only.unavailable
-              else render_comparisons(table))
+    report = render_comparisons(table)
     outputs: dict[Path, str | bytes] = {}
     if args.output:
         outputs[Path(args.output)] = report
@@ -642,6 +653,16 @@ def _run_comparisons(
     if not args.output:
         print(report)
     return 0
+
+
+def _surprise_window(value: str) -> int:
+    try:
+        window = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Surprise window must be an integer, minimum of 4.") from exc
+    if window < 4:
+        raise argparse.ArgumentTypeError(f"A surprise window of {window} is below the minimum of 4.")
+    return window
 
 
 if __name__ == "__main__":

@@ -151,3 +151,16 @@ name and worksheet to `TableAnalysis`. Comparison audits use that provenance by
 default. In-memory API results leave source identity null. Long panel outputs
 carry the CLI capture hash or null for in-memory calls; the batch itself is not a
 new audit schema kind. Every comparison audit remains independently verifiable.
+
+### Statistics in audit 1.8
+
+Comparison-wrapper records optionally add `statistics_configuration` (window,
+entity choice and history source name/SHA-256) and `statistics[]`. Each statistic
+contains entity, line item, flat segment, measure, amount/bps surprise, history
+SHA-256, ordered prior periods and their exact surprise values, count, window,
+sample variance, sample deviation, standardized surprise/reason and dispersion
+surprise/reason. The prior values permit independent recomputation. In-memory
+history has no claimed file hash. Only Consensus children carry statistics; each
+child and the complete set validate independently. These fields enter both
+public payload and analysis fingerprints; the effective statistic options also
+enter the child configuration identity. Published schemas 1.0–1.7 are unchanged.

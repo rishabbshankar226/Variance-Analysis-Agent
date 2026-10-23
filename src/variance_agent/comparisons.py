@@ -19,6 +19,8 @@ from .numeric import financial_context, ratio
 from .parsing import is_missing, normalize_key, normalize_row
 from .classification import infer_line_type
 from .segments import SEGMENT_KEYS, read_segment
+from .surprise import (SurpriseOptions, SurpriseStatistic, attach_statistics, verify_statistics,
+                       statistic_record, statistics_configuration, render_statistics)
 from .report import _pct, _safe_inline
 
 
@@ -62,6 +64,8 @@ class TableAnalysis:
     source_name: str | None = None
     source_sha256: str | None = None
     source_worksheet: str | None = None
+    statistic_context: SurpriseOptions | None = None
+    statistics: tuple[SurpriseStatistic, ...] = ()
 
 
 def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...]) -> list[dict[str, object]]:
@@ -225,7 +229,7 @@ def analyze_comparisons(
     gaps = _estimate_gaps(tuple(comparisons))
     metric_order = tuple((str(row.get(line_key, "")).strip().casefold(), str(row.get("segment", "")).strip().casefold(),
                           measure_kind(row.get("measure"), str(row.get(line_key, "Row")))) for row in canonical)
-    return TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes), metric_order)
+    return attach_statistics(TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes), metric_order))
 
 
 def _identity(row: AnalyzedRow) -> tuple[str, str, MeasureKind]:
@@ -292,6 +296,8 @@ def build_comparison_audit(
                      "source": {"name": source_name, "sha256": source_sha256},
                      "unavailable_comparisons": [_missing_record(row) for row in comparison.unavailable], "comparisons": [],
                      "audience": audience_configuration(replace(table.config, comparison_basis=comparison.basis))}
+        if table.statistic_context is not None and comparison.basis is ComparisonBasis.CONSENSUS:
+            _attach_statistic_record(child, table)
         finalize_audience_record(child)
         records.append(child)
     if len(records) == 1:
@@ -303,12 +309,14 @@ def build_comparison_audit(
                         "comparison_order": [str(c.basis) for c in table.comparisons],
                         "estimate_vs_consensus": [_gap_record(gap) for gap in table.estimate_vs_consensus],
                         "inferences": list(table.inferences)}
+    if table.statistic_context is not None:
+        _attach_statistic_record(root, table)
     finalize_audience_record(root)
     return root
 
 
 @financial_context()
-def render_comparisons(table: TableAnalysis) -> str:
+def _render_comparisons(table: TableAnalysis) -> str:
     verify_comparisons(table)
     if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
         from .report import render_markdown
@@ -489,6 +497,7 @@ def verify_comparisons(table: TableAnalysis) -> None:
             if not isinstance(absent.measure, MeasureKind) or not isinstance(absent.actual, Decimal):
                 raise RuntimeError("Unavailable comparison has invalid measure or amount.")
             parse_decimal(absent.actual, field="Actual", line_item=absent.line_item)
+    verify_statistics(table)
     if table.estimate_vs_consensus != _estimate_gaps(table.comparisons):
         raise RuntimeError("Estimate against Consensus facts mismatch.")
 
@@ -540,3 +549,17 @@ def _mapped_headers(headers: tuple[str, ...], mapping: Mapping[str, str]) -> tup
         else:
             output.append(header)
     return tuple(output), tuple(notes)
+
+
+def render_comparisons(table: TableAnalysis) -> str:
+    return _render_comparisons(table) + render_statistics(table)
+
+
+def _attach_statistic_record(record: JSONObject, table: TableAnalysis) -> None:
+    from .audit import _canonical, sha256_bytes
+    record["statistics"] = [statistic_record(stat) for stat in table.statistics]
+    record["statistics_configuration"] = statistics_configuration(table)
+    provenance = record.get("provenance")
+    if isinstance(provenance, dict):
+        provenance["configuration_sha256"] = sha256_bytes(_canonical({
+            "base": provenance["configuration_sha256"], "statistics": record["statistics_configuration"]}))

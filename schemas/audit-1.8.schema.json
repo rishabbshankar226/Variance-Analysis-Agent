@@ -26,7 +26,9 @@
     "kind": {},
     "comparison_order": {},
     "estimate_vs_consensus": {},
-    "segments": {}
+    "segments": {},
+    "statistics": {},
+    "statistics_configuration": {}
   },
   "required": [
     "schema_version",
@@ -1505,6 +1507,50 @@
               }
             }
           }
+        },
+        "statistics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statistic"
+          }
+        },
+        "statistics_configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "entity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "window",
+            "entity",
+            "history_source",
+            "history_sha256"
+          ]
         }
       },
       "required": [
@@ -1868,6 +1914,50 @@
             "type_map"
           ],
           "additionalProperties": false
+        },
+        "statistics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statistic"
+          }
+        },
+        "statistics_configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "entity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "window",
+            "entity",
+            "history_source",
+            "history_sha256"
+          ]
         }
       },
       "required": [
@@ -2037,6 +2127,50 @@
           "items": {
             "type": "string"
           }
+        },
+        "statistics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statistic"
+          }
+        },
+        "statistics_configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "window": {
+              "type": "integer",
+              "minimum": 4
+            },
+            "entity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "history_sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "window",
+            "entity",
+            "history_source",
+            "history_sha256"
+          ]
         }
       },
       "required": [
@@ -2061,6 +2195,139 @@
         {
           "$ref": "#/$defs/missing_record"
         }
+      ]
+    },
+    "statistic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "type": "string"
+        },
+        "line_item": {
+          "type": "string"
+        },
+        "segment": {
+          "type": "string"
+        },
+        "measure": {
+          "enum": [
+            "Currency",
+            "Per Share",
+            "Percent",
+            "Count"
+          ]
+        },
+        "surprise": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sample_variance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sample_stddev": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "standardized_surprise": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dispersion_surprise": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/decimal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "standardized_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dispersion_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prior_periods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prior_surprises": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/decimal"
+          }
+        },
+        "prior_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "window": {
+          "type": "integer",
+          "minimum": 4
+        }
+      },
+      "required": [
+        "entity",
+        "line_item",
+        "segment",
+        "measure",
+        "surprise",
+        "sample_variance",
+        "sample_stddev",
+        "standardized_surprise",
+        "dispersion_surprise",
+        "standardized_reason",
+        "dispersion_reason",
+        "history_sha256",
+        "prior_periods",
+        "prior_surprises",
+        "prior_count",
+        "window"
       ]
     }
   },

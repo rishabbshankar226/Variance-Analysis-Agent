@@ -12,14 +12,18 @@ from .comparison import display_outcome
 from .comparisons import UnavailableComparison, _identity, verify_comparisons
 from .audit import validate_source_identity
 from .json_types import JSONObject
-from .models import AnalyzedRow
+from .models import AnalyzedRow, ComparisonBasis
 
 if TYPE_CHECKING:
     from .panel import BatchResult
 
 LONG_FIELDS = ("line_item", "segment", "measure", "basis", "comparison_present", "comparison", "actual", "variance",
                "variance_percent", "variance_bps", "status", "material", "display_label", "source_sha256")
-_NUMERIC = {"comparison", "actual", "variance", "variance_percent", "variance_bps"}
+STATISTIC_FIELDS = ("prior_surprise_count", "surprise_window", "sample_variance", "sample_stddev", "standardized_surprise",
+                    "standardized_reason", "dispersion_surprise", "dispersion_reason", "history_sha256")
+_NUMERIC = {"comparison", "actual", "variance", "variance_percent", "variance_bps",
+            "prior_surprise_count", "surprise_window", "sample_variance", "sample_stddev",
+            "standardized_surprise", "dispersion_surprise"}
 
 
 def _decimal(value: Decimal | None) -> str | None:
@@ -30,6 +34,7 @@ def long_rows(batch: BatchResult) -> list[JSONObject]:
     """Groups sort lexically by declared keys, then source metric order, then requested basis order."""
     validate_source_identity(batch.source_name, batch.source_sha256)
     output: list[JSONObject] = []
+    statistics_enabled = _has_statistics(batch)
     for group in batch.groups:
         table = group.analysis
         if table is None:
@@ -38,6 +43,8 @@ def long_rows(batch: BatchResult) -> list[JSONObject]:
         validate_source_identity(table.source_name, table.source_sha256)
         if len(set(table.metric_order)) != len(table.metric_order):
             raise ValueError("Long output requires unique line item, segment and measure identities.")
+        statistics = {(stat.line_item.strip().casefold(), stat.segment.strip().casefold(), stat.measure): stat
+                      for stat in table.statistics}
         maps = []
         for comparison in table.comparisons:
             current: dict[tuple[str, str, object], AnalyzedRow | UnavailableComparison] = {}
@@ -67,6 +74,16 @@ def long_rows(batch: BatchResult) -> list[JSONObject]:
                                "material": entry.material if isinstance(entry, AnalyzedRow) else None,
                                "display_label": display_outcome(entry, comparison.basis) if isinstance(entry, AnalyzedRow) else "",
                                "source_sha256": batch.source_sha256 or table.source_sha256})
+                if statistics_enabled:
+                    stat = statistics.get(identity) if comparison.basis is ComparisonBasis.CONSENSUS else None
+                    record.update({field: None for field in STATISTIC_FIELDS})
+                    if stat is not None:
+                        record.update(prior_surprise_count=str(stat.prior_count), surprise_window=str(stat.window),
+                                      sample_variance=_decimal(stat.sample_variance), sample_stddev=_decimal(stat.sample_stddev),
+                                      standardized_surprise=_decimal(stat.standardized_surprise),
+                                      standardized_reason=stat.standardized_reason,
+                                      dispersion_surprise=_decimal(stat.dispersion_surprise), dispersion_reason=stat.dispersion_reason,
+                                      history_sha256=stat.history_sha256)
                 output.append(record)
     return output
 
@@ -90,7 +107,8 @@ def _csv(fields: tuple[str, ...], rows: list[JSONObject], numeric: set[str]) -> 
 
 
 def long_csv(batch: BatchResult) -> str:
-    return _csv((*batch.group_by, *LONG_FIELDS), long_rows(batch), _NUMERIC)
+    fields = (*LONG_FIELDS, *STATISTIC_FIELDS) if _has_statistics(batch) else LONG_FIELDS
+    return _csv((*batch.group_by, *fields), long_rows(batch), _NUMERIC)
 
 
 def long_jsonl(batch: BatchResult) -> str:
@@ -105,3 +123,8 @@ def errors_csv(batch: BatchResult) -> str:
             row.update(error=group.error, source_sha256=batch.source_sha256)
             rows.append(row)
     return _csv((*batch.group_by, "error", "source_sha256"), rows, set())
+
+
+def _has_statistics(batch: BatchResult) -> bool:
+    return batch.statistics_enabled or any(group.analysis is not None and group.analysis.statistic_context is not None
+                                           for group in batch.groups)

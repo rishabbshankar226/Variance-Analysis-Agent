@@ -73,3 +73,24 @@ CSV protects untrusted text, including headers and error reasons, by prefixing a
 File capture remains at most 32 MiB. Whole-table limits apply before grouping: at most 100,000 data rows, 256 columns, 1,000,000 cells, bounded text and numeric strings, and the existing nesting depth. No per-group cap resets permit a larger capture. Split larger universes into separate files and runs. A strict 100,000-row CSV may have at most 10 columns; assisted intake also counts its header/title rows against its bounded table scan.
 
 Before 1.0, minor releases may add opt-in functions, defaulted metadata fields, comparison bases and schema versions. They may not change existing public parameter names/order, positional versus keyword-only behavior, defaults, old financial rules, fixed long-output columns/order/units, deterministic serialization, or legacy outputs for existing inputs. A required wire change needs an explicit new format/version. Unknown future enum members must not be assumed valid in an older closed audit schema. The four original names retain their exact signatures; signature tests pin the three new functions too.
+
+## Optional history statistics
+
+`AudienceOptions.surprise` accepts `SurpriseOptions(history=..., window=8,
+entity=None)` from `variance_agent.surprise`. Use `load_history(path)` to capture
+bounded CSV/JSON and retain its source hash, or `history_from_rows(rows)` for
+in-memory exact values without a source-byte claim. `TableAnalysis.statistics`
+contains independently rechecked descriptive facts. Ticker/Entity is detected
+per group unless an identity is supplied explicitly. History/period ambiguities
+fail the relevant panel group; malformed auxiliary captures and invalid windows
+fail globally.
+
+A history option or supplied estimate dispersion enables optional long columns,
+appended after the base fields: `prior_surprise_count, surprise_window,
+sample_variance, sample_stddev, standardized_surprise, standardized_reason,
+dispersion_surprise, dispersion_reason, history_sha256`. Count/window values are
+exact integer strings. The columns are absent when statistics are not enabled;
+non-Consensus rows have null statistic fields. An explicitly enabled all-failed
+panel retains these optional CSV headers. Statistic values never affect variance,
+Status or materiality. CLI equivalents are `--history`, `--surprise-window` and
+`--entity`; no threshold default is supplied by this option.

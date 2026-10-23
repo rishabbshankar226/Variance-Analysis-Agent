@@ -1310,3 +1310,84 @@ Core phases 1–4 are complete and locally committed after this log is recorded.
 Both optional phases are feasible with the existing standard-library/optional-PDF environment; no forbidden dependency or runtime network requirement has emerged. There is no stated remaining time budget against which to promise they fit. Recommended choice: retain both, since they directly serve Wei’s history normalization and Priya’s EPS intake. Owner may drop either or both at this gate.
 
 The owner attachment explicitly requires this pause: “STOP 3. After Phase 4. Report the time spent, what remains, and whether Phases 5 and 7 fit.” Await the owner’s choice before proceeding. Nothing has been pushed, merged, tagged or released. Browser executable remains unavailable; the authorized chat/frontend-test fallback has run in the full suite. Real vendor exports, real filings, hosted deployment, Windows and Python versions other than the measured 3.12.14 remain untested here.
+
+## STOP 3 resumed — keep phases 5 and 7
+
+Owner said “continue the work”, accepting the recommended choice to retain both
+optional phases. Continue sequentially through phases 5–8 and stop before any
+push or merge at STOP 4. No new runtime dependency or network use is authorized.
+
+Phase 5 uses one `SurpriseOptions` value on `AudienceOptions`, captured/history
+rows in `surprise.py`, and defaulted statistic fields on `TableAnalysis`.
+Statistics attach only for supplied dispersion or explicit history. They never
+change amount variance, materiality or Status. History is keyed by entity,
+metric and optional flat segment. Raw source hashes remain null for in-memory
+history. Long statistic columns append only when statistics are opted in.
+CLI adds `--history`, `--surprise-window` and an optional `--entity` override;
+ticker/entity columns supply the usual identity automatically. New history
+fixtures are fictional. Direct `build_audit_record` keeps its signature; the
+comparison wrapper records and re-verifies statistic context and facts.
+
+## Phase 5 complete — Wei
+
+History/dispersion statistics are retained. Thirteen tests cover Scenario D, the 3/4 observation boundary, exact-square and irrational sqrt oracles, entity keys, date-order permutation/current/future exclusion, fiscal/granularity/duplicate ambiguity, rate units, zero/missing dispersion, bounded history, path protection, independently valid set children and statistic tampering. Amounts, Status and materiality are unchanged. The wrapper records ordered prior values and statistic configuration; optional long columns are appended only when enabled. No baseline tests, fixtures or published schemas changed beyond the previously approved one-line test exception.
+
+**pytest**
+
+```text
+........................................................................ [ 97%]
+.................................................                        [100%]
+1921 passed in 41.32s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 61 source files
+```
+
+**compileall**
+
+```text
+Completed successfully with no output.
+```
+
+**pip-check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**package**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```

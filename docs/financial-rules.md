@@ -151,3 +151,26 @@ rate difference in bps. It does not generate an estimate or investment advice.
 ### Segment scope
 
 Reconcile at most one supplied Currency summary per category within each segment, using the existing inclusive 0.01 reconciliation tolerance. Never reconcile across segments or synthesize consolidated totals. Unsegmented consolidated rows remain a separate bucket. Duplicate names across segments are distinct; duplicates within the same segment still warn. Labels containing slashes do not imply hierarchy.
+
+### Descriptive surprise statistics (opt-in)
+
+Standardized surprise uses Actual minus supplied Consensus divided by the sample
+standard deviation of the most recent prior surprises for that entity, metric
+and optional segment. Percent metric history is in bps, and its numerator is the
+bps variance. Current and future periods are excluded. The default maximum
+window is 8; a window below 4 is refused. With fewer than 4 prior surprises or
+zero historical deviation, the statistic is null with a stated reason.
+
+The sample variance is algebraically demeaned:
+`(n * sum(x*x) - sum(x)*sum(x)) / (n * (n-1))`. Sums and cross-products use the
+existing exact 50-significant-digit financial context and fail rather than
+silently losing amount precision. The variance ratio may repeat and uses the
+existing permitted 50-digit half-even ratio rounding. `Decimal.sqrt` is the
+inexact square-root step, evaluated in that context with only Inexact locally
+disabled. The final standardized ratio uses the same ratio rounding. No binary
+float enters these calculations.
+
+Dispersion surprise divides the same numerator by supplied estimate standard
+deviation. Percent dispersion is supplied in percentage points and converted to
+bps before division. Absent or zero dispersion produces null with a reason.
+These are descriptive statistics of supplied numbers; they make no predictions.

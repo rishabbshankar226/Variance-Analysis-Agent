@@ -16,6 +16,7 @@ from .limits import display_text
 from .measures import metric_inferences
 from .long_output import errors_csv, long_csv, long_jsonl
 from .mapping import load_mapping
+from .surprise import load_history, SurpriseOptions
 from .output import write_text_outputs
 from .parsing import normalize_key, normalize_row, parse_decimal, read_input_bytes
 
@@ -63,7 +64,8 @@ def run_panel(args: Arguments) -> int:
                          per_share_threshold=threshold("per_share_threshold"), bps_threshold=threshold("bps_threshold"),
                          count_threshold=threshold("count_threshold"), percent_values=percent_values, extended_headers=True)
     batch = analyze_panel(rows, group_by=tuple(args.group_by.split(",")), options=PanelOptions(config=cfg,
-                           audience=AudienceOptions(bases=bases)))
+                           audience=AudienceOptions(bases=bases, surprise=(SurpriseOptions(history=load_history(args.history),
+                               window=args.surprise_window, entity=args.entity) if args.history else None))))
     batch = replace(batch, source_sha256=sha256_bytes(data), source_name=source.name)
     outputs: dict[Path, str | bytes] = {Path(args.errors_output): errors_csv(batch)}
     if args.long_output:

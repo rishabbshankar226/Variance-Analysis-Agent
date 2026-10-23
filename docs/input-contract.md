@@ -236,3 +236,16 @@ text values. Missing keys are global errors. Amounts and unresolved analytical
 choices fail their own groups without prompts. Period keys supply group periods;
 a simultaneous configured period is refused. See `docs/api.md` for the wire
 contract and deterministic ordering.
+
+### Supplied surprise history
+
+`--history` accepts bounded CSV/JSON with Entity (or Ticker), Metric (or Line
+Item), Period and Surprise. Optional Segment and Measure can disambiguate flat
+metrics and assert units. Surprise is an exact amount difference, or bps for a
+Percent metric. It is never a percentage surprise ratio. Histories are keyed by
+entity, metric and segment; duplicate period identities, mixed granularities,
+and fiscal/calendar quarter mixtures are refused. File order is irrelevant.
+Current and future periods do not enter the window. Ticker/Entity in actual rows
+supplies identity; otherwise use `--entity`. Larger captures must be split under
+the same existing input limits. A supplied `Std Dev` column enables dispersion
+statistics; explicit history also reports why dispersion is absent.

@@ -27,12 +27,13 @@ class BatchResult:
     groups: tuple[GroupResult, ...]
     source_sha256: str | None = None
     source_name: str | None = None
+    statistics_enabled: bool = False
 
 
 def analyze_groups(rows: list[dict[str, object]], normalized: list[dict[str, object]],
                    group_by: tuple[str, ...], options: PanelOptions) -> BatchResult:
     from .api import _analyze_table
-    from .long_output import LONG_FIELDS
+    from .long_output import LONG_FIELDS, STATISTIC_FIELDS
     if not isinstance(group_by, tuple) or not group_by:
         raise ValueError("Choose a nonempty tuple of distinct group keys.")
     for key in group_by:
@@ -40,7 +41,7 @@ def analyze_groups(rows: list[dict[str, object]], normalized: list[dict[str, obj
     keys = tuple(normalize_key(key) for key in group_by)
     if len(set(keys)) != len(keys):
         raise ValueError("Group keys must be distinct.")
-    if any(key in {*LONG_FIELDS, "error"} for key in keys):
+    if any(key in {*LONG_FIELDS, *STATISTIC_FIELDS, "error"} for key in keys):
         raise ValueError("A group key conflicts with a reserved long-output column.")
     period_key = "period" in keys
     if period_key and options.config.period:
@@ -74,4 +75,4 @@ def analyze_groups(rows: list[dict[str, object]], normalized: list[dict[str, obj
             output.append(GroupResult(identity, table))
         except (ValueError, DecimalException) as exc:
             output.append(GroupResult(identity, None, str(exc)))
-    return BatchResult(group_by, tuple(output))
+    return BatchResult(group_by, tuple(output), statistics_enabled=options.audience.surprise is not None)
