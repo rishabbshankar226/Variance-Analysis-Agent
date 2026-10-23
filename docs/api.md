@@ -112,3 +112,14 @@ come from the same engine. Earnings chat tables use the existing safe text-cell
 widget; source strings remain data. New API calls recognize extended headers by
 default; `extended_headers=False` in AudienceOptions preserves legacy metadata
 interpretation. CLI export/layout flags alone do not enable extended headers.
+
+## Filing measures
+
+`analyze_file` supports assisted PDFs with `AudienceOptions(assisted=True,
+preset="earnings")` or explicit `per_share_lines=True`. Supply
+`better_directions={"printed line item": "Higher" or "Lower"}` to settle count
+directions, alongside explicit cutoffs in AudienceConfig. Per Share defaults
+Higher. A per-share override beats a preset default. Count/EPS amounts remain
+independent of currency-caption scaling. `TableAnalysis.source_document` and
+`source_transformations` retain the statement/pages and applied reader policies;
+comparison audit building uses them by default.

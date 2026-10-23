@@ -1509,3 +1509,93 @@ Wheel/sdist contents, license, Python support, and entry point verified
 Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
 No broken requirements found.
 ```
+
+## Phase 7 implementation plan
+
+Keep the extractor's off-mode path and omission note unchanged. The explicit
+flag adds Measure/Better metadata to retained EPS/share-count rows. Money-only
+statement shaping runs separately, then the retained measures return in source
+order. EPS defaults Higher as required; share counts require an explicit Better
+choice. A dollars-in-millions caption scales only Currency; Count remains as
+printed, with its unit policy visible. No unsupported share-unit conversion is
+inferred.
+
+The existing fixture producer is explicitly named for modification in the owner
+brief. Add only a new fictional `build_fixture_t` and its main invocation; this
+is fixture-generation code, not an edit to an existing test assertion. Invoke
+only that new function so no existing binary fixture is regenerated. Baseline
+byte checks will permit the authorized producer diff and the earlier one-line
+schema test scope, while requiring all existing fixture bytes unchanged.
+
+The advanced file reader gains optional PDF provenance metadata so API/CLI
+records retain the original statement, pages, period label and transformations.
+Chat adds an explicit “review earnings” request before or after a PDF upload;
+default filing uploads remain on Maya's original path. Tests first cover off/on
+cache separation, exact EPS/count amounts, scale and summary isolation,
+threshold/direction requirements, API/CLI provenance and chat confirmation.
+
+## Phase 7 complete — Priya
+
+Opted-in PDF intake retains exact basic/diluted EPS and weighted average share counts. Currency-only statement shaping and scaling preserve money reconciliation; counts remain as printed and require a direction. API, CLI and confirmed earnings chat retain PDF source document, pages, periods and transformations. The new fictional fixture was visually inspected after rendering; no existing PDF binary was regenerated. The producer extension is explicitly authorized by the brief.
+
+Eight new tests pass alongside the unchanged existing PDF tests. All baseline fixture bytes (including 19 contracts), eight published schemas and all deterministic_conditioning files match the baseline. The owner-approved existing schema test edit remains exactly one line.
+
+**pytest**
+
+```text
+........................................................................ [ 99%]
+..............                                                           [100%]
+1958 passed in 39.10s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 62 source files
+```
+
+**compileall**
+
+```text
+Completed successfully with no output.
+```
+
+**pip check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**distribution**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal installation**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```

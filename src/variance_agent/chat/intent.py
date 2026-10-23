@@ -74,6 +74,7 @@ KNOWLEDGE_INTENTS: frozenset[str] = frozenset({
 # Ordered list of (compiled_regex, intent_id).
 # Evaluated top-to-bottom; first match wins.
 _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"^review\s+earnings$", re.IGNORECASE), "earnings_review"),
     (re.compile(r"^(?:what\s+is|explain|define)\s+(?:street\s+)?consensus\??$", re.IGNORECASE), "concept_consensus"),
     (re.compile(r"^(?:what\s+is|explain|define)\s+(?:earnings\s+)?surprise\??$", re.IGNORECASE), "concept_surprise"),
     (re.compile(r"^(?:what\s+do\s+beat\s+and\s+miss\s+mean|explain\s+beat\s+and\s+miss)\??$", re.IGNORECASE), "concept_beat_miss"),

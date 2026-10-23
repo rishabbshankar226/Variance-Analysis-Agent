@@ -49,6 +49,8 @@ def run_panel(args: Arguments) -> int:
             normalized = normalize_row(row)
             name = str(normalized.get("line_item", ""))
             if name in mapping.better_directions:
+                for key in [key for key in row if normalize_key(key) == "better"]:
+                    row.pop(key)
                 row["better"] = mapping.better_directions[name]
     def threshold(name: str) -> Decimal | None:
         explicit = getattr(args, name, None)

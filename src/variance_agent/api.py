@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from pathlib import Path
 
-from .audience import audience_config
+from .audience import audience_config, effective_per_share_lines, AudienceConfig
 from .audit import sha256_bytes
 from .comparisons import TableAnalysis, analyze_comparisons, detect_comparison_bases, read_comparison_input
 from .limits import MAX_CELLS, MAX_COLUMNS, MAX_JSON_DEPTH, MAX_ROWS, validate_text
@@ -29,6 +29,7 @@ class AudienceOptions:
     layout: str | None = None
     per_share_lines: bool | None = None
     headline_items: tuple[str, ...] | None = None
+    better_directions: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -86,15 +87,16 @@ def _analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, option
             raise ValueError("Multiple bases found; choose the comparison explicitly with AudienceOptions.bases.")
         if not bases:
             bases = (ComparisonBasis.PRIOR_PERIOD,)
-    cfg = audience_config(config)
-    if options.preset is not None:
-        cfg = replace(cfg, preset=options.preset)
-    if options.layout is not None:
-        cfg = replace(cfg, layout=options.layout)
-    if options.per_share_lines is not None:
-        cfg = replace(cfg, per_share_lines=options.per_share_lines)
-    if options.headline_items is not None:
-        cfg = replace(cfg, headline_items=options.headline_items)
+    cfg = _configuration(config, options)
+    if options.better_directions:
+        transformed = []
+        for raw in rows:
+            row = normalize_row(raw)
+            name = str(row.get("line_item", ""))
+            if name in options.better_directions:
+                row["better"] = options.better_directions[name]
+            transformed.append(row)
+        rows = transformed
     table = analyze_comparisons(rows, cfg, bases, raw_headers=headers, extended_headers=options.extended_headers)
     if options.surprise is not None:
         selected = options.surprise
@@ -123,13 +125,24 @@ def analyze_file(path: str | Path, config: AnalysisConfig, *, options: AudienceO
     selected = options or AudienceOptions()
     source = Path(path)
     data = read_input_bytes(source)
+    cfg = _configuration(config, selected)
+    metadata: dict[str, object] = {}
     rows, headers, worksheet, notes = read_comparison_input(data, source.suffix, filename=source.name,
                                                            sheet=selected.sheet, assisted=selected.assisted,
-                                                           column_mapping=selected.column_mapping or None)
+                                                           column_mapping=selected.column_mapping or None,
+                                                           per_share_lines=effective_per_share_lines(cfg), metadata=metadata)
+    if isinstance(metadata.get("comparison_label"), str):
+        cfg = replace(cfg, comparison_label=str(metadata["comparison_label"]))
+    if isinstance(metadata.get("actual_label"), str):
+        cfg = replace(cfg, actual_label=str(metadata["actual_label"]))
     validate_table(rows)
-    table = _analyze_table(rows, config, selected, raw_headers=headers)
+    table = _analyze_table(rows, cfg, selected, raw_headers=headers)
+    document = metadata.get("document")
+    transformations = metadata.get("transformations")
     return replace(table, source_name=source.name, source_sha256=sha256_bytes(data), source_worksheet=worksheet,
-                   inferences=(*table.inferences, *notes))
+                   inferences=(*table.inferences, *notes),
+                   source_document=document if isinstance(document, dict) else None,
+                   source_transformations=transformations if isinstance(transformations, dict) else None)
 
 
 def analyze_panel(rows: list[dict[str, object]], *, group_by: tuple[str, ...], options: PanelOptions) -> BatchResult:
@@ -147,3 +160,16 @@ def analyze_panel(rows: list[dict[str, object]], *, group_by: tuple[str, ...], o
     # normalize_row refuses duplicate normalized fields before grouping.
     normalized = [normalize_row(row) for row in rows]
     return analyze_groups(rows, normalized, group_by, options)
+
+
+def _configuration(config: AnalysisConfig, options: AudienceOptions) -> AudienceConfig:
+    cfg = audience_config(config)
+    if options.preset is not None:
+        cfg = replace(cfg, preset=options.preset)
+    if options.layout is not None:
+        cfg = replace(cfg, layout=options.layout)
+    if options.per_share_lines is not None:
+        cfg = replace(cfg, per_share_lines=options.per_share_lines)
+    if options.headline_items is not None:
+        cfg = replace(cfg, headline_items=options.headline_items)
+    return cfg

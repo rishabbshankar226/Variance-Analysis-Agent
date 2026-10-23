@@ -67,6 +67,7 @@ class Session:
     percent_values: str | None = None
     measure_pending: tuple[str, int] | None = None
     earnings_mode: bool = False
+    earnings_requested: bool = False
     earnings_headers: tuple[str, ...] = ()
     earnings_choices: tuple[ComparisonBasis, ...] = ()
     earnings_notes: tuple[str, ...] = ()
@@ -118,6 +119,7 @@ class Session:
         self.percent_values = None
         self.measure_pending = None
         self.earnings_mode = False
+        self.earnings_requested = False
         self.earnings_headers = ()
         self.earnings_choices = ()
         self.earnings_notes = ()

@@ -7,7 +7,7 @@ from variance_agent.comparison import basis_noun, comparison_heading, parse_comp
 from variance_agent.comparisons import (TableAnalysis, analyze_comparisons, build_comparison_audit,
                                        read_comparison_input, render_comparisons, detect_comparison_bases)
 from variance_agent.audit import serialize_audit_json, sha256_bytes
-from variance_agent.intake import IntakeResult
+from variance_agent.intake import IntakeResult, audit_transformations, CanonicalRole
 from variance_agent.models import AnalysisConfig, ComparisonBasis
 from variance_agent.parsing import normalize_row
 from variance_agent.report import _safe_inline
@@ -107,7 +107,15 @@ def explicit_comparison(session: Session, basis: ComparisonBasis) -> Response:
 def analyze_review(session: Session, config: AnalysisConfig) -> TableAnalysis:
     assert session.parsed_rows is not None
     config = replace(audience_config(config), preset="earnings")
-    return analyze_comparisons(session.parsed_rows, config, session.comparison_bases, raw_headers=session.earnings_headers)
+    intake = session.intake_result
+    if intake is not None and intake.source_kind == "pdf":
+        config = replace(config, comparison_label=intake.comparison_label,
+                         actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
+    table = analyze_comparisons(session.parsed_rows, config, session.comparison_bases, raw_headers=session.earnings_headers)
+    if intake is not None and intake.source_kind == "pdf":
+        table = replace(table, source_document=intake.source_document(), source_transformations=audit_transformations(intake),
+                        source_worksheet=intake.sheet_name)
+    return table
 
 
 def summary(session: Session) -> Response:
@@ -163,10 +171,11 @@ def handle_question(session: Session, intent_id: str) -> Response:
     return explicit_comparison(session, ComparisonBasis.GUIDANCE if intent_id == "earnings_guidance" else ComparisonBasis.CONSENSUS)
 
 
-def review_upload(session: Session, data: bytes, filename: str, basis: ComparisonBasis, sheet: str | None) -> Response:
+def review_upload(session: Session, data: bytes, filename: str, basis: ComparisonBasis | None, sheet: str | None) -> Response:
+    metadata: dict[str, object] = {}
     try:
         rows, headers, worksheet, notes = read_comparison_input(data, Path(filename).suffix, filename=filename,
-                                                               assisted=True, sheet=sheet)
+                                                               assisted=True, sheet=sheet, per_share_lines=True, metadata=metadata)
     except (ValueError, OSError, RuntimeError):
         return Response(text="I could not read a supported financial table in this file. Upload a CSV, JSON or Excel table "
                              "with a line item, Actual and your supplied comparison.", phase=session.phase)
@@ -176,4 +185,22 @@ def review_upload(session: Session, data: bytes, filename: str, basis: Compariso
     session.earnings_mode, session.compare_to = True, basis
     session.parsed_rows = [normalize_row(row) for row in rows]
     session.earnings_headers, session.earnings_choices, session.earnings_notes = headers, detect_comparison_bases(headers), notes
-    return confirm_layout(session, (basis,))
+    if basis is None:
+        session.phase = Phase.AWAITING_EARNINGS_REVIEW
+        response = handle_review_choice(session, "Review earnings")
+    else:
+        response = confirm_layout(session, (basis,))
+    intake = metadata.get("intake_result")
+    if isinstance(intake, IntakeResult):
+        session.intake_result = intake
+    return response
+
+
+def request_review(session: Session) -> Response:
+    if session.phase is Phase.AWAITING_EARNINGS_REVIEW:
+        return handle_review_choice(session, "Review earnings")
+    if session.source_bytes is None or session.source_name is None:
+        session.earnings_requested = True
+        return Response(text="Upload your supplied earnings table or PDF filing for an earnings review. "
+                             "EPS is kept per share; share counts need your Higher/Lower choice.", phase=session.phase)
+    return review_upload(session, session.source_bytes, session.source_name, None, session.sheet)

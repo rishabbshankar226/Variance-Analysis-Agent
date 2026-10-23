@@ -66,6 +66,8 @@ class TableAnalysis:
     source_worksheet: str | None = None
     statistic_context: SurpriseOptions | None = None
     statistics: tuple[SurpriseStatistic, ...] = ()
+    source_document: dict[str, object] | None = None
+    source_transformations: dict[str, object] | None = None
 
 
 def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...], *, extended: bool = True) -> list[dict[str, object]]:
@@ -178,8 +180,9 @@ def analyze_comparisons(
     for basis in bases:
         selected = [key for key in keys if basis_for_header(key, extended=extended_headers) is basis]
         comparison_key = _one_column(keys, selected, comparison_heading(basis, None), required=False)
-        label, title = None, None
-        selected_cfg = replace(cfg, comparison_basis=basis, comparison_label=None, comparison_title=None)
+        label = cfg.comparison_label if basis is ComparisonBasis.PRIOR_PERIOD else None
+        title = None
+        selected_cfg = replace(cfg, comparison_basis=basis, comparison_label=label, comparison_title=None)
         if comparison_key is None and basis is ComparisonBasis.PRIOR_PERIOD and ordered:
             comparison_key, label = period_keys[ordered[1]], ordered[1]
             title = _title(ordered[0], ordered[1])
@@ -280,6 +283,7 @@ def build_comparison_audit(
     table: TableAnalysis, *, source_name: str | None = None, source_sha256: str | None = None,
     schema_version: str | None = None, source_worksheet: str | None = None,
     transformations: Mapping[str, object] | None = None,
+    source_document: Mapping[str, object] | None = None,
 ) -> JSONObject:
     if schema_version not in {None, "1.8"}:
         raise ValueError("Comparison sets and new comparisons require audit schema 1.8.")
@@ -287,6 +291,8 @@ def build_comparison_audit(
     source_name = source_name if source_name is not None else table.source_name
     source_sha256 = source_sha256 if source_sha256 is not None else table.source_sha256
     source_worksheet = source_worksheet if source_worksheet is not None else table.source_worksheet
+    source_document = source_document if source_document is not None else table.source_document
+    transformations = transformations if transformations is not None else table.source_transformations
     validate_source_identity(source_name, source_sha256)
     source_sha256 = source_sha256.lower() if source_sha256 is not None else None
     records: list[JSONValue] = []
@@ -294,7 +300,7 @@ def build_comparison_audit(
         if comparison.result is not None:
             child = build_audit_record(comparison.result, schema_version="1.8", source_name=source_name,
                                        source_sha256=source_sha256, source_worksheet=source_worksheet,
-                                       transformations=transformations)
+                                       transformations=transformations, source_document=source_document)
             child["unavailable_comparisons"] = [_missing_record(row) for row in comparison.unavailable]
         else:
             child = {"schema_version": "1.8", "kind": "comparison_unavailable", "period": table.config.period,
@@ -381,7 +387,8 @@ def _render_comparisons(table: TableAnalysis) -> str:
 
 def read_comparison_input(
     data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
-    column_mapping: Mapping[str, str] | None = None,
+    column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
+    metadata: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
     """Bounded captured-file intake for opt-in headers, retaining raw header identity."""
     import io
@@ -391,6 +398,26 @@ def read_comparison_input(
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
+    if suffix.lower() == ".pdf":
+        if not assisted:
+            raise ValueError("PDF input requires --assisted.")
+        if column_mapping:
+            raise ValueError("PDF columns are selected by statement and period, not CSV column mappings.")
+        from .intake import read_input_assisted, audit_transformations, CanonicalRole
+        intake = read_input_assisted(data, suffix, filename=filename, sheet=sheet, per_share_lines=per_share_lines)
+        if intake.has_fatal_errors or not intake.rows:
+            raise ValueError(intake.fatal_error_message or "No comparable financial statement was found.")
+        rows = []
+        for pdf_row in intake.rows:
+            row = normalize_row(pdf_row)
+            row["Prior Period"] = row.pop("budget")
+            rows.append(row)
+        headers = tuple(dict.fromkeys(key for row in rows for key in row))
+        if metadata is not None:
+            metadata.update(intake_result=intake, document=intake.source_document(), transformations=audit_transformations(intake),
+                            comparison_label=intake.comparison_label, comparison_basis=str(intake.comparison_basis),
+                            actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
+        return rows, headers, intake.sheet_name, tuple([*intake.visible_transformations, *intake.reader_notes])
     notes: list[str] = []
     worksheet = None
     raw: list[list[object]] | None = None

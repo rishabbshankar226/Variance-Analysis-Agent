@@ -249,3 +249,25 @@ Current and future periods do not enter the window. Ticker/Entity in actual rows
 supplies identity; otherwise use `--entity`. Larger captures must be split under
 the same existing input limits. A supplied `Std Dev` column enables dispersion
 statistics; explicit history also reports why dispersion is absent.
+
+### Opted-in EPS and share counts from filings
+
+Under assisted PDF intake, `--per-share-lines` retains recognizable basic/diluted
+EPS as Per Share with Better Higher, and weighted average share counts as Count.
+The earnings preset enables this policy; `--no-per-share-lines` overrides it.
+Default FP&A intake and its exact omission note remain unchanged. Other omitted
+share-related disclosures are not guessed into these measures.
+
+EPS is never multiplied by a currency-caption scale. Share counts remain as
+printed, with a visible note; a dollars-in-millions caption scales only Currency.
+Verify a vendor's share-count units and normalize a different printed count scale
+before analysis. Count Better and all occurring measure thresholds remain the
+user's choices. Statement sign/subtotal reconciliation considers Currency only.
+PDF statement, pages, period label and reader transformations remain in audit
+1.8. The tool does not match EPS from a filing with a separate consensus file;
+users must align metric definitions and combine supplied amounts explicitly.
+
+In chat, request “review earnings” before a filing upload, or after uploading it,
+to opt into these retained lines. Confirm the review, reporting period and
+thresholds, then choose Higher or Lower for each count measure. Ordinary filing
+uploads remain on the existing FP&A path. Hosted path exports remain disabled.

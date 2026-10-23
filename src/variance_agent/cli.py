@@ -5,6 +5,7 @@ import csv
 import os
 import sys
 import unicodedata
+from dataclasses import replace
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -26,7 +27,7 @@ from .comparison import (
     parse_period_label,
     select_strict_comparison,
 )
-from .parsing import normalize_row, load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
+from .parsing import normalize_key, normalize_row, load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
@@ -325,7 +326,7 @@ def _run(args: Arguments) -> int:
     mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
     if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
             or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
-            or args.layout is not None or args.headline or args.per_share_lines is not None):
+            or args.layout is not None or args.headline or args.per_share_lines is True):
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
@@ -594,14 +595,17 @@ def _run_comparisons(
     columns = dict(layout.column_mapping) if layout is not None else {}
     if "budget" in columns and len(requested) == 1:
         columns[str(requested[0])] = columns.pop("budget")
+    metadata: dict[str, object] = {}
     rows, headers, worksheet, notes = read_comparison_input(
         source_bytes, path.suffix, filename=path.name, sheet=args.sheet, assisted=args.assisted or layout is not None,
         column_mapping=columns or None,
+        per_share_lines=args.per_share_lines if args.per_share_lines is not None else args.preset == "earnings",
+        metadata=metadata,
     )
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
     if not bases and not extended:
-        bases = (ComparisonBasis.BUDGET,)
+        bases = (ComparisonBasis(str(metadata["comparison_basis"])),) if "comparison_basis" in metadata else (ComparisonBasis.BUDGET,)
     if not bases:
         bases = detect_comparison_bases(headers)
         if len(bases) > 1:
@@ -623,6 +627,8 @@ def _run_comparisons(
             canonical = normalize_row(row)
             name = str(canonical.get("line_item", ""))
             if name in layout.better_directions:
+                for key in [key for key in row if normalize_key(key) == "better"]:
+                    row.pop(key)
                 row["Better"] = layout.better_directions[name]
     config = AudienceConfig(args.period, args.dollar_threshold, args.percent_threshold / Decimal("100"),
                             currency=args.currency, type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
@@ -630,7 +636,21 @@ def _run_comparisons(
                             bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True,
                             preset=args.preset, layout=args.layout, per_share_lines=args.per_share_lines,
                             headline_items=tuple(args.headline or ()))
+    if isinstance(metadata.get("comparison_label"), str):
+        config = replace(config, comparison_label=str(metadata["comparison_label"]))
+    if isinstance(metadata.get("actual_label"), str):
+        config = replace(config, actual_label=str(metadata["actual_label"]))
     table = analyze_comparisons(rows, config, bases, raw_headers=headers, extended_headers=extended)
+    transformations = metadata.get("transformations", {})
+    assert isinstance(transformations, dict)
+    if layout is not None:
+        from .mapping import mapping_sha256
+        transformations["mapping_file_sha256"] = mapping_sha256(layout)
+        if columns:
+            transformations["column_mapping"] = columns
+    document = metadata.get("document")
+    table = replace(table, source_document=document if isinstance(document, dict) else None,
+                    source_transformations=transformations or None)
     if args.history:
         from .surprise import load_history, SurpriseOptions, attach_statistics, infer_entity
         table = attach_statistics(table, SurpriseOptions(history=load_history(args.history), window=args.surprise_window,

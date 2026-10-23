@@ -1236,6 +1236,7 @@ def read_input_assisted(
     treat_blank_budgets_as_zero: bool = False,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling."""
     if len(data) > MAX_INPUT_BYTES:
@@ -1276,6 +1277,7 @@ def read_input_assisted(
             treat_blank_budgets_as_zero,
             selected_period,
             compare_to=compare_to,
+            per_share_lines=per_share_lines,
         )
 
     return IntakeResult(
@@ -1589,10 +1591,12 @@ def _read_pdf_bytes(
     treat_blank_budgets_as_zero: bool,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
 ) -> IntakeResult:
     """Read one statement from a 10-K / 10-Q style PDF; each statement acts like a worksheet."""
     try:
-        tables = extract_statement_tables(data, filename)
+        tables = (extract_statement_tables(data, filename, per_share_lines=True) if per_share_lines
+                  else extract_statement_tables(data, filename))
     except PdfReadError as exc:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
 

@@ -129,7 +129,7 @@ _PHRASE_GAP = 8.0  # wider gaps than this split header text into separate phrase
 _COLUMN_TOLERANCE = 8.0  # right edges within this distance share a column
 _COLUMN_SUPPORT = 0.3  # share of the fullest column's amounts a column needs
 
-_CACHE: dict[tuple[str, int, float], list[StatementTable]] = {}
+_CACHE: dict[tuple[str, int, float, bool], list[StatementTable]] = {}
 
 
 @dataclass(frozen=True)
@@ -173,12 +173,13 @@ def extract_statement_tables(
     *,
     max_pages: int = MAX_PDF_PAGES,
     max_seconds: float = MAX_PDF_SECONDS,
+    per_share_lines: bool = False,
 ) -> list[StatementTable]:
     """Return every income statement, balance sheet and cash flow statement in the PDF."""
-    key = (hashlib.sha256(data).hexdigest(), max_pages, max_seconds)
+    key = (hashlib.sha256(data).hexdigest(), max_pages, max_seconds, per_share_lines)
     if key not in _CACHE:
         _CACHE.clear()
-        _CACHE[key] = _extract(data, filename, max_pages, max_seconds)
+        _CACHE[key] = _extract(data, filename, max_pages, max_seconds, per_share_lines=per_share_lines)
     return copy.deepcopy(_CACHE[key])
 
 
@@ -252,7 +253,7 @@ def _statement_pages(
     return candidates
 
 
-def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float) -> list[StatementTable]:
+def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float, *, per_share_lines: bool = False) -> list[StatementTable]:
     scan, opener = _pdf_tools()
     deadline = time.monotonic() + max_seconds
     candidates = _statement_pages(scan, data, filename, max_pages, deadline)
@@ -284,7 +285,7 @@ def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float) -> 
     groups = _merge_continued(found)
     # A combined filing (parent and subsidiary) repeats each title; name the company too.
     by_company = len({group[0].entity for group in groups}) > 1
-    tables = [t for group in groups for t in _statement_tables(group, by_company)]
+    tables = [t for group in groups for t in _statement_tables(group, by_company, per_share_lines=per_share_lines)]
     if not tables:
         raise PdfReadError(
             f"We couldn't find an income statement, balance sheet or cash flow statement in "
@@ -501,7 +502,7 @@ def _period(header: str) -> tuple[str | None, str]:
     return None, group
 
 
-def _statement_tables(group: list[_PageTable], by_company: bool) -> list[StatementTable]:
+def _statement_tables(group: list[_PageTable], by_company: bool, *, per_share_lines: bool = False) -> list[StatementTable]:
     first = group[0]
     periods = [_period(c.header) for c in first.columns]
 
@@ -526,7 +527,7 @@ def _statement_tables(group: list[_PageTable], by_company: bool) -> list[Stateme
         name = f"{first.title}, {duration} {where}" if duration else f"{first.title} {where}"
         if by_company and first.entity:
             name = f"{first.entity}: {name}"
-        tables.append(_statement_table(group, name, pages, indexes, periods))
+        tables.append(_statement_table(group, name, pages, indexes, periods, per_share_lines=per_share_lines))
     return tables
 
 
@@ -557,6 +558,7 @@ def _statement_table(
     pages: tuple[int, ...],
     indexes: list[int],
     periods: list[tuple[str | None, str]],
+    *, per_share_lines: bool = False,
 ) -> StatementTable:
     first = group[0]
     notes: list[str] = []
@@ -573,8 +575,9 @@ def _statement_table(
     rows: list[list[object]] = []
     if first.caption:
         rows.append([first.caption])
-    rows.append(["Line Item", *headers])
+    rows.append(["Line Item", *headers, *(["Measure", "Better"] if per_share_lines else [])])
     lines: list[tuple[str, str, list[str]]] = []  # label, section, amounts
+    measures: list[tuple[str, str]] = []
 
     for table in group:
         section = ""
@@ -596,19 +599,28 @@ def _statement_table(
             pending = ""
             if not label or _FOOTER_RE.search(label):
                 continue
-            if _PER_SHARE_RE.search(label) or (
+            measure, better = "Currency", ""
+            if _PER_SHARE_RE.search(label) or (per_share_lines and re.search(r"\beps\b", label, re.IGNORECASE)) or (
                     _SHARE_SUBROW_RE.match(label) and _PER_SHARE_RE.search(section)):
-                shown = f"{section}: {label}" if not _PER_SHARE_RE.search(label) else label
-                notes.append(f"Left out '{shown}' {_PER_SHARE_NOTE}")
-                continue
+                shown = (f"{section}: {label}" if not _PER_SHARE_RE.search(label) and section
+                         and not (per_share_lines and re.search(r"\beps\b", label, re.IGNORECASE)) else label)
+                measure = _retained_measure(label, section) if per_share_lines else ""
+                if not measure:
+                    notes.append(f"Left out '{shown}' {_PER_SHARE_NOTE}")
+                    continue
+                label = shown
+                better = "Higher" if measure == "Per Share" else ""
+                notes.append(f"Retained '{shown}' as {measure} as printed; currency-caption scaling does not apply."
+                             + (" Better is Higher." if better else " Choose whether Higher or Lower is better."))
             cells = [values.get(i, "") for i in indexes]
             if any(cells):
                 lines.append((label, section, cells))
+                measures.append((measure, better))
 
-    for (label, _, cells), distinct in zip(lines, _distinct_names(lines), strict=True):
+    for (label, _, cells), distinct, metadata in zip(lines, _distinct_names(lines), measures, strict=True):
         if distinct != label:
             notes.append(f"Named the repeated line '{label}' as '{distinct}'")
-        rows.append([distinct, *cells])
+        rows.append([distinct, *cells, *(metadata if per_share_lines else ())])
     return StatementTable(name=name, page_numbers=pages, raw_rows=rows, notes=notes,
                           kind=_kind(first.title))
 
@@ -622,3 +634,14 @@ def _kind(title: str) -> str:
     if "cash flow" in lowered:
         return "cash_flow"
     return "income"
+
+
+def _retained_measure(label: str, section: str) -> str:
+    text = section + " " + label
+    if re.search(r"weighted[-\s]average.*shares", text, re.IGNORECASE):
+        return "Count"
+    if re.search(r"shares\s+(?:used|outstanding)|number\s+of\s+shares|anti-?dilutive", text, re.IGNORECASE):
+        return ""
+    if re.search(r"\beps\b|per\s+(?:common\s+|basic\s+|diluted\s+)?share", text, re.IGNORECASE):
+        return "Per Share"
+    return ""

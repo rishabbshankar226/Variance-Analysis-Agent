@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import itertools
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from collections import defaultdict, deque
 from decimal import Decimal, InvalidOperation
 
 from .numeric import financial_context
@@ -116,6 +117,8 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
     if header_at is None:
         return ShapedStatement(rows=raw_rows, shaped=False)
+    if "Measure" in raw_rows[header_at]:
+        return _shape_with_measures(raw_rows, header_at)
     header, data = raw_rows[header_at], raw_rows[header_at + 1:]
     periods = len(header) - 1
     # Parsing runs in the policy context: an unreadable figure raises InvalidOperation, and
@@ -217,3 +220,39 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     shaped.audit_notes = [*subtotal_note, *shaped.notes,
                           *(f"Labeled '{label}' as {kind.lower()}" for label, kind in labels)]
     return shaped
+
+
+def _shape_with_measures(raw_rows: list[list[object]], header_at: int) -> ShapedStatement:
+    """Keep non-money rows outside the unchanged monetary reconciliation."""
+    header = raw_rows[header_at]
+    measure_at = header.index("Measure")
+    better_at = header.index("Better") if "Better" in header else None
+    columns = [index for index, label in enumerate(header) if index and label not in {"Measure", "Better", "Type"}]
+    data = raw_rows[header_at + 1:]
+    def kind(row: list[object]) -> str:
+        return str(row[measure_at]) if measure_at < len(row) and row[measure_at] else "Currency"
+    reduced = [[row[0], *[row[index] if index < len(row) else "" for index in columns]]
+               for row in data if row and kind(row) == "Currency"]
+    money = shape_income_statement([*raw_rows[:header_at], ["Line Item", *[header[index] for index in columns]], *reduced])
+    shaped_header = next(row for row in money.rows if row and row[0] == "Line Item")
+    money_at = money.rows.index(shaped_header)
+    mapped: dict[str, deque[list[object]]] = defaultdict(deque)
+    for row in money.rows[money_at + 1:]:
+        mapped[str(row[0])].append(row)
+    output = [*raw_rows[:header_at], ["Line Item", *[header[index] for index in columns], "Type", "Measure", "Better"]]
+    for row in data:
+        if not row:
+            continue
+        measure = kind(row)
+        better = row[better_at] if better_at is not None and better_at < len(row) else ""
+        if measure == "Currency":
+            if not mapped[str(row[0])]:
+                continue  # the existing shaper excluded a monetary subtotal
+            source = mapped[str(row[0])].popleft()
+            cells = source[1:1 + len(columns)]
+            line_type = source[-1] if "Type" in shaped_header else ""
+        else:
+            cells = [row[index] if index < len(row) else "" for index in columns]
+            line_type = ""
+        output.append([row[0], *cells, line_type, measure, better])
+    return replace(money, rows=output)

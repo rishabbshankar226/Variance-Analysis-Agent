@@ -199,6 +199,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
         return _handle_identity(session)
     if intent.intent_id == "help":
         return _handle_help(session)
+    if intent.intent_id == "earnings_review":
+        from .earnings import request_review
+        return request_review(session)
     if intent.intent_id in {"earnings_consensus", "earnings_margins", "earnings_guidance"}:
         from .earnings import handle_question
         return handle_question(session, intent.intent_id)
@@ -545,6 +548,9 @@ def _load_file(
     # A comparison choice belongs to the file it was made for; a replacement file is
     # detected afresh. A choice made before the first upload still applies to it.
     compare_to = None if session.source_bytes is not None else session.compare_to
+    if session.earnings_requested and session.source_bytes is None:
+        from .earnings import review_upload
+        return review_upload(session, file_bytes, filename, None, sheet)
     if compare_to in {ComparisonBasis.CONSENSUS, ComparisonBasis.ESTIMATE, ComparisonBasis.GUIDANCE}:
         from .earnings import review_upload
         return review_upload(session, file_bytes, filename, compare_to, sheet)

@@ -172,3 +172,13 @@ and explicit headline names. Defaulted choices and headline inference are
 visible. These values enter the configuration and public payload identities.
 Existing Status values are unchanged; an Earnings sheet or Beat label does not
 create a second financial calculation.
+
+### Retained filing lines
+
+Advanced file/API and explicit earnings-chat reviews retain the same PDF source
+document group used by earlier audit versions: statement, page numbers and reader
+notes. Retention and independent scale policies are recorded as transformations.
+The current and comparison period labels are preserved from the statement.
+Currency-only shaping excludes the same supplied computed subtotals; retained
+EPS/count rows do not affect monetary reconciliation or totals. New comparison
+wrappers use 1.8 and include these fields in their fingerprints.
