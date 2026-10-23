@@ -99,7 +99,8 @@ def test_output_or_layout_alone_keeps_legacy_metadata_inert(tmp_path: Path, extr
 def test_panel_budget_choice_keeps_metadata_columns_inert(tmp_path: Path) -> None:
     import csv
     source = tmp_path / "HALV.FAKE.csv"
-    source.write_text("Ticker,Period,Line Item,Budget,Consensus,Model,Actual,Type,Region\nHALV.FAKE,3Q26,Revenue,100,999,888,110,Revenue,North\n")
+    source.write_text("Ticker,Period,Line Item,Budget,Consensus,Model,Actual,Type,Region\n"
+                      "HALV.FAKE,3Q26,Revenue,100,999,888,110,Revenue,North\n")
     long, errors = tmp_path / "long.csv", tmp_path / "errors.csv"
     assert main([str(source), "--group-by", "Ticker,Period", "--compare-to", "budget", "--dollar-threshold", "10",
                  "--percent-threshold", "2", "--long-output", str(long), "--errors-output", str(errors)]) == 0

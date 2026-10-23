@@ -1445,3 +1445,67 @@ Found 1 error.
 ```text
 Success: no issues found in 62 source files
 ```
+
+### Phase 6 checkpoint correction
+
+Commit `78565b9` was created too early: a new test fixture string exceeded the lint line limit. The shell continued after that failure, so compileall and pip check had not run. The formatting is corrected without changing data or assertions. The complete gate was rerun with fail-fast shell handling; results below supersede the failed checkpoint entry. No history was rewritten.
+
+**pytest**
+
+```text
+........................................................................ [ 99%]
+......                                                                   [100%]
+1950 passed in 43.75s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 62 source files
+```
+
+**compileall**
+
+```text
+Completed successfully with no output.
+```
+
+**pip-check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**package**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
