@@ -1599,3 +1599,141 @@ Wheel/sdist contents, license, Python support, and entry point verified
 Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
 No broken requirements found.
 ```
+
+## Phase 8 integration checks before documentation
+
+Read-through found two adapter gaps worth closing before freezing the release
+candidate. The new file API retains its capture but loses CSV/JSON mapping
+provenance, and a single-basis audit wrapper omits the table's intake/period
+notes. Also, explicit CLI surprise window/entity choices are ignored when only
+supplied dispersion enables statistics. Add failing regressions in
+`tests/test_multi_audience_integration.py`, then adjust `api.py`,
+`comparisons.py`, `cli.py` and `panel_cli.py`. Preserve old paths and schemas;
+only opted-in wrapper metadata and explicit statistical options change. No new
+financial formula is introduced. Full phase-8 checks follow these targeted tests.
+
+Phase 8 also adds `tests/fixtures/multi_audience/fpa.csv` (fictional Halvorsen
+currency rows from Scenario A, with supplied Budget) and documents it in the
+adjacent README so Maya has a runnable command alongside the three new readers.
+The mapping regression also exposed assisted header detection checking only
+built-in names before applying the explicit mapping. Header discovery now honors
+the mapped Line Item/Actual source names; the same red test covers that fix.
+
+## Phase 8 integration checkpoint — Priya and Wei
+
+Six adapter regressions were observed failing, then all passed (the combined API/statistics/PDF selection: 36 passed in 1.97s). CSV/JSON mapping provenance and header/intake notes now reach each available child audit; explicit dispersion-only statistic choices reach single and panel runs. Assisted discovery honors explicit mapped header names. No old financial rule changed.
+
+The first full run had 1,963 passes and one documentation-link failure because the final report file had not yet been created. After creating it, the full run below passed. No existing test was edited. This integration checkpoint precedes the final report/documentation commit and STOP 4.
+
+**pytest**
+
+```text
+........................................................................ [ 98%]
+....................                                                     [100%]
+1964 passed in 40.32s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 62 source files
+```
+
+**compileall**
+
+```text
+Completed successfully with no output.
+```
+
+**pip check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**distribution**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal source installation**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
+
+**wheel installation**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
+
+**sdist installation**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
+
+**chat/frontend fallback**
+
+```text
+........................................................................ [ 95%]
+......................                                                   [100%]
+526 passed in 20.78s
+```
+
+Final-code strict maximum-capture throughput (measured, both long formats):
+
+```json
+{
+  "rows": 100000,
+  "columns": 10,
+  "cells": 1000000,
+  "groups": 1000,
+  "input_bytes": 8000078,
+  "seconds": 19.399163291999912,
+  "exit": 0,
+  "machine": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "cpu_count": 9,
+  "cpu_model": "AMD EPYC 9V74 80-Core Processor"
+}
+```
+
+Compatibility proof:
+
+```text
+19 contract files match f5cd79c byte for byte
+58 existing non-producer fixture files match byte for byte
+8 published schemas, 26 deterministic_conditioning files and dependency manifests unchanged
+All original test source unchanged except the owner-approved one-line schema-1.6 scope
+Fixture producer changes are limited to new build_fixture_t and its invocation/label
+Legacy sample report SHA-256: 63f5d2d61de895f715d8270d948fb1b6d54208fa582f461c95a4e49b637d8587 (matches baseline)
+Legacy sample audit SHA-256: 3420b6d4e77dab921dfb683feb7241f8cece1c298d86c2c9f01f951d2c829c7c (matches baseline)
+Legacy sample xlsx SHA-256: 11db3182fb2f5b377e7973016e9b51fc0780e96fd80d6b3471e1c6633025ee43 (matches baseline)
+```

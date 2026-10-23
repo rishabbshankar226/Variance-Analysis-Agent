@@ -69,8 +69,10 @@ def run_panel(args: Arguments) -> int:
                          headline_items=tuple(args.headline or ()))
     batch = analyze_panel(rows, group_by=tuple(args.group_by.split(",")), options=PanelOptions(config=cfg,
                            audience=AudienceOptions(bases=bases, extended_headers=(args.preset != "fpa" or mapping is not None
-                               or any(basis in NEW_BASES for basis in bases)), surprise=(SurpriseOptions(history=load_history(args.history),
-                               window=args.surprise_window, entity=args.entity) if args.history else None))))
+                               or any(basis in NEW_BASES for basis in bases)), surprise=(SurpriseOptions(
+                               history=load_history(args.history) if args.history else None,
+                               window=args.surprise_window, entity=args.entity)
+                               if args.history or args.entity or args.surprise_window != 8 else None))))
     batch = replace(batch, source_sha256=sha256_bytes(data), source_name=source.name)
     outputs: dict[Path, str | bytes] = {Path(args.errors_output): errors_csv(batch)}
     if args.long_output:

@@ -302,6 +302,9 @@ def build_comparison_audit(
                                        source_sha256=source_sha256, source_worksheet=source_worksheet,
                                        transformations=transformations, source_document=source_document)
             child["unavailable_comparisons"] = [_missing_record(row) for row in comparison.unavailable]
+            inferences = child.get("inferences")
+            assert isinstance(inferences, list)
+            inferences.extend(note for note in table.inferences if note not in inferences)
         else:
             child = {"schema_version": "1.8", "kind": "comparison_unavailable", "period": table.config.period,
                      "comparison": {"basis": str(comparison.basis), "label": comparison.label},
@@ -398,6 +401,8 @@ def read_comparison_input(
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
+    if metadata is not None and column_mapping:
+        metadata["transformations"] = {"column_mapping": dict(column_mapping)}
     if suffix.lower() == ".pdf":
         if not assisted:
             raise ValueError("PDF input requires --assisted.")
@@ -474,6 +479,7 @@ def read_comparison_input(
         for index, record in enumerate(raw[:25]):
             labels = [str(v).strip() for v in record if v is not None]
             normalized = {normalize_key(v) for v in labels}
+            normalized.update(role for role, source in (column_mapping or {}).items() if source in labels)
             if normalized & {"line_item", "account", "account_name", "account_description", "item", "category"}:
                 if normalized & {"actual", "actuals", "actual_amount", "act", "actual_ytd"} or sum(
                         parse_period_label(label, extended=True) is not None for label in labels) >= 2:
@@ -484,6 +490,8 @@ def read_comparison_input(
     if not raw:
         raise ValueError("Input contains no data.")
     headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
+    if metadata is not None:
+        metadata["transformations"] = {"header_row_number": header_at + 1, "column_mapping": dict(column_mapping or {})}
     mapped_headers, ignored = _mapped_headers(headers, column_mapping or {})
     notes.extend(ignored)
     _normalized_headers(mapped_headers)  # collision, column, and header-text limits

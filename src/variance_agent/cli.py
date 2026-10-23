@@ -650,12 +650,13 @@ def _run_comparisons(
             transformations["column_mapping"] = columns
     document = metadata.get("document")
     table = replace(table, source_document=document if isinstance(document, dict) else None,
-                    source_transformations=transformations or None)
-    if args.history:
+                    source_transformations=transformations or None, inferences=(*table.inferences, *notes))
+    if args.history or table.statistic_context is not None or args.entity or args.surprise_window != 8:
         from .surprise import load_history, SurpriseOptions, attach_statistics, infer_entity
-        table = attach_statistics(table, SurpriseOptions(history=load_history(args.history), window=args.surprise_window,
+        table = attach_statistics(table, SurpriseOptions(history=load_history(args.history) if args.history else None,
+                                                         window=args.surprise_window,
                                                          entity=args.entity or infer_entity(rows)))
-    for note in (*notes, *table.inferences):
+    for note in table.inferences:
         print("[comparison intake] " + display_text(note), file=sys.stderr)
     for comparison in table.comparisons:
         if comparison.result is not None:
@@ -673,12 +674,6 @@ def _run_comparisons(
     if args.audit_json:
         record = build_comparison_audit(table, source_name=path.name, source_sha256=sha256_bytes(source_bytes),
                                         schema_version=args.audit_schema_version, source_worksheet=worksheet)
-        # Input-layout notes are facts too; recompute both digests after adding them.
-        from .audit import finalize_audience_record
-        inferences = record.get("inferences")
-        if isinstance(inferences, list):
-            inferences.extend(notes)
-            finalize_audience_record(record)
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
     if args.long_output or args.long_output_jsonl:
         from .panel import BatchResult, GroupResult
