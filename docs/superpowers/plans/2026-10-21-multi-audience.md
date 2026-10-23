@@ -930,3 +930,54 @@ No broken requirements found.
 The compile/type/lint/pip commands were also rerun successfully after the final
 JS phase-map fix, as shown in the execution transcript. This commit is local;
 no push/merge is authorized. Next: phase 2 (Priya and Dan).
+
+## STOP 2 — legacy schema test enumerates future bases
+
+Phase 1 committed locally as `188d26a`, with 1,815 passing tests. Before phase 2
+implementation, source inspection found `tests/test_audit_schema_16.py`:
+
+```python
+@pytest.mark.parametrize("basis", list(ComparisonBasis))
+def test_16_records_comparison_and_validates(basis: ComparisonBasis) -> None:
+    record = build_audit_record(analyze_rows(ROWS, cfg(basis, label="FY2024")), schema_version="1.6")
+    assert record["comparison"] == {"basis": basis.value, "label": "FY2024"}
+    _validator("1.6").validate(record)
+```
+
+Adding the required enum members automatically expands this test to demand that
+schema 1.6 accepts Consensus/Estimate/Guidance. The unchanged published schema
+permits only budget/forecast/prior_period. The new bases require 1.8 under the
+approved design; accepting or downgrading them to 1.6 would violate the contract.
+Thus this existing test needs its parameter scope pinned to the original bases.
+This is a prospective compatibility gate, not a claim that phase-2 code or an
+existing test has already failed. No phase-2 implementation has been written.
+
+Recommended exact exception (not applied):
+
+```diff
+-@pytest.mark.parametrize("basis", list(ComparisonBasis))
++@pytest.mark.parametrize("basis", (B, F, P))
+ def test_16_records_comparison_and_validates(basis: ComparisonBasis) -> None:
+```
+
+All three constants are already imported by that test. Every existing assertion
+and legacy schema stays unchanged; all three existing cases are retained. Add
+new tests that require 1.8 for the three added bases and reject older versions.
+Do not change enum iteration behavior to conceal the new bases.
+
+Measured schema-only reproduction using an actual valid 1.6 record, changing only
+`comparison.basis` and validating against the unchanged published schema:
+
+```text
+consensus: schema 1.6 rejects comparison.basis; allowed: budget, forecast, prior_period
+estimate: schema 1.6 rejects comparison.basis; allowed: budget, forecast, prior_period
+guidance: schema 1.6 rejects comparison.basis; allowed: budget, forecast, prior_period
+```
+
+The instruction requiring this pause is the owner's attachment, section 5:
+“Whenever a change would alter a byte of a contract fixture or require editing
+an existing test. Show the diff and the reason.”
+
+Awaiting owner approval for only the one-line parameter-scope exception above.
+All existing tests/fixtures/schemas remain byte-identical to the baseline; the
+working tree has no feature changes after phase 1. Nothing has been pushed.
