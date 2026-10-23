@@ -124,3 +124,24 @@ Tests include exact Fraction-oracle accounting/materiality properties, financial
 Strict typing covers `src/variance_agent`, `scripts` and the auxiliary `deterministic_conditioning` package. It is configured in `pyproject.toml` (`[tool.mypy] files`), including bans on explicit and unimported `Any`, and CI runs the command above on each supported Python version. List the package explicitly: when the checkout is also the editable-install target, mypy treats an unlisted package as installed and hides its errors, so a run from a different directory reports errors that CI never showed. Without the `pdf` extra the PDF tests are skipped.
 
 See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
+
+### Panel API and long output for Wei
+
+The typed `analyze_table`, `analyze_file` and `analyze_panel` functions are available
+from `variance_agent`. See [the API contract](docs/api.md) for exact units,
+ordering, provenance, formula protection and compatibility policy.
+
+```sh
+variance-agent tests/fixtures/multi_audience/panel.csv \
+  --group-by Ticker,Period --compare-to consensus \
+  --dollar-threshold 10 --percent-threshold 2 \
+  --long-output panel.csv --long-output-jsonl panel.jsonl --errors-output errors.csv
+```
+
+This fictional fixture deliberately fails one group: five groups succeed and the
+command exits **3** with exactly one error row. Exit 0 means success; exit 2 still
+means a command/data/global failure. Panel runs never prompt. Declare all needed
+measure cutoffs and ambiguous choices. With Period as a group key, omit
+`--period`; otherwise it is required. Inputs retain the 32 MiB, 100,000-row,
+256-column and 1,000,000-cell caps across the whole panel. Split larger universes
+into several files.

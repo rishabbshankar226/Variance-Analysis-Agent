@@ -1,0 +1,124 @@
+"""Stable, offline table/file/panel APIs. Financial inputs use Decimal or exact text."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from decimal import Decimal
+from pathlib import Path
+
+from .audience import audience_config
+from .audit import sha256_bytes
+from .comparisons import TableAnalysis, analyze_comparisons, detect_comparison_bases, read_comparison_input
+from .limits import MAX_CELLS, MAX_COLUMNS, MAX_JSON_DEPTH, MAX_ROWS, validate_text
+from .models import AnalysisConfig, ComparisonBasis
+from .parsing import normalize_row, read_input_bytes
+
+from .panel import BatchResult
+
+
+@dataclass(frozen=True, kw_only=True)
+class AudienceOptions:
+    """Explicit comparison order and file layout; no threshold defaults."""
+    bases: tuple[ComparisonBasis, ...] = ()
+    assisted: bool = False
+    sheet: str | None = None
+    column_mapping: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, kw_only=True)
+class PanelOptions:
+    """An empty config.period is required when Period is a grouping key."""
+    config: AnalysisConfig
+    audience: AudienceOptions = field(default_factory=AudienceOptions)
+
+
+def validate_table(rows: list[dict[str, object]]) -> None:
+    """Apply whole-capture limits before partitioning; never reset caps per group."""
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Dataset contains no data rows.")
+    if len(rows) > MAX_ROWS:
+        raise ValueError("Dataset exceeds the supported row count.")
+    cells = 0
+    columns: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not all(isinstance(key, str) for key in row):
+            raise ValueError("Each table row must be an object with text column names.")
+        cells += len(row)
+        columns.update(row)
+        if cells > MAX_CELLS:
+            raise ValueError("Dataset exceeds the supported cell count.")
+        if len(columns) > MAX_COLUMNS:
+            raise ValueError("Dataset exceeds the supported column count.")
+        stack: list[tuple[object, int]] = [(row, 0)]
+        while stack:
+            value, depth = stack.pop()
+            if depth > MAX_JSON_DEPTH:
+                raise ValueError("Dataset exceeds the supported nesting depth.")
+            if isinstance(value, str):
+                validate_text(value, field="Table value")
+            elif isinstance(value, dict):
+                for key, item in value.items():
+                    validate_text(key, field="Table column")
+                    stack.append((item, depth + 1))
+            elif isinstance(value, (list, tuple)):
+                stack.extend((item, depth + 1) for item in value)
+            elif value is not None and not isinstance(value, (bool, int, float, Decimal)):
+                raise ValueError("Table values must be text, exact numbers, or JSON values.")
+
+
+def _analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, options: AudienceOptions,
+                   *, raw_headers: tuple[str, ...] = ()) -> TableAnalysis:
+    if any(isinstance(value, float) for row in rows for value in row.values()):
+        raise ValueError("Financial table values cannot be float; supply Decimal or exact numeric text.")
+    headers = raw_headers or tuple(dict.fromkeys(key for row in rows for key in row))
+    bases = options.bases
+    if not bases:
+        bases = detect_comparison_bases(headers)
+        if len(bases) > 1:
+            raise ValueError("Multiple bases found; choose the comparison explicitly with AudienceOptions.bases.")
+        if not bases:
+            bases = (ComparisonBasis.PRIOR_PERIOD,)
+    cfg = audience_config(config)
+    return analyze_comparisons(rows, cfg, bases, raw_headers=headers)
+
+
+def analyze_table(rows: list[dict[str, object]], config: AnalysisConfig, *,
+                  options: AudienceOptions | None = None) -> TableAnalysis:
+    """Analyze a table with explicit new-header recognition and no source-byte claim."""
+    validate_table(rows)
+    selected = options or AudienceOptions()
+    if selected.column_mapping:
+        from .comparisons import _mapped_headers
+        headers = tuple(dict.fromkeys(key for row in rows for key in row))
+        mapped, _ = _mapped_headers(headers, selected.column_mapping)
+        renames = dict(zip(headers, mapped, strict=True))
+        rows = [{renames[key]: value for key, value in row.items()} for row in rows]
+    return _analyze_table(rows, config, selected)
+
+
+def analyze_file(path: str | Path, config: AnalysisConfig, *, options: AudienceOptions | None = None) -> TableAnalysis:
+    """Capture a bounded file once; provenance hashes exactly those input bytes."""
+    selected = options or AudienceOptions()
+    source = Path(path)
+    data = read_input_bytes(source)
+    rows, headers, worksheet, notes = read_comparison_input(data, source.suffix, filename=source.name,
+                                                           sheet=selected.sheet, assisted=selected.assisted,
+                                                           column_mapping=selected.column_mapping or None)
+    validate_table(rows)
+    table = _analyze_table(rows, config, selected, raw_headers=headers)
+    return replace(table, source_name=source.name, source_sha256=sha256_bytes(data), source_worksheet=worksheet,
+                   inferences=(*table.inferences, *notes))
+
+
+def analyze_panel(rows: list[dict[str, object]], *, group_by: tuple[str, ...], options: PanelOptions) -> BatchResult:
+    """Validate the capture, then isolate data errors within each declared group."""
+    from .panel import analyze_groups
+    validate_table(rows)
+    if options.audience.column_mapping:
+        from .comparisons import _mapped_headers
+        headers = tuple(dict.fromkeys(key for row in rows for key in row))
+        mapped, _ = _mapped_headers(headers, options.audience.column_mapping)
+        renames = dict(zip(headers, mapped, strict=True))
+        rows = [{renames[key]: value for key, value in row.items()} for row in rows]
+    # normalize_row refuses duplicate normalized fields before grouping.
+    normalized = [normalize_row(row) for row in rows]
+    return analyze_groups(rows, normalized, group_by, options)

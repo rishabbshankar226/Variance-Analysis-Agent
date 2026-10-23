@@ -143,3 +143,11 @@ are recomputed; changing unavailable rows or supplied-estimate gaps changes them
 ### Segment records in 1.8
 
 `measure_rows[].segment` preserves the supplied flat label. `segments[]` carries scoped revenue/expense aggregates and summary verifications in first-seen segment order. These records do not imply a consolidated total; global completeness is false when named segments are present. Segment source columns appear in inferences. Prior schemas remain unchanged.
+
+### API file provenance
+
+The new file API captures a bounded source once and attaches its exact SHA-256,
+name and worksheet to `TableAnalysis`. Comparison audits use that provenance by
+default. In-memory API results leave source identity null. Long panel outputs
+carry the CLI capture hash or null for in-memory calls; the batch itself is not a
+new audit schema kind. Every comparison audit remains independently verifiable.

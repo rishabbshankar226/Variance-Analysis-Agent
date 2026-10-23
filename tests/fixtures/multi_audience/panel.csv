@@ -1,0 +1,7 @@
+Ticker,Period,Line Item,Consensus,Actual,Type
+HALV.FAKE,2Q26,Revenue,1250.0,1287.5,Revenue
+HALV.FAKE,3Q26,Revenue,1250.0,1287.5,Revenue
+BRWB.FAKE,2Q26,Revenue,100,120,Revenue
+BRWB.FAKE,3Q26,Revenue,100,105,Revenue
+CORD.FAKE,2Q26,Revenue,500,520,Revenue
+CORD.FAKE,3Q26,Revenue,500,TBD,Revenue

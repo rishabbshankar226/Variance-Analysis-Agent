@@ -95,6 +95,10 @@ class Arguments(Protocol):
     count_threshold: Decimal | None
     bps_threshold: Decimal | None
     percent_values: str | None
+    group_by: str | None
+    long_output: str | None
+    long_output_jsonl: str | None
+    errors_output: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -138,6 +142,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
     )
     parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    parser.add_argument("--group-by", help="Panel keys, for example Ticker,Period. Mixed success exits 3; global errors exit 2.")
+    parser.add_argument("--long-output", help="Write deterministic exact-number CSV.")
+    parser.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
+    parser.add_argument("--errors-output", help="Write one CSV error row per failed panel group (required with --group-by).")
     parser.add_argument("--period", help="Reporting period shown in the report.")
     parser.add_argument(
         "--dollar-threshold",
@@ -225,7 +233,9 @@ def _validate_output_paths(args: Arguments) -> None:
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         inputs.append(Path(mapping_arg))
-    outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx) if value]
+    outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx,
+               getattr(args, "long_output", None), getattr(args, "long_output_jsonl", None),
+               getattr(args, "errors_output", None)) if value]
     for index, output in enumerate(outputs):
         if any(_same_path(output, other) for other in inputs + outputs[:index]):
             raise ValueError(
@@ -256,6 +266,12 @@ def _run(args: Arguments) -> int:
                                open_browser=not args.no_browser)
 
     assert args.input is not None
+    if args.group_by:
+        from .panel_cli import run_panel
+        _validate_output_paths(args)
+        return run_panel(args)
+    if args.errors_output:
+        raise ValueError("--errors-output requires --group-by.")
     assert args.period is not None
     assert args.dollar_threshold is not None
     assert args.percent_threshold is not None
@@ -284,8 +300,9 @@ def _run(args: Arguments) -> int:
         requested = mapping_obj.comparison_bases
     if not requested and mapping_obj is not None and mapping_obj.comparison_basis is not None:
         requested = (mapping_obj.comparison_basis,)
-    if (len(requested) > 1 or any(b in NEW_BASES for b in requested)
-            or getattr(args, "preset", "fpa") != "fpa"):
+    mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
+    if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
+            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl):
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
@@ -499,6 +516,8 @@ def _run(args: Arguments) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = cast(Arguments, parser.parse_args(argv))
+    if args.chat and (args.group_by or args.long_output or args.long_output_jsonl or args.errors_output):
+        parser.error("panel/long-output flags cannot be combined with --chat.")
     if args.hosted and not args.chat:
         parser.error("--hosted requires --chat.")
     if args.no_browser and not args.chat:
@@ -507,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         missing: list[str] = []
         if not args.input:
             missing.append("input")
-        if not args.period:
+        if not args.period and not args.group_by:
             missing.append("--period")
         if args.dollar_threshold is None:
             missing.append("--dollar-threshold")
@@ -611,6 +630,14 @@ def _run_comparisons(
             inferences.extend(notes)
             finalize_audience_record(record)
         outputs[Path(args.audit_json)] = serialize_audit_json(record)
+    if args.long_output or args.long_output_jsonl:
+        from .panel import BatchResult, GroupResult
+        from .long_output import long_csv, long_jsonl
+        batch = BatchResult((), (GroupResult((), table),), sha256_bytes(source_bytes), path.name)
+        if args.long_output:
+            outputs[Path(args.long_output)] = long_csv(batch)
+        if args.long_output_jsonl:
+            outputs[Path(args.long_output_jsonl)] = long_jsonl(batch)
     write_text_outputs(outputs)
     if not args.output:
         print(report)

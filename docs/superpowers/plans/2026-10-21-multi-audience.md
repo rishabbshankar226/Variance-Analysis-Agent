@@ -1128,3 +1128,185 @@ Wheel/sdist contents, license, Python support, and entry point verified
 Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
 No broken requirements found.
 ```
+
+## Phase 4 implementation note
+
+Use a small `panel_cli.py` sibling for the noninteractive panel adapter rather than expanding the legacy CLI handler. `TableAnalysis` gains defaulted metric order and captured source fields; the in-memory API leaves source identity null. Whole-capture validation precedes grouping, and only expected data/numeric errors become isolated group errors. Internal verification failures remain fatal.
+
+## Phase 4 complete — Wei
+
+The stable typed table, captured-file and panel functions are exported beside the original four names. New signature pins cover keyword-only options and defaults; public annotations resolve at runtime. The panel adapter uses the same comparison engine. Whole-table limits and keys are validated before grouping; analytical errors are isolated, unresolved classifications fail their group, and internal verification failures remain fatal. Long CSV and JSONL have fixed units/order and exact decimal strings; source-byte hashes, null missing comparisons, native JSON booleans and CSV formula protection are covered. Paths reject same-file, symlink and hardlink aliases. Staging failures preserve old destinations. No runtime dependency, network call, float amount, history statistic or PDF extension was added.
+
+Thirty-two new tests cover the three new APIs, Scenario C, limits, source identity, absent versus zero comparisons, basis/metric order, formula text, path aliases, staged output failure, type/threshold prompts, metric-index completeness and export re-verification. Explicit Segment role mappings now enter the extended Budget path; ordinary legacy mappings remain unchanged.
+
+### Required verification
+
+**pytest**
+
+```text
+........................................................................ [ 98%]
+....................................                                     [100%]
+1908 passed in 41.26s
+```
+
+**ruff**
+
+```text
+All checks passed!
+```
+
+**mypy**
+
+```text
+Success: no issues found in 60 source files
+```
+
+**compileall**
+
+```text
+Completed successfully with no output.
+```
+
+**pip-check**
+
+```text
+No broken requirements found.
+```
+
+**build**
+
+```text
+* Installed build dependency versions:
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**twine**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**package**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**minimal**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```
+
+**contracts**
+
+```text
+19 contract fixtures byte-identical; all baseline tests and published schemas unchanged except the approved one-line schema-1.6 parameter scope.
+```
+
+The contract check enumerated all baseline paths with `git ls-tree -r --name-only f5cd79c tests schemas`, compared each byte sequence against `git show f5cd79c:<path>`, and permitted only the previously approved one-line schema-1.6 parameter scope. `git diff --check` also passed.
+
+### Scenario C, actually run
+
+```sh
+.venv/bin/python -m variance_agent.cli tests/fixtures/multi_audience/panel.csv --group-by Ticker,Period --compare-to consensus --dollar-threshold 10 --percent-threshold 2 --bps-threshold 25 --per-share-threshold 0.01 --count-threshold 1000 --long-output ../phase0-evidence/scenario-c.csv --long-output-jsonl ../phase0-evidence/scenario-c.jsonl --errors-output ../phase0-evidence/scenario-c-errors.csv
+```
+
+Measured exit status: **3**. Output:
+
+```text
+[panel intake] Comparing Actual against Consensus.
+Panel: 5 successful groups; 1 failed groups.
+```
+
+```csv
+Ticker,Period,error,source_sha256
+CORD.FAKE,3Q26,Revenue: field 'Actual' has an invalid numeric format: 'TBD'.,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+```
+
+```csv
+Ticker,Period,line_item,segment,measure,basis,comparison_present,comparison,actual,variance,variance_percent,variance_bps,status,material,display_label,source_sha256
+BRWB.FAKE,2Q26,Revenue,,Currency,consensus,true,100,120,20,0.2,,F,true,Beat,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+BRWB.FAKE,3Q26,Revenue,,Currency,consensus,true,100,105,5,0.05,,F,true,Beat,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+CORD.FAKE,2Q26,Revenue,,Currency,consensus,true,500,520,20,0.04,,F,true,Beat,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+HALV.FAKE,2Q26,Revenue,,Currency,consensus,true,1250.0,1287.5,37.5,0.03,,F,true,Beat,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+HALV.FAKE,3Q26,Revenue,,Currency,consensus,true,1250.0,1287.5,37.5,0.03,,F,true,Beat,aa11301e22e04c5a09d23a96702d74b59b7cbc279b8bc93385ee51dcbf6842ab
+```
+
+The automated test runs Scenario C twice and compares all output bytes.
+
+### Maximum-capture throughput, measured
+
+```json
+{
+  "rows": 100000,
+  "columns": 10,
+  "cells": 1000000,
+  "groups": 1000,
+  "input_bytes": 8000078,
+  "seconds": 21.097414243999992,
+  "exit": 0,
+  "machine": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "cpu_count": 9,
+  "cpu_model": "AMD EPYC 9V74 80-Core Processor"
+}
+```
+
+The final-code run writes CSV and JSONL plus an empty errors CSV. It asserts 100,000 JSONL records and zero error rows. No optimization was needed because the measured time is below 60 seconds. CPU model is the host-reported model; nine logical CPUs were visible to the process. The 10 columns and 100,000 data rows exactly reach the 1,000,000-cell cap; the header is additional in strict CSV. No large generated benchmark data is tracked.
+
+Reproduction generator and invocation (run from the repository using its environment):
+
+```python
+"""Generate the maximum 100,000-row / 1,000,000-cell fictional strict CSV."""
+import csv
+import json
+import os
+import platform
+import time
+from pathlib import Path
+from variance_agent.cli import main
+
+root = Path(__file__).resolve().parent
+source = root / 'maximum-panel.csv'
+with source.open('w', newline='') as handle:
+    writer = csv.writer(handle, lineterminator='\n')
+    writer.writerow(['Ticker', 'Period', 'Line Item', 'Consensus', 'Actual', 'Type', 'Measure', 'Better', 'Currency', 'Segment'])
+    for ticker in range(100):
+        for quarter in range(10):
+            for metric in range(100):
+                writer.writerow([f'Fictional{ticker:03d}.FAKE', f'Q{quarter % 4 + 1} {2024 + quarter // 4}',
+                                 f'Revenue {metric:03d}', '100', '110', 'Revenue', 'Currency', 'Higher', 'USD', 'North'])
+start = time.perf_counter()
+code = main([str(source), '--group-by', 'Ticker,Period', '--compare-to', 'consensus', '--dollar-threshold', '10',
+             '--percent-threshold', '2', '--long-output', str(root / 'maximum-panel-long.csv'),
+             '--long-output-jsonl', str(root / 'maximum-panel-long.jsonl'), '--errors-output', str(root / 'maximum-panel-errors.csv')])
+seconds = time.perf_counter() - start
+result = {'rows':100000,'columns':10,'cells':1000000,'groups':1000,'input_bytes':source.stat().st_size,
+          'seconds':seconds,'exit':code,'machine':platform.platform(),'python':platform.python_version(),'cpu_count':os.cpu_count()}
+try:
+    result['cpu_model'] = next(line.split(':',1)[1].strip() for line in Path('/proc/cpuinfo').read_text().splitlines() if line.startswith('model name'))
+except (OSError, StopIteration):
+    result['cpu_model'] = 'unavailable'
+(root / 'phase4-benchmark.json').write_text(json.dumps(result, indent=2)+'\n')
+print(json.dumps(result,indent=2))
+assert code == 0
+assert sum(1 for _ in (root / 'maximum-panel-long.jsonl').open()) == 100000
+assert len((root / 'maximum-panel-errors.csv').read_text().splitlines()) == 1
+```
+
+This script was stored under the adjacent scratch evidence directory during measurement. To rerun elsewhere, place it in an empty directory; it creates its captures and outputs beside itself. Every generated entity is fictional and ends in `.FAKE`.
+
+## STOP 3 — owner choice on optional work
+
+Recorded 2026-10-22T19:34:51.341837+00:00. Measured wall-clock elapsed since the phase-2 checkpoint commit: 21.2 minutes; since the phase-3 checkpoint (phase-4 work): 16.4 minutes. Elapsed since the phase-0 plan commit: 84.3 minutes, including owner pauses. Active work time across the entire run was not separately instrumented.
+
+Core phases 1–4 are complete and locally committed after this log is recorded. Phases 6 (full earnings/quant presets, layouts and knowledge routing) and 8 (documentation, final report and verification) remain required. Phase 5 adds descriptive history/dispersion surprise statistics; phase 7 adds opted-in EPS/share-count extraction from fictional PDF filings. Neither optional phase has been implemented or dropped.
+
+Both optional phases are feasible with the existing standard-library/optional-PDF environment; no forbidden dependency or runtime network requirement has emerged. There is no stated remaining time budget against which to promise they fit. Recommended choice: retain both, since they directly serve Wei’s history normalization and Priya’s EPS intake. Owner may drop either or both at this gate.
+
+The owner attachment explicitly requires this pause: “STOP 3. After Phase 4. Report the time spent, what remains, and whether Phases 5 and 7 fit.” Await the owner’s choice before proceeding. Nothing has been pushed, merged, tagged or released. Browser executable remains unavailable; the authorized chat/frontend-test fallback has run in the full suite. Real vendor exports, real filings, hosted deployment, Windows and Python versions other than the measured 3.12.14 remain untested here.

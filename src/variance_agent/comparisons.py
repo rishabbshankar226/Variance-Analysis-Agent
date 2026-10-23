@@ -58,6 +58,10 @@ class TableAnalysis:
     comparisons: tuple[ComparisonAnalysis, ...]
     estimate_vs_consensus: tuple[EstimateGap, ...] = ()
     inferences: tuple[str, ...] = ()
+    metric_order: tuple[tuple[str, str, MeasureKind], ...] = ()
+    source_name: str | None = None
+    source_sha256: str | None = None
+    source_worksheet: str | None = None
 
 
 def _canonical_rows(rows: list[dict[str, object]], raw_headers: tuple[str, ...]) -> list[dict[str, object]]:
@@ -219,7 +223,9 @@ def analyze_comparisons(
         comparisons.append(ComparisonAnalysis(basis, result, tuple(unavailable), label))
         notes.append(f"Comparing Actual against {comparison_heading(basis, label)}.")
     gaps = _estimate_gaps(tuple(comparisons))
-    return TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes))
+    metric_order = tuple((str(row.get(line_key, "")).strip().casefold(), str(row.get("segment", "")).strip().casefold(),
+                          measure_kind(row.get("measure"), str(row.get(line_key, "Row")))) for row in canonical)
+    return TableAnalysis(cfg, tuple(comparisons), gaps, tuple(notes), metric_order)
 
 
 def _identity(row: AnalyzedRow) -> tuple[str, str, MeasureKind]:
@@ -268,6 +274,9 @@ def build_comparison_audit(
     if schema_version not in {None, "1.8"}:
         raise ValueError("Comparison sets and new comparisons require audit schema 1.8.")
     verify_comparisons(table)
+    source_name = source_name if source_name is not None else table.source_name
+    source_sha256 = source_sha256 if source_sha256 is not None else table.source_sha256
+    source_worksheet = source_worksheet if source_worksheet is not None else table.source_worksheet
     validate_source_identity(source_name, source_sha256)
     source_sha256 = source_sha256.lower() if source_sha256 is not None else None
     records: list[JSONValue] = []

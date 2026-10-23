@@ -227,3 +227,12 @@ can be resolved separately. Existing single-basis mapping bytes stay unchanged.
 ### Flat segments (opt-in)
 
 With extended header recognition, Segment, Division, Region, Geography or Business Unit identifies one flat dimension. Choose competing columns with a mapping. Blank labels form an unsegmented bucket. Nested objects, parent columns and second levels are refused. Legacy uploads keep treating these names as metadata.
+
+### Panel captures
+
+Panel grouping applies only after whole-input row, column, cell, text and nesting
+validation. Group keys must be distinct named text columns with nonblank scalar
+text values. Missing keys are global errors. Amounts and unresolved analytical
+choices fail their own groups without prompts. Period keys supply group periods;
+a simultaneous configured period is refused. See `docs/api.md` for the wire
+contract and deterministic ordering.
