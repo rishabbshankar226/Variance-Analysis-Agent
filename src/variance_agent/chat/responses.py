@@ -9,7 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from variance_agent.models import AnalysisResult, AnalyzedRow, Status
+from variance_agent.models import AnalysisResult, AnalyzedRow, Status, MeasureKind
+from variance_agent.measures import format_measure
 from variance_agent.report import _money, _pct, _report_places, _safe_inline, _threshold_number
 from variance_agent.currencies import CURRENCY_SYMBOLS
 
@@ -62,6 +63,16 @@ def row_to_table_dict(
 
     ``comparison`` names the column Actual is compared against, e.g. "Forecast".
     """
+    if row.measure is not MeasureKind.CURRENCY:
+        variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+        assert variance is not None
+        return {
+            "Line Item": safe_inline(row.line_item), "Measure": str(row.measure),
+            comparison: format_measure(row.budget, row.measure, currency),
+            "Actual": format_measure(row.actual, row.measure, currency),
+            "Variance": format_measure(variance, row.measure, currency, variance=True),
+            "Var (%)": format_pct(row.budget, row.variance_dollars, row.percent_label), "Status": str(row.status),
+        }
     return {
         "Line Item": safe_inline(row.line_item),
         "Type": str(row.line_type),

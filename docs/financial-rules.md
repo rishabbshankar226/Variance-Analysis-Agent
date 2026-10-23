@@ -106,3 +106,71 @@ audit records retain the original labels and periods.
 Terminal and bidirectional formatting controls are shown as visible escapes in
 reports and CLI errors. Report and audit builders independently reverify derived
 financial identities before serializing results from Python callers.
+
+## Opted-in measure kinds
+
+Currency rules above are unchanged. Per Share and Count use Actual minus the
+supplied comparison and percentage variance against its absolute nonzero value.
+Per Share uses its per-share absolute cutoff OR the percentage cutoff; Count
+uses its count absolute cutoff OR the percentage cutoff. At zero comparison,
+only the absolute test applies. Their absolute cutoffs are required even when a
+particular row would pass the percentage test.
+
+Percent inputs represent percentage points. Basis-point variance is exactly
+`(Actual - comparison) * 100`. It has no relative percentage variance; display
+`N/A (rate)`. Only the required bps cutoff applies. Every cutoff test is strict
+`>`; equality is not material. Higher/Lower controls the status of noncurrency
+rows; absent Per Share direction defaults visibly to Higher. Missing Percent or
+Count direction needs a user choice. Revenue/Expense Type controls Currency;
+a contradictory Better is an error. Scored unclassified Currency rows remain
+non-additive. Noncurrency rows do not affect Currency completeness or net impact.
+
+Units are displayed as currency/share, bps, or units, following the existing
+ASCII minus/no-leading-plus conventions. Amount arithmetic remains exact in the
+financial context. Money scaling and subtotal inference never apply to a declared
+rate, per-share value, or count. A standalone count is in its supplied units;
+there is no inference that a caption about money also scales counts.
+
+## Supplied earnings bases (unreleased)
+
+Consensus, Estimate, and Guidance reuse single-basis variance and materiality.
+Consensus displays Beat for a material favorable row, Miss for material
+unfavorable, and In line for a scored nonmaterial/neutral row. Unscored rows get
+none of those three outcomes. Status itself remains F/U/Neutral/Unclassified.
+Blank consensus has no status; supplied zero consensus remains real, its ratio
+is null, and only the absolute materiality test applies. Estimate, Guidance, and
+Prior Period never acquire consensus outcome vocabulary.
+
+Guidance midpoint is `(low + high) / 2` in the financial context, verified at the
+engine and output boundaries. Low > High is an error. Actual equal to either
+end is Within range; strict crossings are Below range or Above range.
+Estimate against Consensus describes the difference between two supplied
+numbers, divided by absolute nonzero Consensus, or multiplied by 100 for a
+rate difference in bps. It does not generate an estimate or investment advice.
+
+### Segment scope
+
+Reconcile at most one supplied Currency summary per category within each segment, using the existing inclusive 0.01 reconciliation tolerance. Never reconcile across segments or synthesize consolidated totals. Unsegmented consolidated rows remain a separate bucket. Duplicate names across segments are distinct; duplicates within the same segment still warn. Labels containing slashes do not imply hierarchy.
+
+### Descriptive surprise statistics (opt-in)
+
+Standardized surprise uses Actual minus supplied Consensus divided by the sample
+standard deviation of the most recent prior surprises for that entity, metric
+and optional segment. Percent metric history is in bps, and its numerator is the
+bps variance. Current and future periods are excluded. The default maximum
+window is 8; a window below 4 is refused. With fewer than 4 prior surprises or
+zero historical deviation, the statistic is null with a stated reason.
+
+The sample variance is algebraically demeaned:
+`(n * sum(x*x) - sum(x)*sum(x)) / (n * (n-1))`. Sums and cross-products use the
+existing exact 50-significant-digit financial context and fail rather than
+silently losing amount precision. The variance ratio may repeat and uses the
+existing permitted 50-digit half-even ratio rounding. `Decimal.sqrt` is the
+inexact square-root step, evaluated in that context with only Inexact locally
+disabled. The final standardized ratio uses the same ratio rounding. No binary
+float enters these calculations.
+
+Dispersion surprise divides the same numerator by supplied estimate standard
+deviation. Percent dispersion is supplied in percentage points and converted to
+bps before division. Absent or zero dispersion produces null with a reason.
+These are descriptive statistics of supplied numbers; they make no predictions.

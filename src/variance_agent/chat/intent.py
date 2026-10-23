@@ -48,6 +48,8 @@ class ParsedIntent:
 
 
 KNOWLEDGE_INTENTS: frozenset[str] = frozenset({
+    "concept_consensus", "concept_surprise", "concept_beat_miss", "concept_bps",
+    "concept_guidance_range", "concept_standardized_surprise",
     "concept_variance",
     "concept_f_vs_u",
     "concept_fav",
@@ -72,6 +74,17 @@ KNOWLEDGE_INTENTS: frozenset[str] = frozenset({
 # Ordered list of (compiled_regex, intent_id).
 # Evaluated top-to-bottom; first match wins.
 _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"^review\s+earnings$", re.IGNORECASE), "earnings_review"),
+    (re.compile(r"^(?:what\s+is|explain|define)\s+(?:street\s+)?consensus\??$", re.IGNORECASE), "concept_consensus"),
+    (re.compile(r"^(?:what\s+is|explain|define)\s+(?:earnings\s+)?surprise\??$", re.IGNORECASE), "concept_surprise"),
+    (re.compile(r"^(?:what\s+do\s+beat\s+and\s+miss\s+mean|explain\s+beat\s+and\s+miss)\??$", re.IGNORECASE), "concept_beat_miss"),
+    (re.compile(r"^(?:what\s+are|explain|define)\s+(?:basis\s+points|bps)\??$", re.IGNORECASE), "concept_bps"),
+    (re.compile(r"^(?:how\s+do\s+guidance\s+ranges\s+work|explain\s+guidance\s+ranges)\??$", re.IGNORECASE), "concept_guidance_range"),
+    (re.compile(r"^(?:what\s+is|explain|define)\s+(?:standardized\s+surprise|sue)\??$", re.IGNORECASE), "concept_standardized_surprise"),
+    (re.compile(r"^(?:did\s+we\s+beat\s+(?:the\s+)?consensus|(?:vs\.?|versus)\s+(?:the\s+)?street)\??$",
+                re.IGNORECASE), "earnings_consensus"),
+    (re.compile(r"^margins?\s+in\s+(?:bps|basis\s+points)\??$", re.IGNORECASE), "earnings_margins"),
+    (re.compile(r"^where\s+are\s+we\s+(?:vs\.?|versus)\s+(?:the\s+)?guid(?:e|ance)\??$", re.IGNORECASE), "earnings_guidance"),
     (re.compile(
         r"^(?:help|commands|menu|\?|what\s+can\s+you\s+do|can\s+you\s+help(?:\s+me)?|how\s+do\s+i\s+use\s+this|what\s+should\s+i\s+do)\??$",
         re.IGNORECASE,
@@ -142,7 +155,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "summary"),
 
     (re.compile(
-        r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period))\??$",
+        r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period|consensus|estimate|guidance))\??$",
         re.IGNORECASE,
     ), "set_comparison"),
 

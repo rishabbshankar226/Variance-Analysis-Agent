@@ -277,3 +277,40 @@ def explain_comparison_types() -> str:
         "Switch at any time with `compare to budget`, `compare to forecast` or `compare to prior period`. "
         "On the command line, pass `--compare-to budget`, `--compare-to forecast` or `--compare-to prior-period`."
     )
+
+
+def explain_consensus() -> str:
+    return ("Consensus is the estimate summary supplied in your file, such as a mean of analysts' estimates. "
+            "I compare Actual with that supplied figure and make no estimates. "
+            "Keep GAAP and adjusted measures consistent yourself; I never relabel one as the other.")
+
+
+def explain_surprise() -> str:
+    return ("An earnings surprise is Actual minus supplied Consensus. Surprise percent divides that difference by "
+            "the absolute Consensus, including when Consensus is a loss. A zero or missing Consensus has no ratio. "
+            "I compare supplied numbers and make no estimates.")
+
+
+def explain_beat_miss() -> str:
+    return ("Against supplied Consensus, a material favorable result is a Beat and a material unfavorable result is a Miss. "
+            "A scored result below or equal to your cutoffs is In line. An unclassified or missing comparison gets no such label. "
+            "Direction comes from Type or your Better choice. I compare supplied numbers and make no estimates.")
+
+
+def explain_bps() -> str:
+    return ("One basis point is 0.01 percentage points. A supplied margin moving from 41.2% to 40.6% changes by -60 bps. "
+            "Rate materiality compares absolute bps with your cutoff, using strictly greater than. "
+            "I compare supplied numbers and make no estimates.")
+
+
+def explain_guidance_ranges() -> str:
+    return ("A supplied guidance range is compared at its exact midpoint. Actual at either endpoint is Within range; "
+            "below the low is Below range and above the high is Above range. These positions do not imply a forecast. "
+            "I compare supplied numbers and make no estimates.")
+
+
+def explain_standardized_surprise() -> str:
+    return ("Standardized surprise divides the current supplied Actual-minus-Consensus surprise by the sample standard deviation "
+            "of prior supplied surprises for the same entity and metric. Current and future periods are excluded. "
+            "At least four prior observations and nonzero deviation are required. Rate histories use bps. "
+            "It describes the supplied history and is not predictive. I make no estimates.")

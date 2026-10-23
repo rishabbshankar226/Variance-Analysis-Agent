@@ -38,6 +38,8 @@ from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, extract_statement_tables
 from .statement_shape import shape_income_statement
+from .measures import measure_kind
+from .models import MeasureKind
 from .comparison import (
     _ACTUAL_SUFFIX,
     BUDGET_SYNONYMS,
@@ -485,6 +487,9 @@ def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> li
     scaled: list[dict[str, object]] = []
     for r in rows:
         rc = dict(r)
+        if _row_measure(rc) is not MeasureKind.CURRENCY:
+            scaled.append(rc)
+            continue
         if "budget" in rc and isinstance(rc["budget"], Decimal):
             rc["budget"] = rc["budget"] * multiplier
         if "actual" in rc and isinstance(rc["actual"], Decimal):
@@ -1231,6 +1236,7 @@ def read_input_assisted(
     treat_blank_budgets_as_zero: bool = False,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling."""
     if len(data) > MAX_INPUT_BYTES:
@@ -1271,6 +1277,7 @@ def read_input_assisted(
             treat_blank_budgets_as_zero,
             selected_period,
             compare_to=compare_to,
+            per_share_lines=per_share_lines,
         )
 
     return IntakeResult(
@@ -1584,10 +1591,12 @@ def _read_pdf_bytes(
     treat_blank_budgets_as_zero: bool,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
 ) -> IntakeResult:
     """Read one statement from a 10-K / 10-Q style PDF; each statement acts like a worksheet."""
     try:
-        tables = extract_statement_tables(data, filename)
+        tables = (extract_statement_tables(data, filename, per_share_lines=True) if per_share_lines
+                  else extract_statement_tables(data, filename))
     except PdfReadError as exc:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
 
@@ -1830,11 +1839,17 @@ def _process_raw_table(
             )
             continue
 
+        measure_column = next((i for i, h in enumerate(header_row) if h is not None and normalize_key(str(h)) == "measure"), None)
+        try:
+            kind = measure_kind(row[measure_column] if measure_column is not None and measure_column < len(row) else None,
+                                line_item_str)
+        except ValueError as exc:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
         raw_budget = row[budget_idx] if budget_idx < len(row) else None
         budget_dec: Decimal | None = None
         try:
             budget_dec, b_note = parse_assisted_decimal(
-                raw_budget,
+                _rate_number(raw_budget, kind),
                 field=comparison_field,
                 line_item=line_item_str,
                 allow_blank=True,
@@ -1859,7 +1874,7 @@ def _process_raw_table(
         actual_dec: Decimal | None = None
         try:
             actual_dec, a_note = parse_assisted_decimal(
-                raw_actual,
+                _rate_number(raw_actual, kind),
                 field="Actual",
                 line_item=line_item_str,
                 allow_blank=False,
@@ -1907,6 +1922,20 @@ def _process_raw_table(
             if value is not None and str(value).strip():
                 row_dict[header] = value
 
+        if kind is MeasureKind.PERCENT:
+            # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it.
+            row_dict["budget"] = raw_budget
+            row_dict["actual"] = raw_actual
+            if any(str(value).strip().endswith("%") for value in (raw_budget, raw_actual)):
+                visible_transformations.append(f"{line_item_str}: read % values as percentage points.")
+        if measure_column is not None:
+            visible_transformations.append(f"{line_item_str}: read Measure as {kind}.")
+            better_value = next((row[i] for i, h in enumerate(header_row)
+                                 if h is not None and normalize_key(str(h)) == "better" and i < len(row)), None)
+            if kind is MeasureKind.PER_SHARE and not str(better_value or "").strip():
+                visible_transformations.append(f"{line_item_str}: defaulted Better to Higher.")
+            elif str(better_value or "").strip():
+                visible_transformations.append(f"{line_item_str}: read Better as {better_value}.")
         output_rows.append(row_dict)
 
     if unreadable_cells:
@@ -1957,7 +1986,7 @@ def _process_raw_table(
 
     # 2. Signed ledger check
     signed_det = (SignedLedgerDetection(False, 0, [])
-                  if signs_resolved else detect_signed_ledger(output_rows))
+                  if signs_resolved else detect_signed_ledger([r for r in output_rows if _row_measure(r) is MeasureKind.CURRENCY]))
     flipped_items: list[str] = []
     if signed_det.is_signed_ledger:
         output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
@@ -1971,11 +2000,14 @@ def _process_raw_table(
     has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
     subtotals_det = (
         SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
-        if has_row_kind or signs_resolved else detect_subtotals_and_totals(output_rows)
+        if has_row_kind or signs_resolved
+        else detect_subtotals_and_totals([r for r in output_rows if _row_measure(r) is MeasureKind.CURRENCY])
     )
     reconciled_names = [t.line_item for t in subtotals_det.reconciled_totals]
     if reconciled_names:
-        output_rows = [r for r in output_rows if str(r.get("line_item", "")).strip() not in set(reconciled_names)]
+        output_rows = [r for r in output_rows
+                       if _row_measure(r) is not MeasureKind.CURRENCY
+                       or str(r.get("line_item", "")).strip() not in set(reconciled_names)]
         visible_transformations.append(
             f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. "
             "Excluded from line items to avoid double-counting."
@@ -2171,3 +2203,12 @@ def plain_analysis_error(error_text: str) -> str:
     text = re.sub(r"\bpayload\b", "data", text, flags=re.IGNORECASE)
 
     return text
+
+
+def _row_measure(row: dict[str, object]) -> MeasureKind:
+    value = next((v for k, v in row.items() if normalize_key(k) == "measure"), None)
+    return measure_kind(value, str(row.get("line_item", "Row")))
+
+
+def _rate_number(value: object, kind: MeasureKind) -> object:
+    return value.strip()[:-1] if kind is MeasureKind.PERCENT and isinstance(value, str) and value.strip().endswith("%") else value

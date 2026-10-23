@@ -2,6 +2,31 @@
 
 ## 0.3.0 — Unreleased
 
+### Multi-audience expansion — behavior changes first
+
+- Opt-in supplied Consensus, Estimate and Guidance comparisons, including explicit
+  comparison sets. Legacy FP&A headers, reports, audits and workbook outputs keep
+  their defaults. Consensus alone uses Beat/Miss/In line; guidance ranges use an
+  exact midpoint and inclusive range positions. No estimates are generated.
+- Explicit Per Share, Percent and Count measures with direction choices and
+  required cutoffs. Rates report bps; noncurrency measures stay out of money
+  totals. Flat segments reconcile within each segment without consolidation.
+- Typed table/file/panel APIs and deterministic exact long CSV/JSONL. Panels
+  isolate data errors by group and exit 3 when any group fails. Text CSV cells
+  receive formula protection; exact numeric strings retain their signs.
+- Optional descriptive history and estimate-dispersion statistics, with bounded
+  inputs, prior-period exclusion, sample deviation and stated null reasons.
+- FP&A, earnings and quant presets, an earnings headline table/workbook sheet,
+  confirmed earnings chat review and explanatory knowledge routes. Explicit flags
+  override preset defaults; no preset chooses materiality thresholds.
+- Optional filing EPS and weighted average share counts, with independent units
+  and currency-only statement reconciliation. Ordinary filing intake is unchanged.
+- New closed audit 1.8 records these choices and facts. Published schemas 1.0–1.7
+  are unchanged; legacy default remains 1.7. README denominator wording is
+  corrected to the existing absolute-comparison calculation.
+- Executed evidence and untested boundaries:
+  [docs/MULTI_AUDIENCE_2026-10.md](docs/MULTI_AUDIENCE_2026-10.md).
+
 ### Bug hunt (2026-10-21) — behavior changes first
 
 Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/BUG_HUNT_2026-10-21.md).

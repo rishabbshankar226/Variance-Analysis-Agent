@@ -16,18 +16,22 @@ if TYPE_CHECKING:
     from variance_agent.intake import GLRangeRule, IntakeResult, PeriodColumnPair
     from variance_agent.mapping import LayoutMapping
     from variance_agent.models import AnalysisResult, ComparisonBasis, LineType
+    from variance_agent.comparisons import TableAnalysis
 
 
 class Phase(StrEnum):
     """Conversation phases in the guided intake flow."""
 
     AWAITING_FILE = "awaiting_file"
+    AWAITING_EARNINGS_REVIEW = "awaiting_earnings_review"
+    AWAITING_COMPARISON_CHOICE = "awaiting_comparison_choice"
     AWAITING_BLANK_BUDGET_CONFIRMATION = "awaiting_blank_budget_confirmation"
     AWAITING_PERIOD_CHOICE = "awaiting_period_choice"
     AWAITING_INTAKE_CONFIRMATION = "awaiting_intake_confirmation"
     AWAITING_PERIOD = "awaiting_period"
     AWAITING_THRESHOLDS = "awaiting_thresholds"
     AWAITING_CURRENCY = "awaiting_currency"
+    AWAITING_MEASURE_OPTIONS = "awaiting_measure_options"
     RESOLVE_UNCLASSIFIED = "resolve_unclassified"
     EXPLORING = "exploring"
 
@@ -57,6 +61,18 @@ class Session:
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
     compare_to: ComparisonBasis | None = None
+    per_share_threshold: Decimal | None = None
+    count_threshold: Decimal | None = None
+    bps_threshold: Decimal | None = None
+    percent_values: str | None = None
+    measure_pending: tuple[str, int] | None = None
+    earnings_mode: bool = False
+    earnings_requested: bool = False
+    earnings_headers: tuple[str, ...] = ()
+    earnings_choices: tuple[ComparisonBasis, ...] = ()
+    earnings_notes: tuple[str, ...] = ()
+    comparison_bases: tuple[ComparisonBasis, ...] = ()
+    table_analysis: TableAnalysis | None = None
 
     # Unclassified items pending resolution, and items the user chose to leave unclassified
     unclassified_queue: list[str] = field(default_factory=list)
@@ -97,6 +113,18 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.compare_to = None
+        self.per_share_threshold = None
+        self.count_threshold = None
+        self.bps_threshold = None
+        self.percent_values = None
+        self.measure_pending = None
+        self.earnings_mode = False
+        self.earnings_requested = False
+        self.earnings_headers = ()
+        self.earnings_choices = ()
+        self.earnings_notes = ()
+        self.comparison_bases = ()
+        self.table_analysis = None
         self.unclassified_queue = []
         self.pending_gl_rules = []
         self.skipped_items = set()

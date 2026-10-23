@@ -159,3 +159,115 @@ With the optional `[pdf]` extra (`pip install 'variance-analysis-agent[pdf]'`), 
 variance-agent filings/10-K-2025.pdf --assisted --period 'FY2025' \
   --dollar-threshold 100000 --percent-threshold 5 --audit-json audit.json
 ```
+
+## Explicit measure columns (opt-in)
+
+`Measure` enables unit-aware rows: Currency (default; aliases `currency`, `money`),
+Per Share (`per share`, `per-share`, `per_share`, `eps`), Percent (`percent`,
+`percentage`, `rate`), or Count (`count`, `units`). `Better` accepts Higher or
+Lower. Revenue/Expense classification controls Currency direction; a conflicting
+Better is rejected. Better can score an otherwise unclassified Currency profit
+metric without making it additive. Per Share defaults visibly to Higher;
+Percent and Count require Better. Noncurrency rows never enter currency totals.
+
+Provide `--per-share-threshold`, `--count-threshold`, or `--bps-threshold` for
+any corresponding kind present. All cutoffs are nonnegative, exact numbers, with
+strict greater-than materiality. No cutoff is inferred. Percent strings such as
+`41.2%` mean 41.2 percentage points. Bare Percent numbers require
+`--percent-values points` or `--percent-values fractions`; the latter reads
+`0.412` as 41.2 points. The chat proposes this choice and asks before analysis.
+New typed metric callers supply exact text, integers, or Decimal; floats and
+booleans are refused. Legacy undeclared Currency callers keep their contract.
+
+New mapping files can record `measure_options` with text-valued keys
+`percent_values`, `per_share_threshold`, `count_threshold`, and `bps_threshold`,
+and `better_directions` mapping line-item names to Higher/Lower. Explicit CLI
+scale/cutoff flags override the mapping. Old mapping serialization is unchanged.
+
+## Earnings comparison columns (explicit opt-in)
+
+`--compare-to consensus`, `estimate`, or `guidance`, a comma-list comparison set,
+or `--preset earnings` / `quant` enables new headers. Without these choices,
+Consensus, Model, Region, Division and the new quarter forms stay ordinary
+metadata; assisted legacy files still ask on multiple existing comparison bases.
+In chat, files with earnings comparisons and no Budget offer a confirmed earnings
+review. Budget uploads follow the existing path. An earnings review can choose
+one basis or “Compare against all of them.”
+
+Consensus synonyms: Consensus, Cons, Street, Consensus Mean, Mean Estimate.
+Estimate synonyms: Our Est., House, Model, Internal Estimate. `Est.` / `Estimate`
+alone is ambiguous and needs an explicit column mapping or a renamed header.
+The raw `# Est.` header means number of estimates; normalization alone cannot
+identify it. High, Low, Std Dev, Std. Dev., Standard Deviation are optional
+consensus metadata. Low must not exceed High; dispersion is nonnegative and the
+estimator count a nonnegative whole number. GAAP-versus-adjusted matching is the
+user's responsibility. Blank consensus is unavailable and never converted to 0.
+Supplied zero is a real comparison, with no defined surprise percentage.
+
+Guidance/Guide supplies a point, or Guidance Low/High and Guide Low/High supply
+an inclusive range. A point and range together need an explicit mapping.
+The range compares against its exact midpoint and records its position.
+Outlook continues to mean Forecast. `--compare-to consensus,estimate,prior-period`
+selects all three supplied bases in that order; every basis is independently
+analyzed. Missing cells in a set leave unavailable comparison groups. Ambiguous
+same-name/same-segment/same-measure joins are refused.
+
+Extended period recognition adds 3Q26, Q3 FY26, F3Q26, Q3'26 and 3QFY26. Mixed
+fiscal/calendar quarters, mixed granularities, and duplicate period identities
+need a user choice. New quarter comparisons name consecutive quarters/years;
+existing forms retain their old wording, including Prior Period (FY2024).
+
+New saved mappings may carry an ordered `comparison_bases` list; an explicit
+`--compare-to` wins. A column mapping can select one of competing comparison
+columns (for example `estimate: Model`) or choose a guidance point instead of a
+range. Ignored competing columns are named in intake notes. Raw header identity
+is retained before mapping, so `consensus: Est.` and `estimator_count: # Est.`
+can be resolved separately. Existing single-basis mapping bytes stay unchanged.
+
+### Flat segments (opt-in)
+
+With extended header recognition, Segment, Division, Region, Geography or Business Unit identifies one flat dimension. Choose competing columns with a mapping. Blank labels form an unsegmented bucket. Nested objects, parent columns and second levels are refused. Legacy uploads keep treating these names as metadata.
+
+### Panel captures
+
+Panel grouping applies only after whole-input row, column, cell, text and nesting
+validation. Group keys must be distinct named text columns with nonblank scalar
+text values. Missing keys are global errors. Amounts and unresolved analytical
+choices fail their own groups without prompts. Period keys supply group periods;
+a simultaneous configured period is refused. See `docs/api.md` for the wire
+contract and deterministic ordering.
+
+### Supplied surprise history
+
+`--history` accepts bounded CSV/JSON with Entity (or Ticker), Metric (or Line
+Item), Period and Surprise. Optional Segment and Measure can disambiguate flat
+metrics and assert units. Surprise is an exact amount difference, or bps for a
+Percent metric. It is never a percentage surprise ratio. Histories are keyed by
+entity, metric and segment; duplicate period identities, mixed granularities,
+and fiscal/calendar quarter mixtures are refused. File order is irrelevant.
+Current and future periods do not enter the window. Ticker/Entity in actual rows
+supplies identity; otherwise use `--entity`. Larger captures must be split under
+the same existing input limits. A supplied `Std Dev` column enables dispersion
+statistics; explicit history also reports why dispersion is absent.
+
+### Opted-in EPS and share counts from filings
+
+Under assisted PDF intake, `--per-share-lines` retains recognizable basic/diluted
+EPS as Per Share with Better Higher, and weighted average share counts as Count.
+The earnings preset enables this policy; `--no-per-share-lines` overrides it.
+Default FP&A intake and its exact omission note remain unchanged. Other omitted
+share-related disclosures are not guessed into these measures.
+
+EPS is never multiplied by a currency-caption scale. Share counts remain as
+printed, with a visible note; a dollars-in-millions caption scales only Currency.
+Verify a vendor's share-count units and normalize a different printed count scale
+before analysis. Count Better and all occurring measure thresholds remain the
+user's choices. Statement sign/subtotal reconciliation considers Currency only.
+PDF statement, pages, period label and reader transformations remain in audit
+1.8. The tool does not match EPS from a filing with a separate consensus file;
+users must align metric definitions and combine supplied amounts explicitly.
+
+In chat, request “review earnings” before a filing upload, or after uploading it,
+to opt into these retained lines. Confirm the review, reporting period and
+thresholds, then choose Higher or Lower for each count measure. Ordinary filing
+uploads remain on the existing FP&A path. Hosted path exports remain disabled.

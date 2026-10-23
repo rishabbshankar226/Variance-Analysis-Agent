@@ -96,3 +96,134 @@ the reviewed USD goldens; financial values are unchanged. EUR and GBP goldens
 exercise every report section. Mixing currency symbols is rejected; it is not an
 accepted financial rule.
 Run `pytest tests/test_contract_fixtures.py` after installing `.[dev,excel]`.
+
+## Unreleased 1.8: explicit measures and direction
+
+Schema 1.8 is selectable. The legacy default constant remains 1.7 and every
+legacy record keeps its bytes. Declared measures/Better or new measure settings
+select 1.8 automatically; explicitly choosing 1.0–1.7 for those facts is refused
+before output publication. Published schemas 1.0–1.7 are unchanged.
+
+1.8 introduces these foundational closed sibling groups:
+
+- `audience`: exact nullable `per_share_threshold`, `count_threshold`,
+  `bps_threshold`, and `percent_values` (points/fractions/null).
+- `inferences`: visible measure, direction/default, and percent-scale notes.
+- `measure_rows`: all analyzed rows, including nonmaterial ones, with line item,
+  measure, type, Better/direction source, comparison/actual/variance, nullable
+  variance percent/bps and percent label, status, materiality/reason, and
+  exclusion from currency aggregation. All financial values are decimal strings.
+
+The existing money-oriented `material_variances` contains Currency rows only;
+`measure_rows` is the complete heterogeneous table. Classification quality and
+Currency completeness consider Currency rows, while material variance counts
+cover all kinds. The effective audience settings enter configuration identity;
+all new row facts and notes enter analysis and public payload identities. Every
+1.8 record shape rejects unknown properties. The complete unreleased extension
+is described below; published schemas 1.0–1.7 remain immutable.
+
+### Unreleased 1.8 comparison additions
+
+`comparison.basis` includes consensus/estimate/guidance only in 1.8. Single records
+add `comparison_details` (high/low, estimator count, dispersion, guidance bounds,
+midpoint and positions) and `unavailable_comparisons`, and an empty `comparisons`.
+`measure_rows.display_label` is a status/materiality projection. `audience` also
+records full currency/materiality/type-map settings and extended period/header
+choices. Unavailable-only records preserve actuals, absence reasons, supplied
+metadata, and effective configuration without invented analyzed amounts.
+
+A set record has kind `comparison_set`, ordered `comparisons` of complete single
+or unavailable-only 1.8 child records, `comparison_order`, supplied
+`estimate_vs_consensus` facts and inference notes. It claims no financial total
+across bases. Every child validates against 1.8 independently, has its own source
+and digests, and cannot itself contain a set. Closed conditional shapes refuse
+unknown or cross-kind fields. Wrapper metadata is included before both digests
+are recomputed; changing unavailable rows or supplied-estimate gaps changes them.
+
+### Segment records in 1.8
+
+`measure_rows[].segment` preserves the supplied flat label. `segments[]` carries scoped revenue/expense aggregates and summary verifications in first-seen segment order. These records do not imply a consolidated total; global completeness is false when named segments are present. Segment source columns appear in inferences. Prior schemas remain unchanged.
+
+### API file provenance
+
+The new file API captures a bounded source once and attaches its exact SHA-256,
+name and worksheet to `TableAnalysis`. Comparison audits use that provenance by
+default. In-memory API results leave source identity null. Long panel outputs
+carry the CLI capture hash or null for in-memory calls; the batch itself is not a
+new audit schema kind. Every comparison audit remains independently verifiable.
+
+Mapped file intake records its explicit role-to-source-column map and detected
+header row in `transformations`. Intake and period notes are copied into every
+available child record's `inferences`, including a single-basis wrapper. These
+facts enter the payload digest and analysis fingerprint. A mapping-file digest
+identifies canonical validated mapping choices, rather than the original file's
+whitespace. Effective audience/statistic configuration enters
+`configuration_sha256`; mapping provenance is covered by the record identities.
+
+### Statistics in audit 1.8
+
+Comparison-wrapper records optionally add `statistics_configuration` (window,
+entity choice and history source name/SHA-256) and `statistics[]`. Each statistic
+contains entity, line item, flat segment, measure, amount/bps surprise, history
+SHA-256, ordered prior periods and their exact surprise values, count, window,
+sample variance, sample deviation, standardized surprise/reason and dispersion
+surprise/reason. The prior values permit independent recomputation. In-memory
+history has no claimed file hash. Only Consensus children carry statistics; each
+child and the complete set validate independently. These fields enter both
+public payload and analysis fingerprints; the effective statistic options also
+enter the child configuration identity. Published schemas 1.0–1.7 are unchanged.
+
+### Presentation choices in 1.8
+
+`audience` includes the effective preset, layout, per-share filing-line policy
+and explicit headline names. Defaulted choices and headline inference are
+visible. These values enter the configuration and public payload identities.
+Existing Status values are unchanged; an Earnings sheet or Beat label does not
+create a second financial calculation.
+
+### Retained filing lines
+
+Advanced file/API and explicit earnings-chat reviews retain the same PDF source
+document group used by earlier audit versions: statement, page numbers and reader
+notes. Retention and independent scale policies are recorded as transformations.
+The current and comparison period labels are preserved from the statement.
+Currency-only shaping excludes the same supplied computed subtotals; retained
+EPS/count rows do not affect monetary reconciliation or totals. New comparison
+wrappers use 1.8 and include these fields in their fingerprints.
+
+### Final 1.8 field delta
+
+The schema is the authoritative closed contract. The implemented fields replace
+the preliminary shape proposed in the implementation plan. Existing 1.7 groups
+retain their meanings for representable Currency results.
+
+| Path | Implemented values and meaning |
+|---|---|
+| `schema_version` | `1.8`; legacy default remains `1.7` |
+| `audience` cutoffs | `per_share_threshold`, `count_threshold`, `bps_threshold`: exact decimal strings or null; `percent_values`: points/fractions/null |
+| `audience` period/header choices | `actual_label`, `comparison_title`, `extended_headers`; comparison label remains in `comparison.label` |
+| `audience` presentation | `preset`, effective `layout`, effective `per_share_lines`, ordered `headline_items` |
+| `audience` existing configuration | `currency`, `dollar_threshold`, ratio `percent_threshold`, sorted `type_map` entries with `line_item` and `type` |
+| `inferences[]` | Strings describing basis, measure, direction/default, rate scale, segment source, period and layout/intake decisions |
+| `measure_rows[]` identity/direction | `line_item`, `segment`, `measure`, `type`, `better`, `direction_source` |
+| `measure_rows[]` amounts | `comparison`, `actual`, `variance`, nullable ratio `variance_percent`, nullable `variance_bps`, `percent_label` |
+| `measure_rows[]` outcomes | `status`, `material`, `materiality_reason`, `display_label`, `excluded_from_aggregation` |
+| `comparison_details[]` | `line_item`, nullable `consensus_low`, `consensus_high`, `dispersion`, `estimator_count`, `consensus_range_position`, `guidance_low`, `guidance_high`, `guidance_midpoint`, `guidance_position` |
+| `unavailable_comparisons[]` | `line_item`, `segment`, `measure`, exact `actual`, null `comparison`/`status`/`display_label`, `reason`, supplied `comparison_details` |
+| `segments[]` | `segment`, scoped `revenue`, `expenses`, `summary_verifications`; no synthesized consolidation |
+| `comparisons[]` | Empty on single records; ordered independently valid single/unavailable records on sets |
+| Set root | `kind: comparison_set`, `comparison_order`, `estimate_vs_consensus`, `inferences`, source, period and both digests |
+| `estimate_vs_consensus[]` | `line_item`, `segment`, `measure`, supplied `estimate`, `consensus`, `variance`, nullable `variance_percent`/`variance_bps` |
+| Unavailable-only root | `kind: comparison_unavailable`, period, source, comparison, effective audience, unavailable rows, empty comparisons and both digests |
+| `statistics_configuration` | `window`, nullable `entity`, `history_source`, `history_sha256` |
+| `statistics[]` identity/history | `entity`, `line_item`, `segment`, `measure`, `surprise`, `history_sha256`, ordered `prior_periods`/`prior_surprises`, `prior_count`, `window` |
+| `statistics[]` results | Nullable `sample_variance`, `sample_stddev`, `standardized_surprise`/`standardized_reason`, `dispersion_surprise`/`dispersion_reason` |
+| `source` / `transformations` | Existing captured-byte, worksheet and PDF-document fields plus explicit mapping/header facts; no raw row dictionaries |
+| Integrity | Effective audience/statistic options enter configuration identity; all public facts enter the payload digest and analysis fingerprint, including each child |
+
+There is no separate row identifier or structured inference object. Row identity
+is line item, segment and measure, with deterministic array order. There is no
+panel audit root: group keys and captured source identity are in long output.
+The long-format number contract uses strings even for counts; audit metadata
+counts remain JSON integers as the schema specifies. Missing comparisons never
+occupy an analyzed row's numeric comparison field with a fabricated zero.

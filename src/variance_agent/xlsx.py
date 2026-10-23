@@ -7,6 +7,11 @@ formulas) and fixed zip timestamps so the same analysis yields identical bytes.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .comparisons import TableAnalysis
+
 import io
 import math
 import zipfile
@@ -14,8 +19,11 @@ from dataclasses import dataclass, field
 from decimal import Context, Decimal
 from xml.sax.saxutils import escape
 
+from .audience import is_audience_result, audience_config, effective_layout
+from .measures import format_measure
+from .models import MeasureKind
 from .analysis import verify_result
-from .comparison import basis_noun, comparison_heading
+from .comparison import basis_noun, comparison_heading, display_outcome, extended_heading
 from .currencies import CURRENCY_SYMBOLS
 from .limits import display_text
 from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType, Status
@@ -332,7 +340,7 @@ def _status_cell(status: Status) -> _Cell:
 
 def _heading(cfg: AnalysisConfig) -> str:
     """Column name for the comparison amount: 'Budget', 'Forecast' or 'Prior Period (FY2024)'."""
-    return display_text(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    return display_text(extended_heading(cfg))
 
 
 def _against(cfg: AnalysisConfig) -> str:
@@ -654,6 +662,8 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
     places = _report_places(result)
+    if is_audience_result(result):
+        return _package(_audience_sheets(result), places)
     sheets = [
         _summary_sheet(result, places),
         _material_sheet(result),
@@ -661,3 +671,126 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
         _all_rows_sheet(result, places),
     ]
     return _package(sheets, places)
+
+
+def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
+    """The combined sheet contains display units and never merges unlike measures."""
+    from .comparisons import UnavailableComparison, _identity, verify_comparisons
+    verify_comparisons(table)
+    if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
+        result = table.comparisons[0].result
+        sheets = _audience_sheets(result)
+        if table.statistics:
+            sheets.append(_statistics_sheet(table))
+        return _package(sheets, _report_places(result))
+    column_count = 5 * len(table.comparisons) + (2 if table.estimate_vs_consensus else 0)
+    sheet = _Sheet("Comparisons", tuple([34, 16, 24] + [22] * column_count), freeze_header=True, autofilter=True)
+    headers = ["Line Item", "Measure", "Segment"]
+    mapping = []
+    names: dict[tuple[str, str, MeasureKind], tuple[str, MeasureKind, str]] = {}
+    for comparison in table.comparisons:
+        if comparison.result is not None:
+            verify_result(comparison.result)
+        title = extended_heading(comparison.result.config) if comparison.result else comparison_heading(comparison.basis, comparison.label)
+        headers.extend([f"{title}: Comparison", f"{title}: Actual", f"{title}: Variance", f"{title}: Var %", f"{title}: Outcome"])
+        current: dict[tuple[str, str, MeasureKind], AnalyzedRow | UnavailableComparison] = {}
+        for row in comparison.result.rows if comparison.result else ():
+            key = _identity(row)
+            current[key] = row
+            names.setdefault(key, (row.line_item, row.measure, row.segment))
+        for absent in comparison.unavailable:
+            key = (absent.line_item.casefold(), absent.segment.casefold(), absent.measure)
+            current[key] = absent
+            names.setdefault(key, (absent.line_item, absent.measure, absent.segment))
+        mapping.append(current)
+    if table.estimate_vs_consensus:
+        headers.extend(["Estimate - Consensus", "Estimate - Consensus % / bps"])
+    gaps = {(gap.line_item.casefold(), gap.segment.casefold(), gap.measure): gap for gap in table.estimate_vs_consensus}
+    sheet.add(*(_Cell(header, S_HEADER) for header in headers))
+    from .report import _pct
+    for key, (name, kind, segment) in names.items():
+        cells = [_Cell(name, S_TEXT), _Cell(str(kind), S_TEXT), _Cell(segment, S_TEXT)]
+        for comparison, current in zip(table.comparisons, mapping, strict=True):
+            entry = current.get(key)
+            if isinstance(entry, AnalyzedRow):
+                variance = entry.variance_bps if kind is MeasureKind.PERCENT else entry.variance_dollars
+                assert variance is not None
+                cells.extend([_Cell(format_measure(entry.budget, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(variance, kind, table.config.currency, variance=True), S_TEXT_RIGHT),
+                              _Cell(_pct(entry.budget, entry.variance_dollars, entry.percent_label), S_TEXT_RIGHT),
+                              _Cell(display_outcome(entry, comparison.basis), _STATUS_STYLE[entry.status])])
+            elif isinstance(entry, UnavailableComparison):
+                cells.extend([_Cell(entry.reason, S_TEXT), _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell("", S_TEXT), _Cell("", S_TEXT), _Cell("", S_TEXT)])
+            else:
+                cells.extend(_Cell("", S_TEXT) for _ in range(5))
+        if table.estimate_vs_consensus:
+            gap = gaps.get(key)
+            if gap is None:
+                cells.extend([_Cell("", S_TEXT), _Cell("", S_TEXT)])
+            else:
+                cells.extend([_Cell(format_measure(gap.variance, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(gap.variance_bps, kind, variance=True) if gap.variance_bps is not None
+                                    else _pct(gap.consensus, gap.variance, "N/A" if gap.consensus == 0 else None), S_TEXT_RIGHT)])
+        sheet.add(*cells)
+    sheets = [sheet]
+    if effective_layout(table.config) == "earnings":
+        sheets.insert(0, _earnings_sheet(table))
+    if table.statistics:
+        sheets.append(_statistics_sheet(table))
+    return _package(sheets, 2)
+
+
+def _table_for_result(result: AnalysisResult) -> "TableAnalysis":
+    from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
+    return TableAnalysis(audience_config(result.config), (ComparisonAnalysis(result.config.comparison_basis, result),),
+                         metric_order=tuple(_identity(row) for row in result.rows))
+
+
+@financial_context()
+def _audience_sheets(result: AnalysisResult) -> list[_Sheet]:
+    sheet = _Sheet("Measures", (34, 16, 20, 20, 20, 14, 14, 14, 24), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(text, S_HEADER) for text in
+                ("Line Item", "Measure", _heading(result.config), "Actual", "Variance", "Var %", "Status", "Material", "Segment")))
+    for row in result.rows:
+        variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+        assert variance is not None
+        from .report import _pct
+        sheet.add(_Cell(row.line_item, S_TEXT), _Cell(str(row.measure), S_TEXT),
+                  _Cell(format_measure(row.budget, row.measure, result.config.currency), S_TEXT_RIGHT),
+                  _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
+                  _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
+                  _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
+                  _Cell(display_outcome(row, result.config.comparison_basis), _STATUS_STYLE[row.status]),
+                  _Cell("Yes" if row.material else "No", S_TEXT), _Cell(row.segment, S_TEXT))
+    sheets = [sheet]
+    if effective_layout(result.config) == "earnings":
+        sheets.insert(0, _earnings_sheet(_table_for_result(result)))
+    return sheets
+
+
+def _earnings_sheet(table: "TableAnalysis") -> _Sheet:
+    from .earnings import display_rows, headline_keys
+    rows = display_rows(table)
+    headline = headline_keys(table)
+    ordered = [row for row, key in zip(rows, table.metric_order, strict=True) if key in headline]
+    ordered.extend(row for row, key in zip(rows, table.metric_order, strict=True) if key not in headline)
+    columns = list(rows[0]) if rows else ["Line Item"]
+    sheet = _Sheet("Earnings", tuple([26] * len(columns)), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(column, S_HEADER) for column in columns))
+    for row in ordered:
+        sheet.add(*(_Cell(row[column], S_TEXT) for column in columns))
+    return sheet
+
+
+def _statistics_sheet(table: "TableAnalysis") -> _Sheet:
+    from .surprise import statistic_record
+    columns = ("entity", "line_item", "segment", "measure", "prior_count", "standardized_surprise", "dispersion_surprise",
+               "standardized_reason", "dispersion_reason")
+    sheet = _Sheet("Statistics", tuple([24] * len(columns)), freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(column.replace("_", " ").title(), S_HEADER) for column in columns))
+    for statistic in table.statistics:
+        record = statistic_record(statistic)
+        sheet.add(*(_Cell(str(record[column]) if record[column] is not None else "", S_TEXT) for column in columns))
+    return sheet

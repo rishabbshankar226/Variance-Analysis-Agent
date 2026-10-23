@@ -14,15 +14,21 @@ from .models import (
     DriverEvidence,
     DriverReconciliation,
     LineType,
+    MeasureKind,
+    BetterDirection,
     Status,
     SummaryVerification,
 )
 from .classification import explicit_line_type, infer_line_type
-from .comparison import comparison_heading, zero_comparison_label
+from .comparison import comparison_heading, comparison_details, validate_guidance_midpoint, zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
 from .limits import MAX_ROWS, validate_text
+
+from .segments import read_segment
+from .audience import validate_audience_config
+from .measures import absolute_cutoff, currency_row, direction, measure_kind, metric_inferences, parse_measure_amount
 
 CLASSIFICATION_POLICY_ID = "flat-classification-v1"
 DRIVER_POLICY_ID = "quantity-rate-reconcile-residual-v2"
@@ -130,17 +136,26 @@ def _classify(
 
 
 def _percent_variance(
-    budget: Decimal, actual: Decimal, basis: ComparisonBasis
+    budget: Decimal, actual: Decimal, basis: ComparisonBasis, measure: MeasureKind = MeasureKind.CURRENCY
 ) -> tuple[Decimal | None, str | None]:
+    if measure is MeasureKind.PERCENT:
+        return None, "N/A (rate)"
     if budget != 0:
         return ratio(actual - budget, abs(budget)), None
+    if basis is ComparisonBasis.CONSENSUS:
+        return None, zero_comparison_label(basis)
     if actual == 0:
         return Decimal("0"), None
     return None, zero_comparison_label(basis)
 
 
-def _is_material(budget: Decimal, variance: Decimal, config: AnalysisConfig) -> bool:
-    if abs(variance) > config.dollar_threshold:
+def _is_material(
+    budget: Decimal, variance: Decimal, config: AnalysisConfig, measure: MeasureKind = MeasureKind.CURRENCY
+) -> bool:
+    cutoff = absolute_cutoff(config, measure)
+    if measure is MeasureKind.PERCENT:
+        return abs(variance * Decimal("100")) > cutoff
+    if abs(variance) > cutoff:
         return True
     if budget == 0:
         return False
@@ -151,9 +166,12 @@ def _is_material(budget: Decimal, variance: Decimal, config: AnalysisConfig) -> 
             > abs(budget_units) * threshold_units * variance_scale)
 
 
-def _status(line_type: LineType, variance: Decimal) -> Status:
+def _status(line_type: LineType, variance: Decimal, better: BetterDirection | None = None) -> Status:
     if variance == 0:
         return Status.NEUTRAL
+    if better is not None:
+        favorable = variance > 0 if better is BetterDirection.HIGHER else variance < 0
+        return Status.FAVORABLE if favorable else Status.UNFAVORABLE
     if line_type == LineType.EXPENSE:
         return Status.UNFAVORABLE if variance > 0 else Status.FAVORABLE
     if line_type == LineType.REVENUE:
@@ -238,7 +256,14 @@ def _driver_evidence(
     return fallback
 
 
-def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
+def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> list[AnalyzedRow]:
+    if not scoped and any(row.segment_declared for row in rows):
+        groups = {segment: iter(_resolve_summary_rows([row for row in rows if row.segment == segment], scoped=True))
+                  for segment in dict.fromkeys(row.segment for row in rows)}
+        return [next(groups[row.segment]) for row in rows]
+    if any(not currency_row(row) for row in rows):
+        money = iter(_resolve_summary_rows([row for row in rows if currency_row(row)], scoped=True))
+        return [next(money) if currency_row(row) else row for row in rows]
     verifications: dict[LineType, SummaryVerification] = {}
     detail_types = {
         row.line_type
@@ -302,12 +327,12 @@ def _resolve_summary_rows(rows: list[AnalyzedRow]) -> list[AnalyzedRow]:
 
 
 def _aggregate(
-    rows: list[AnalyzedRow], line_type: LineType, basis: ComparisonBasis
+    rows: list[AnalyzedRow], line_type: LineType, basis: ComparisonBasis, *, segment: str = ""
 ) -> Aggregate:
     included = [
         row
         for row in rows
-        if row.line_type == line_type and not row.excluded_from_aggregation
+        if row.line_type == line_type and not row.excluded_from_aggregation and currency_row(row) and row.segment == segment
     ]
     budget = sum((row.budget for row in included), Decimal("0"))
     actual = sum((row.actual for row in included), Decimal("0"))
@@ -342,15 +367,33 @@ def _verify_result(
     config: AnalysisConfig,
 ) -> None:
     for row in rows:
+        if (row.segment, row.segment_declared) != read_segment(row.raw, config):
+            raise _verification_failure(f"segment mismatch for {row.line_item!r}")
         if row.variance_dollars != row.actual - row.budget:
             raise _verification_failure(f"dollar variance mismatch for {row.line_item!r}")
         expected_percent, expected_label = _percent_variance(
-            row.budget, row.actual, config.comparison_basis)
+            row.budget, row.actual, config.comparison_basis, row.measure)
         if (row.variance_percent, row.percent_label) != (expected_percent, expected_label):
             raise _verification_failure(f"percentage mismatch for {row.line_item!r}")
-        if row.status != _status(row.line_type, row.variance_dollars):
+        if not isinstance(row.measure, MeasureKind) or (row.better is not None and not isinstance(row.better, BetterDirection)):
+            raise _verification_failure(f"measure or direction mismatch for {row.line_item!r}")
+        if row.measure_declared or row.better is not None or row.measure is not MeasureKind.CURRENCY:
+            expected_kind = measure_kind(row.raw.get("measure"), row.line_item)
+            expected_better, expected_source = direction(row.raw.get("better"), expected_kind, row.line_type, row.line_item)
+            if (row.measure, row.better, row.direction_source) != (expected_kind, expected_better, expected_source):
+                raise _verification_failure(f"measure/direction metadata mismatch for {row.line_item!r}")
+        bps = row.variance_dollars * Decimal("100") if row.measure is MeasureKind.PERCENT else None
+        try:
+            validate_guidance_midpoint(row.budget, row.comparison_details, row.line_item)
+        except ValueError as exc:
+            raise _verification_failure(str(exc)) from exc
+        if row.comparison_details != comparison_details(row.raw, row.actual, row.measure, config):
+            raise _verification_failure(f"comparison metadata mismatch for {row.line_item!r}")
+        if row.variance_bps != bps:
+            raise _verification_failure(f"basis-point variance mismatch for {row.line_item!r}")
+        if row.status != _status(row.line_type, row.variance_dollars, row.better):
             raise _verification_failure(f"F/U status mismatch for {row.line_item!r}")
-        expected_material = _is_material(row.budget, row.variance_dollars, config)
+        expected_material = _is_material(row.budget, row.variance_dollars, config, row.measure)
         if row.material != expected_material:
             raise _verification_failure(f"materiality mismatch for {row.line_item!r}")
         driver = row.driver_evidence
@@ -378,12 +421,12 @@ def _verify_result(
     revenue_rows = [
         row
         for row in rows
-        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
+        if row.line_type == LineType.REVENUE and not row.excluded_from_aggregation and currency_row(row) and not row.segment
     ]
     expense_rows = [
         row
         for row in rows
-        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation
+        if row.line_type == LineType.EXPENSE and not row.excluded_from_aggregation and currency_row(row) and not row.segment
     ]
 
     checks = (
@@ -403,6 +446,7 @@ def verify_result(result: AnalysisResult) -> None:
     validate_currency(result.config.currency)
     validate_text(result.config.period, field="Period", nonblank=True)
     _validate_comparison(result.config)
+    validate_audience_config(result.config)
     if not result.rows:
         raise _verification_failure("dataset contains no data rows")
     _verify_result(list(result.rows), list(result.material_rows), result.revenue,
@@ -416,6 +460,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     validate_currency(config.currency)
     validate_text(config.period, field="Period", nonblank=True)
     _validate_comparison(config)
+    validate_audience_config(config)
     if not isinstance(rows, list):
         raise ValueError("Rows must be a list of row objects.")
     if not rows:
@@ -486,29 +531,40 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
 
         # Budget runs keep 'Budget'; other runs name the comparison and do not list the
         # internal budget column aliases.
-        budget = parse_decimal(
+        segment, segment_declared = read_segment(row, config)
+        kind = measure_kind(row.get("measure"), line_item)
+        absolute_cutoff(config, kind, line_item)
+        if "measure" in row or "better" in row:
+            if any(isinstance(row.get(k), float) for k in (*_BUDGET_KEYS, *_ACTUAL_KEYS)):
+                raise ValueError(f"{line_item}: declared measure amounts cannot be float; supply exact numeric text.")
+        budget = parse_measure_amount(
             _required_value(
                 row, _BUDGET_KEYS, comparison_field, index,
                 list_accepted_names=config.comparison_basis is ComparisonBasis.BUDGET,
             ),
             field=comparison_field,
             line_item=line_item,
-            currency=config.currency,
+            kind=kind, config=config,
         )
-        actual = parse_decimal(
+        actual = parse_measure_amount(
             _required_value(row, _ACTUAL_KEYS, "Actual", index),
             field="Actual",
             line_item=line_item,
-            currency=config.currency,
+            kind=kind, config=config,
         )
 
         line_type, classification_source = _classify(line_item, row, config)
-        summary_candidate, summary_source = _summary_candidate(line_item, row)
+        better, direction_source = direction(row.get("better"), kind, line_type, line_item)
+        summary_candidate, summary_source = (_summary_candidate(line_item, row)
+                                             if kind is MeasureKind.CURRENCY else (False, "noncurrency"))
         variance = actual - budget
-        pct, pct_label = _percent_variance(budget, actual, config.comparison_basis)
-        material = _is_material(budget, variance, config)
-        driver = _driver_evidence(row, budget, actual, line_item, config.currency)
+        pct, pct_label = _percent_variance(budget, actual, config.comparison_basis, kind)
+        material = _is_material(budget, variance, config, kind)
+        driver = (_driver_evidence(row, budget, actual, line_item, config.currency)
+                  if kind is MeasureKind.CURRENCY else None)
 
+        details = comparison_details(row, actual, kind, config)
+        validate_guidance_midpoint(budget, details, line_item)
         analyzed.append(
             AnalyzedRow(
                 line_item=line_item,
@@ -518,29 +574,36 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 variance_dollars=variance,
                 variance_percent=pct,
                 percent_label=pct_label,
-                status=_status(line_type, variance),
+                status=_status(line_type, variance, better),
                 material=material,
                 excluded_from_aggregation=summary_candidate,
                 driver_evidence=driver,
                 raw=row,
+                measure=kind, better=better, direction_source=direction_source,
+                measure_declared="measure" in row,
+                comparison_details=details,
+                segment=segment, segment_declared=segment_declared,
+                variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
                 classification_source=classification_source,
                 summary_source=summary_source,
-                materiality_reason=("absolute_amount" if abs(variance) > config.dollar_threshold
+                materiality_reason=("basis_points" if kind is MeasureKind.PERCENT and material
+                                    else "absolute_amount" if abs(variance) > absolute_cutoff(config, kind)
                                     else "absolute_percent" if material
                                     else "below_or_equal_thresholds"),
             )
         )
 
     analyzed = _resolve_summary_rows(analyzed)
+    warnings.extend(metric_inferences(tuple(analyzed), config))
 
-    normalized_names: dict[str, int] = {}
+    normalized_names: dict[tuple[str, str], int] = {}
     for analyzed_row in analyzed:
-        key = analyzed_row.line_item.strip().casefold()
+        key = (analyzed_row.line_item.strip().casefold(), analyzed_row.segment.casefold())
         normalized_names[key] = normalized_names.get(key, 0) + 1
     duplicates = sorted(
         row.line_item
         for row in analyzed
-        if normalized_names[row.line_item.strip().casefold()] > 1
+        if normalized_names[(row.line_item.strip().casefold(), row.segment.casefold())] > 1
     )
     duplicate_unique = list(dict.fromkeys(duplicates))
     if duplicate_unique:
@@ -551,7 +614,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         )
 
     unclassified = [
-        row.line_item for row in analyzed if row.line_type == LineType.UNCLASSIFIED
+        row.line_item for row in analyzed if row.line_type == LineType.UNCLASSIFIED and currency_row(row)
     ]
     if unclassified:
         sample = ", ".join(unclassified[:5])

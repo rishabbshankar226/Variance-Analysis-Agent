@@ -350,13 +350,40 @@ def build_fixture_s() -> None:
     ])
 
 
+
+def build_fixture_t() -> None:
+    """Fictional HALV.FAKE: dollars in millions, EPS per share, counts in units."""
+    page = Page()
+    page.center(306, 40, FICTIONAL, size=7)
+    page.center(306, 60, "HALVORSEN INSTRUMENTS, INC. - HALV.FAKE", size=10)
+    page.center(306, 74, "CONSOLIDATED STATEMENTS OF OPERATIONS", size=10)
+    page.center(306, 88, "(Dollars in millions, except per-share data; share counts in units)", size=8)
+    for x, year in zip([440, 540], ["2026", "2025"], strict=True):
+        page.right(x, 112, year)
+    _statement(page, 130, [440, 540], [
+        ("Revenue", ("1,287.5", "1,250.0"), 0),
+        ("Operating expenses", ("383.0", "380.0"), 0),
+        ("Operating income", ("904.5", "870.0"), 0),
+        ("Earnings per share:", None, 0),
+        ("Basic", ("0.95", "0.88"), 10),
+        ("Diluted", ("0.91", "0.84"), 10),
+        ("Weighted average common shares outstanding:", None, 0),
+        ("Basic", ("50,000,000", "49,000,000"), 10),
+        ("Diluted", ("52,000,000", "51,000,000"), 10),
+    ])
+    page.text(72, 270, "See accompanying notes to consolidated financial statements.", size=7)
+    page.right(574, 750, "1")
+    write_pdf(FIXTURES_DIR / "fixture_t_halvorsen_fake_eps.pdf", [page])
+
+
 def main() -> None:
     build_fixture_o()
     build_fixture_p()
     build_fixture_q()
     build_fixture_r()
     build_fixture_s()
-    print("Built fictional PDF fixtures o, p, q, r and s in tests/fixtures/realworld/")
+    build_fixture_t()
+    print("Built fictional PDF fixtures o, p, q, r, s and t in tests/fixtures/realworld/")
 
 
 if __name__ == "__main__":

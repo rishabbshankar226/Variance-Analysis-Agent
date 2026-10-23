@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status
+from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status, MeasureKind
+from .audience import is_audience_result, audience_config, effective_layout
+from .measures import currency_row, format_measure
 from .numeric import financial_context
 from .currencies import CURRENCY_SYMBOLS
 from .analysis import verify_result
 from .limits import display_text
-from .comparison import basis_noun, comparison_heading
+from .comparison import basis_noun, comparison_heading, display_outcome, extended_heading
 from .models import ComparisonBasis
 
 
@@ -266,6 +268,14 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
+    if effective_layout(result.config) == "earnings":
+        from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
+        from .earnings import render_earnings
+        table = TableAnalysis(audience_config(result.config), (ComparisonAnalysis(result.config.comparison_basis, result),),
+                              metric_order=tuple(_identity(row) for row in result.rows))
+        return render_earnings(table)
+    if is_audience_result(result):
+        return render_measure_report(result)
     cfg = result.config
     places = _report_places(result)
     heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
@@ -375,3 +385,63 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+@financial_context()
+def render_measure_report(result: AnalysisResult, *, segment_view: bool = False) -> str:
+    """Describe declared metrics without adding incompatible units."""
+    cfg = result.config
+    if not segment_view and any(row.segment_declared for row in result.rows):
+        from dataclasses import replace
+        from .analysis import _aggregate
+        lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "",
+                 "Totals are scoped to each supplied segment; no consolidated total is synthesized.", ""]
+        for segment in dict.fromkeys(row.segment for row in result.rows):
+            rows = tuple(row for row in result.rows if row.segment == segment)
+            view = replace(result, rows=rows, material_rows=tuple(row for row in result.material_rows if row.segment == segment),
+                           revenue=_aggregate(list(rows), LineType.REVENUE, cfg.comparison_basis, segment=segment),
+                           expenses=_aggregate(list(rows), LineType.EXPENSE, cfg.comparison_basis, segment=segment))
+            lines.extend(["## Segment: " + (_safe_inline(segment) if segment else "Unsegmented"), "",
+                          "\n".join(render_measure_report(view, segment_view=True).splitlines()[4:])])
+        return "\n".join(lines)
+    heading = _safe_inline(extended_heading(cfg))
+    lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", ""]
+    money = tuple(row for row in result.rows if currency_row(row))
+    complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
+                and any(row.line_type is LineType.REVENUE for row in money)
+                and any(row.line_type is LineType.EXPENSE for row in money))
+    lines.extend(["## Currency totals", ""])
+    if complete:
+        lines.extend([_aggregate_line("Total Revenue", result.revenue, cfg.currency),
+                      _aggregate_line("Total Expenses", result.expenses, cfg.currency),
+                      "- Net operating variance: " + _money(result.revenue.variance_dollars -
+                                                             result.expenses.variance_dollars, cfg.currency)])
+    else:
+        lines.append("Currency totals are incomplete; net operating impact is unavailable.")
+    for label, rows in (("Currency variances", money),
+                        ("Other measures", tuple(row for row in result.rows if not currency_row(row)))):
+        if not rows:
+            continue
+        lines.extend(["", "## " + label, "", f"| Line Item | Measure | {heading} | Actual | Variance | Var (%) | Status | Material |",
+                      "|---|---|---:|---:|---:|---:|---|---|"])
+        row_notes = []
+        for row in rows:
+            variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+            assert variance is not None
+            cells = [_safe_inline(row.line_item), str(row.measure), format_measure(row.budget, row.measure, cfg.currency),
+                     format_measure(row.actual, row.measure, cfg.currency),
+                     format_measure(variance, row.measure, cfg.currency, variance=True),
+                     _pct(row.budget, row.variance_dollars, row.percent_label),
+                     display_outcome(row, cfg.comparison_basis), "Yes" if row.material else "No"]
+            lines.append("| " + " | ".join(cells) + " |")
+            if row.comparison_details is not None:
+                detail = row.comparison_details
+                if detail.guidance_position:
+                    row_notes.append(f"- {_safe_inline(row.line_item)}: {detail.guidance_position}.")
+                if detail.consensus_range_position:
+                    row_notes.append(f"- {_safe_inline(row.line_item)}: {detail.consensus_range_position}.")
+        if row_notes:
+            lines.extend(["", *row_notes])
+    if result.warnings:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    return "\n".join([*lines, ""])

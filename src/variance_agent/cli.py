@@ -5,14 +5,17 @@ import csv
 import os
 import sys
 import unicodedata
+from dataclasses import replace
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
+from .audience import AudienceConfig, NEW_BASES, is_audience_result
+from .measures import metric_inferences
 from .analysis import analyze_rows
 from .classification import explicit_line_type
-from .audit import (CURRENT_SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS,
+from .audit import (SUPPORTED_SCHEMA_VERSIONS,
                     build_audit_record, sha256_bytes, serialize_audit_json)
 from .currencies import CURRENCY_SYMBOLS
 from .models import AnalysisConfig, ComparisonBasis, LineType
@@ -24,7 +27,7 @@ from .comparison import (
     parse_period_label,
     select_strict_comparison,
 )
-from .parsing import load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
+from .parsing import normalize_key, normalize_row, load_input, load_json_value, parse_decimal, read_input_bytes, validate_input_format
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
@@ -88,6 +91,21 @@ class Arguments(Protocol):
     assisted: bool
     mapping: str | None
     compare_to: str | None
+    preset: str
+    layout: str | None
+    per_share_lines: bool | None
+    headline: list[str] | None
+    per_share_threshold: Decimal | None
+    count_threshold: Decimal | None
+    bps_threshold: Decimal | None
+    percent_values: str | None
+    group_by: str | None
+    long_output: str | None
+    long_output_jsonl: str | None
+    errors_output: str | None
+    history: str | None
+    surprise_window: int
+    entity: str | None
 
 
 def _decimal(text: str) -> Decimal:
@@ -128,9 +146,17 @@ def _parse_type_map(data: bytes) -> dict[str, LineType]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="variance-agent",
-        description="Generate an auditable FP&A variance report from CSV, JSON, or Excel data.",
+        description="Compare supplied actuals with budgets, consensus, estimates, guidance or prior periods "
+                    "in auditable reports and panels.",
     )
     parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    parser.add_argument("--history", help="CSV/JSON supplied surprise history, keyed by entity, metric and period.")
+    parser.add_argument("--surprise-window", type=_surprise_window, default=8, help="Most recent prior surprises (default 8, minimum 4).")
+    parser.add_argument("--entity", help="Entity identity for a single history comparison; otherwise read Ticker/Entity.")
+    parser.add_argument("--group-by", help="Panel keys, for example Ticker,Period. Mixed success exits 3; global errors exit 2.")
+    parser.add_argument("--long-output", help="Write deterministic exact-number CSV.")
+    parser.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
+    parser.add_argument("--errors-output", help="Write one CSV error row per failed panel group (required with --group-by).")
     parser.add_argument("--period", help="Reporting period shown in the report.")
     parser.add_argument(
         "--dollar-threshold",
@@ -149,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
     parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
-                        default=CURRENT_SCHEMA_VERSION, help="Audit JSON format version.")
+                        default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
     parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
     parser.add_argument("--xlsx", help="Write a formatted Excel workbook to this path.")
     parser.add_argument(
@@ -188,9 +214,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--compare-to",
-        choices=("budget", "forecast", "prior-period"),
-        help="Comparison basis (default: detect from headers or budget).",
+        type=_comparison_argument,
+        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
     )
+    parser.add_argument("--layout", choices=("standard", "earnings"), help="Override the preset report layout.")
+    sharing = parser.add_mutually_exclusive_group()
+    sharing.add_argument("--per-share-lines", dest="per_share_lines", action="store_true", default=None,
+                         help="Keep EPS/share counts in assisted filing intake (earnings preset default).")
+    sharing.add_argument("--no-per-share-lines", dest="per_share_lines", action="store_false", help="Omit filing EPS/share counts.")
+    parser.add_argument("--headline", action="append", help="Headline line-item name; repeat to replace earnings defaults.")
+    parser.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
+                        help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
+                             "quant: new headers, long output required, no Markdown stdout, per-share off. No thresholds supplied.")
+    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
+        parser.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
+    parser.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
     return parser
 
 
@@ -213,7 +251,12 @@ def _validate_output_paths(args: Arguments) -> None:
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         inputs.append(Path(mapping_arg))
-    outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx) if value]
+    history_arg = getattr(args, "history", None)
+    if isinstance(history_arg, str) and history_arg:
+        inputs.append(Path(history_arg))
+    outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx,
+               getattr(args, "long_output", None), getattr(args, "long_output_jsonl", None),
+               getattr(args, "errors_output", None)) if value]
     for index, output in enumerate(outputs):
         if any(_same_path(output, other) for other in inputs + outputs[:index]):
             raise ValueError(
@@ -244,6 +287,14 @@ def _run(args: Arguments) -> int:
                                open_browser=not args.no_browser)
 
     assert args.input is not None
+    if args.preset == "quant" and not (args.long_output or args.long_output_jsonl):
+        raise ValueError("--preset quant requires --long-output or --long-output-jsonl.")
+    if args.group_by:
+        from .panel_cli import run_panel
+        _validate_output_paths(args)
+        return run_panel(args)
+    if args.errors_output:
+        raise ValueError("--errors-output requires --group-by.")
     assert args.period is not None
     assert args.dollar_threshold is not None
     assert args.percent_threshold is not None
@@ -263,12 +314,25 @@ def _run(args: Arguments) -> int:
     mapping_obj = None
     intake_res = None
 
-    compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
+    requested = tuple(parse_compare_to(value) for value in args.compare_to.split(",")) if args.compare_to else ()
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        from .mapping import load_mapping
+        mapping_obj = load_mapping(read_input_bytes(mapping_arg))
+    if not requested and mapping_obj is not None and mapping_obj.comparison_bases:
+        requested = mapping_obj.comparison_bases
+    if not requested and mapping_obj is not None and mapping_obj.comparison_basis is not None:
+        requested = (mapping_obj.comparison_basis,)
+    mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
+    if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
+            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
+            or args.layout is not None or args.headline or args.per_share_lines is True):
+        return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
+    compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
-        from .mapping import load_mapping
         from .intake import (
             GLRangeRule,
             apply_classification_rules,
@@ -277,8 +341,7 @@ def _run(args: Arguments) -> int:
             read_input_assisted,
             scale_rows_by_unit,
         )
-        mapping_path = Path(mapping_arg)
-        mapping_obj = load_mapping(read_input_bytes(mapping_path))
+        assert mapping_obj is not None
 
         intake_res = read_input_assisted(
             source_bytes,
@@ -384,6 +447,28 @@ def _run(args: Arguments) -> int:
             comparison_basis = compare_to_basis
 
     type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
+    audience_args = {
+        "per_share_threshold": getattr(args, "per_share_threshold", None),
+        "count_threshold": getattr(args, "count_threshold", None),
+        "bps_threshold": getattr(args, "bps_threshold", None),
+        "percent_values": getattr(args, "percent_values", None),
+    }
+    if mapping_obj is not None:
+        for key, value in (mapping_obj.measure_options or {}).items():
+            if audience_args.get(key) is None:
+                try:
+                    audience_args[key] = value if key == "percent_values" else _decimal(value)
+                except argparse.ArgumentTypeError as exc:
+                    raise ValueError(f"Mapping file: {key} must be a non-negative numeric threshold.") from exc
+        if mapping_obj.better_directions:
+            selected_rows = []
+            for row in parsed_rows:
+                canonical = normalize_row(row)
+                label = str(canonical.get("line_item", ""))
+                if label in mapping_obj.better_directions:
+                    canonical["better"] = mapping_obj.better_directions[label]
+                selected_rows.append(canonical)
+            parsed_rows = selected_rows
     config = AnalysisConfig(
         period=args.period,
         dollar_threshold=args.dollar_threshold,
@@ -393,6 +478,15 @@ def _run(args: Arguments) -> int:
         comparison_basis=comparison_basis,
         comparison_label=comparison_label,
     )
+    if any(value is not None for value in audience_args.values()):
+        config = AudienceConfig(
+            config.period, config.dollar_threshold, config.percent_threshold, type_map=config.type_map,
+            currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
+            per_share_threshold=cast(Decimal | None, audience_args["per_share_threshold"]),
+            count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
+            bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
+            percent_values=cast(str | None, audience_args["percent_values"]),
+        )
     try:
         result = analyze_rows(parsed_rows, config)
     except ValueError as exc:
@@ -404,6 +498,9 @@ def _run(args: Arguments) -> int:
             if year_hint is not None:
                 raise ValueError(f"{exc} {year_hint}") from exc
         raise
+    if is_audience_result(result):
+        for note in metric_inferences(result.rows, result.config):
+            print("[measure intake] " + display_text(note), file=sys.stderr)
     if args.check_only:
         unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
         print(f"Validation passed: {_count(len(result.rows), 'row')}, "
@@ -443,6 +540,8 @@ def _run(args: Arguments) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = cast(Arguments, parser.parse_args(argv))
+    if args.chat and (args.group_by or args.long_output or args.long_output_jsonl or args.errors_output or args.history or args.entity):
+        parser.error("panel/long-output flags cannot be combined with --chat.")
     if args.hosted and not args.chat:
         parser.error("--hosted requires --chat.")
     if args.no_browser and not args.chat:
@@ -451,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
         missing: list[str] = []
         if not args.input:
             missing.append("input")
-        if not args.period:
+        if not args.period and not args.group_by:
             missing.append("--period")
         if args.dollar_threshold is None:
             missing.append("--dollar-threshold")
@@ -464,6 +563,140 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
         # A problem with the data, not with the command line: one clear line, no usage banner.
         parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
+
+
+
+
+def _comparison_argument(value: str) -> str:
+    tokens = [token.strip().lower() for token in value.split(",")]
+    try:
+        bases = [parse_compare_to(token) for token in tokens]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if len(set(bases)) != len(bases):
+        raise argparse.ArgumentTypeError("Choose each comparison basis only once.")
+    return ",".join(tokens)
+
+
+def _run_comparisons(
+    args: Arguments, source_bytes: bytes, type_map_bytes: bytes | None, requested: tuple[ComparisonBasis, ...],
+    mapping: object,
+) -> int:
+    from .comparisons import (analyze_comparisons, build_comparison_audit, read_comparison_input,
+                              render_comparisons, detect_comparison_bases)
+    from .mapping import LayoutMapping
+    from .xlsx import render_comparison_xlsx
+    assert args.input is not None and args.period is not None
+    assert args.dollar_threshold is not None and args.percent_threshold is not None
+    layout = mapping if isinstance(mapping, LayoutMapping) else None
+    if args.commentary:
+        raise ValueError("Executive commentary is not available for a multi-measure comparison review.")
+    path = Path(args.input)
+    columns = dict(layout.column_mapping) if layout is not None else {}
+    if "budget" in columns and len(requested) == 1:
+        columns[str(requested[0])] = columns.pop("budget")
+    metadata: dict[str, object] = {}
+    rows, headers, worksheet, notes = read_comparison_input(
+        source_bytes, path.suffix, filename=path.name, sheet=args.sheet, assisted=args.assisted or layout is not None,
+        column_mapping=columns or None,
+        per_share_lines=args.per_share_lines if args.per_share_lines is not None else args.preset == "earnings",
+        metadata=metadata,
+    )
+    bases = requested
+    extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
+    if not bases and not extended:
+        bases = (ComparisonBasis(str(metadata["comparison_basis"])),) if "comparison_basis" in metadata else (ComparisonBasis.BUDGET,)
+    if not bases:
+        bases = detect_comparison_bases(headers)
+        if len(bases) > 1:
+            raise ValueError("Multiple comparison bases found; choose --compare-to with one basis or an explicit comma list.")
+        if not bases:
+            bases = (ComparisonBasis.PRIOR_PERIOD,)
+    def option(name: str) -> Decimal | None:
+        supplied = getattr(args, name, None)
+        if isinstance(supplied, Decimal):
+            return supplied
+        if layout is not None and name in (layout.measure_options or {}):
+            return parse_decimal((layout.measure_options or {})[name], field=name, line_item="Mapping file")
+        return None
+    percent_values = getattr(args, "percent_values", None)
+    if percent_values is None and layout is not None:
+        percent_values = (layout.measure_options or {}).get("percent_values")
+    if layout is not None and layout.better_directions:
+        for row in rows:
+            canonical = normalize_row(row)
+            name = str(canonical.get("line_item", ""))
+            if name in layout.better_directions:
+                for key in [key for key in row if normalize_key(key) == "better"]:
+                    row.pop(key)
+                row["Better"] = layout.better_directions[name]
+    config = AudienceConfig(args.period, args.dollar_threshold, args.percent_threshold / Decimal("100"),
+                            currency=args.currency, type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
+                            per_share_threshold=option("per_share_threshold"), count_threshold=option("count_threshold"),
+                            bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True,
+                            preset=args.preset, layout=args.layout, per_share_lines=args.per_share_lines,
+                            headline_items=tuple(args.headline or ()))
+    if isinstance(metadata.get("comparison_label"), str):
+        config = replace(config, comparison_label=str(metadata["comparison_label"]))
+    if isinstance(metadata.get("actual_label"), str):
+        config = replace(config, actual_label=str(metadata["actual_label"]))
+    table = analyze_comparisons(rows, config, bases, raw_headers=headers, extended_headers=extended)
+    transformations = metadata.get("transformations", {})
+    assert isinstance(transformations, dict)
+    if layout is not None:
+        from .mapping import mapping_sha256
+        transformations["mapping_file_sha256"] = mapping_sha256(layout)
+        if columns:
+            transformations["column_mapping"] = columns
+    document = metadata.get("document")
+    table = replace(table, source_document=document if isinstance(document, dict) else None,
+                    source_transformations=transformations or None, inferences=(*table.inferences, *notes))
+    if args.history or table.statistic_context is not None or args.entity or args.surprise_window != 8:
+        from .surprise import load_history, SurpriseOptions, attach_statistics, infer_entity
+        table = attach_statistics(table, SurpriseOptions(history=load_history(args.history) if args.history else None,
+                                                         window=args.surprise_window,
+                                                         entity=args.entity or infer_entity(rows)))
+    for note in table.inferences:
+        print("[comparison intake] " + display_text(note), file=sys.stderr)
+    for comparison in table.comparisons:
+        if comparison.result is not None:
+            for note in metric_inferences(comparison.result.rows, comparison.result.config):
+                print("[measure intake] " + display_text(note), file=sys.stderr)
+    if args.check_only:
+        print(f"Validation passed: {len(rows)} rows, {len(bases)} comparison(s).")
+        return 0
+    report = render_comparisons(table) if args.output or args.preset != "quant" else ""
+    outputs: dict[Path, str | bytes] = {}
+    if args.output:
+        outputs[Path(args.output)] = report
+    if args.xlsx:
+        outputs[Path(args.xlsx)] = render_comparison_xlsx(table)
+    if args.audit_json:
+        record = build_comparison_audit(table, source_name=path.name, source_sha256=sha256_bytes(source_bytes),
+                                        schema_version=args.audit_schema_version, source_worksheet=worksheet)
+        outputs[Path(args.audit_json)] = serialize_audit_json(record)
+    if args.long_output or args.long_output_jsonl:
+        from .panel import BatchResult, GroupResult
+        from .long_output import long_csv, long_jsonl
+        batch = BatchResult((), (GroupResult((), table),), sha256_bytes(source_bytes), path.name)
+        if args.long_output:
+            outputs[Path(args.long_output)] = long_csv(batch)
+        if args.long_output_jsonl:
+            outputs[Path(args.long_output_jsonl)] = long_jsonl(batch)
+    write_text_outputs(outputs)
+    if not args.output and args.preset != "quant":
+        print(report)
+    return 0
+
+
+def _surprise_window(value: str) -> int:
+    try:
+        window = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Surprise window must be an integer, minimum of 4.") from exc
+    if window < 4:
+        raise argparse.ArgumentTypeError(f"A surprise window of {window} is below the minimum of 4.")
+    return window
 
 
 if __name__ == "__main__":
