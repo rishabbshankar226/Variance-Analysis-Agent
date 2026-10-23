@@ -130,3 +130,20 @@ ASCII minus/no-leading-plus conventions. Amount arithmetic remains exact in the
 financial context. Money scaling and subtotal inference never apply to a declared
 rate, per-share value, or count. A standalone count is in its supplied units;
 there is no inference that a caption about money also scales counts.
+
+## Supplied earnings bases (unreleased)
+
+Consensus, Estimate, and Guidance reuse single-basis variance and materiality.
+Consensus displays Beat for a material favorable row, Miss for material
+unfavorable, and In line for a scored nonmaterial/neutral row. Unscored rows get
+none of those three outcomes. Status itself remains F/U/Neutral/Unclassified.
+Blank consensus has no status; supplied zero consensus remains real, its ratio
+is null, and only the absolute materiality test applies. Estimate, Guidance, and
+Prior Period never acquire consensus outcome vocabulary.
+
+Guidance midpoint is `(low + high) / 2` in the financial context, verified at the
+engine and output boundaries. Low > High is an error. Actual equal to either
+end is Within range; strict crossings are Below range or Above range.
+Estimate against Consensus describes the difference between two supplied
+numbers, divided by absolute nonzero Consensus, or multiplied by 100 for a
+rate difference in bps. It does not generate an estimate or investment advice.

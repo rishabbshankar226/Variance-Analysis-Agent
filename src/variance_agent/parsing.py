@@ -34,6 +34,7 @@ class ParsedInput:
     rows: list[dict[str, object]]
     worksheet: str | None = None
     sheetnames: tuple[str, ...] = ()
+    raw_headers: tuple[str, ...] = ()
 
 
 def is_missing(value: object) -> bool:
@@ -300,9 +301,16 @@ def load_input(
     if sheet is not None and not isinstance(sheet, str):
         raise ValueError("Worksheet name must be text.")
     if suffix == ".csv":
-        return ParsedInput(load_csv_text(data.decode("utf-8-sig")))
+        text = data.decode("utf-8-sig")
+        raw = next(csv.reader(io.StringIO(text)), [])
+        return ParsedInput(load_csv_text(text), raw_headers=tuple(raw))
     if suffix == ".json":
-        return ParsedInput(load_json_text(data.decode("utf-8")))
+        text = data.decode("utf-8")
+        payload = load_json_value(text)
+        table = payload.get("rows", payload.get("data")) if isinstance(payload, dict) else payload
+        json_headers = (tuple(dict.fromkeys(k for row in table if isinstance(row, dict) for k in row if isinstance(k, str)))
+                        if isinstance(table, list) else ())
+        return ParsedInput(load_json_text(text), raw_headers=json_headers)
     if suffix in {".xlsx", ".xlsm"}:
         stored_numbers = inspect_archive(data)
         load_workbook = _excel_loader()
@@ -343,7 +351,7 @@ def load_input(
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded, strict=False) if h})
-                return ParsedInput(output, ws.title, tuple(wb.sheetnames))
+                return ParsedInput(output, ws.title, tuple(wb.sheetnames), tuple(str(h) if h is not None else "" for h in raw_headers))
             except (BadZipFile, KeyError, SyntaxError) as exc:
                 raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc
             finally:

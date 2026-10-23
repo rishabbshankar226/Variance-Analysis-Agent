@@ -34,6 +34,9 @@ class ComparisonBasis(StrEnum):
     BUDGET = "budget"
     FORECAST = "forecast"
     PRIOR_PERIOD = "prior_period"
+    CONSENSUS = "consensus"
+    ESTIMATE = "estimate"
+    GUIDANCE = "guidance"
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,19 @@ class SummaryVerification:
 
 
 @dataclass(frozen=True)
+class ComparisonDetails:
+    consensus_low: Decimal | None = None
+    consensus_high: Decimal | None = None
+    estimator_count: int | None = None
+    dispersion: Decimal | None = None
+    consensus_range_position: str | None = None
+    guidance_low: Decimal | None = None
+    guidance_high: Decimal | None = None
+    guidance_position: str | None = None
+    guidance_midpoint: Decimal | None = None
+
+
+@dataclass(frozen=True)
 class AnalyzedRow:
     line_item: str
     line_type: LineType
@@ -99,6 +115,7 @@ class AnalyzedRow:
     direction_source: str = "type"
     variance_bps: Decimal | None = None
     measure_declared: bool = False
+    comparison_details: ComparisonDetails | None = None
 
 
 @dataclass(frozen=True)

@@ -39,3 +39,30 @@ def test_followup_material_table_retains_rate_units():
     reply = handle_message(session, "material")
     assert reply.table is not None
     assert "-60 bps" in list(reply.table[0].values())
+
+
+def test_earnings_review_offers_all_comparisons_without_changing_budget_uploads():
+    data = b"Line Item,Type,Consensus,Model,Actual\nRevenue,Revenue,100,105,110\n"
+    session = Session()
+    response = handle_upload(session, data, "fictional.csv")
+    assert "earnings review" in response.text.lower()
+    assert session.result is None
+    response = handle_message(session, "Review earnings")
+    assert "Compare against all of them" in response.chips
+    response = handle_message(session, "Compare against all of them")
+    assert "Here's how I read your file" in response.text
+    for text in ("Looks right", "3Q26", "$10 or 2%", "USD"):
+        response = handle_message(session, text)
+    assert session.phase is Phase.EXPLORING
+    assert "Consensus" in response.text and "Estimate" in response.text
+    audit = handle_message(session, "export audit")
+    import json
+    record = json.loads(next(iter(audit.download.values())))
+    assert len(record["comparisons"]) == 2
+    session.path_exports_enabled = False
+    refused = handle_message(session, "export audit to /tmp/should-not-write.json")
+    assert "turned off" in refused.text
+    budget = Session()
+    response = handle_upload(budget, b"Line Item,Type,Budget,Consensus,Model,Actual\nRevenue,Revenue,90,100,105,110\n", "budget.csv")
+    assert "earnings review" not in response.text.lower()
+    assert budget.phase is Phase.AWAITING_PERIOD

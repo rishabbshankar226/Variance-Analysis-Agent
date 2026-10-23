@@ -9,7 +9,7 @@ from .numeric import financial_context
 from .currencies import CURRENCY_SYMBOLS
 from .analysis import verify_result
 from .limits import display_text
-from .comparison import basis_noun, comparison_heading
+from .comparison import basis_noun, comparison_heading, display_outcome, extended_heading
 from .models import ComparisonBasis
 
 
@@ -385,7 +385,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
 def render_measure_report(result: AnalysisResult) -> str:
     """Describe declared metrics without adding incompatible units."""
     cfg = result.config
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(extended_heading(cfg))
     lines = [f"# Variance Report: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", ""]
     money = tuple(row for row in result.rows if currency_row(row))
     complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
@@ -405,14 +405,24 @@ def render_measure_report(result: AnalysisResult) -> str:
             continue
         lines.extend(["", "## " + label, "", f"| Line Item | Measure | {heading} | Actual | Variance | Var (%) | Status | Material |",
                       "|---|---|---:|---:|---:|---:|---|---|"])
+        row_notes = []
         for row in rows:
             variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
             assert variance is not None
             cells = [_safe_inline(row.line_item), str(row.measure), format_measure(row.budget, row.measure, cfg.currency),
                      format_measure(row.actual, row.measure, cfg.currency),
                      format_measure(variance, row.measure, cfg.currency, variance=True),
-                     _pct(row.budget, row.variance_dollars, row.percent_label), str(row.status), "Yes" if row.material else "No"]
+                     _pct(row.budget, row.variance_dollars, row.percent_label),
+                     display_outcome(row, cfg.comparison_basis), "Yes" if row.material else "No"]
             lines.append("| " + " | ".join(cells) + " |")
+            if row.comparison_details is not None:
+                detail = row.comparison_details
+                if detail.guidance_position:
+                    row_notes.append(f"- {_safe_inline(row.line_item)}: {detail.guidance_position}.")
+                if detail.consensus_range_position:
+                    row_notes.append(f"- {_safe_inline(row.line_item)}: {detail.consensus_range_position}.")
+        if row_notes:
+            lines.extend(["", *row_notes])
     if result.warnings:
         lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
     return "\n".join([*lines, ""])

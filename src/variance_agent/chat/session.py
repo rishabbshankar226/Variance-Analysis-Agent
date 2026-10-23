@@ -16,12 +16,15 @@ if TYPE_CHECKING:
     from variance_agent.intake import GLRangeRule, IntakeResult, PeriodColumnPair
     from variance_agent.mapping import LayoutMapping
     from variance_agent.models import AnalysisResult, ComparisonBasis, LineType
+    from variance_agent.comparisons import TableAnalysis
 
 
 class Phase(StrEnum):
     """Conversation phases in the guided intake flow."""
 
     AWAITING_FILE = "awaiting_file"
+    AWAITING_EARNINGS_REVIEW = "awaiting_earnings_review"
+    AWAITING_COMPARISON_CHOICE = "awaiting_comparison_choice"
     AWAITING_BLANK_BUDGET_CONFIRMATION = "awaiting_blank_budget_confirmation"
     AWAITING_PERIOD_CHOICE = "awaiting_period_choice"
     AWAITING_INTAKE_CONFIRMATION = "awaiting_intake_confirmation"
@@ -63,6 +66,12 @@ class Session:
     bps_threshold: Decimal | None = None
     percent_values: str | None = None
     measure_pending: tuple[str, int] | None = None
+    earnings_mode: bool = False
+    earnings_headers: tuple[str, ...] = ()
+    earnings_choices: tuple[ComparisonBasis, ...] = ()
+    earnings_notes: tuple[str, ...] = ()
+    comparison_bases: tuple[ComparisonBasis, ...] = ()
+    table_analysis: TableAnalysis | None = None
 
     # Unclassified items pending resolution, and items the user chose to leave unclassified
     unclassified_queue: list[str] = field(default_factory=list)
@@ -108,6 +117,12 @@ class Session:
         self.bps_threshold = None
         self.percent_values = None
         self.measure_pending = None
+        self.earnings_mode = False
+        self.earnings_headers = ()
+        self.earnings_choices = ()
+        self.earnings_notes = ()
+        self.comparison_bases = ()
+        self.table_analysis = None
         self.unclassified_queue = []
         self.pending_gl_rules = []
         self.skipped_items = set()

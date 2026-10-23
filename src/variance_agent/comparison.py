@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import re
 
-from variance_agent.models import ComparisonBasis
+from decimal import Decimal
+from variance_agent.models import AnalysisConfig, AnalyzedRow, ComparisonBasis, ComparisonDetails, LineType, MeasureKind, Status
+from variance_agent.numeric import financial_context
 
 BUDGET_SYNONYMS: frozenset[str] = frozenset({
     "budget", "budget_amount", "plan", "planned",
@@ -21,30 +23,49 @@ _SYNONYMS: dict[ComparisonBasis, frozenset[str]] = {
     ComparisonBasis.FORECAST: FORECAST_SYNONYMS,
     ComparisonBasis.PRIOR_PERIOD: PRIOR_PERIOD_SYNONYMS,
 }
+_EXTENDED_SYNONYMS: dict[ComparisonBasis, frozenset[str]] = {
+    ComparisonBasis.CONSENSUS: frozenset({"consensus", "cons", "street", "consensus_mean", "mean_estimate"}),
+    ComparisonBasis.ESTIMATE: frozenset({"our_est", "house", "model", "internal_estimate"}),
+    ComparisonBasis.GUIDANCE: frozenset({"guidance", "guide"}),
+}
+
 _NOUNS: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "budget",
     ComparisonBasis.FORECAST: "forecast",
     ComparisonBasis.PRIOR_PERIOD: "prior period",
+    ComparisonBasis.CONSENSUS: "consensus",
+    ComparisonBasis.ESTIMATE: "estimate",
+    ComparisonBasis.GUIDANCE: "guidance",
 }
 _ZERO_LABELS: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "N/A (Unbudgeted)",
     ComparisonBasis.FORECAST: "N/A (Not in forecast)",
     ComparisonBasis.PRIOR_PERIOD: "N/A (New this period)",
+    ComparisonBasis.CONSENSUS: "N/A (No consensus)",
+    ComparisonBasis.ESTIMATE: "N/A (No estimate)",
+    ComparisonBasis.GUIDANCE: "N/A (No guidance)",
 }
 _ZERO_PHRASES: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "unbudgeted",
     ComparisonBasis.FORECAST: "not in forecast",
     ComparisonBasis.PRIOR_PERIOD: "new this period",
+    ComparisonBasis.CONSENSUS: "no consensus",
+    ComparisonBasis.ESTIMATE: "no estimate",
+    ComparisonBasis.GUIDANCE: "no guidance",
 }
 _CLI_VALUES: dict[str, ComparisonBasis] = {
     "budget": ComparisonBasis.BUDGET,
     "forecast": ComparisonBasis.FORECAST,
     "prior-period": ComparisonBasis.PRIOR_PERIOD,
+    "consensus": ComparisonBasis.CONSENSUS,
+    "estimate": ComparisonBasis.ESTIMATE,
+    "guidance": ComparisonBasis.GUIDANCE,
 }
 
 
-def basis_for_header(normalized: str) -> ComparisonBasis | None:
-    for basis, synonyms in _SYNONYMS.items():
+def basis_for_header(normalized: str, *, extended: bool = False) -> ComparisonBasis | None:
+    tables = _SYNONYMS | _EXTENDED_SYNONYMS if extended else _SYNONYMS
+    for basis, synonyms in tables.items():
         if normalized in synonyms:
             return basis
     return None
@@ -85,6 +106,8 @@ def basis_noun(basis: ComparisonBasis) -> str:
 def comparison_heading(basis: ComparisonBasis, label: str | None) -> str:
     if basis is ComparisonBasis.PRIOR_PERIOD:
         return f"Prior Period ({label})" if label else "Prior Period"
+    if basis in _EXTENDED_SYNONYMS:
+        return _NOUNS[basis].title()
     return "Forecast" if basis is ComparisonBasis.FORECAST else "Budget"
 
 
@@ -126,9 +149,16 @@ def _month_index(name: str) -> int | None:
     return None
 
 
-def parse_period_label(text: str) -> tuple[int, str, int] | None:
+def parse_period_label(text: str, *, extended: bool = False) -> tuple[int, str, int] | None:
     """Return (year, granularity, index) for a recognizable period label."""
     s = _ACTUAL_SUFFIX.sub("", text.strip())
+    if extended:
+        match = re.fullmatch(r"(?:f)?([1-4])q(?:fy)?(\d{2}|\d{4})", s, re.IGNORECASE)
+        if match:
+            return (_year(match[2]), "quarter", int(match[1]))
+        match = re.fullmatch(r"q([1-4])(?:\s*fy\s*|'|’)(\d{2}|\d{4})", s, re.IGNORECASE)
+        if match:
+            return (_year(match[2]), "quarter", int(match[1]))
     if m := _FY_RE.match(s):
         return (_year(m.group(1)), "year", 0)
     if m := _BARE_YEAR_RE.match(s):
@@ -144,14 +174,17 @@ def parse_period_label(text: str) -> tuple[int, str, int] | None:
     return None
 
 
-def order_period_labels(labels: list[str]) -> list[str] | None:
+def order_period_labels(labels: list[str], *, extended: bool = False) -> list[str] | None:
     """Order labels newest first, or None when the order cannot be trusted."""
     parsed: list[tuple[tuple[int, str, int], str]] = []
     for label in labels:
-        key = parse_period_label(label)
+        key = parse_period_label(label, extended=extended)
         if key is None:
             return None
         parsed.append((key, label))
+    if extended and any(key[1] == "quarter" for key, _ in parsed):
+        if len({period_calendar(label) for _, label in parsed}) > 1:
+            return None
     if len({key[1] for key, _ in parsed}) > 1:
         return None
     if len({key for key, _ in parsed}) != len(parsed):
@@ -185,7 +218,7 @@ def select_strict_comparison(
     if basis is ComparisonBasis.BUDGET:
         return rows
     noun = basis_noun(basis)
-    wanted = _SYNONYMS[basis]
+    wanted = (_SYNONYMS | _EXTENDED_SYNONYMS)[basis]
     all_keys = {key for row in rows for key in row}
     matches = sorted(all_keys & wanted)
     if not matches:
@@ -205,3 +238,68 @@ def select_strict_comparison(
             new["budget"] = row[source]
         result.append(new)
     return result
+
+
+def period_calendar(label: str) -> str:
+    return "fiscal" if re.search(r"fy|^f[1-4]q", label, re.IGNORECASE) else "calendar"
+
+
+def extended_heading(config: AnalysisConfig) -> str:
+    from .audience import AudienceConfig
+    if isinstance(config, AudienceConfig) and config.comparison_title is not None:
+        return config.comparison_title
+    return comparison_heading(config.comparison_basis, config.comparison_label)
+
+
+def display_outcome(row: AnalyzedRow, basis: ComparisonBasis) -> str:
+    if (basis is not ComparisonBasis.CONSENSUS or row.status is Status.UNCLASSIFIED
+            or (row.line_type is LineType.UNCLASSIFIED and row.better is None)):
+        return str(row.status)
+    if not row.material:
+        return "In line"
+    return "Beat" if row.status is Status.FAVORABLE else "Miss" if row.status is Status.UNFAVORABLE else "In line"
+
+
+@financial_context()
+def comparison_details(raw: dict[str, object], actual: Decimal, measure: MeasureKind, config: AnalysisConfig) -> ComparisonDetails | None:
+    from .measures import parse_measure_amount
+    from .parsing import is_missing, parse_decimal
+    def optional(key: str) -> Decimal | None:
+        value = raw.get(key)
+        return None if is_missing(value) else parse_measure_amount(value, kind=measure, config=config,
+                                                                   field=key.replace("_", " "), line_item=name)
+    name = str(raw.get("line_item", "Row"))
+    if config.comparison_basis is ComparisonBasis.CONSENSUS:
+        low, high, dispersion = optional("consensus_low"), optional("consensus_high"), optional("dispersion")
+        if low is not None and high is not None and low > high:
+            raise ValueError(f"{name}: consensus low must not exceed high.")
+        if dispersion is not None and dispersion < 0:
+            raise ValueError(f"{name}: standard deviation must be non-negative.")
+        count = None
+        if not is_missing(raw.get("estimator_count")):
+            number = parse_decimal(raw["estimator_count"], field="Number of estimates", line_item=name)
+            if number < 0 or number != number.to_integral_value():
+                raise ValueError(f"{name}: number of estimates must be a non-negative whole number.")
+            count = int(number)
+        position = "above the high estimate" if high is not None and actual > high else (
+            "below the low estimate" if low is not None and actual < low else None)
+        return ComparisonDetails(consensus_low=low, consensus_high=high, estimator_count=count,
+                                 dispersion=dispersion, consensus_range_position=position)
+    if config.comparison_basis is ComparisonBasis.GUIDANCE:
+        low, high = optional("guidance_low"), optional("guidance_high")
+        if (low is None) != (high is None):
+            raise ValueError(f"{name}: guidance range needs both low and high.")
+        if low is not None and high is not None:
+            if low > high:
+                raise ValueError(f"{name}: guidance low must not exceed high.")
+            position = "Below range" if actual < low else "Above range" if actual > high else "Within range"
+            return ComparisonDetails(guidance_low=low, guidance_high=high, guidance_position=position,
+                                     guidance_midpoint=(low + high) / Decimal("2"))
+    return None
+
+
+@financial_context()
+def validate_guidance_midpoint(budget: Decimal, details: ComparisonDetails | None, name: str) -> None:
+    if details is not None and details.guidance_low is not None and details.guidance_high is not None:
+        if budget != (details.guidance_low + details.guidance_high) / Decimal("2"):
+            raise ValueError(f"{name}: comparison must equal the exact guidance midpoint.")

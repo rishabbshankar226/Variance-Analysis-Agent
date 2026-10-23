@@ -20,7 +20,7 @@ from .models import (
     SummaryVerification,
 )
 from .classification import explicit_line_type, infer_line_type
-from .comparison import comparison_heading, zero_comparison_label
+from .comparison import comparison_heading, comparison_details, validate_guidance_midpoint, zero_comparison_label
 from .parsing import first_present, normalize_row, parse_decimal, is_missing
 from .numeric import financial_context, ratio
 from .currencies import validate_currency
@@ -141,6 +141,8 @@ def _percent_variance(
         return None, "N/A (rate)"
     if budget != 0:
         return ratio(actual - budget, abs(budget)), None
+    if basis is ComparisonBasis.CONSENSUS:
+        return None, zero_comparison_label(basis)
     if actual == 0:
         return Decimal("0"), None
     return None, zero_comparison_label(basis)
@@ -374,6 +376,12 @@ def _verify_result(
             if (row.measure, row.better, row.direction_source) != (expected_kind, expected_better, expected_source):
                 raise _verification_failure(f"measure/direction metadata mismatch for {row.line_item!r}")
         bps = row.variance_dollars * Decimal("100") if row.measure is MeasureKind.PERCENT else None
+        try:
+            validate_guidance_midpoint(row.budget, row.comparison_details, row.line_item)
+        except ValueError as exc:
+            raise _verification_failure(str(exc)) from exc
+        if row.comparison_details != comparison_details(row.raw, row.actual, row.measure, config):
+            raise _verification_failure(f"comparison metadata mismatch for {row.line_item!r}")
         if row.variance_bps != bps:
             raise _verification_failure(f"basis-point variance mismatch for {row.line_item!r}")
         if row.status != _status(row.line_type, row.variance_dollars, row.better):
@@ -547,6 +555,8 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         driver = (_driver_evidence(row, budget, actual, line_item, config.currency)
                   if kind is MeasureKind.CURRENCY else None)
 
+        details = comparison_details(row, actual, kind, config)
+        validate_guidance_midpoint(budget, details, line_item)
         analyzed.append(
             AnalyzedRow(
                 line_item=line_item,
@@ -563,6 +573,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 raw=row,
                 measure=kind, better=better, direction_source=direction_source,
                 measure_declared="measure" in row,
+                comparison_details=details,
                 variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
                 classification_source=classification_source,
                 summary_source=summary_source,

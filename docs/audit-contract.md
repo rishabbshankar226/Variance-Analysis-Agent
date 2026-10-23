@@ -121,3 +121,21 @@ cover all kinds. The effective audience settings enter configuration identity;
 all new row facts and notes enter analysis and public payload identities. Every
 1.8 object rejects unknown properties. This schema is unreleased and will gain
 the remaining approved comparison/panel facts before publication.
+
+### Unreleased 1.8 comparison additions
+
+`comparison.basis` includes consensus/estimate/guidance only in 1.8. Single records
+add `comparison_details` (high/low, estimator count, dispersion, guidance bounds,
+midpoint and positions) and `unavailable_comparisons`, and an empty `comparisons`.
+`measure_rows.display_label` is a status/materiality projection. `audience` also
+records full currency/materiality/type-map settings and extended period/header
+choices. Unavailable-only records preserve actuals, absence reasons, supplied
+metadata, and effective configuration without invented analyzed amounts.
+
+A set record has kind `comparison_set`, ordered `comparisons` of complete single
+or unavailable-only 1.8 child records, `comparison_order`, supplied
+`estimate_vs_consensus` facts and inference notes. It claims no financial total
+across bases. Every child validates against 1.8 independently, has its own source
+and digests, and cannot itself contain a set. Closed conditional shapes refuse
+unknown or cross-kind fields. Wrapper metadata is included before both digests
+are recomputed; changing unavailable rows or supplied-estimate gaps changes them.

@@ -38,6 +38,8 @@ const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
 // ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
 /** @type {Record<string, string>} */
 export const PHASE_LABELS = {
+  awaiting_earnings_review:            'Choose Review',
+  awaiting_comparison_choice:         'Choose Comparisons',
   awaiting_file:                      'Upload File',
   awaiting_sheet_choice:              'Choose Sheet',
   awaiting_header_choice:             'Choose Header Row',
@@ -54,6 +56,8 @@ export const PHASE_LABELS = {
 
 /** @type {Record<string, string>} */
 export const PHASE_PLACEHOLDERS = {
+  awaiting_earnings_review:            'Review earnings or upload another file...',
+  awaiting_comparison_choice:         'Choose a comparison or all of them...',
   awaiting_file:                      'Upload a file above or ask a financial question (e.g., "what is materiality?")...',
   awaiting_sheet_choice:              'Pick a worksheet from the options above...',
   awaiting_header_choice:             'Pick the header row from the options above...',

@@ -33,6 +33,7 @@ class LayoutMapping:
     # Optional: the chosen comparison. Omitted from the file when unset, so Budget
     # mappings (and their SHA-256) are unchanged and older mappings still load.
     comparison_basis: ComparisonBasis | None = None
+    comparison_bases: tuple[ComparisonBasis, ...] = ()
     measure_options: dict[str, str] | None = None
     better_directions: dict[str, str] = field(default_factory=dict)
 
@@ -52,6 +53,8 @@ class LayoutMapping:
         }
         if self.comparison_basis is not None:
             data["comparison_basis"] = self.comparison_basis.value
+        if self.comparison_bases:
+            data["comparison_bases"] = [str(basis) for basis in self.comparison_bases]
         if self.measure_options:
             data["measure_options"] = dict(self.measure_options)
         if self.better_directions:
@@ -219,6 +222,15 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
                 "Mapping comparison_basis must be budget, forecast or prior_period."
             ) from None
 
+    raw_bases = parsed.get("comparison_bases", [])
+    if not isinstance(raw_bases, list) or any(not isinstance(value, str) for value in raw_bases):
+        raise _bad("comparison_bases", "a list of distinct comparison names")
+    try:
+        comparison_bases = tuple(ComparisonBasis(value) for value in raw_bases)
+    except ValueError as exc:
+        raise _bad("comparison_bases", "recognized comparison names") from exc
+    if len(set(comparison_bases)) != len(comparison_bases):
+        raise _bad("comparison_bases", "distinct comparison names")
     measure_options = parsed.get("measure_options")
     allowed = {"percent_values", "per_share_threshold", "count_threshold", "bps_threshold"}
     if measure_options is not None and (not isinstance(measure_options, dict)
@@ -251,6 +263,6 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
             parsed.get("period_column_selection"), "period_column_selection"
         ),
         classification_rules=_classification_rules(parsed.get("classification_rules")),
-        comparison_basis=comparison_basis,
+        comparison_basis=comparison_basis, comparison_bases=comparison_bases,
         measure_options=measure_options, better_directions=directions,
     )

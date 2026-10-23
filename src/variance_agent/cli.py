@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
-from .audience import AudienceConfig, is_audience_result
+from .audience import AudienceConfig, NEW_BASES, is_audience_result
 from .measures import metric_inferences
 from .analysis import analyze_rows
 from .classification import explicit_line_type
@@ -90,6 +90,7 @@ class Arguments(Protocol):
     assisted: bool
     mapping: str | None
     compare_to: str | None
+    preset: str
     per_share_threshold: Decimal | None
     count_threshold: Decimal | None
     bps_threshold: Decimal | None
@@ -194,9 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--compare-to",
-        choices=("budget", "forecast", "prior-period"),
-        help="Comparison basis (default: detect from headers or budget).",
+        type=_comparison_argument,
+        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
     )
+    parser.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
+                        help="Header recognition: fpa preserves defaults; earnings/quant opt into new headers.")
     for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
         parser.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
     parser.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
@@ -272,12 +275,23 @@ def _run(args: Arguments) -> int:
     mapping_obj = None
     intake_res = None
 
-    compare_to_basis = parse_compare_to(args.compare_to) if args.compare_to else None
+    requested = tuple(parse_compare_to(value) for value in args.compare_to.split(",")) if args.compare_to else ()
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        from .mapping import load_mapping
+        mapping_obj = load_mapping(read_input_bytes(mapping_arg))
+    if not requested and mapping_obj is not None and mapping_obj.comparison_bases:
+        requested = mapping_obj.comparison_bases
+    if not requested and mapping_obj is not None and mapping_obj.comparison_basis is not None:
+        requested = (mapping_obj.comparison_basis,)
+    if (len(requested) > 1 or any(b in NEW_BASES for b in requested)
+            or getattr(args, "preset", "fpa") != "fpa"):
+        return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
+    compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
-        from .mapping import load_mapping
         from .intake import (
             GLRangeRule,
             apply_classification_rules,
@@ -286,8 +300,7 @@ def _run(args: Arguments) -> int:
             read_input_assisted,
             scale_rows_by_unit,
         )
-        mapping_path = Path(mapping_arg)
-        mapping_obj = load_mapping(read_input_bytes(mapping_path))
+        assert mapping_obj is not None
 
         intake_res = read_input_assisted(
             source_bytes,
@@ -507,6 +520,101 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
         # A problem with the data, not with the command line: one clear line, no usage banner.
         parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
+
+
+
+
+def _comparison_argument(value: str) -> str:
+    tokens = [token.strip().lower() for token in value.split(",")]
+    try:
+        bases = [parse_compare_to(token) for token in tokens]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if len(set(bases)) != len(bases):
+        raise argparse.ArgumentTypeError("Choose each comparison basis only once.")
+    return ",".join(tokens)
+
+
+def _run_comparisons(
+    args: Arguments, source_bytes: bytes, type_map_bytes: bytes | None, requested: tuple[ComparisonBasis, ...],
+    mapping: object,
+) -> int:
+    from .comparisons import (analyze_comparisons, build_comparison_audit, read_comparison_input,
+                              render_comparisons, detect_comparison_bases)
+    from .mapping import LayoutMapping
+    from .xlsx import render_comparison_xlsx
+    assert args.input is not None and args.period is not None
+    assert args.dollar_threshold is not None and args.percent_threshold is not None
+    layout = mapping if isinstance(mapping, LayoutMapping) else None
+    if args.commentary:
+        raise ValueError("Executive commentary is not available for a multi-measure comparison review.")
+    path = Path(args.input)
+    columns = dict(layout.column_mapping) if layout is not None else {}
+    if "budget" in columns and len(requested) == 1:
+        columns[str(requested[0])] = columns.pop("budget")
+    rows, headers, worksheet, notes = read_comparison_input(
+        source_bytes, path.suffix, filename=path.name, sheet=args.sheet, assisted=args.assisted or layout is not None,
+        column_mapping=columns or None,
+    )
+    bases = requested
+    if not bases:
+        bases = detect_comparison_bases(headers)
+        if len(bases) > 1:
+            raise ValueError("Multiple comparison bases found; choose --compare-to with one basis or an explicit comma list.")
+        if not bases:
+            bases = (ComparisonBasis.PRIOR_PERIOD,)
+    def option(name: str) -> Decimal | None:
+        supplied = getattr(args, name, None)
+        if isinstance(supplied, Decimal):
+            return supplied
+        if layout is not None and name in (layout.measure_options or {}):
+            return parse_decimal((layout.measure_options or {})[name], field=name, line_item="Mapping file")
+        return None
+    percent_values = getattr(args, "percent_values", None)
+    if percent_values is None and layout is not None:
+        percent_values = (layout.measure_options or {}).get("percent_values")
+    if layout is not None and layout.better_directions:
+        for row in rows:
+            canonical = normalize_row(row)
+            name = str(canonical.get("line_item", ""))
+            if name in layout.better_directions:
+                row["Better"] = layout.better_directions[name]
+    config = AudienceConfig(args.period, args.dollar_threshold, args.percent_threshold / Decimal("100"),
+                            currency=args.currency, type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
+                            per_share_threshold=option("per_share_threshold"), count_threshold=option("count_threshold"),
+                            bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True)
+    table = analyze_comparisons(rows, config, bases, raw_headers=headers)
+    for note in (*notes, *table.inferences):
+        print("[comparison intake] " + display_text(note), file=sys.stderr)
+    for comparison in table.comparisons:
+        if comparison.result is not None:
+            for note in metric_inferences(comparison.result.rows, comparison.result.config):
+                print("[measure intake] " + display_text(note), file=sys.stderr)
+    if args.check_only:
+        print(f"Validation passed: {len(rows)} rows, {len(bases)} comparison(s).")
+        return 0
+    only = table.comparisons[0]
+    report = (render_markdown(only.result) if len(bases) == 1 and only.result is not None and not only.unavailable
+              else render_comparisons(table))
+    outputs: dict[Path, str | bytes] = {}
+    if args.output:
+        outputs[Path(args.output)] = report
+    if args.xlsx:
+        outputs[Path(args.xlsx)] = render_comparison_xlsx(table)
+    if args.audit_json:
+        record = build_comparison_audit(table, source_name=path.name, source_sha256=sha256_bytes(source_bytes),
+                                        schema_version=args.audit_schema_version, source_worksheet=worksheet)
+        # Input-layout notes are facts too; recompute both digests after adding them.
+        from .audit import finalize_audience_record
+        inferences = record.get("inferences")
+        if isinstance(inferences, list):
+            inferences.extend(notes)
+            finalize_audience_record(record)
+        outputs[Path(args.audit_json)] = serialize_audit_json(record)
+    write_text_outputs(outputs)
+    if not args.output:
+        print(report)
+    return 0
 
 
 if __name__ == "__main__":

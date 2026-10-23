@@ -30,7 +30,7 @@ def test_16_is_current() -> None:
     assert "1.5" in SUPPORTED_SCHEMA_VERSIONS
 
 
-@pytest.mark.parametrize("basis", list(ComparisonBasis))
+@pytest.mark.parametrize("basis", (B, F, P))
 def test_16_records_comparison_and_validates(basis: ComparisonBasis) -> None:
     record = build_audit_record(analyze_rows(ROWS, cfg(basis, label="FY2024")), schema_version="1.6")
     assert record["comparison"] == {"basis": basis.value, "label": "FY2024"}

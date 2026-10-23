@@ -1,0 +1,6 @@
+Ticker,Period,Line Item,Measure,Type,Better,Consensus,Actual
+HALV.FAKE,3Q26,Revenue,Currency,Revenue,,1250.0,1287.5
+HALV.FAKE,3Q26,Operating Expenses,Currency,Expense,,380.0,383.0
+HALV.FAKE,3Q26,Gross Margin,Percent,,Higher,41.2%,40.6%
+HALV.FAKE,3Q26,Diluted EPS,Per Share,,Higher,0.84,0.91
+HALV.FAKE,3Q26,Units Shipped,Count,,Higher,48000,46500

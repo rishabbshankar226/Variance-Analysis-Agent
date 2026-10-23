@@ -7,9 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
-from .models import Aggregate, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType
+from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, ComparisonDetails, LineType
 from .audience import AudienceConfig, is_audience_result
 from .measures import currency_row, metric_inferences
+from .comparison import display_outcome, extended_heading
 from .output import write_text_outputs
 from .numeric import NUMERIC_POLICY_ID, financial_context, ratio
 from .analysis import CLASSIFICATION_POLICY_ID, DRIVER_POLICY_ID, verify_result
@@ -339,7 +340,7 @@ def build_audit_record(
         if schema_version in {"1.6", "1.7", "1.8"}:
             config_identity["comparison"] = comparison
         if schema_version == "1.8":
-            config_identity["audience"] = _audience_configuration(result)
+            config_identity["audience"] = audience_configuration(result.config)
         record["provenance"] = {
             "tool_version": __version__,
             "numeric_policy": NUMERIC_POLICY_ID,
@@ -377,9 +378,13 @@ def build_audit_record(
             "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
         }
     if schema_version == "1.8":
-        record["audience"] = _audience_configuration(result)
+        record["audience"] = audience_configuration(result.config)
         record["inferences"] = list(metric_inferences(result.rows, result.config))
-        record["measure_rows"] = [_measure_record(row) for row in result.rows]
+        record["measure_rows"] = [dict(_measure_record(row), display_label=display_outcome(row, result.config.comparison_basis))
+                                  for row in result.rows]
+        record["comparisons"] = []
+        record["unavailable_comparisons"] = []
+        record["comparison_details"] = [_comparison_record(row) for row in result.rows]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
             (_measure_record(row) if schema_version == "1.8" else
@@ -391,13 +396,18 @@ def build_audit_record(
     return record
 
 
-def _audience_configuration(result: AnalysisResult) -> JSONObject:
-    cfg = result.config
+def audience_configuration(cfg: AnalysisConfig) -> JSONObject:
     return {
         "per_share_threshold": _decimal(cfg.per_share_threshold) if isinstance(cfg, AudienceConfig) else None,
         "count_threshold": _decimal(cfg.count_threshold) if isinstance(cfg, AudienceConfig) else None,
         "bps_threshold": _decimal(cfg.bps_threshold) if isinstance(cfg, AudienceConfig) else None,
         "percent_values": cfg.percent_values if isinstance(cfg, AudienceConfig) else None,
+        "actual_label": cfg.actual_label if isinstance(cfg, AudienceConfig) else None,
+        "comparison_title": extended_heading(cfg),
+        "extended_headers": cfg.extended_headers if isinstance(cfg, AudienceConfig) else False,
+        "currency": cfg.currency, "dollar_threshold": _decimal(cfg.dollar_threshold),
+        "percent_threshold": _decimal(cfg.percent_threshold),
+        "type_map": [{"line_item": key, "type": str(value)} for key, value in sorted(cfg.type_map.items())],
     }
 
 
@@ -412,3 +422,31 @@ def _measure_record(row: AnalyzedRow) -> JSONObject:
         "excluded_from_aggregation": (row.excluded_from_aggregation or not currency_row(row)
                                       or row.line_type is LineType.UNCLASSIFIED),
     }
+
+
+def _comparison_record(row: AnalyzedRow) -> JSONObject:
+    return comparison_details_record(row.line_item, row.comparison_details)
+
+
+def comparison_details_record(line_item: str, detail: ComparisonDetails | None) -> JSONObject:
+    from dataclasses import fields
+    record: JSONObject = {"line_item": line_item}
+    for item in fields(ComparisonDetails):
+        value = getattr(detail, item.name) if detail is not None else None
+        record[item.name] = _decimal(value) if isinstance(value, Decimal) else value
+    return record
+
+
+def finalize_audience_record(record: JSONObject) -> None:
+    """Recompute the documented record/rows and public digests after wrapper metadata."""
+    record.pop("analysis_fingerprint", None)
+    record.pop("payload_sha256", None)
+    record["analysis_fingerprint"] = sha256_bytes(_canonical({"record": record, "analyzed_rows": record.get("measure_rows", [])}))
+    record["payload_sha256"] = payload_sha256(record)
+
+
+def validate_source_identity(name: str | None, digest: str | None) -> None:
+    if name is not None:
+        validate_text(name, field="source_name")
+    if digest is not None and (not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest)):
+        raise ValueError("source_sha256 must be a 64-character hexadecimal SHA-256 digest.")

@@ -1,0 +1,3 @@
+Ticker,Period,Line Item,Measure,Type,Better,Consensus,Model,Prior Year,Actual
+HALV.FAKE,3Q26,Revenue,Currency,Revenue,,1250,1260,1190,1287.5
+HALV.FAKE,3Q26,Diluted EPS,Per Share,,Higher,0.84,0.88,0.80,0.91

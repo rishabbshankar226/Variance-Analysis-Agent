@@ -183,3 +183,43 @@ New mapping files can record `measure_options` with text-valued keys
 `percent_values`, `per_share_threshold`, `count_threshold`, and `bps_threshold`,
 and `better_directions` mapping line-item names to Higher/Lower. Explicit CLI
 scale/cutoff flags override the mapping. Old mapping serialization is unchanged.
+
+## Earnings comparison columns (explicit opt-in)
+
+`--compare-to consensus`, `estimate`, or `guidance`, a comma-list comparison set,
+or `--preset earnings` / `quant` enables new headers. Without these choices,
+Consensus, Model, Region, Division and the new quarter forms stay ordinary
+metadata; assisted legacy files still ask on multiple existing comparison bases.
+In chat, files with earnings comparisons and no Budget offer a confirmed earnings
+review. Budget uploads follow the existing path. An earnings review can choose
+one basis or “Compare against all of them.”
+
+Consensus synonyms: Consensus, Cons, Street, Consensus Mean, Mean Estimate.
+Estimate synonyms: Our Est., House, Model, Internal Estimate. `Est.` / `Estimate`
+alone is ambiguous and needs an explicit column mapping or a renamed header.
+The raw `# Est.` header means number of estimates; normalization alone cannot
+identify it. High, Low, Std Dev, Std. Dev., Standard Deviation are optional
+consensus metadata. Low must not exceed High; dispersion is nonnegative and the
+estimator count a nonnegative whole number. GAAP-versus-adjusted matching is the
+user's responsibility. Blank consensus is unavailable and never converted to 0.
+Supplied zero is a real comparison, with no defined surprise percentage.
+
+Guidance/Guide supplies a point, or Guidance Low/High and Guide Low/High supply
+an inclusive range. A point and range together need an explicit mapping.
+The range compares against its exact midpoint and records its position.
+Outlook continues to mean Forecast. `--compare-to consensus,estimate,prior-period`
+selects all three supplied bases in that order; every basis is independently
+analyzed. Missing cells in a set leave unavailable comparison groups. Ambiguous
+same-name/same-segment/same-measure joins are refused.
+
+Extended period recognition adds 3Q26, Q3 FY26, F3Q26, Q3'26 and 3QFY26. Mixed
+fiscal/calendar quarters, mixed granularities, and duplicate period identities
+need a user choice. New quarter comparisons name consecutive quarters/years;
+existing forms retain their old wording, including Prior Period (FY2024).
+
+New saved mappings may carry an ordered `comparison_bases` list; an explicit
+`--compare-to` wins. A column mapping can select one of competing comparison
+columns (for example `estimate: Model`) or choose a guidance point instead of a
+range. Ignored competing columns are named in intake notes. Raw header identity
+is retained before mapping, so `consensus: Est.` and `estimator_count: # Est.`
+can be resolved separately. Existing single-basis mapping bytes stay unchanged.

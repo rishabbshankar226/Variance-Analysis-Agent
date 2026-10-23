@@ -142,7 +142,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "summary"),
 
     (re.compile(
-        r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period))\??$",
+        r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period|consensus|estimate|guidance))\??$",
         re.IGNORECASE,
     ), "set_comparison"),
 

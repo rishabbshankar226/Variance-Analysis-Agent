@@ -981,3 +981,86 @@ an existing test. Show the diff and the reason.”
 Awaiting owner approval for only the one-line parameter-scope exception above.
 All existing tests/fixtures/schemas remain byte-identical to the baseline; the
 working tree has no feature changes after phase 1. Nothing has been pushed.
+
+## Phase 2 resumed
+
+Owner approved the exact STOP 2 exception with “continue”. Apply only the
+one-line `(B, F, P)` parameter scope in `test_audit_schema_16.py`; add separate
+new-base/old-schema refusal tests. No other baseline test change is authorized.
+`tests/test_multi_audience_comparisons.py`, `test_multi_audience_periods.py`, and
+`test_multi_audience_sets.py` are the new phase-2 tests. Early `--preset` parsing
+is necessary for opt-in header recognition in this phase; phase 6 completes its
+layouts. The proposed comparison wrapper lives in `comparisons.py` and uses the
+existing engine separately for each available basis.
+
+Phase 2 adds `src/variance_agent/chat/earnings.py` to keep the new confirmed
+comparison-review flow out of the large legacy handler. It shares the existing
+chat export policy and single-basis engine; `static/chat.js` gets labels/hints
+for its two explicit question states. The existing frontend test remains intact.
+
+## Phase 2 complete — Priya and Dan
+
+Consensus, Estimate, Guidance, quarter labels and explicit comparison sets are implemented. CLI, confirmed chat review, Markdown, Excel and closed audit 1.8 use the same single-basis engine. Missing comparisons stay absent; exact guidance midpoints and supplied Estimate versus Consensus gaps are verified. Legacy Budget chat intake remains unchanged. Mapping explicitly resolves ambiguous Est. and competing model/range columns. New fixtures are fictional.
+
+All baseline tests, fixtures and published schemas are byte-identical except the approved one-line schema-1.6 parameter scope. Browser executable remains unavailable; chat/frontend tests provide the authorized fallback. No push or merge.
+
+**phase2-pytest.log**
+
+```text
+........................................................................ [ 96%]
+..............................................................           [100%]
+1862 passed in 43.12s
+```
+
+**phase2-ruff.log**
+
+```text
+All checks passed!
+```
+
+**phase2-mypy.log**
+
+```text
+Success: no issues found in 55 source files
+```
+
+**phase2-compileall.log**
+
+```text
+
+```
+
+**phase2-pip-check.log**
+
+```text
+No broken requirements found.
+```
+
+**phase2-build.log**
+
+```text
+* Installed build dependency versions:
+  - hatchling==1.32.4
+* Building wheel...
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+```
+
+**phase2-twine.log**
+
+```text
+Checking dist/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking dist/variance_analysis_agent-0.3.0.tar.gz: PASSED
+```
+
+**phase2-package.log**
+
+```text
+Wheel/sdist contents, license, Python support, and entry point verified
+```
+
+**phase2-minimal.log**
+
+```text
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+```

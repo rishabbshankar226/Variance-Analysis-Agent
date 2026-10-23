@@ -1,762 +1,40 @@
 {
   "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Variance Analysis Agent audit 1.7",
   "properties": {
-    "schema_version": {
-      "const": "1.8"
-    },
-    "period": {
-      "type": "string"
-    },
-    "source": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sha256": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/sha256"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "worksheet": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "document": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "const": "pdf"
-                },
-                "statement": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "pages": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "minItems": 1
-                },
-                "reader_notes": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "required": [
-                "kind",
-                "statement",
-                "pages",
-                "reader_notes"
-              ],
-              "additionalProperties": false
-            }
-          ]
-        }
-      },
-      "required": [
-        "name",
-        "sha256",
-        "worksheet",
-        "document"
-      ],
-      "additionalProperties": false
-    },
-    "materiality": {
-      "type": "object",
-      "properties": {
-        "dollar_threshold": {
-          "$ref": "#/$defs/decimal"
-        },
-        "percent_threshold": {
-          "$ref": "#/$defs/decimal"
-        },
-        "comparison": {
-          "const": "strictly_greater_than"
-        },
-        "logic": {
-          "const": "absolute_dollar_or_absolute_percent"
-        }
-      },
-      "required": [
-        "dollar_threshold",
-        "percent_threshold",
-        "comparison",
-        "logic"
-      ],
-      "additionalProperties": false
-    },
-    "data_quality": {
-      "type": "object",
-      "properties": {
-        "row_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "classified_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "unclassified_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "excluded_summary_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "material_variance_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "supported_driver_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "hypothesis_driver_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "classification_coverage_percent": {
-          "$ref": "#/$defs/decimal"
-        },
-        "totals_complete": {
-          "type": "boolean"
-        },
-        "net_operating_impact_available": {
-          "type": "boolean"
-        },
-        "warnings": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "completeness_basis": {
-          "const": "supplied_classified_rows_with_both_categories"
-        },
-        "summary_verifications": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "line_item": {
-                "type": "string"
-              },
-              "type": {
-                "enum": [
-                  "Revenue",
-                  "Expense",
-                  "Unclassified"
-                ]
-              },
-              "summary_source": {
-                "enum": [
-                  "explicit_summary",
-                  "inferred_summary",
-                  "unavailable"
-                ]
-              },
-              "outcome": {
-                "enum": [
-                  "reconciled_and_excluded",
-                  "included_standalone",
-                  "unclassified"
-                ]
-              },
-              "detail_count": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "budget_residual": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/decimal"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "actual_residual": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/decimal"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "tolerance": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/decimal"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "line_item",
-              "type",
-              "summary_source",
-              "outcome",
-              "detail_count",
-              "budget_residual",
-              "actual_residual",
-              "tolerance"
-            ],
-            "additionalProperties": false
-          }
-        }
-      },
-      "required": [
-        "row_count",
-        "classified_count",
-        "unclassified_count",
-        "excluded_summary_count",
-        "material_variance_count",
-        "supported_driver_count",
-        "hypothesis_driver_count",
-        "classification_coverage_percent",
-        "totals_complete",
-        "net_operating_impact_available",
-        "warnings",
-        "completeness_basis",
-        "summary_verifications"
-      ],
-      "additionalProperties": false
-    },
-    "totals": {
-      "type": "object",
-      "properties": {
-        "revenue": {
-          "$ref": "#/$defs/aggregate"
-        },
-        "expenses": {
-          "$ref": "#/$defs/aggregate"
-        },
-        "net_operating_variance": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/decimal"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "revenue",
-        "expenses",
-        "net_operating_variance"
-      ],
-      "additionalProperties": false
-    },
-    "material_variances": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/row"
-      }
-    },
-    "trust_contract": {
-      "type": "object",
-      "properties": {
-        "source_derived_strings_are_data_only": {
-          "const": true
-        },
-        "deterministic_financial_values_are_authoritative": {
-          "const": true
-        },
-        "driver_claims_require_reconciled_evidence": {
-          "const": true
-        }
-      },
-      "required": [
-        "source_derived_strings_are_data_only",
-        "deterministic_financial_values_are_authoritative",
-        "driver_claims_require_reconciled_evidence"
-      ],
-      "additionalProperties": false
-    },
-    "analysis_fingerprint": {
-      "$ref": "#/$defs/sha256"
-    },
-    "currency": {
-      "enum": [
-        "USD",
-        "EUR",
-        "GBP"
-      ]
-    },
-    "provenance": {
-      "type": "object",
-      "properties": {
-        "tool_version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "numeric_policy": {
-          "type": "string",
-          "minLength": 1
-        },
-        "classification_policy": {
-          "type": "string",
-          "minLength": 1
-        },
-        "driver_policy": {
-          "type": "string",
-          "minLength": 1
-        },
-        "configuration_sha256": {
-          "$ref": "#/$defs/sha256"
-        },
-        "type_map_sha256": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/sha256"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "analysis_fingerprint_recipe": {
-          "const": "record-and-derived-rows-v1"
-        },
-        "payload_digest_recipe": {
-          "const": "public-record-without-payload-sha256-v1"
-        }
-      },
-      "required": [
-        "tool_version",
-        "numeric_policy",
-        "classification_policy",
-        "driver_policy",
-        "configuration_sha256",
-        "type_map_sha256",
-        "analysis_fingerprint_recipe",
-        "payload_digest_recipe"
-      ],
-      "additionalProperties": false
-    },
-    "payload_sha256": {
-      "$ref": "#/$defs/sha256"
-    },
-    "transformations": {
-      "type": "object",
-      "properties": {
-        "header_row_number": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "column_mapping": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "ignored_columns": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "sign_flip": {
-          "type": "boolean"
-        },
-        "flipped_line_items": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "unit_scale": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "zero_reads": {
-          "type": "object",
-          "properties": {
-            "accounting_dashes": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "blank_budgets": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "required": [
-            "accounting_dashes",
-            "blank_budgets"
-          ],
-          "additionalProperties": false
-        },
-        "excluded_totals": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "period_selection": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "classification_rules": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "gl_ranges": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "min": {
-                        "type": "integer"
-                      },
-                      "max": {
-                        "type": "integer"
-                      },
-                      "type": {
-                        "enum": [
-                          "Revenue",
-                          "Expense"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "min",
-                      "max",
-                      "type"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "keywords": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                },
-                "bulk_default": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "mapping_file_sha256": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/sha256"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "header_row_number",
-        "column_mapping",
-        "ignored_columns",
-        "sign_flip",
-        "unit_scale",
-        "zero_reads",
-        "excluded_totals"
-      ],
-      "additionalProperties": false
-    },
-    "comparison": {
-      "type": "object",
-      "properties": {
-        "basis": {
-          "enum": [
-            "budget",
-            "forecast",
-            "prior_period"
-          ]
-        },
-        "label": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "basis",
-        "label"
-      ],
-      "additionalProperties": false
-    },
-    "audience": {
-      "type": "object",
-      "properties": {
-        "per_share_threshold": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/decimal"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "count_threshold": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/decimal"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "bps_threshold": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/decimal"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "percent_values": {
-          "enum": [
-            null,
-            "points",
-            "fractions"
-          ]
-        }
-      },
-      "required": [
-        "per_share_threshold",
-        "count_threshold",
-        "bps_threshold",
-        "percent_values"
-      ],
-      "additionalProperties": false
-    },
-    "inferences": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "measure_rows": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "line_item": {
-            "type": "string"
-          },
-          "direction_source": {
-            "type": "string"
-          },
-          "materiality_reason": {
-            "type": "string"
-          },
-          "measure": {
-            "enum": [
-              "Currency",
-              "Per Share",
-              "Percent",
-              "Count"
-            ]
-          },
-          "type": {
-            "enum": [
-              "Revenue",
-              "Expense",
-              "Unclassified"
-            ]
-          },
-          "better": {
-            "enum": [
-              null,
-              "Higher",
-              "Lower"
-            ]
-          },
-          "status": {
-            "enum": [
-              "F",
-              "U",
-              "Neutral",
-              "Unclassified"
-            ]
-          },
-          "material": {
-            "type": "boolean"
-          },
-          "excluded_from_aggregation": {
-            "type": "boolean"
-          },
-          "percent_label": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "comparison": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "actual": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "variance": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "variance_percent": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "variance_bps": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/decimal"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "line_item",
-          "direction_source",
-          "materiality_reason",
-          "measure",
-          "type",
-          "better",
-          "status",
-          "material",
-          "excluded_from_aggregation",
-          "percent_label",
-          "comparison",
-          "actual",
-          "variance",
-          "variance_percent",
-          "variance_bps"
-        ],
-        "additionalProperties": false
-      }
-    }
+    "schema_version": {},
+    "period": {},
+    "source": {},
+    "materiality": {},
+    "data_quality": {},
+    "totals": {},
+    "material_variances": {},
+    "trust_contract": {},
+    "analysis_fingerprint": {},
+    "currency": {},
+    "provenance": {},
+    "payload_sha256": {},
+    "transformations": {},
+    "comparison": {},
+    "audience": {},
+    "inferences": {},
+    "measure_rows": {},
+    "comparisons": {},
+    "unavailable_comparisons": {},
+    "comparison_details": {},
+    "kind": {},
+    "comparison_order": {},
+    "estimate_vs_consensus": {}
   },
   "required": [
     "schema_version",
     "period",
     "source",
-    "materiality",
-    "data_quality",
-    "totals",
-    "material_variances",
-    "trust_contract",
     "analysis_fingerprint",
-    "currency",
-    "provenance",
-    "payload_sha256",
-    "transformations",
-    "comparison",
-    "audience",
-    "inferences",
-    "measure_rows"
+    "payload_sha256"
   ],
   "additionalProperties": false,
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Variance Analysis Agent audit 1.7",
   "$defs": {
     "decimal": {
       "type": "string",
@@ -1061,6 +339,1657 @@
         "materiality_reason"
       ],
       "additionalProperties": false
+    },
+    "single_record": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.8"
+        },
+        "period": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "worksheet": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "document": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "pdf"
+                    },
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "pages": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 1
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "statement",
+                    "pages",
+                    "reader_notes"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "sha256",
+            "worksheet",
+            "document"
+          ],
+          "additionalProperties": false
+        },
+        "materiality": {
+          "type": "object",
+          "properties": {
+            "dollar_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "percent_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "comparison": {
+              "const": "strictly_greater_than"
+            },
+            "logic": {
+              "const": "absolute_dollar_or_absolute_percent"
+            }
+          },
+          "required": [
+            "dollar_threshold",
+            "percent_threshold",
+            "comparison",
+            "logic"
+          ],
+          "additionalProperties": false
+        },
+        "data_quality": {
+          "type": "object",
+          "properties": {
+            "row_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "classified_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unclassified_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "excluded_summary_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "material_variance_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "supported_driver_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hypothesis_driver_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "classification_coverage_percent": {
+              "$ref": "#/$defs/decimal"
+            },
+            "totals_complete": {
+              "type": "boolean"
+            },
+            "net_operating_impact_available": {
+              "type": "boolean"
+            },
+            "warnings": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "completeness_basis": {
+              "const": "supplied_classified_rows_with_both_categories"
+            },
+            "summary_verifications": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "line_item": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "Revenue",
+                      "Expense",
+                      "Unclassified"
+                    ]
+                  },
+                  "summary_source": {
+                    "enum": [
+                      "explicit_summary",
+                      "inferred_summary",
+                      "unavailable"
+                    ]
+                  },
+                  "outcome": {
+                    "enum": [
+                      "reconciled_and_excluded",
+                      "included_standalone",
+                      "unclassified"
+                    ]
+                  },
+                  "detail_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "budget_residual": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "actual_residual": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tolerance": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "line_item",
+                  "type",
+                  "summary_source",
+                  "outcome",
+                  "detail_count",
+                  "budget_residual",
+                  "actual_residual",
+                  "tolerance"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "row_count",
+            "classified_count",
+            "unclassified_count",
+            "excluded_summary_count",
+            "material_variance_count",
+            "supported_driver_count",
+            "hypothesis_driver_count",
+            "classification_coverage_percent",
+            "totals_complete",
+            "net_operating_impact_available",
+            "warnings",
+            "completeness_basis",
+            "summary_verifications"
+          ],
+          "additionalProperties": false
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "revenue": {
+              "$ref": "#/$defs/aggregate"
+            },
+            "expenses": {
+              "$ref": "#/$defs/aggregate"
+            },
+            "net_operating_variance": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "revenue",
+            "expenses",
+            "net_operating_variance"
+          ],
+          "additionalProperties": false
+        },
+        "material_variances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        },
+        "trust_contract": {
+          "type": "object",
+          "properties": {
+            "source_derived_strings_are_data_only": {
+              "const": true
+            },
+            "deterministic_financial_values_are_authoritative": {
+              "const": true
+            },
+            "driver_claims_require_reconciled_evidence": {
+              "const": true
+            }
+          },
+          "required": [
+            "source_derived_strings_are_data_only",
+            "deterministic_financial_values_are_authoritative",
+            "driver_claims_require_reconciled_evidence"
+          ],
+          "additionalProperties": false
+        },
+        "analysis_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "currency": {
+          "enum": [
+            "USD",
+            "EUR",
+            "GBP"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "tool_version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "numeric_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "classification_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "driver_policy": {
+              "type": "string",
+              "minLength": 1
+            },
+            "configuration_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "type_map_sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "analysis_fingerprint_recipe": {
+              "const": "record-and-derived-rows-v1"
+            },
+            "payload_digest_recipe": {
+              "const": "public-record-without-payload-sha256-v1"
+            }
+          },
+          "required": [
+            "tool_version",
+            "numeric_policy",
+            "classification_policy",
+            "driver_policy",
+            "configuration_sha256",
+            "type_map_sha256",
+            "analysis_fingerprint_recipe",
+            "payload_digest_recipe"
+          ],
+          "additionalProperties": false
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "transformations": {
+          "type": "object",
+          "properties": {
+            "header_row_number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "column_mapping": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "ignored_columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "sign_flip": {
+              "type": "boolean"
+            },
+            "flipped_line_items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unit_scale": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "zero_reads": {
+              "type": "object",
+              "properties": {
+                "accounting_dashes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "blank_budgets": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "accounting_dashes",
+                "blank_budgets"
+              ],
+              "additionalProperties": false
+            },
+            "excluded_totals": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "period_selection": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "classification_rules": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "gl_ranges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "min": {
+                            "type": "integer"
+                          },
+                          "max": {
+                            "type": "integer"
+                          },
+                          "type": {
+                            "enum": [
+                              "Revenue",
+                              "Expense"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "min",
+                          "max",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "keywords": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "bulk_default": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mapping_file_sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "header_row_number",
+            "column_mapping",
+            "ignored_columns",
+            "sign_flip",
+            "unit_scale",
+            "zero_reads",
+            "excluded_totals"
+          ],
+          "additionalProperties": false
+        },
+        "comparison": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "budget",
+                "forecast",
+                "prior_period",
+                "consensus",
+                "estimate",
+                "guidance"
+              ]
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "basis",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        "audience": {
+          "type": "object",
+          "properties": {
+            "per_share_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "bps_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "percent_values": {
+              "enum": [
+                null,
+                "points",
+                "fractions"
+              ]
+            },
+            "actual_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "comparison_title": {
+              "type": "string"
+            },
+            "extended_headers": {
+              "type": "boolean"
+            },
+            "currency": {
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP"
+              ]
+            },
+            "dollar_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "percent_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "type_map": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "line_item": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "Revenue",
+                      "Expense",
+                      "Unclassified"
+                    ]
+                  }
+                },
+                "required": [
+                  "line_item",
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "per_share_threshold",
+            "count_threshold",
+            "bps_threshold",
+            "percent_values",
+            "actual_label",
+            "comparison_title",
+            "extended_headers",
+            "currency",
+            "dollar_threshold",
+            "percent_threshold",
+            "type_map"
+          ],
+          "additionalProperties": false
+        },
+        "inferences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "measure_rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "direction_source": {
+                "type": "string"
+              },
+              "materiality_reason": {
+                "type": "string"
+              },
+              "measure": {
+                "enum": [
+                  "Currency",
+                  "Per Share",
+                  "Percent",
+                  "Count"
+                ]
+              },
+              "type": {
+                "enum": [
+                  "Revenue",
+                  "Expense",
+                  "Unclassified"
+                ]
+              },
+              "better": {
+                "enum": [
+                  null,
+                  "Higher",
+                  "Lower"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "F",
+                  "U",
+                  "Neutral",
+                  "Unclassified"
+                ]
+              },
+              "material": {
+                "type": "boolean"
+              },
+              "excluded_from_aggregation": {
+                "type": "boolean"
+              },
+              "percent_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "comparison": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "actual": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance_percent": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance_bps": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "display_label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "line_item",
+              "direction_source",
+              "materiality_reason",
+              "measure",
+              "type",
+              "better",
+              "status",
+              "material",
+              "excluded_from_aggregation",
+              "percent_label",
+              "comparison",
+              "actual",
+              "variance",
+              "variance_percent",
+              "variance_bps",
+              "display_label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "comparisons": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "unavailable_comparisons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "segment": {
+                "type": "string"
+              },
+              "measure": {
+                "enum": [
+                  "Currency",
+                  "Per Share",
+                  "Percent",
+                  "Count"
+                ]
+              },
+              "actual": {
+                "$ref": "#/$defs/decimal"
+              },
+              "comparison": {
+                "type": "null"
+              },
+              "status": {
+                "type": "null"
+              },
+              "display_label": {
+                "type": "null"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "comparison_details": {
+                "type": "object",
+                "properties": {
+                  "line_item": {
+                    "type": "string"
+                  },
+                  "consensus_low": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "consensus_high": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dispersion": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guidance_low": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guidance_high": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "estimator_count": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "consensus_range_position": {
+                    "enum": [
+                      null,
+                      "above the high estimate",
+                      "below the low estimate"
+                    ]
+                  },
+                  "guidance_position": {
+                    "enum": [
+                      null,
+                      "Below range",
+                      "Within range",
+                      "Above range"
+                    ]
+                  },
+                  "guidance_midpoint": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "line_item",
+                  "consensus_low",
+                  "consensus_high",
+                  "dispersion",
+                  "guidance_low",
+                  "guidance_high",
+                  "estimator_count",
+                  "consensus_range_position",
+                  "guidance_position",
+                  "guidance_midpoint"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "line_item",
+              "segment",
+              "measure",
+              "actual",
+              "comparison",
+              "status",
+              "display_label",
+              "reason",
+              "comparison_details"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "comparison_details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "consensus_low": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "consensus_high": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dispersion": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "guidance_low": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "guidance_high": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimator_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "consensus_range_position": {
+                "enum": [
+                  null,
+                  "above the high estimate",
+                  "below the low estimate"
+                ]
+              },
+              "guidance_position": {
+                "enum": [
+                  null,
+                  "Below range",
+                  "Within range",
+                  "Above range"
+                ]
+              },
+              "guidance_midpoint": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "line_item",
+              "consensus_low",
+              "consensus_high",
+              "dispersion",
+              "guidance_low",
+              "guidance_high",
+              "estimator_count",
+              "consensus_range_position",
+              "guidance_position",
+              "guidance_midpoint"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "period",
+        "source",
+        "materiality",
+        "data_quality",
+        "totals",
+        "material_variances",
+        "trust_contract",
+        "analysis_fingerprint",
+        "currency",
+        "provenance",
+        "payload_sha256",
+        "transformations",
+        "comparison",
+        "audience",
+        "inferences",
+        "measure_rows",
+        "comparisons",
+        "unavailable_comparisons",
+        "comparison_details"
+      ],
+      "additionalProperties": false,
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "Variance Analysis Agent audit 1.7"
+    },
+    "missing_record": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.8"
+        },
+        "period": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        "analysis_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "const": "comparison_unavailable"
+        },
+        "comparison": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "budget",
+                "forecast",
+                "prior_period",
+                "consensus",
+                "estimate",
+                "guidance"
+              ]
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "basis",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        "unavailable_comparisons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "segment": {
+                "type": "string"
+              },
+              "measure": {
+                "enum": [
+                  "Currency",
+                  "Per Share",
+                  "Percent",
+                  "Count"
+                ]
+              },
+              "actual": {
+                "$ref": "#/$defs/decimal"
+              },
+              "comparison": {
+                "type": "null"
+              },
+              "status": {
+                "type": "null"
+              },
+              "display_label": {
+                "type": "null"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "comparison_details": {
+                "type": "object",
+                "properties": {
+                  "line_item": {
+                    "type": "string"
+                  },
+                  "consensus_low": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "consensus_high": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dispersion": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guidance_low": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "guidance_high": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "estimator_count": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "consensus_range_position": {
+                    "enum": [
+                      null,
+                      "above the high estimate",
+                      "below the low estimate"
+                    ]
+                  },
+                  "guidance_position": {
+                    "enum": [
+                      null,
+                      "Below range",
+                      "Within range",
+                      "Above range"
+                    ]
+                  },
+                  "guidance_midpoint": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/decimal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "line_item",
+                  "consensus_low",
+                  "consensus_high",
+                  "dispersion",
+                  "guidance_low",
+                  "guidance_high",
+                  "estimator_count",
+                  "consensus_range_position",
+                  "guidance_position",
+                  "guidance_midpoint"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "line_item",
+              "segment",
+              "measure",
+              "actual",
+              "comparison",
+              "status",
+              "display_label",
+              "reason",
+              "comparison_details"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "comparisons": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "audience": {
+          "type": "object",
+          "properties": {
+            "per_share_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "count_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "bps_threshold": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "percent_values": {
+              "enum": [
+                null,
+                "points",
+                "fractions"
+              ]
+            },
+            "actual_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "comparison_title": {
+              "type": "string"
+            },
+            "extended_headers": {
+              "type": "boolean"
+            },
+            "currency": {
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP"
+              ]
+            },
+            "dollar_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "percent_threshold": {
+              "$ref": "#/$defs/decimal"
+            },
+            "type_map": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "line_item": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "Revenue",
+                      "Expense",
+                      "Unclassified"
+                    ]
+                  }
+                },
+                "required": [
+                  "line_item",
+                  "type"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "per_share_threshold",
+            "count_threshold",
+            "bps_threshold",
+            "percent_values",
+            "actual_label",
+            "comparison_title",
+            "extended_headers",
+            "currency",
+            "dollar_threshold",
+            "percent_threshold",
+            "type_map"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "period",
+        "source",
+        "analysis_fingerprint",
+        "payload_sha256",
+        "kind",
+        "comparison",
+        "unavailable_comparisons",
+        "comparisons",
+        "audience"
+      ],
+      "additionalProperties": false
+    },
+    "set_record": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.8"
+        },
+        "period": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sha256": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/sha256"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        "analysis_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "payload_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "const": "comparison_set"
+        },
+        "comparisons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/child_record"
+          },
+          "minItems": 2
+        },
+        "comparison_order": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "budget",
+              "forecast",
+              "prior_period",
+              "consensus",
+              "estimate",
+              "guidance"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "estimate_vs_consensus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "segment": {
+                "type": "string"
+              },
+              "measure": {
+                "enum": [
+                  "Currency",
+                  "Per Share",
+                  "Percent",
+                  "Count"
+                ]
+              },
+              "estimate": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "consensus": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance_percent": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "variance_bps": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "line_item",
+              "segment",
+              "measure",
+              "estimate",
+              "consensus",
+              "variance",
+              "variance_percent",
+              "variance_bps"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "inferences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "period",
+        "source",
+        "analysis_fingerprint",
+        "payload_sha256",
+        "kind",
+        "comparisons",
+        "comparison_order",
+        "estimate_vs_consensus",
+        "inferences"
+      ],
+      "additionalProperties": false
+    },
+    "child_record": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/single_record"
+        },
+        {
+          "$ref": "#/$defs/missing_record"
+        }
+      ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "const": "comparison_set"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/set_record"
+      },
+      "else": {
+        "if": {
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "comparison_unavailable"
+            }
+          }
+        },
+        "then": {
+          "$ref": "#/$defs/missing_record"
+        },
+        "else": {
+          "$ref": "#/$defs/single_record"
+        }
+      }
+    }
+  ]
 }

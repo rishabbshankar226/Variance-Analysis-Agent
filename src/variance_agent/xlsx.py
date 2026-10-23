@@ -7,6 +7,11 @@ formulas) and fixed zip timestamps so the same analysis yields identical bytes.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .comparisons import TableAnalysis
+
 import io
 import math
 import zipfile
@@ -18,7 +23,7 @@ from .audience import is_audience_result
 from .measures import format_measure
 from .models import MeasureKind
 from .analysis import verify_result
-from .comparison import basis_noun, comparison_heading
+from .comparison import basis_noun, comparison_heading, display_outcome, extended_heading
 from .currencies import CURRENCY_SYMBOLS
 from .limits import display_text
 from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType, Status
@@ -335,7 +340,7 @@ def _status_cell(status: Status) -> _Cell:
 
 def _heading(cfg: AnalysisConfig) -> str:
     """Column name for the comparison amount: 'Budget', 'Forecast' or 'Prior Period (FY2024)'."""
-    return display_text(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    return display_text(extended_heading(cfg))
 
 
 def _against(cfg: AnalysisConfig) -> str:
@@ -670,7 +675,8 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
                       _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
                       _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
                       _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
-                      _status_cell(row.status), _Cell("Yes" if row.material else "No", S_TEXT))
+                      _Cell(display_outcome(row, result.config.comparison_basis), _STATUS_STYLE[row.status]),
+                      _Cell("Yes" if row.material else "No", S_TEXT))
         return _package([sheet], places)
     sheets = [
         _summary_sheet(result, places),
@@ -679,3 +685,63 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
         _all_rows_sheet(result, places),
     ]
     return _package(sheets, places)
+
+
+def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
+    """The combined sheet contains display units and never merges unlike measures."""
+    from .comparisons import UnavailableComparison, _identity, verify_comparisons
+    verify_comparisons(table)
+    if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
+        return render_xlsx(table.comparisons[0].result)
+    column_count = 5 * len(table.comparisons) + (2 if table.estimate_vs_consensus else 0)
+    sheet = _Sheet("Comparisons", tuple([34, 16] + [22] * column_count), freeze_header=True, autofilter=True)
+    headers = ["Line Item", "Measure"]
+    mapping = []
+    names: dict[tuple[str, str, MeasureKind], tuple[str, MeasureKind]] = {}
+    for comparison in table.comparisons:
+        if comparison.result is not None:
+            verify_result(comparison.result)
+        title = extended_heading(comparison.result.config) if comparison.result else comparison_heading(comparison.basis, comparison.label)
+        headers.extend([f"{title}: Comparison", f"{title}: Actual", f"{title}: Variance", f"{title}: Var %", f"{title}: Outcome"])
+        current: dict[tuple[str, str, MeasureKind], AnalyzedRow | UnavailableComparison] = {}
+        for row in comparison.result.rows if comparison.result else ():
+            key = _identity(row)
+            current[key] = row
+            names.setdefault(key, (row.line_item, row.measure))
+        for absent in comparison.unavailable:
+            key = (absent.line_item.casefold(), absent.segment.casefold(), absent.measure)
+            current[key] = absent
+            names.setdefault(key, (absent.line_item, absent.measure))
+        mapping.append(current)
+    if table.estimate_vs_consensus:
+        headers.extend(["Estimate - Consensus", "Estimate - Consensus % / bps"])
+    gaps = {(gap.line_item.casefold(), gap.segment.casefold(), gap.measure): gap for gap in table.estimate_vs_consensus}
+    sheet.add(*(_Cell(header, S_HEADER) for header in headers))
+    from .report import _pct
+    for key, (name, kind) in names.items():
+        cells = [_Cell(name, S_TEXT), _Cell(str(kind), S_TEXT)]
+        for comparison, current in zip(table.comparisons, mapping, strict=True):
+            entry = current.get(key)
+            if isinstance(entry, AnalyzedRow):
+                variance = entry.variance_bps if kind is MeasureKind.PERCENT else entry.variance_dollars
+                assert variance is not None
+                cells.extend([_Cell(format_measure(entry.budget, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(variance, kind, table.config.currency, variance=True), S_TEXT_RIGHT),
+                              _Cell(_pct(entry.budget, entry.variance_dollars, entry.percent_label), S_TEXT_RIGHT),
+                              _Cell(display_outcome(entry, comparison.basis), _STATUS_STYLE[entry.status])])
+            elif isinstance(entry, UnavailableComparison):
+                cells.extend([_Cell(entry.reason, S_TEXT), _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell("", S_TEXT), _Cell("", S_TEXT), _Cell("", S_TEXT)])
+            else:
+                cells.extend(_Cell("", S_TEXT) for _ in range(5))
+        if table.estimate_vs_consensus:
+            gap = gaps.get(key)
+            if gap is None:
+                cells.extend([_Cell("", S_TEXT), _Cell("", S_TEXT)])
+            else:
+                cells.extend([_Cell(format_measure(gap.variance, kind, table.config.currency), S_TEXT_RIGHT),
+                              _Cell(format_measure(gap.variance_bps, kind, variance=True) if gap.variance_bps is not None
+                                    else _pct(gap.consensus, gap.variance, "N/A" if gap.consensus == 0 else None), S_TEXT_RIGHT)])
+        sheet.add(*cells)
+    return _package([sheet], 2)

@@ -25,6 +25,7 @@ from variance_agent.analysis import analyze_rows
 from variance_agent.audit import build_audit_record, serialize_audit_json, sha256_bytes
 from variance_agent.comparison import (
     basis_noun,
+    basis_for_header,
     comparison_heading,
     zero_comparison_phrase,
 )
@@ -205,6 +206,12 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if intent.intent_id == "switch_sheet":
         return _handle_switch_sheet(session, intent)
     if intent.intent_id == "set_comparison":
+        if intent.captures.get("basis") in {"consensus", "estimate", "guidance"}:
+            from .earnings import explicit_comparison
+            return explicit_comparison(session, ComparisonBasis(intent.captures["basis"]))
+        if session.earnings_mode:
+            from .earnings import handle_review_choice
+            return handle_review_choice(session, text)
         return _handle_set_comparison(session, intent)
 
     if routing_key in ("show technical details", "technical details"):
@@ -225,6 +232,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=Phase.AWAITING_FILE,
         )
 
+    if session.phase in {Phase.AWAITING_EARNINGS_REVIEW, Phase.AWAITING_COMPARISON_CHOICE}:
+        from .earnings import handle_review_choice
+        return handle_review_choice(session, text)
     if session.phase == Phase.AWAITING_FILE:
         return Response(
             text="Please upload a file using the drop zone above, or paste a table copied from a spreadsheet.",
@@ -543,6 +553,10 @@ def _load_file(
     failed = intake_res.has_fatal_errors or not intake_res.rows
     awaiting_answer = bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
     if failed and not awaiting_answer:
+        from .earnings import offer_review
+        proposal = offer_review(session, file_bytes, filename)
+        if proposal is not None:
+            return proposal
         return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
 
     session.reset()
@@ -1123,7 +1137,18 @@ def _run_analysis(session: Session) -> Response:
         )
     try:
         with financial_context():
-            result = analyze_rows(session.parsed_rows, config)
+            if session.earnings_mode:
+                from .earnings import analyze_review, summary
+                session.table_analysis = analyze_review(session, config)
+                first = next((comparison.result for comparison in session.table_analysis.comparisons
+                              if comparison.result is not None), None)
+                if first is None:
+                    session.result = None
+                    session.phase = Phase.EXPLORING
+                    return summary(session)
+                result = first
+            else:
+                result = analyze_rows(session.parsed_rows, config)
     except (ValueError, RuntimeError) as exc:
         session.phase = Phase.AWAITING_FILE
         technical = str(exc)
@@ -1311,6 +1336,9 @@ def _rerun_after_classification(session: Session) -> Response:
 
 def _build_analysis_summary(session: Session) -> Response:
     """Build the initial analysis summary after successful analysis."""
+    if session.earnings_mode and session.table_analysis is not None:
+        from .earnings import summary
+        return summary(session)
     result = session.result
     assert result is not None
     if is_audience_result(result):
@@ -1461,6 +1489,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
         period_column_selection=session.period,
         classification_rules=classification_rules,
         comparison_basis=_saved_comparison_basis(session),
+        comparison_bases=session.comparison_bases if len(session.comparison_bases) > 1 else (),
         measure_options={key: str(value) for key in ("per_share_threshold", "count_threshold", "bps_threshold", "percent_values")
                          if (value := getattr(session, key)) is not None} or None,
         better_directions={str(row.get("line_item", "")): str(row["better"])
@@ -1524,6 +1553,9 @@ def _handle_exploring(session: Session, text: str) -> Response:
         return _handle_save_mapping(session)
 
     intent = parse_intent(text)
+    if session.earnings_mode and session.table_analysis is not None:
+        from .earnings import explore
+        return explore(session, intent.intent_id, intent.captures)
     if session.result is None:
         return _file_is_gone(session)
 
@@ -4513,7 +4545,9 @@ def _next_measure_question(session: Session) -> Response | None:
             question = f"For **{safe_inline(name)}**, is Higher or Lower better?"
             chips, pending = ["Higher", "Lower"], ("better", index)
         elif kind is MeasureKind.PERCENT and session.percent_values is None:
-            bare = [v for k, v in row.items() if k in {"budget", "actual"} and not str(v).strip().endswith("%")]
+            bare = [v for k, v in row.items()
+                    if (k in {"budget", "actual"} or (session.earnings_mode and basis_for_header(k, extended=True) is not None))
+                    and not str(v).strip().endswith("%")]
             if bare:
                 example = parse_decimal(bare[0], field="Rate", line_item=name)
                 percent = format(example * Decimal("100"), "f")
