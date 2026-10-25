@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 2. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: Phase 3. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 
@@ -69,7 +69,7 @@ Favorable and unfavorable differ in lightness as well as hue (contrast between t
 | Message | Yours: tinted block on the right. The tool's: plain text, 72 ch | Phase 2 copy |
 | Chips | Bordered 4 px buttons in body text; earlier turns' chips are disabled, announced as no longer available, and set as small muted text | — |
 | Input bar | Bordered box, filled ink-blue Send | — |
-| Intake panel | Markdown bullets | Phase 3: rows from a sibling of `format_intake_summary` |
+| Intake panel | A bordered panel, 72 ch wide: title, one hairline row per fact (label left in secondary text, the file's words right), notes under a stronger rule, the question last; stacked on a phone | — |
 | Headline strip | — | Phase 4: three or four figures, label above, value at 28 px, comparison and variance at 12 px, status as a word |
 | Results table | Framed panel, hairline rows 40 px, 12 px heads, right-aligned tabular numbers, drawn sort icons | Phase 4: `view` field, sentence-case heads, status words, phone layout, totals rule |
 | Drill-down, driver breakdown | Markdown | Phase 4 |
@@ -91,6 +91,8 @@ None. `•` (U+2022) in Markdown bullets and `…` (U+2026) in previews are punc
 | First reply after upload | 👋 plus a three-heading essay ("What it's for", "Who it's for", "What you can do") before the question | "Welcome to the Variance Analysis Agent. I compare each line's Actual against your budget, flag the gaps big enough to matter, and say whether each one helped or hurt profit. Type `help` for everything you can ask." then the file line and the question |
 | Help | "`biggest risks` — Top material unfavorable variances and mitigation advice" | "`biggest risks`: the largest material unfavorable variances" |
 | A refusal | "⚠️ 'file.pdf' looks like a scanned image…" | the same sentence with no sign, beside an attention-coloured rule, carried by `level: "error"` |
+| Intake summary | "Here's how I read your file:" and double-spaced bullets with bold labels | A panel titled "How I read your file" with one row per fact and "Adjustments I made" |
+| Step reminder | "🎯 **Next Step:** Please enter your materiality thresholds" | "**Next:** Enter your materiality thresholds (for example `$10,000 or 5%`), or choose a preset below." |
 | Header | "? Help", "↺ Reset", "SET PERIOD" with a pulsing dot | Help and Start over with drawn icons; "Set the period" as plain text |
 | Placeholder | "Enter the reporting period (e.g., Q3 2026)..." | "Reporting period, for example Q3 2026" |
 | Drop zone | "Drop file here or click to browse" / ".csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)" | "Drop a file here, or choose one" / "CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to 32 MB" |

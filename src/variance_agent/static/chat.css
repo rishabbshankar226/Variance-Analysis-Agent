@@ -253,6 +253,45 @@ button, input, textarea { font: inherit; color: inherit; }
   padding-left: var(--space-3);
 }
 
+/* ── Panels: a designed view of a reply ──────────────────── */
+.view-lead { margin-bottom: var(--space-4); }
+
+.panel {
+  max-width: 72ch;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4) var(--space-6);
+}
+.panel-title {
+  font-size: var(--text-lead);
+  font-weight: var(--weight-strong);
+  line-height: 1.25;
+  margin-bottom: var(--space-3);
+}
+
+/* One fact per row: the label on the left, the file's own words on the right. */
+.facts { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; }
+.fact { display: contents; }
+.fact dt, .fact dd { padding: var(--space-2) 0; border-top: 1px solid var(--border); }
+.fact:first-child dt, .fact:first-child dd { border-top: 0; }
+.fact dt { color: var(--text-secondary); padding-right: var(--space-6); }
+.fact dd { overflow-wrap: anywhere; }
+
+.panel-note { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border-strong); }
+.panel-note h4 {
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.panel-note ul { list-style: none; display: grid; gap: var(--space-1); }
+.panel-note li { padding-left: var(--space-4); text-indent: calc(-1 * var(--space-4)); }
+.panel-note li::before { content: "\2013"; display: inline-block; width: var(--space-4); text-indent: 0; color: var(--text-muted); }
+.panel-note li.more { color: var(--text-muted); }
+
+.panel-question { margin-top: var(--space-4); font-weight: var(--weight-medium); }
+
 /* ── Working indicator ────────────────────────────────────── */
 /* Nothing for 100 ms, then the dots and a line saying what is happening, and after a second a
    flat skeleton where the reply will go (chat.js sets .is-long). */
@@ -620,6 +659,7 @@ body.is-busy .drop-zone {
   .chip, .header-action-btn, .download-btn, .send-btn, .table-search, .drop-zone { border: 1px solid ButtonText; }
   .message.user .message-body, .data-table-wrapper { border: 1px solid CanvasText; }
   .message-body.is-error { border-left: 2px solid Highlight; }
+  .panel { border: 1px solid CanvasText; }
   .skeleton div { background: GrayText; }
   .variance-bar-fill { background: CanvasText; forced-color-adjust: none; }
   .header-icon .icon-fill { fill: CanvasText; }
@@ -642,6 +682,10 @@ body.is-busy .drop-zone {
 /* ── Narrow screens ───────────────────────────────────────── */
 @media (max-width: 640px) {
   .header { padding: var(--space-2) var(--space-4); gap: var(--space-2); }
+  .panel { padding: var(--space-3) var(--space-4); }
+  .facts { grid-template-columns: 1fr; }
+  .fact dt { padding-bottom: 0; }
+  .fact dd { border-top: 0; padding-top: 0; }
   .messages { padding: var(--space-4); gap: var(--space-4); }
   .input-bar { padding: var(--space-2) var(--space-4) var(--space-3); }
   .drop-zone { padding: var(--space-6) var(--space-4); }

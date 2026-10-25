@@ -267,6 +267,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
                     "chips": self.initial_response.chips,
                     "table": self.initial_response.table,
                     "level": self.initial_response.level,
+                    "view": self.initial_response.view,
                 }
             self._json_response(payload)
         elif self.path == "/favicon.ico":
@@ -420,6 +421,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
             payload["chips"] = response.chips
         if response.level is not None:
             payload["level"] = response.level
+        if response.view is not None:
+            payload["view"] = response.view
         if response.download is not None:
             # Stage the download and return a URL
             for filename, content in response.download.items():

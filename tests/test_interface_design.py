@@ -364,3 +364,31 @@ def test_copy_on_the_page_is_sentence_case_without_exclamations() -> None:
     for text in re.findall(r"'([A-Z][a-z][^'\n]{10,})'", script):  # prose, not code
         assert "!" not in text, text
     assert "..." not in script[script.index("PHASE_PLACEHOLDERS = {"):script.index("export function phaseLabel")]
+
+
+# ---------------------------------------------------------------------------
+# The intake panel (Phase 3)
+# ---------------------------------------------------------------------------
+
+def test_the_page_draws_only_intake_views_it_understands(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    good = ('{kind: "intake", title: "How I read your file", lead: null, question: "Does this look right?",'
+            ' rows: [{label: "Header row", value: "Row 2"}], notes: [{title: "Adjustments I made", items: ["x"], more: 0}]}')
+    cases = run_js(
+        f"const good = {good};"
+        "return [m.isIntakeView(good), m.isIntakeView({...good, lead: 'Welcome.'}), m.isIntakeView(null),"
+        " m.isIntakeView({...good, kind: 'results'}), m.isIntakeView({...good, rows: []}),"
+        " m.isIntakeView({...good, rows: [{label: 'a', value: 3}]}),"
+        " m.isIntakeView({...good, notes: [{title: 't', items: ['x'], more: -1}]})];"
+    )
+    assert cases == [True, True, False, False, False, False, False]
+
+
+def test_the_intake_panel_sets_file_labels_as_text() -> None:
+    script = _script()
+    panel = script[script.index("function renderIntakePanel(view) {"):]
+    panel = panel[:panel.index("\n  }\n")]
+    assert "innerHTML" not in panel
+    for field in ("row.label", "row.value", "item", "view.title", "view.question", "note.title"):
+        assert f"textContent = {field}" in panel, field
+    # The lead is the server's own Markdown and goes through the escaping renderer.
+    assert "lead.innerHTML = renderMarkdown(view.lead)" in script

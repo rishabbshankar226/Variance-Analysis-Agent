@@ -76,6 +76,7 @@ from .responses import (
     status_label,
 )
 from .session import Phase, Session
+from .views import CONFIRM_QUESTION, intake_view, with_lead
 
 
 # ---------------------------------------------------------------------------
@@ -432,13 +433,7 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
             )
 
         session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
-        summary_text = format_intake_summary(intake_res)
-        summary_text += "\n\nDoes this look right?"
-        return Response(
-            text=summary_text,
-            chips=["Looks right", "Change something"],
-            phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-        )
+        return _intake_confirmation(intake_res, ["Looks right", "Change something"])
     session.phase = Phase.AWAITING_FILE
     return Response(
         text="Please upload a file using the drop zone above.",
@@ -479,14 +474,7 @@ def _handle_period_choice(session: Session, text: str) -> Response:
     session.intake_result = intake_res
 
     session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
-    summary_text = format_intake_summary(intake_res)
-    summary_text += "\n\nDoes this look right?"
-    chips = ["Looks right", "Change something"]
-    return Response(
-        text=summary_text,
-        chips=chips,
-        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-    )
+    return _intake_confirmation(intake_res, ["Looks right", "Change something"])
 
 
 def _file_is_gone(session: Session) -> Response:
@@ -604,6 +592,23 @@ def _fatal_upload_response(
     return Response(text=text, chips=chips, phase=session.phase, level="error")
 
 
+def _intake_summary_text(intake_res: IntakeResult) -> str:
+    """`format_intake_summary` for the chat, with the question, and without its warning sign."""
+    text = format_intake_summary(intake_res).replace("\n\u26a0\ufe0f **Items needing attention:**",
+                                                      "\n**Items needing attention:**")
+    return text + f"\n\n{CONFIRM_QUESTION}"
+
+
+def _intake_confirmation(intake_res: IntakeResult, chips: list[str]) -> Response:
+    """Ask the analyst to confirm how the file was read, as text and as a panel."""
+    return Response(
+        text=_intake_summary_text(intake_res),
+        chips=chips,
+        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
+        view=intake_view(intake_res),
+    )
+
+
 def _first_upload_intro(basis: ComparisonBasis) -> str:
     """A short welcome for a visitor's first file, worded for the file's comparison basis.
 
@@ -632,7 +637,7 @@ def _with_first_upload_intro(
     session.intro_shown = True
     if not show:
         return response
-    return replace(response, text=_first_upload_intro(basis) + response.text)
+    return with_lead(response, _first_upload_intro(basis))
 
 
 def _intake_response(session: Session, intake_res: IntakeResult, filename: str) -> Response:
@@ -701,8 +706,6 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
 
     session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
 
-    summary_text = format_intake_summary(intake_res)
-    summary_text += "\n\nDoes this look right?"
     chips = ["Looks right", "Change something"]
     if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
         other_sheets = [s for s in _choosable(session, intake_res.available_sheets)
@@ -710,11 +713,7 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
         if other_sheets:
             chips.insert(1, _sheet_chip(session, other_sheets[0]))
 
-    return Response(
-        text=summary_text,
-        chips=chips,
-        phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-    )
+    return _intake_confirmation(intake_res, chips)
 
 
 # ---------------------------------------------------------------------------
@@ -1325,13 +1324,9 @@ def _rerun_after_classification(session: Session) -> Response:
     session.phase = Phase.EXPLORING
     summary = _build_analysis_summary(session)
     names = ", ".join(f"'{safe_inline(item)}'" for item in added)
-    return Response(
-        text=f"{response.text}\n\nThe classification of {names} was not applied; "
-             f"those items stay Unclassified.\n\n{summary.text}",
-        table=summary.table,
-        chips=summary.chips,
-        phase=Phase.EXPLORING,
-    )
+    return with_lead(replace(summary, phase=Phase.EXPLORING),
+                     f"{response.text}\n\nThe classification of {names} was not applied; "
+                     "those items stay Unclassified.\n\n")
 
 
 def _build_analysis_summary(session: Session) -> Response:
@@ -2011,13 +2006,7 @@ def _handle_set_threshold(session: Session, intent: ParsedIntent) -> Response:
         if exited:
             changes.append("**No longer material:** " + ", ".join(safe_inline(i) for i in sorted(exited)))
         if changes:
-            response = Response(
-                text=response.text + "\n\n" + "\n".join(changes),
-                table=response.table,
-                chips=response.chips,
-                download=response.download,
-                phase=response.phase,
-            )
+            response = replace(response, text=response.text + "\n\n" + "\n".join(changes))
 
     return response
 
@@ -2401,34 +2390,34 @@ def _handle_knowledge(session: Session, intent_id: str) -> Response:
     if session.phase == Phase.AWAITING_FILE:
         text += (
             "\n\n---\n"
-            "📁 **Next Step:** Upload your financial file (CSV, JSON, XLSX, XLSM, or a PDF filing) "
-            "using the drop zone above to begin."
+            "**Next:** Upload your financial file (CSV, JSON, XLSX, XLSM or a PDF filing) "
+            "with the drop zone above."
         )
         chips = ["Supported file formats", "What is materiality?"]
     elif session.phase == Phase.AWAITING_PERIOD:
         text += (
             "\n\n---\n"
-            f"📅 **Next Step:** What reporting period does '{safe_inline(session.source_name or 'your file')}' cover? "
+            f"**Next:** What reporting period does '{safe_inline(session.source_name or 'your file')}' cover? "
             "(e.g., `Q3 2026`, `October 2026`, `FY2026`)"
         )
         chips = ["Q3 2026", "FY2026", "October 2026"]
     elif session.phase == Phase.AWAITING_THRESHOLDS:
         text += (
             "\n\n---\n"
-            "🎯 **Next Step:** Please enter your materiality thresholds (e.g., `$10,000 or 5%`) or pick a preset below:"
+            "**Next:** Enter your materiality thresholds (for example `$10,000 or 5%`), or choose a preset below."
         )
         chips = ["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"]
     elif session.phase == Phase.AWAITING_CURRENCY:
         text += (
             "\n\n---\n"
-            "💱 **Next Step:** What is the reporting currency for this analysis?"
+            "**Next:** What is the reporting currency for this analysis?"
         )
         chips = ["USD", "EUR", "GBP"]
     elif session.phase == Phase.RESOLVE_UNCLASSIFIED:
         current_item = safe_inline(session.unclassified_queue[0]) if session.unclassified_queue else ""
         text += (
             "\n\n---\n"
-            f"🏷️ **Next Step:** Classify '{current_item}': is it Revenue, Expense, or Skip?"
+            f"**Next:** Classify '{current_item}': is it Revenue, Expense or Skip?"
         )
         chips = ["Revenue", "Expense", "Skip", "Skip all"]
 
@@ -3323,7 +3312,7 @@ def _handle_list_sheets(session: Session) -> Response:
         sheet_list_md.append(f"{idx}. **{safe_inline(s)}**{marker}")
 
     text = (
-        f"📑 **{word.capitalize()}s in '{safe_inline(session.source_name)}' ({len(sheets)} total):**\n\n"
+        f"**{word.capitalize()}s in '{safe_inline(session.source_name)}' ({len(sheets)} total):**\n\n"
         + "\n".join(sheet_list_md)
         + f"\n\nTo switch {word}s, type `{_sheet_chip(session, '<name>').lower()}` (e.g., `"
         + _sheet_chip(session, safe_inline(sheets[1] if len(sheets) > 1 else sheets[0])).replace(
@@ -3450,33 +3439,22 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         and session.percent_threshold is not None
     ):
         resp = _run_analysis(session)
-        prefix = f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'** ({len(intake_res.rows)} rows).\n\n"
-        return Response(
-            text=prefix + resp.text,
-            table=resp.table,
-            chips=resp.chips,
-            phase=resp.phase,
-            download=resp.download,
-        )
+        prefix = f"Switched to {word} **'{safe_inline(matched_sheet)}'** ({len(intake_res.rows)} rows).\n\n"
+        return with_lead(resp, prefix)
 
     if session.phase == Phase.AWAITING_INTAKE_CONFIRMATION:
-        summary_text = format_intake_summary(intake_res)
-        summary_text += "\n\nDoes this look right?"
         chips = ["Looks right", "Change something"]
         if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
             other_sheets = [s for s in _choosable(session, intake_res.available_sheets)
                             if s != matched_sheet]
             if other_sheets:
                 chips.insert(1, _sheet_chip(session, other_sheets[0]))
-        return Response(
-            text=f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'**.\n\n" + summary_text,
-            chips=chips,
-            phase=Phase.AWAITING_INTAKE_CONFIRMATION,
-        )
+        return with_lead(_intake_confirmation(intake_res, chips),
+                         f"Switched to {word} **'{safe_inline(matched_sheet)}'**.\n\n")
 
     row_count = len(intake_res.rows)
     return Response(
-        text=f"📑 Switched to {word} **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}).\n\n"
+        text=f"Switched to {word} **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}).\n\n"
              f"Current reporting period: **{safe_inline(session.period or 'Not set')}**.",
         phase=session.phase,
     )
@@ -3529,13 +3507,7 @@ def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
         session.available_sheets = intake_res.available_sheets
     resp = _run_analysis(session)
     heading = safe_inline(comparison_heading(intake_res.comparison_basis, intake_res.comparison_label))
-    return Response(
-        text=f"🔁 Now comparing Actual against **{heading}**.\n\n" + resp.text,
-        table=resp.table,
-        chips=resp.chips,
-        phase=resp.phase,
-        download=resp.download,
-    )
+    return with_lead(resp, f"Now comparing Actual against **{heading}**.\n\n")
 
 
 def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
@@ -4181,7 +4153,7 @@ def _handle_greeting(session: Session) -> Response:
         status = "favorable beat" if net_impact >= 0 else "unfavorable shortfall"
 
         text = (
-            f"👋 **Hello!** I am ready to explore your **{cfg.period}** financial results.\n\n"
+            f"I am ready to explore your **{cfg.period}** financial results.\n\n"
             f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. "
             f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n"
             f"What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
@@ -4189,33 +4161,33 @@ def _handle_greeting(session: Session) -> Response:
         chips = ["Executive memo", "Waterfall", "Biggest risks", "Sensitivity"]
     elif session.phase == Phase.AWAITING_PERIOD:
         text = (
-            "👋 **Hello!** Your file has been validated and loaded. "
-            "Please tell me which reporting period this data represents (for example: `Q3 2026` or `August 2026`)."
+            "Your file has been validated and loaded. "
+            "Which reporting period does it cover? For example `Q3 2026` or `August 2026`."
         )
         chips = ["Q3 2026", "FY 2026", "Month ended Sep 30, 2026"]
     elif session.phase == Phase.AWAITING_THRESHOLDS:
         text = (
-            "👋 **Hello!** Next, let's configure your materiality tolerance hurdles. "
-            "Enter both dollar and percentage hurdles (e.g., `$10,000 or 5%`)."
+            "Next come the materiality thresholds: a dollar amount and a percentage, "
+            "for example `$10,000 or 5%`."
         )
         chips = ["$5,000 or 5%", "$10,000 or 5%", "$25,000 or 10%"]
     elif session.phase == Phase.AWAITING_CURRENCY:
         text = (
-            "👋 **Hello!** What currency are these financial figures reported in? "
-            "I support `USD`, `EUR`, and `GBP`."
+            "What currency are these figures reported in? "
+            "For example `USD`, `EUR` or `GBP`."
         )
         chips = ["USD", "EUR", "GBP"]
     elif session.phase == Phase.RESOLVE_UNCLASSIFIED:
         text = (
-            "👋 **Hello!** We are currently resolving unclassified line items. "
-            "Please select `Revenue`, `Expense`, or `Skip` for the highlighted account."
+            "Some lines are not yet labeled revenue or expense. "
+            "Choose `Revenue`, `Expense` or `Skip` for the line named above."
         )
         chips = ["Revenue", "Expense", "Skip", "Skip all"]
     else:
         text = (
-            "👋 **Hello! Welcome to the Variance Analysis Agent.**\n\n"
-            "I am an institutional FP&A assistant powered by deterministic 50-digit Decimal arithmetic. "
-            "Please drop a CSV, JSON, or Excel workbook above to begin your analysis, or ask me any question about financial variance concepts."
+            "**Welcome to the Variance Analysis Agent.**\n\n"
+            "Every figure comes from exact, repeatable calculations. "
+            "Drop a CSV, JSON or Excel workbook above to start, or ask about a variance concept."
         )
         chips = ["Supported file formats", "What is materiality?", "Budget vs forecast"]
 
@@ -4242,7 +4214,7 @@ def _handle_identity(session: Session) -> Response:
         else "Run locally, your file is read on your own machine."
     )
     text = (
-        "🤖 **Institutional Variance Analysis Agent**\n\n"
+        "**Institutional Variance Analysis Agent**\n\n"
         "I am an intelligent, deterministic financial analysis assistant built specifically for FP&A teams, "
         "controllers, and CFO organizations.\n\n"
         "**How I differ from a non-deterministic LLM:**\n"

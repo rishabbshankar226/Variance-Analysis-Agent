@@ -27,6 +27,9 @@ class Response:
     phase: str | None = None
     # "error" when the reply refuses or could not do what was asked; the page styles it from this.
     level: Literal["error"] | None = None
+    # A designed view of the same reply (see chat/views.py); the page renders it when present and
+    # `text` otherwise. `text` always carries every figure and sentence on its own.
+    view: dict[str, object] | None = None
 
 
 def format_money(value: Decimal, currency: str = "USD", places: int = 2) -> str:

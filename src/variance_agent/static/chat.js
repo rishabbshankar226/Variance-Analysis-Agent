@@ -17,6 +17,7 @@
  * @property {string} [download_url]
  * @property {string} [download_filename]
  * @property {'error'} [level]  set when the reply refuses or could not do what was asked
+ * @property {Record<string, unknown>} [view]  a designed view of the same reply (see chat/views.py)
  * @property {ChatReply} [initial_response]  Only on /status, when a file was loaded at start-up.
  */
 
@@ -331,6 +332,39 @@ export function retireChips(groups) {
   return retired;
 }
 
+// ── Designed views ──────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} IntakeView  How the file was read, one fact per row (chat/views.py).
+ * @property {'intake'} kind
+ * @property {string} title
+ * @property {string | null} lead  the server's Markdown, shown above the panel
+ * @property {Array<{label: string, value: string}>} rows
+ * @property {Array<{title: string, items: string[], more: number}>} notes
+ * @property {string} question
+ */
+
+/** @param {unknown} value @returns {value is string} */
+const isString = (value) => typeof value === 'string';
+
+/**
+ * Whether a reply's `view` is an intake panel this page can draw. Anything else falls back to
+ * the reply's text, which always carries the same facts.
+ * @param {unknown} view
+ * @returns {view is IntakeView}
+ */
+export function isIntakeView(view) {
+  if (!view || typeof view !== 'object') return false;
+  const v = /** @type {Record<string, unknown>} */ (view);
+  return v.kind === 'intake' && isString(v.title) && isString(v.question)
+    && (v.lead === null || isString(v.lead))
+    && Array.isArray(v.rows) && v.rows.length > 0
+    && v.rows.every((r) => r && isString(r.label) && isString(r.value))
+    && Array.isArray(v.notes)
+    && v.notes.every((n) => n && isString(n.title) && Array.isArray(n.items) && n.items.every(isString)
+      && Number.isInteger(n.more) && n.more >= 0);
+}
+
 // ── The page ────────────────────────────────────────────────────────────────
 
 function boot() {
@@ -394,7 +428,7 @@ function boot() {
     updatePhase(view.phase);
     if (view.kind === 'restored' && view.reply) {
       markIntroSeen();
-      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false, view.reply.level);
+      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false, view.reply.level, view.reply.view);
     } else if (view.kind === 'resumed') {
       addAgentMessage(
         'Welcome back. This server already has an analysis in progress (step: **' +
@@ -443,9 +477,10 @@ function boot() {
    * @param {string[] | null | undefined} chips
    * @param {boolean} [showDropZone]
    * @param {'error'} [level]  set for a reply that refuses or could not do what was asked
+   * @param {unknown} [view]  a designed view of the same reply, drawn in place of the text
    * @returns {HTMLElement} the new message
    */
-  function addAgentMessage(text, table, chips, showDropZone, level) {
+  function addAgentMessage(text, table, chips, showDropZone, level, view) {
     const msg = document.createElement('div');
     msg.className = 'message agent';
 
@@ -459,7 +494,17 @@ function boot() {
 
     if (level === 'error') body.classList.add('is-error');
 
-    body.innerHTML = renderMarkdown(text || '');
+    if (isIntakeView(view)) {
+      if (view.lead) {
+        const lead = document.createElement('div');
+        lead.className = 'view-lead';
+        lead.innerHTML = renderMarkdown(view.lead); // the server's own text, escaped by renderMarkdown
+        body.appendChild(lead);
+      }
+      body.appendChild(renderIntakePanel(view));
+    } else {
+      body.innerHTML = renderMarkdown(text || '');
+    }
     msg.appendChild(body);
 
     if (table && table.length > 0) {
@@ -487,6 +532,62 @@ function boot() {
     messagesEl.appendChild(msg);
     scrollToBottom();
     return msg;
+  }
+
+  /**
+   * The intake panel. Every label and value is the file's own text, so it is set with textContent.
+   * @param {IntakeView} view
+   * @returns {HTMLElement}
+   */
+  function renderIntakePanel(view) {
+    const panel = document.createElement('section');
+    panel.className = 'panel intake-panel';
+    const title = document.createElement('h3');
+    title.className = 'panel-title';
+    title.textContent = view.title;
+    panel.setAttribute('aria-label', view.title);
+    panel.appendChild(title);
+
+    const facts = document.createElement('dl');
+    facts.className = 'facts';
+    view.rows.forEach((row) => {
+      const fact = document.createElement('div');
+      fact.className = 'fact';
+      const dt = document.createElement('dt');
+      dt.textContent = row.label;
+      const dd = document.createElement('dd');
+      dd.textContent = row.value;
+      fact.append(dt, dd);
+      facts.appendChild(fact);
+    });
+    panel.appendChild(facts);
+
+    view.notes.forEach((note) => {
+      const block = document.createElement('div');
+      block.className = 'panel-note';
+      const heading = document.createElement('h4');
+      heading.textContent = note.title;
+      const list = document.createElement('ul');
+      note.items.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+      });
+      if (note.more > 0) {
+        const li = document.createElement('li');
+        li.className = 'more';
+        li.textContent = `and ${note.more} more`;
+        list.appendChild(li);
+      }
+      block.append(heading, list);
+      panel.appendChild(block);
+    });
+
+    const question = document.createElement('p');
+    question.className = 'panel-question';
+    question.textContent = view.question;
+    panel.appendChild(question);
+    return panel;
   }
 
   /** @param {string} text */
@@ -882,7 +983,7 @@ function boot() {
     if (data.phase) updatePhase(data.phase);
 
     const showDrop = !fromUpload && data.phase === 'awaiting_file';
-    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level);
+    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level, data.view);
     if (data.download_url) {
       addDownloadLink(msg, data.download_url, data.download_filename);
     }

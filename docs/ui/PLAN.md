@@ -11,7 +11,7 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | `c978cf1` |
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | done: approved | (this commit) |
-| 3 | Intake panel (sibling of `format_intake_summary` returning rows) | todo | |
+| 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | (this commit) |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | todo | |
 | 5 | Earnings and equity views; emoji allowlist empty | todo | |
 | 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | todo | |
@@ -101,6 +101,16 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Copy.** Phase labels and placeholders are sentence case without ellipses; the first screen says what the file needs and what happens next; Markdown no longer leaves an empty line after each bullet.
 - **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
+## Phase 3 record
+
+- **The `view` field.** `Response.view: dict | None`, passed through `/message`, `/upload` and `/status` (`initial_response.view`). The page draws a view it recognises (`isIntakeView`) and otherwise the text, which still carries every fact. Builders live in the new `chat/views.py`, so `handlers.py` only calls them. `with_lead` puts a sentence (the first-upload welcome, "Switched to worksheet", "Now comparing Actual against") before both the text and the view.
+- **Intake panel.** `intake_summary_rows` in `intake.py` is the sibling of `format_intake_summary` (unchanged, still used by the text); it returns the same facts as label/value rows plus the adjustment and attention sentences. `chat/views.py` turns them into a panel: "How I read your file", one row per inference (worksheet or statement, header row, each column mapping, rows read, subtotals left out), "Adjustments I made", "Needs your attention", and the question. Earnings files get the same panel from `chat/earnings.py` (compared against, columns read, one row per measure, headline rows). The page builds it with `createElement`/`textContent` only; on a phone each row stacks label over value.
+- **Chat-only wrapper.** `_intake_summary_text` drops the shared formatter's warning sign from chat text; `intake.py` line 2124 is untouched, so the CLI's provenance output is unchanged.
+- **Step copy.** "Next Step" reminders and the "Hello!" greetings lose their emoji and greeting; the sentences tests pin ("Upload your financial file", "What reporting period", "Classify 'Unknown Item'", "ready to explore your **Q3 2026** financial results", "Switched to worksheet") are kept word for word. The confirmations and the order of the flow are unchanged.
+- **Exit check.** `test_every_intake_reply_is_plain_language` runs the first reply (and the blank-budget follow-up) for all 21 real-world fixtures through the intake file's jargon checker and the T1 glyph check, text and panel. All pass.
+- **Screenshots.** `docs/ui/evidence/phase-3/`: 144 JPEGs (intake, period choice, comparison, unclassified, error, earnings, comparison set, PDF, sample × light and dark × 1280 and 375 px), every one opened. Intake states covered at both sizes: blank-budget question, intake summary (workbook, PDF, earnings, comparison set), period, period choice, thresholds, currency, comparison choice, unclassified review, measure thresholds, unreadable file. Sheet and header-row choice are reached only by files the fixtures do not hold in that state; their replies use the same chip and text components.
+- **Gates** (`gates.sh dist`): ruff, mypy (63 files), **2080 passed in 41.15s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
 
 ## STOP 1 decisions (2026-10-24)
 

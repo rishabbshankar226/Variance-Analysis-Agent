@@ -17,6 +17,7 @@ from variance_agent.earnings import display_rows
 from variance_agent.models import MeasureKind
 from variance_agent.xlsx import render_comparison_xlsx
 from .responses import Response
+from .views import earnings_intake_view
 from .session import Phase, Session
 
 
@@ -71,24 +72,32 @@ def confirm_layout(session: Session, bases: tuple[ComparisonBasis, ...]) -> Resp
     session.comparison_bases = bases
     session.intake_result = IntakeResult(rows=session.parsed_rows or [], comparison_basis=bases[0])
     session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
+    headings = [comparison_heading(b, None) for b in bases]
     lines = ["Here's how I read your file:", "", "- Compare Actual against: " +
-             ", ".join(comparison_heading(b, None) for b in bases) + ".", "- Source columns: " +
+             ", ".join(headings) + ".", "- Source columns: " +
              ", ".join(_safe_inline(h) for h in session.earnings_headers) + "."]
+    measures: list[tuple[str, str]] = []
+    adjustments: list[str] = []
     for raw in session.parsed_rows or []:
         row = normalize_row(raw)
         from variance_agent.segments import SEGMENT_KEYS
         for column in SEGMENT_KEYS:
             if column in row:
                 lines.append(f"- Read {_safe_inline(column)} as Segment {_safe_inline(row[column])} (one flat dimension).")
+                adjustments.append(f"Read {column} as segment {row[column]} (one flat dimension).")
         if row.get("measure"):
             lines.append(f"- {_safe_inline(row.get('line_item', 'Row'))}: Measure {_safe_inline(row['measure'])}.")
+            measures.append((str(row.get("line_item", "Row")), str(row["measure"])))
     candidates = [str(row.get("line_item", "")) for row in session.parsed_rows or []
                   if "revenue" in str(row.get("line_item", "")).casefold() or "eps" in str(row.get("line_item", "")).casefold()
                   or "margin" in str(row.get("line_item", "")).casefold()]
     lines.append("- Earnings headline rows: " + ", ".join(_safe_inline(name) for name in candidates) + ".")
     lines.extend("- " + _safe_inline(note) for note in session.earnings_notes)
     lines.extend(["", "Does this look right?"])
-    return Response(text="\n".join(lines), chips=["Looks right", "Change something"], phase=session.phase)
+    view = earnings_intake_view(headings, session.earnings_headers, measures, candidates,
+                                [*adjustments, *session.earnings_notes])
+    return Response(text="\n".join(lines), chips=["Looks right", "Change something"], phase=session.phase,
+                    view=view)
 
 
 def explicit_comparison(session: Session, basis: ComparisonBasis) -> Response:
