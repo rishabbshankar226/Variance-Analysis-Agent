@@ -15,3 +15,5 @@ Branch `ui/professional-design`, worktree `.claude/worktrees/ui-professional-des
 | `sample_light_d_04_results.jpg` | The results screen as it stands: still Markdown, rethemed only (Phase 4 builds the real view) |
 
 Tokens: `docs/ui/DESIGN.md`, sections Tokens and Decisions. Edited assertions: `docs/ui/PLAN.md`, "Assertions likely to need edits".
+
+The images this page lists were pruned before merge; see `docs/ui/PLAN.md`, "Evidence kept", for where they are in history.

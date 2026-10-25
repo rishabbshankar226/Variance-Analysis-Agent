@@ -24,3 +24,5 @@ comparison-set workbook). The same test's Markdown report hash and audit schema 
 
 Recommendation: replace only the workbook hash line with the value-and-address comparison (which the
 spec's Phase 6 asks for), keep the report hash and schema lines as they are, and commit Phase 6.
+
+The images this page lists were pruned before merge; see `docs/ui/PLAN.md`, "Evidence kept", for where they are in history.

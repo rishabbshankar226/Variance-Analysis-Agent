@@ -107,4 +107,4 @@ The final blind reviewer raised these and they were not changed:
 - **Figures as the engine formats them** (constraint 2). Amounts keep their cents and aren't scaled to K/M. The what-if table marks a $0.00 change "Favorable". Net operating impact has no status word.
 - **The `recommendations` reply and the workbook's Mitigation and Optimization text.** They mirror the contract report's "Strategic Recommendations" section.
 - **The product name and mark.**
-- **Evidence size.** `docs/ui/evidence/` is 49 MB in git. It is excluded from the sdist, and `check_distribution.py` checks that. Pruning the per-phase folders before a merge would keep the repository light.
+- **Evidence size.** Done: the per-phase folders were pruned, taking `docs/ui/evidence/` from 49 MB to 19 MB. They remain in the branch history; [PLAN.md](PLAN.md) under "Evidence kept" says where. A squash merge carries only what is kept. The folder is excluded from the sdist, and `check_distribution.py` checks that.

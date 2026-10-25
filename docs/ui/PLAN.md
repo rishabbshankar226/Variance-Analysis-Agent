@@ -111,6 +111,10 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
 - Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
 
+## Evidence kept
+
+Pruned before merge: the per-phase screenshot folders (`phase-1` to `phase-5`, most of `phase-4` and `phase-6`) and the stop images were removed to keep the repository light. They remain in the branch history; for example `git show 8f30c42:docs/ui/evidence/phase-4/sample_light_d_04_results.jpg`, or `git checkout <phase commit> -- docs/ui/evidence/phase-N`. Phase commits: 1 `c978cf1`, 2 `36a3f6c`/`15469b8`, 3 `0995c16`, 4 `8f30c42`, 5 `35759be`, 6 `d3ad507`, 8 `ec48399`. Kept: `before/`, `after/`, `final-pairs/`, `hardening/`, `phase-7/`, the images `REPORT.md` links, the mock and the harness scripts.
+
 ## Final gate run (Phase 8)
 
 `sh docs/ui/evidence/gates.sh dist`:
