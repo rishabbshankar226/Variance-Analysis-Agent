@@ -136,7 +136,7 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .header-icon .icon-fill { fill: var(--accent-text); stroke: none; }
 
-.header-text { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; flex: 1 1 auto; }
+.header-text { display: flex; align-items: baseline; min-width: 0; flex: 0 1 auto; }
 
 .header-text h1 {
   font-size: var(--text-lead);
@@ -148,13 +148,6 @@ button, input, textarea { font: inherit; color: inherit; }
   min-width: 0;
 }
 
-.header-text p { white-space: nowrap; }
-
-.header-text p {
-  font-size: var(--text-meta);
-  color: var(--text-muted);
-}
-
 .header-actions {
   margin-left: auto;
   display: flex;
@@ -164,6 +157,9 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 
 .header-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   background: none;
   border: 1px solid transparent;
   color: var(--text-secondary);
@@ -177,19 +173,18 @@ button, input, textarea { font: inherit; color: inherit; }
   color: var(--text-primary);
 }
 
+/* The current step, after a hairline: plain text, never a pill or a pulsing dot. */
 .header-status {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-left: var(--space-2);
+  min-width: 0;
   padding-left: var(--space-3);
   border-left: 1px solid var(--border);
   font-size: var(--text-meta);
   color: var(--text-muted);
   white-space: nowrap;
 }
-
-.header-status .dot { display: none; }
+#phase-label { overflow: hidden; text-overflow: ellipsis; }
 
 /* ── The conversation ─────────────────────────────────────── */
 .messages {
@@ -251,20 +246,28 @@ button, input, textarea { font: inherit; color: inherit; }
   font-size: var(--text-code);
 }
 
-/* A reply that needs attention: a rule in the attention colour, never a tinted box. */
-.message-body.warning {
+/* A reply that refuses or could not do what was asked (level "error"): a rule in the
+   attention colour beside the text, never a tinted box or a warning sign. */
+.message-body.is-error {
   border-left: 2px solid var(--amber);
   padding-left: var(--space-3);
 }
 
 /* ── Working indicator ────────────────────────────────────── */
+/* Nothing for 100 ms, then the dots and a line saying what is happening, and after a second a
+   flat skeleton where the reply will go (chat.js sets .is-long). */
 .typing-dots {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-2) 0;
 }
-.typing-dots span:not(.sr-only) {
+.typing-dots .working-label {
+  margin-left: var(--space-2);
+  font-size: var(--text-meta);
+  color: var(--text-muted);
+}
+.typing-dots span:not(.working-label) {
   width: 6px;
   height: 6px;
   background: var(--text-muted);
@@ -278,6 +281,18 @@ button, input, textarea { font: inherit; color: inherit; }
   0%, 80%, 100% { opacity: 0.3; }
   40% { opacity: 1; }
 }
+
+.skeleton { display: none; }
+.working.is-long .skeleton {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 72ch;
+  margin-top: var(--space-2);
+}
+.skeleton div { height: 12px; background: var(--bg-card); border-radius: var(--radius-control); }
+.skeleton div:nth-child(1) { width: 60%; }
+.skeleton div:nth-child(2) { width: 90%; opacity: 0.6; }
+.skeleton div:nth-child(3) { width: 40%; opacity: 0.6; }
 
 /* ── Tables ───────────────────────────────────────────────── */
 .data-table-wrapper {
@@ -427,8 +442,19 @@ button, input, textarea { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 
-.chip:hover { border-color: var(--text-muted); }
-.chip:active { background: var(--bg-card); }
+.chip:hover:not(:disabled) { border-color: var(--text-muted); }
+.chip:active:not(:disabled) { background: var(--bg-card); }
+
+/* Earlier turns' chips: kept as a record of what was offered, disabled, and set as plain text. */
+.chips.is-retired { gap: var(--space-1) var(--space-3); }
+.chips.is-retired .chip {
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-meta);
+  cursor: default;
+}
 
 /* ── File drop zone ───────────────────────────────────────── */
 .drop-zone {
@@ -591,7 +617,8 @@ body.is-busy .drop-zone {
 @media (forced-colors: active) {
   .chip, .header-action-btn, .download-btn, .send-btn, .table-search, .drop-zone { border: 1px solid ButtonText; }
   .message.user .message-body, .data-table-wrapper { border: 1px solid CanvasText; }
-  .message-body.warning { border-left: 2px solid Highlight; }
+  .message-body.is-error { border-left: 2px solid Highlight; }
+  .skeleton div { background: GrayText; }
   .variance-bar-fill { background: CanvasText; forced-color-adjust: none; }
   .header-icon .icon-fill { fill: CanvasText; }
 }
@@ -613,16 +640,26 @@ body.is-busy .drop-zone {
 /* ── Narrow screens ───────────────────────────────────────── */
 @media (max-width: 640px) {
   .header { padding: var(--space-2) var(--space-4); gap: var(--space-2); }
-  .header-text p { display: none; }
   .messages { padding: var(--space-4); gap: var(--space-4); }
   .input-bar { padding: var(--space-2) var(--space-4) var(--space-3); }
   .drop-zone { padding: var(--space-6) var(--space-4); }
 }
 
+/* A phone: the step moves to a thin second row under the name, and Help and Start over keep
+   their words for screen readers but show only their icons. */
 @media (max-width: 420px) {
+  .header { flex-wrap: wrap; row-gap: 0; }
   .header-text h1 { font-size: var(--text-body); }
-  .header-status { margin-left: var(--space-1); padding-left: var(--space-2); }
+  .header-status { order: 3; flex-basis: 100%; padding: 0 0 var(--space-1) 28px; border-left: 0; }
   .header-action-btn { padding: var(--space-2); }
+  .header-action-btn .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
   .table-search { width: 100%; max-width: none; }
   .table-toolbar { flex-wrap: wrap; }
 }

@@ -8,8 +8,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | Phase | Task | State | Commit |
 |---|---|---|---|
 | 0 | Read, baseline, harness, before screenshots, renders, this plan, `DESIGN.md` skeleton, `CLAUDE.md` | done | `9bcf130` |
-| 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | (this commit) |
-| 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | todo | |
+| 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | `c978cf1` |
+| 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | todo | |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | todo | |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | todo | |
@@ -91,6 +91,17 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Tests.** `tests/frontend_helpers.py` holds the stylesheet readers (theme blocks, `var()` resolution, contrast); `test_frontend_contract.py` imports them and its two contrast tests now run per theme. `tests/test_interface_design.py`: 72 cases. The emoji allowlist starts as `handlers.py` and `knowledge.py`: `earnings.py` and `responses.py` already carry no T1 glyph, and the test fails if an allowlisted file is already clean. The T1 check is a superset of the spec's ranges (it adds U+2300–23FF, U+25A0–25FF and U+FE0F).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2036 passed in 36.74s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS. `check_distribution.py` now also asserts that no `docs/ui/evidence` path is in the sdist.
 
+## Phase 2 record
+
+- **Error level.** `Response.level: Literal["error"] | None`, filled at the ten reply sites that opened with `⚠️` (fatal upload, analysis error, write failure, hosted save, revenue and expense certification refusals, sheet not found, statement refused, sheet load failure, comparison switch failure). `/message` and `/upload` send `level` only when set; `/status` sends it inside `initial_response`. `chat.js` styles a reply as `is-error` from the field alone; the U+26A0 fallback is gone. One value covers both a refusal and a stop that asks (the comparison choice): both are replies the analysis could not continue past, and the text says which. The seven inline `⚠️` inside successful replies (data quality count, unclassified notes, revenue shortfall headings, run-rate period note, driver status) are T1 work for Phases 4 and 5.
+- **First reply after upload (T6).** `_first_upload_intro` is one short paragraph (name, what it compares, `help`); the capability list moved into `_handle_help`, rewritten in plain sentences without the advice wording ("mitigation advice", "Actionable mitigation & optimization steps"). The `first_visit` protocol and `intro_shown` are unchanged.
+- **Chips (T7).** At each new user message, earlier `.chips` groups get `is-retired`, an `aria-label` saying they are no longer available, and every chip `disabled`; they stay as a record and are set as small muted text. Table drill-downs and download links are not touched.
+- **Shell (T11).** Drawn mark, wordmark "Variance Analysis Agent" (the name the tests and the page title use), the step as plain text after a hairline, Help and Start over with drawn icons. At 420 px and below the step moves to a second row and the two buttons show only icons, keeping their words for screen readers. `favicon.svg` (the mark on the accent) is allowlisted in `_STATIC_TYPES`, both lists of `check_distribution.py` and the served-assets test, in this commit.
+- **Loading.** Nothing for 100 ms, then dots plus "Working on it" or "Reading the file", then after another 900 ms a flat three-bar skeleton at two opacities; both timers are cleared when the reply lands.
+- **Copy.** Phase labels and placeholders are sentence case without ellipses; the first screen says what the file needs and what happens next; Markdown no longer leaves an empty line after each bullet.
+- **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
+- **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
 ## Assertions likely to need edits
 
 Each edit is listed again in `REPORT.md` with the reason.
@@ -111,7 +122,23 @@ Kept unchanged: `tests/test_chat_upload_state.py` lines 76 and 127 (`intro_shown
 
 Extended, not loosened (Phase 1, done): `_tokens()`, `_luminance()` and `_contrast()` in `test_frontend_contract.py` moved to `tests/frontend_helpers.py`, which reads both theme blocks, resolves `var()` and fails on a token that is not `#rrggbb`. `test_text_colours_reach_wcag_aa_on_every_surface` and `test_white_text_on_filled_controls_reaches_wcag_aa` keep every pair and threshold and now run once per theme (48 + 8 cases, was 24 + 4).
 
-Edited so far: 2 assertions extended (above), 0 pinning meaning.
+Edited in Phase 2:
+
+| Test | Was | Now | Kind |
+|---|---|---|---|
+| `test_chat_comparison.py:172` | `response.text.startswith("⚠️")` | `response.level == "error"` | `level` migration (pre-approved) |
+| `test_chat_comparison.py:308` | `text.startswith("⚠️")` | `reply.level == "error"` (text still checked for plan words) | `level` migration |
+| `test_chat_comparison.py:349` | `not response.text.startswith("⚠️")` | `response.level is None` | `level` migration (success case) |
+| `test_chat_comparison.py:359` | `response.text.startswith("⚠️")` | `response.level == "error"` | `level` migration |
+| `test_chat_comparison.py:373` | `response.text.startswith("⚠️")` | `response.level == "error"` | `level` migration |
+| `test_chat_upload_state.py:37, 159, 169` | `response.text.startswith("⚠️")` | `response.level == "error"` | `level` migration |
+| `test_chat.py:319, 325, 542` | `"⚠️" in resp.text` | `resp.level == "error"` (the sentence checks beside them stay) | `level` migration |
+| `test_pdf_intake.py:203` | `startswith(f"⚠️ '{BALANCE}' lists assets")` | `level == "error"` and `startswith(f"'{BALANCE}' lists assets")` | `level` migration |
+| `test_chat.py:332-333` | intro contains "What it's for", "What you can do" | intro is short and points to `help`; Help contains "What you can ask", the audience sentence and the commands | presentation (T6 wording) |
+| `test_chat.py:1454` | Help contains "Available Commands & Intelligence" | Help contains "What you can ask" | presentation (heading wording) |
+| `test_frontend_contract.py:303-304` | fallback labels "New Step", "Exploring"; placeholder "Type a message..." | "New step", "Results"; "Type a message" | presentation (sentence case) |
+
+Totals so far: 12 `level` migrations, 3 presentation edits, 2 assertions extended to both themes, 0 assertions that pin meaning edited otherwise. New tests: `tests/test_chat_reply_shape.py` (5, the JSON shape across `/message`, `/upload`, `/status`) and 7 Phase 2 cases in `tests/test_interface_design.py`.
 
 ## Decisions
 

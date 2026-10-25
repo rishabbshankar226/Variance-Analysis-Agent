@@ -16,6 +16,7 @@
  * @property {string} [error]
  * @property {string} [download_url]
  * @property {string} [download_filename]
+ * @property {'error'} [level]  set when the reply refuses or could not do what was asked
  * @property {ChatReply} [initial_response]  Only on /status, when a file was loaded at start-up.
  */
 
@@ -38,38 +39,38 @@ const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
 // ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
 /** @type {Record<string, string>} */
 export const PHASE_LABELS = {
-  awaiting_earnings_review:            'Choose Review',
-  awaiting_comparison_choice:         'Choose Comparisons',
-  awaiting_file:                      'Upload File',
-  awaiting_sheet_choice:              'Choose Sheet',
-  awaiting_header_choice:             'Choose Header Row',
-  awaiting_blank_budget_confirmation: 'Confirm Blank Budgets',
-  awaiting_period_choice:             'Choose Period',
-  awaiting_intake_confirmation:       'Confirm Intake',
-  awaiting_period:                    'Set Period',
-  awaiting_thresholds:                'Set Thresholds',
-  awaiting_currency:                  'Set Currency',
-  awaiting_measure_options:           'Confirm Measure',
-  resolve_unclassified:               'Classify Items',
-  exploring:                          'Exploring',
+  awaiting_earnings_review:           'Choose a review',
+  awaiting_comparison_choice:         'Choose a comparison',
+  awaiting_file:                      'Upload a file',
+  awaiting_sheet_choice:              'Choose a sheet',
+  awaiting_header_choice:             'Choose the header row',
+  awaiting_blank_budget_confirmation: 'Confirm blank budgets',
+  awaiting_period_choice:             'Choose a period',
+  awaiting_intake_confirmation:       'Confirm how the file was read',
+  awaiting_period:                    'Set the period',
+  awaiting_thresholds:                'Set the thresholds',
+  awaiting_currency:                  'Set the currency',
+  awaiting_measure_options:           'Confirm a measure',
+  resolve_unclassified:               'Label lines',
+  exploring:                          'Results',
 };
 
 /** @type {Record<string, string>} */
 export const PHASE_PLACEHOLDERS = {
-  awaiting_earnings_review:            'Review earnings or upload another file...',
-  awaiting_comparison_choice:         'Choose a comparison or all of them...',
-  awaiting_file:                      'Upload a file above or ask a financial question (e.g., "what is materiality?")...',
-  awaiting_sheet_choice:              'Pick a worksheet from the options above...',
-  awaiting_header_choice:             'Pick the header row from the options above...',
-  awaiting_blank_budget_confirmation: 'Choose how to treat the blank values...',
-  awaiting_period_choice:             'Pick the period to analyze...',
-  awaiting_intake_confirmation:       'Confirm the summary above, or say what to change...',
-  awaiting_period:                    'Enter the reporting period (e.g., Q3 2026)...',
-  awaiting_thresholds:                'Set thresholds (e.g., $10,000 or 5%)...',
-  awaiting_currency:                  'Enter currency (USD, EUR, GBP)...',
-  awaiting_measure_options:           'Choose a direction, scale, or threshold...',
-  resolve_unclassified:               'Revenue, Expense, or Skip...',
-  exploring:                          'Ask a question (e.g., "why marketing?", "biggest risks")...',
+  awaiting_earnings_review:           'Review earnings, or upload another file',
+  awaiting_comparison_choice:         'Choose a comparison, or all of them',
+  awaiting_file:                      'Upload a file above, or ask a question such as what is materiality',
+  awaiting_sheet_choice:              'Choose a worksheet from the options above',
+  awaiting_header_choice:             'Choose the header row from the options above',
+  awaiting_blank_budget_confirmation: 'Choose how to treat the blank values',
+  awaiting_period_choice:             'Choose the period to analyze',
+  awaiting_intake_confirmation:       'Confirm the summary above, or say what to change',
+  awaiting_period:                    'Reporting period, for example Q3 2026',
+  awaiting_thresholds:                'Thresholds, for example $10,000 or 5%',
+  awaiting_currency:                  'Currency, for example USD',
+  awaiting_measure_options:           'Choose a direction, a scale or a threshold',
+  resolve_unclassified:               'Revenue, Expense or Skip',
+  exploring:                          'Ask about the results, for example why marketing',
 };
 
 /**
@@ -80,7 +81,8 @@ export const PHASE_PLACEHOLDERS = {
 export function phaseLabel(phase) {
   if (Object.hasOwn(PHASE_LABELS, phase)) return PHASE_LABELS[phase];
   const words = String(phase).replace(/^awaiting_/, '').split('_').filter(Boolean);
-  return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Ready';
+  const label = words.join(' ');
+  return label ? label[0].toUpperCase() + label.slice(1) : 'Ready';
 }
 
 /**
@@ -88,7 +90,7 @@ export function phaseLabel(phase) {
  * @returns {string}
  */
 export function phasePlaceholder(phase) {
-  return Object.hasOwn(PHASE_PLACEHOLDERS, phase) ? PHASE_PLACEHOLDERS[phase] : 'Type a message...';
+  return Object.hasOwn(PHASE_PLACEHOLDERS, phase) ? PHASE_PLACEHOLDERS[phase] : 'Type a message';
 }
 
 /**
@@ -211,6 +213,8 @@ export function renderMarkdown(text) {
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   html = html.replace(/^[•-]\s+(.+)$/gm, '<div class="md-bullet">• $1</div>');
   html = html.replace(/\n/g, '<br>');
+  // A block (a bullet, a heading or a rule) already ends its line: drop the break after it.
+  html = html.replace(/(<\/div>|<\/h[234]>|<hr class="md-hr">)<br>/g, '$1');
 
   return html.replace(/\u0000(\d+)\u0000/g, (_, i) => literals[Number(i)]);
 }
@@ -259,6 +263,9 @@ export const ICONS = {
   search: [{ d: 'M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12z' }, { d: 'M17 17l-3.75-3.75' }],
   download: [{ d: 'M10 3v10' }, { d: 'M6 9.5l4 4 4-4' }, { d: 'M4 17h12' }],
   upload: [{ d: 'M10 13V3' }, { d: 'M6 6.5l4-4 4 4' }, { d: 'M4 17h12' }],
+  help: [{ d: 'M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16z' }, { d: 'M7.75 7.75a2.25 2.25 0 1 1 3.25 2c-.6.35-1 .8-1 1.5v.5' },
+    { d: 'M10 14.25v.5' }],
+  restart: [{ d: 'M4 10a6 6 0 1 0 1.76-4.24' }, { d: 'M4 3v3.5h3.5' }],
 };
 
 /** The two sizes an icon is drawn at, in CSS pixels. */
@@ -300,6 +307,28 @@ export function createIcon(name, size) {
     svg.appendChild(path);
   }
   return svg;
+}
+
+/**
+ * Retire the suggestion chips of earlier turns: only the latest turn's chips respond (T7). Earlier
+ * chips stay on the page as a record of what was offered, since a reply may say "choose one below",
+ * but they are disabled, so assistive technology announces them as unavailable, and they are styled
+ * as plain text. Table drill-downs and download links in earlier results are not chips and stay live.
+ * @param {Iterable<{classList: {add: (name: string) => void}, setAttribute: (name: string, value: string) => void,
+ *   querySelectorAll: (selector: string) => Iterable<{disabled: boolean}>}>} groups  the live `.chips` groups
+ * @returns {number} how many chips were retired
+ */
+export function retireChips(groups) {
+  let retired = 0;
+  for (const group of groups) {
+    group.classList.add('is-retired');
+    group.setAttribute('aria-label', 'Earlier suggestions, no longer available');
+    for (const chip of group.querySelectorAll('button')) {
+      chip.disabled = true;
+      retired += 1;
+    }
+  }
+  return retired;
 }
 
 // ── The page ────────────────────────────────────────────────────────────────
@@ -349,6 +378,8 @@ function boot() {
 
     const markEl = document.querySelector('.header-icon');
     if (markEl) markEl.appendChild(createIcon('mark', 20));
+    byId('btn-quick-help').prepend(createIcon('help', 16));
+    byId('btn-quick-reset').prepend(createIcon('restart', 16));
 
     byId('btn-quick-help').addEventListener('click', () => sendText('help'));
     byId('btn-quick-reset').addEventListener('click', () => sendText('reset'));
@@ -363,18 +394,18 @@ function boot() {
     updatePhase(view.phase);
     if (view.kind === 'restored' && view.reply) {
       markIntroSeen();
-      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false);
+      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false, view.reply.level);
     } else if (view.kind === 'resumed') {
       addAgentMessage(
         'Welcome back. This server already has an analysis in progress (step: **' +
-        phaseLabel(view.phase) + '**). Carry on where it left off, or reset to start over.',
+        phaseLabel(view.phase) + '**). Carry on where it left off, or start over.',
         null, ['help', 'reset'], false
       );
     } else {
       addAgentMessage(
-        'Welcome! Upload your financial data to get started.\n\n' +
-        'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**, and **PDF** 10-K / 10-Q filings.\n\n' +
-        'You can also ask financial domain questions anytime (e.g., *What is materiality?* or *Budget vs Forecast*).',
+        '**Upload a budget-versus-actual file to start.**\n\n' +
+        'It needs an Actual column and a Budget, Forecast or Prior Period column. I show how I read ' +
+        'the file, ask for the period and the materiality thresholds, then compare each line.',
         null, ['Supported file formats', 'What is materiality?', 'Budget vs forecast'], true
       );
     }
@@ -411,7 +442,7 @@ function boot() {
    * @param {Array<Record<string, string>> | null | undefined} table
    * @param {string[] | null | undefined} chips
    * @param {boolean} [showDropZone]
-   * @param {'warning'} [level]  set for a reply that needs attention (a refusal or a failure)
+   * @param {'error'} [level]  set for a reply that refuses or could not do what was asked
    * @returns {HTMLElement} the new message
    */
   function addAgentMessage(text, table, chips, showDropZone, level) {
@@ -426,10 +457,7 @@ function boot() {
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    // Until the reply carries its own level, a server warning still opens with U+26A0.
-    if (level === 'warning' || (text && text.startsWith('\u26a0'))) {
-      body.classList.add('warning');
-    }
+    if (level === 'error') body.classList.add('is-error');
 
     body.innerHTML = renderMarkdown(text || '');
     msg.appendChild(body);
@@ -463,6 +491,7 @@ function boot() {
 
   /** @param {string} text */
   function addUserMessage(text) {
+    retireChips(Array.from(messagesEl.querySelectorAll('.chips:not(.is-retired)')));
     const msg = document.createElement('div');
     msg.className = 'message user';
 
@@ -738,10 +767,11 @@ function boot() {
     zoneIcon.appendChild(createIcon('upload', 20));
     const zoneTitle = document.createElement('div');
     zoneTitle.className = 'drop-zone-title';
-    zoneTitle.textContent = 'Drop file here or click to browse';
+    zoneTitle.textContent = 'Drop a file here, or choose one';
     const zoneSubtitle = document.createElement('div');
     zoneSubtitle.className = 'drop-zone-subtitle';
-    zoneSubtitle.textContent = '.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)';
+    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to ' +
+      `${MAX_UPLOAD_BYTES / 1048576} MB`;
     zone.append(zoneIcon, zoneTitle, zoneSubtitle);
 
     const fileInput = document.createElement('input');
@@ -784,32 +814,51 @@ function boot() {
     return zone;
   }
 
-  function showTypingIndicator() {
+  // The working indicator: nothing for the first 100 ms, then a line saying what is happening,
+  // and after a second a flat skeleton where the reply will go.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let indicatorTimer;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let skeletonTimer;
+
+  /** @param {string} [what]  shown beside the dots, for example "Reading the file" */
+  function showTypingIndicator(what = 'Working on it') {
     removeTypingIndicator();
-    const msg = document.createElement('div');
-    msg.className = 'message agent';
-    msg.id = 'typing-indicator';
-    msg.setAttribute('role', 'status');
+    indicatorTimer = setTimeout(() => {
+      const msg = document.createElement('div');
+      msg.className = 'message agent working';
+      msg.id = 'typing-indicator';
+      msg.setAttribute('role', 'status');
 
-    const sender = document.createElement('div');
-    sender.className = 'message-sender';
-    sender.textContent = 'Agent';
-    msg.appendChild(sender);
+      const sender = document.createElement('div');
+      sender.className = 'message-sender';
+      sender.textContent = 'Agent';
+      msg.appendChild(sender);
 
-    const body = document.createElement('div');
-    body.className = 'message-body typing-dots';
-    body.innerHTML = '<span></span><span></span><span></span>';
-    const label = document.createElement('span');
-    label.className = 'sr-only';
-    label.textContent = 'Agent is working on it';
-    body.appendChild(label);
-    msg.appendChild(body);
+      const body = document.createElement('div');
+      body.className = 'message-body typing-dots';
+      for (let i = 0; i < 3; i += 1) body.appendChild(document.createElement('span'));
+      const label = document.createElement('span');
+      label.className = 'working-label';
+      label.textContent = what;
+      body.appendChild(label);
+      msg.appendChild(body);
 
-    messagesEl.appendChild(msg);
-    scrollToBottom();
+      const skeleton = document.createElement('div');
+      skeleton.className = 'skeleton';
+      skeleton.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 3; i += 1) skeleton.appendChild(document.createElement('div'));
+      msg.appendChild(skeleton);
+
+      messagesEl.appendChild(msg);
+      scrollToBottom();
+      skeletonTimer = setTimeout(() => msg.classList.add('is-long'), 900);
+    }, 100);
   }
 
   function removeTypingIndicator() {
+    clearTimeout(indicatorTimer);
+    clearTimeout(skeletonTimer);
     const el = document.getElementById('typing-indicator');
     if (el) el.remove();
   }
@@ -823,7 +872,7 @@ function boot() {
   function showResult(result, fromUpload) {
     const data = result.data;
     if (!result.ok || !data || data.error) {
-      addAgentMessage(describeFailure(result.status, data), null, null, fromUpload, 'warning');
+      addAgentMessage(describeFailure(result.status, data), null, null, fromUpload, 'error');
       return;
     }
 
@@ -833,7 +882,7 @@ function boot() {
     if (data.phase) updatePhase(data.phase);
 
     const showDrop = !fromUpload && data.phase === 'awaiting_file';
-    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop);
+    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level);
     if (data.download_url) {
       addDownloadLink(msg, data.download_url, data.download_filename);
     }
@@ -865,7 +914,7 @@ function boot() {
     if (!VALID_EXTENSIONS.includes(ext)) {
       addAgentMessage(
         'Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
-        null, null, true, 'warning'
+        null, null, true, 'error'
       );
       return;
     }
@@ -873,7 +922,7 @@ function boot() {
       addAgentMessage(
         `That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
         `${MAX_UPLOAD_BYTES / 1048576} MB.`,
-        null, null, true, 'warning'
+        null, null, true, 'error'
       );
       return;
     }
@@ -886,7 +935,7 @@ function boot() {
       formData.append('file', file, file.name);
       formData.append('first_visit', introSeen ? '0' : '1');
 
-      showTypingIndicator();
+      showTypingIndicator('Reading the file');
       try {
         const result = await requestJson(
           '/upload', { method: 'POST', body: formData }, UPLOAD_TIMEOUT_MS
@@ -896,7 +945,7 @@ function boot() {
         inputEl.focus();
       } catch (err) {
         removeTypingIndicator();
-        addAgentMessage('Upload failed: ' + errorMessage(err), null, null, true, 'warning');
+        addAgentMessage('Upload failed: ' + errorMessage(err), null, null, true, 'error');
       }
     });
   }
@@ -912,7 +961,7 @@ function boot() {
       addAgentMessage(
         `That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
         `limit is ${MAX_MESSAGE_CHARS.toLocaleString('en-US')}). Upload large data as a file instead.`,
-        null, null, false, 'warning'
+        null, null, false, 'error'
       );
       return;
     }
@@ -945,7 +994,7 @@ function boot() {
       showResult(result, false);
     } catch (err) {
       removeTypingIndicator();
-      addAgentMessage(errorMessage(err), null, null, false, 'warning');
+      addAgentMessage(errorMessage(err), null, null, false, 'error');
     }
   }
 

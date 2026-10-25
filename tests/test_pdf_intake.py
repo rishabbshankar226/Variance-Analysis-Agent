@@ -200,7 +200,8 @@ def test_chat_lists_and_switches_statements() -> None:
     assert "**Statements in '" in listing.text and "(2 total)" in listing.text
     assert "worksheet" not in listing.text.lower()
     refused = handle_message(session, "statement balance")
-    assert refused.text.startswith(f"⚠️ '{BALANCE}' lists assets")
+    assert refused.level == "error"
+    assert refused.text.startswith(f"'{BALANCE}' lists assets")
     assert "Failed to load" not in refused.text
     assert refused.chips == ["Show statements"]  # the only income statement is already open
     assert session.worksheet == INCOME

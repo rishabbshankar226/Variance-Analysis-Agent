@@ -316,22 +316,26 @@ def test_handle_invalid_file_upload() -> None:
     # Bad extension
     resp = handle_upload(session, b"dummy", "invalid.docx")
     assert session.phase == Phase.AWAITING_FILE
-    assert "⚠️" in resp.text
+    assert resp.level == "error"
     assert "Unsupported input format" in resp.text
 
     # Corrupt CSV
     resp2 = handle_upload(session, b"Not,A,Valid\nFormat\n", "bad.csv")
     assert session.phase == Phase.AWAITING_FILE
-    assert "⚠️" in resp2.text
+    assert resp2.level == "error"
 
 
-def test_first_upload_opens_with_purpose_and_capabilities() -> None:
+def test_first_upload_opens_with_a_short_welcome_and_help_holds_the_capabilities() -> None:
     session = Session()
     resp = handle_upload(session, SAMPLE_CSV, "test.csv")
     assert "Welcome to the Variance Analysis Agent" in resp.text
-    assert "What it's for" in resp.text
-    assert "What you can do" in resp.text
     assert "Actual against your budget" in resp.text
+    # The capability list moved into Help, so the file summary follows the welcome directly.
+    welcome = resp.text[:resp.text.index("test.csv")]
+    assert welcome.count("\n\n") <= 2 and "`help`" in welcome
+    help_text = handle_message(Session(), "help").text
+    assert "What you can ask" in help_text and "month-end or quarter-end variance review" in help_text
+    assert "`why [line]`" in help_text and "`export excel`" in help_text
     # The intake step still follows the intro.
     assert resp.text.index("Welcome") < resp.text.index("test.csv")
 
@@ -539,7 +543,7 @@ def test_empty_file_upload_rejected() -> None:
     empty_csv = b"Line Item,Budget,Actual\n"
     resp = handle_upload(session, empty_csv, "empty.csv")
     assert session.phase == Phase.AWAITING_FILE
-    assert "⚠️" in resp.text
+    assert resp.level == "error"
     assert "contains no data rows" in resp.text
 
 
@@ -1451,7 +1455,7 @@ def test_conversational_dialogue_across_phases() -> None:
 
     # 4. Help inquiry in AWAITING_THRESHOLDS
     h_thresh = handle_message(session, "can you help me?")
-    assert "Available Commands & Intelligence" in h_thresh.text
+    assert "What you can ask" in h_thresh.text
 
     handle_message(session, "$5,000 or 5%")
     handle_message(session, "USD")

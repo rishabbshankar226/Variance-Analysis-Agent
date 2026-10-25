@@ -169,7 +169,7 @@ def test_chat_failed_switch_keeps_current_comparison() -> None:
     _configure(session)
     response = _ask(session, "compare to budget")
     assert "No budget column found" in (session.last_technical_detail or "")
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     assert session.compare_to is None
     assert session.phase == Phase.EXPLORING
     assert session.result is not None
@@ -304,8 +304,9 @@ def test_bad_forecast_cell_problem_names_forecast() -> None:
 def test_failed_basis_switch_reply_never_says_plan() -> None:
     session = _upload("fixture_j_10k_three_years.csv")
     _configure(session)
-    text = _ask(session, "compare to forecast").text
-    assert text.startswith("⚠️")
+    reply = _ask(session, "compare to forecast")
+    text = reply.text
+    assert reply.level == "error"
     _no_plan_words(text, "error reply")
 
 
@@ -346,7 +347,7 @@ def test_new_upload_clears_previous_comparison_choice() -> None:
     assert session.compare_to is F
     sample = Path(__file__).resolve().parent.parent / "examples" / "sample_variance.csv"
     response = handle_upload(session, sample.read_bytes(), sample.name)
-    assert not response.text.startswith("⚠️"), response.text
+    assert response.level is None, response.text
     assert session.compare_to is None
     assert session.intake_result is not None and not session.intake_result.has_fatal_errors
     assert session.intake_result.comparison_basis is B
@@ -356,7 +357,7 @@ def test_mixed_named_and_year_columns_offer_both_chips() -> None:
     session = Session()
     data = b"Line Item,Type,Budget,FY2025,FY2024\nRent Expense,Expense,90,130,100\n"
     response = handle_upload(session, data, "mixed.csv")
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     assert response.chips is not None
     assert response.chips[:2] == ["Compare to budget", "Compare to prior period"]
     assert not any("--compare-to" in chip for chip in response.chips)
@@ -370,6 +371,6 @@ def test_mixed_named_and_year_columns_offer_both_chips() -> None:
 def test_empty_forecast_file_error_never_says_budget() -> None:
     session = Session()
     response = handle_upload(session, b"Line Item,Type,Forecast,Actual\n", "empty.csv")
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     _no_plan_words(response.text, "empty file")
     _no_plan_words(session.last_technical_detail or "", "technical detail")

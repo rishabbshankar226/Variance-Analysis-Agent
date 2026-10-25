@@ -426,7 +426,7 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
                     worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
 
             return Response(
-                text=f"✅ Loaded '{safe_inline(session.source_name or 'file')}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
+                text=f"Loaded '{safe_inline(session.source_name or 'file')}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
                      "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
                 phase=Phase.AWAITING_PERIOD,
             )
@@ -598,36 +598,23 @@ def _fatal_upload_response(
             chips.append(_sheet_chip(session, s))
     chips.extend(["Upload a different file", "Show technical details"])
 
-    text = f"⚠️ {plain_analysis_error(technical)}"
+    text = plain_analysis_error(technical)
     if pasted:
         text += "\n\nPaste a table with a header row (such as Line Item, Budget, Actual), or upload a file."
-    return Response(text=text, chips=chips, phase=session.phase)
+    return Response(text=text, chips=chips, phase=session.phase, level="error")
 
 
 def _first_upload_intro(basis: ComparisonBasis) -> str:
-    """What the chatbot is for, worded for the file's comparison basis.
+    """A short welcome for a visitor's first file, worded for the file's comparison basis.
 
-    Forecast and prior-period sessions never say budget, plan or target.
+    Forecast and prior-period sessions never say budget, plan or target. What the tool can do
+    lives in the Help reply, so the file summary and the next question come straight after.
     """
     noun = basis_noun(basis)
     return (
-        "👋 **Welcome to the Variance Analysis Agent.**\n\n"
-        "**What it's for:** explaining why your financial results moved. I compare each line's "
-        f"Actual against your {noun}, flag the gaps big enough to matter, and tell you whether each "
-        "one helped or hurt profit. Every number comes from exact, repeatable calculations, never "
-        "estimates.\n\n"
-        "**Who it's for:** FP&A analysts, controllers, and anyone preparing a month-end or "
-        "quarter-end variance review.\n\n"
-        "**What you can do once your file is set up:**\n"
-        "• See a summary of the material variances, favorable and unfavorable\n"
-        "• Ask `why [line item]` to split a variance into quantity and rate effects, such as volume "
-        "and price (when your file has those columns)\n"
-        f"• Walk from {noun} to actual profit with a `waterfall`, or test a scenario with "
-        "`what if revenue drops 5%`\n"
-        "• Get an executive `memo`, `run rate` projections, and the `biggest risks`\n"
-        "• Export the report, an Excel workbook, a CSV, or an audit file\n\n"
-        "Type `help` anytime for the full list. First, let's set up your file:\n\n"
-        "---\n\n"
+        "Welcome to the Variance Analysis Agent. I compare each line's Actual against your "
+        f"{noun}, flag the gaps big enough to matter, and say whether each one helped or hurt "
+        "profit. Type `help` for everything you can ask.\n\n"
     )
 
 
@@ -707,7 +694,7 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
                 worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
 
         return Response(
-            text=f"✅ Loaded '{safe_inline(filename)}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
+            text=f"Loaded '{safe_inline(filename)}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
                  "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
             phase=Phase.AWAITING_PERIOD,
         )
@@ -1173,9 +1160,10 @@ def _run_analysis(session: Session) -> Response:
                     chips.append(_sheet_chip(session, s))
         chips.append("Show technical details")
         return Response(
-            text=f"⚠️ {plain_err}",
+            text=plain_err,
             chips=chips,
             phase=Phase.AWAITING_FILE,
+            level="error",
         )
 
     session.result = result
@@ -1584,60 +1572,64 @@ def _handle_exploring(session: Session, text: str) -> Response:
 
 
 def _handle_help(session: Session) -> Response:
-    """Show available commands."""
+    """What the tool does and everything you can ask it."""
     text = (
-        "**Available Commands & Intelligence:**\n\n"
-        "**FP&A Analysis & Insights:**\n"
-        "• `memo` / `briefing` — Executive Management Briefing & Commentary for CFO/Board (with download)\n"
-        "• `waterfall` / `bridge` — Reconciles Budget to Actual Operating Profit step-by-step\n"
-        "• `what if [target] [+/-X% or $Y]` — Scenario simulation on profit & margin\n"
-        "• `sensitivity` — 5-point stress-test matrix across revenue and expense deviations\n"
-        "• `run rate` / `project year end` — Annualized pace and Latest Estimate (LE) projections\n"
-        "• `drivers` / `driver summary` — Overview of causal driver models and reconciliation coverage\n"
-        "• `biggest risks` — Top material unfavorable variances and mitigation advice\n"
-        "• `biggest wins` — Top positive variances and revenue overperformance\n"
-        "• `revenue status` — Did we hit revenue targets? Line-by-line beat/miss\n"
-        "• `expense status` — Did expenses stay in budget? Top overspend lines\n"
-        "• `burn rate` / `budget utilization` — % of expense budget spent\n"
-        "• `variance concentration` / `pareto` — % of volatility driven by top 3 accounts\n"
-        "• `unbudgeted spend` — Items with actual spend but $0.00 budget\n"
-        "• `cost savings` — Accounts operating below planned expense budget\n"
-        "• `revenue misses` — Revenue lines that fell short of plan\n"
-        "• `highest percent` — Line items with largest relative percentage swings\n"
-        "• `compare [item1] vs [item2]` — Side-by-side line comparison or macro (actual vs budget, rev vs exp)\n"
-        "• `sheets` / `sheet <name>` — View and switch between Excel worksheets or PDF statements\n"
-        "• `metrics` — Total accounts, materiality rate, and portfolio breakdown\n\n"
-        "**Financial Concepts & Education (Ask Anytime):**\n"
-        "• `what is materiality?` — The dollar-or-percent test for what needs explaining\n"
-        "• `favorable vs unfavorable` — Sign conventions for revenue vs. expense\n"
-        "• `what is net impact?` — Net operating income formula\n"
-        "• `budget vs forecast` — AOP vs. Latest Estimate baseline principles\n"
-        "• `timing vs permanent` — Reversible accounting shifts vs. structural run-rates\n"
-        "• `operating leverage` — Fixed vs. variable costs and drop-through\n"
-        "• `what are financial kpis?` — Key variance performance indicators\n"
-        "• `what is driver decomposition?` — Price vs. volume causal analysis\n"
-        "• `audit trail` — SHA-256 source fingerprints and what the audit file records\n\n"
-        "**Standard Exploration:**\n"
-        "• `summary` — Executive summary with net operating impact\n"
-        "• `material` — Show all material variances\n"
-        "• `unfavorable` / `favorable` — Filter by status\n"
-        "• `revenue` / `expenses` — Filter by type\n"
-        "• `top 3` — Show top N variances by absolute amount\n"
-        "• `totals` — Aggregate revenue and expense totals\n"
-        "• `warnings` — Data quality alerts\n"
-        "• `recommendations` — Actionable mitigation & optimization steps\n\n"
-        "**Drill Down & Adjustment:**\n"
-        "• `why [item]` — Driver breakdown for a line item\n"
-        "• `detail [item]` — Full detail for a line item\n"
-        "• `threshold $X or Y%` — Re-run analysis with adjusted thresholds\n\n"
-        "**Export & Session:**\n"
-        "• `export report` — Download Markdown report\n"
-        "• `export excel` — Download formatted Excel workbook\n"
-        "• `export csv` — Download all rows as CSV\n"
-        "• `export audit` — Download audit JSON\n"
-        "• `report` — View full report inline\n"
-        "• `new` — Start over with a new file\n"
-        "• `help` — Show this guide"
+        "**What you can ask**\n\n"
+        "I compare each line's Actual against your budget, forecast or prior period, flag the gaps "
+        "big enough to matter, and say whether each one helped or hurt profit. Every figure comes from "
+        "exact, repeatable calculations, never estimates. It is built for FP&A analysts, controllers and "
+        "anyone preparing a month-end or quarter-end variance review.\n\n"
+        "**Analysis**\n"
+        "• `memo` / `briefing`: a management briefing on the period, with a download\n"
+        "• `waterfall` / `bridge`: the walk from budget to actual operating profit, step by step\n"
+        "• `what if [line] [+/-X% or $Y]`: profit and margin if one line changes\n"
+        "• `sensitivity`: operating profit under five revenue and expense swings\n"
+        "• `run rate` / `project year end`: the annualised pace and a latest-estimate projection\n"
+        "• `drivers` / `driver summary`: which lines have driver data, and whether it reconciles\n"
+        "• `biggest risks`: the largest material unfavorable variances\n"
+        "• `biggest wins`: the largest favorable variances\n"
+        "• `revenue status`: revenue against budget, line by line\n"
+        "• `expense status`: expenses against budget, and the largest overspends\n"
+        "• `burn rate` / `budget utilization`: the share of the expense budget spent\n"
+        "• `variance concentration` / `pareto`: the share of the total variance in the top three lines\n"
+        "• `unbudgeted spend`: lines with spending and no budget\n"
+        "• `cost savings`: expense lines below budget\n"
+        "• `revenue misses`: revenue lines below budget\n"
+        "• `highest percent`: the largest variances in percentage terms\n"
+        "• `compare [line] vs [line]`: two lines side by side, actual against budget, or revenue against expenses\n"
+        "• `sheets` / `sheet <name>`: list and switch Excel worksheets or PDF statements\n"
+        "• `metrics`: line counts, the material share and the mix of lines\n\n"
+        "**Concepts, any time**\n"
+        "• `what is materiality?`: the dollar-or-percent test for what needs explaining\n"
+        "• `favorable vs unfavorable`: why a revenue gain and an expense saving are both favorable\n"
+        "• `what is net impact?`: how net operating impact is worked out\n"
+        "• `budget vs forecast`: how a budget and a latest estimate differ\n"
+        "• `timing vs permanent`: variances that reverse and variances that last\n"
+        "• `operating leverage`: fixed and variable costs, and drop-through\n"
+        "• `what are financial kpis?`: the measures a variance review reports\n"
+        "• `what is driver decomposition?`: splitting a variance into price and volume\n"
+        "• `audit trail`: what the audit file records, including source fingerprints\n\n"
+        "**Exploring the results**\n"
+        "• `summary`: the headline figures and net operating impact\n"
+        "• `material`: every material variance\n"
+        "• `unfavorable` / `favorable`: one status only\n"
+        "• `revenue` / `expenses`: one type only\n"
+        "• `top 3`: the largest variances by amount\n"
+        "• `totals`: revenue and expense totals\n"
+        "• `warnings`: data quality notes\n"
+        "• `recommendations`: suggested next steps for the largest variances\n\n"
+        "**One line in detail**\n"
+        "• `why [line]`: what drove one line's variance\n"
+        "• `detail [line]`: everything recorded for one line\n"
+        "• `threshold $X or Y%`: run again with different materiality thresholds\n\n"
+        "**Export and session**\n"
+        "• `export report`: download the Markdown report\n"
+        "• `export excel`: download the Excel workbook\n"
+        "• `export csv`: download every row as CSV\n"
+        "• `export audit`: download the audit file (JSON)\n"
+        "• `report`: show the full report here\n"
+        "• `new`: start over with a new file\n"
+        "• `help`: show this list"
     )
     return Response(
         text=text,
@@ -2217,9 +2209,10 @@ def _export_response(
             )
         except (ValueError, OSError) as exc:
             return Response(
-                text=f"⚠️ Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
+                text=f"Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
                 chips=[retry_chip],
                 phase=Phase.EXPLORING,
+                level="error",
             )
     return Response(
         text=ready,
@@ -2254,10 +2247,11 @@ def _path_export_disabled(path: str, intent: ParsedIntent) -> Response:
         intent.intent_id, "Export report"
     )
     return Response(
-        text=(f"⚠️ Saving to `{safe_inline(path)}` is turned off on this hosted version. "
+        text=(f"Saving to `{safe_inline(path)}` is turned off on this hosted version. "
               f"Use **{chip}** to download the file instead."),
         chips=[chip],
         phase=Phase.EXPLORING,
+        level="error",
     )
 
 
@@ -2562,9 +2556,10 @@ def _handle_revenue_status(session: Session) -> Response:
 
     if any(r.line_type == LineType.UNCLASSIFIED for r in result.rows):
         return Response(
-            text="⚠️ Total revenue cannot be certified because there are still unclassified line items. Classify them first.",
+            text="Total revenue cannot be certified because there are still unclassified line items. Classify them first.",
             chips=["Unclassified", "Summary"],
             phase=Phase.EXPLORING,
+            level="error",
         )
 
     rev = result.revenue
@@ -2627,9 +2622,10 @@ def _handle_expense_status(session: Session) -> Response:
 
     if any(r.line_type == LineType.UNCLASSIFIED for r in result.rows):
         return Response(
-            text="⚠️ Total expenses cannot be certified because there are still unclassified line items.",
+            text="Total expenses cannot be certified because there are still unclassified line items.",
             chips=["Unclassified", "Summary"],
             phase=Phase.EXPLORING,
+            level="error",
         )
 
     exp = result.expenses
@@ -3390,10 +3386,11 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     if matched_sheet is None:
         available_str = ", ".join(f"'{safe_inline(s)}'" for s in sheets)
         return Response(
-            text=f"⚠️ {word.capitalize()} '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'.\n\n"
+            text=f"{word.capitalize()} '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'.\n\n"
                  f"Available {word}s: {available_str}.",
             chips=[_sheet_chip(session, s) for s in sheets[:3]],
             phase=session.phase,
+            level="error",
         )
 
     if matched_sheet == session.worksheet and session.result is not None:
@@ -3419,15 +3416,16 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
             # The PDF messages already name the statement; offer the ones that can be read.
             chips = [_sheet_chip(session, s) for s in intake_res.available_sheets
                      if s != session.worksheet][:3]
-            return Response(text=f"⚠️ {plain_err}", chips=[*chips, "Show statements"],
-                            phase=session.phase)
+            return Response(text=plain_err, chips=[*chips, "Show statements"],
+                            phase=session.phase, level="error")
         chips = ["Show sheets"]
         if session.last_technical_detail:
             chips.append("Show technical details")
         return Response(
-            text=f"⚠️ Failed to load {word} '{safe_inline(matched_sheet)}': {plain_err}",
+            text=f"Failed to load {word} '{safe_inline(matched_sheet)}': {plain_err}",
             chips=chips,
             phase=session.phase,
+            level="error",
         )
 
     session.parsed_rows = intake_res.rows
@@ -3506,9 +3504,10 @@ def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
         technical = intake_res.fatal_error_message or "No data rows found"
         session.last_technical_detail = technical
         return Response(
-            text=f"⚠️ Could not compare against the {noun}: {plain_analysis_error(technical)}",
+            text=f"Could not compare against the {noun}: {plain_analysis_error(technical)}",
             chips=["Show technical details", "Upload a different file"],
             phase=session.phase,
+            level="error",
         )
 
     session.compare_to = basis

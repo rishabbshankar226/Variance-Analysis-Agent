@@ -18,7 +18,7 @@ def main() -> None:
         names = wheel.namelist()
         assert "variance_agent/version.py" in names
         # The chat server reads its page from the package; a wheel without these serves a 404.
-        for asset in ("chat.html", "chat.js", "chat.css"):
+        for asset in ("chat.html", "chat.js", "chat.css", "favicon.svg"):
             assert f"variance_agent/static/{asset}" in names, asset
         assert not any(name.startswith("static/") for name in names), "stray top-level static/"
         assert any(name.endswith("/licenses/LICENSE") for name in names)
@@ -34,6 +34,7 @@ def main() -> None:
                          "src/variance_agent/version.py",
                          "src/variance_agent/static/chat.html",
                          "src/variance_agent/static/chat.js", "src/variance_agent/static/chat.css",
+                         "src/variance_agent/static/favicon.svg",
                          "schemas/audit-1.0.schema.json", "schemas/audit-1.3.schema.json",
                          "schemas/audit-1.4.schema.json",
                          "tests/fixtures/contracts/complete.report.md", "docs/audit-contract.md",

@@ -35,6 +35,7 @@ _STATIC_TYPES = {
     "chat.html": "text/html; charset=utf-8",
     "chat.js": "text/javascript; charset=utf-8",
     "chat.css": "text/css; charset=utf-8",
+    "favicon.svg": "image/svg+xml",
 }
 
 # The page loads only its own script and stylesheet: no inline code, no third-party origins, no
@@ -265,6 +266,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
                     "text": self.initial_response.text,
                     "chips": self.initial_response.chips,
                     "table": self.initial_response.table,
+                    "level": self.initial_response.level,
                 }
             self._json_response(payload)
         elif self.path == "/favicon.ico":
@@ -416,6 +418,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
             payload["table"] = response.table
         if response.chips is not None:
             payload["chips"] = response.chips
+        if response.level is not None:
+            payload["level"] = response.level
         if response.download is not None:
             # Stage the download and return a URL
             for filename, content in response.download.items():

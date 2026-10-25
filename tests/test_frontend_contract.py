@@ -127,6 +127,7 @@ def test_the_page_is_served_with_a_strict_csp(httpd: HTTPServer) -> None:
         ("/static/chat.js", "text/javascript; charset=utf-8"),
         ("/static/chat.css", "text/css; charset=utf-8"),
         ("/static/chat.html", "text/html; charset=utf-8"),
+        ("/static/favicon.svg", "image/svg+xml"),
     ],
 )
 def test_assets_are_served_from_the_package_with_their_types(
@@ -299,8 +300,8 @@ def run_js(tmp_path_factory: pytest.TempPathFactory) -> Callable[[str], object]:
 
 def test_unknown_and_inherited_phase_names_still_get_a_readable_label(run_js: Callable[[str], object]) -> None:
     labels = run_js("return ['awaiting_new_step', 'constructor', '', 'exploring'].map(m.phaseLabel);")
-    assert labels == ["New Step", "Constructor", "Ready", "Exploring"]
-    assert run_js("return m.phasePlaceholder('toString');") == "Type a message..."
+    assert labels == ["New step", "Constructor", "Ready", "Results"]
+    assert run_js("return m.phasePlaceholder('toString');") == "Type a message"
 
 
 def test_a_reload_mid_intake_keeps_the_servers_phase(run_js: Callable[[str], object]) -> None:

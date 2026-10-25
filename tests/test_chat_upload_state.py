@@ -34,7 +34,7 @@ def test_failed_reupload_keeps_the_previous_file_and_analysis() -> None:
     assert session.source_bytes == SAMPLE_CSV
     assert session.source_suffix == ".csv"
     assert session.result is not None
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     assert "Upload a different file" in (response.chips or [])
 
 
@@ -156,7 +156,7 @@ def test_upload_chip_is_not_taken_as_a_period_choice() -> None:
 def test_pasted_table_that_cannot_be_read_explains_why() -> None:
     session = Session()
     response = handle_message(session, "alpha\tbeta\nfoo\tbar\n")
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     assert "paste a table" in response.text.lower()
     assert session.source_bytes is None
     assert session.phase == Phase.AWAITING_FILE
@@ -166,7 +166,7 @@ def test_workbook_read_on_an_unreadable_sheet_replaces_the_session_and_offers_it
     session = analysed()
     name = "fixture_g_cover_page_active.xlsx"
     response = handle_upload(session, (REALWORLD / name).read_bytes(), name, sheet="Cover Page")
-    assert response.text.startswith("⚠️")
+    assert response.level == "error"
     assert session.source_name == name
     assert session.phase == Phase.AWAITING_FILE
     assert session.result is None

@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 1. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: Phase 2. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 
@@ -64,18 +64,18 @@ Favorable and unfavorable differ in lightness as well as hue (contrast between t
 
 | Component | Now (Phase 1) | Later |
 |---|---|---|
-| Header and mark | Drawn mark (a budget bar outlined beside a taller actual bar, on a baseline), name, Help, Reset, the phase as plain text after a hairline | Phase 2: wordmark, favicon, phone layout |
+| Header and mark | Drawn mark (a budget bar outlined beside a taller actual bar, on a baseline), wordmark, the step as plain text after a hairline, Help and Start over with icons; on a phone the step takes a second row and the buttons show icons only | — |
 | Drop zone | Dashed hairline panel, drawn upload icon | Phase 2 first screen |
 | Message | Yours: tinted block on the right. The tool's: plain text, 72 ch | Phase 2 copy |
-| Chips | Bordered 4 px buttons in body text | Phase 2: only the latest turn's chips respond (T7) |
+| Chips | Bordered 4 px buttons in body text; earlier turns' chips are disabled, announced as no longer available, and set as small muted text | — |
 | Input bar | Bordered box, filled ink-blue Send | — |
 | Intake panel | Markdown bullets | Phase 3: rows from a sibling of `format_intake_summary` |
 | Headline strip | — | Phase 4: three or four figures, label above, value at 28 px, comparison and variance at 12 px, status as a word |
 | Results table | Framed panel, hairline rows 40 px, 12 px heads, right-aligned tabular numbers, drawn sort icons | Phase 4: `view` field, sentence-case heads, status words, phone layout, totals rule |
 | Drill-down, driver breakdown | Markdown | Phase 4 |
 | Earnings table | Same frame | Phase 5: column groups under spanning heads |
-| Error | Amber rule beside the text | Phase 2: `level` field |
-| Loading | Three squares, opacity only | — |
+| Error | Attention-coloured rule beside the text, from `level: "error"` | — |
+| Loading | Nothing under 100 ms; then three squares pulsing in opacity and a line saying what is happening; after a second a flat three-bar skeleton | — |
 | Print | Header kept, controls dropped, log height released | Phase 4: results view on paper |
 | Forced colours | Controls, panels and the attention rule keep system-colour borders | — |
 
@@ -85,7 +85,15 @@ None. `•` (U+2022) in Markdown bullets and `…` (U+2026) in previews are punc
 
 ## Copy
 
-_One rewritten example per screen, from Phase 2 on._
+| Screen | Before | After |
+|---|---|---|
+| First screen | "Welcome! Upload your financial data to get started." | "Upload a budget-versus-actual file to start. It needs an Actual column and a Budget, Forecast or Prior Period column." |
+| First reply after upload | 👋 plus a three-heading essay ("What it's for", "Who it's for", "What you can do") before the question | "Welcome to the Variance Analysis Agent. I compare each line's Actual against your budget, flag the gaps big enough to matter, and say whether each one helped or hurt profit. Type `help` for everything you can ask." then the file line and the question |
+| Help | "`biggest risks` — Top material unfavorable variances and mitigation advice" | "`biggest risks`: the largest material unfavorable variances" |
+| A refusal | "⚠️ 'file.pdf' looks like a scanned image…" | the same sentence with no sign, beside an attention-coloured rule, carried by `level: "error"` |
+| Header | "? Help", "↺ Reset", "SET PERIOD" with a pulsing dot | Help and Start over with drawn icons; "Set the period" as plain text |
+| Placeholder | "Enter the reporting period (e.g., Q3 2026)..." | "Reporting period, for example Q3 2026" |
+| Drop zone | "Drop file here or click to browse" / ".csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)" | "Drop a file here, or choose one" / "CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to 32 MB" |
 
 ## Decisions
 
@@ -101,21 +109,24 @@ _One rewritten example per screen, from Phase 2 on._
 | Sender labels | Announced to screen readers, not shown | Uppercase "AGENT" / "YOU" eyebrows: a generated tell; position and tint already say who spoke. |
 | Icons | One drawn set, 20-unit grid, 1.5 px non-scaling stroke, drawn at 16 and 20 px | Emoji and arrows: render differently on every system (T1). An icon font: a new asset and a remote-looking dependency. |
 | Status marker shapes | (Phase 4) a dot for favorable, a square for unfavorable, beside the word | Colour alone (T9). |
-| Phone header | The name truncates so nothing overlaps | Two header rows (the old layout, 124 px): Phase 2 redesigns the shell. |
+| Phone header | Name and icon buttons on one row, the step on a thin second row | Shortening the name to fit one row: the product's name is not this run's to change, and tests and the page title use it. Hiding the step: the tests forbid it and it is the only progress cue. |
+| Old chips | Kept, disabled, announced and muted | Removed: a reply can say "choose a preset below", and a removed chip leaves that sentence pointing at nothing. Left live: a click on an old "USD" sent it again in whatever step was current. |
+| Error marker | A rule in the attention colour, from a `level` field | A warning sign in the text: renders differently everywhere and is not a contract. A red tint: red means unfavorable here. |
+| Intro | One sentence and a pointer to `help` | The capability essay: it pushed the first question below the fold on every screen size. |
 
 ## Tell status
 
 | # | Tell | Status | Proof |
 |---|---|---|---|
-| T1 | Emoji as icons | page and stylesheet clean; `handlers.py` and `knowledge.py` reply text still carries glyphs | P (`test_no_emoji_arrows_or_dingbats_in_the_page`, `test_reply_text_built_by_chat_has_no_glyphs`) |
+| T1 | Emoji as icons | done for `static/`; reply text in `handlers.py` (results, drivers, risks, what-if) and `knowledge.py` still carries glyphs: Phases 4 and 5 | P (`test_no_emoji_arrows_or_dingbats_in_the_page`, `test_reply_text_built_by_chat_has_no_glyphs`) |
 | T2 | Violet, gradients, glow | done for the stylesheet; accent reach to be read at STOP 1 | P (`test_no_gradient_glow_or_text_shadow`, theme tests) + S |
 | T3 | Type without a scale | done: 4 sizes and 3 weights in use, tabular figures, mono on code only | P |
 | T4 | Spacing and shape by feel | done for the stylesheet: 4 px scale, 2 radii, 1 overlay shadow | P + S |
 | T5 | Result as a chat bubble | todo (Phase 4) | P + S |
-| T6 | Capability essay | todo (Phase 2) | P + S |
-| T7 | Old chips left live | todo (Phase 2) | P + S |
+| T6 | Capability essay | done | P (`test_first_upload_opens_with_a_short_welcome_and_help_holds_the_capabilities`) + S |
+| T7 | Old chips left live | done | P (`test_only_the_latest_turns_chips_respond`) + S |
 | T8 | Phone table | todo (Phase 4) | S |
 | T9 | Status by colour alone | todo (Phase 4) | P |
 | T10 | Decorative motion | done: 150 ms fade, 1.2 s opacity loader, reduced motion stops both | P |
-| T11 | Emoji brand | mark drawn; wordmark and favicon in Phase 2 | P + S |
+| T11 | Emoji brand | done | P (`test_the_header_has_a_drawn_mark_a_wordmark_and_a_matching_favicon`) + S |
 | T12 | Screen-only design | print block in place; results on paper in Phase 4 | P + S |

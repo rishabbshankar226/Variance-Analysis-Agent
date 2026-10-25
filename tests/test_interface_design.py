@@ -197,7 +197,7 @@ def test_forced_colours_keep_controls_and_marks_visible() -> None:
     sheet = css()
     block = sheet[sheet.index("@media (forced-colors: active)"):]
     block = block[:block.index("\n}\n")]
-    for needle in (".chip", ".send-btn", "ButtonText", "CanvasText", ".message-body.warning"):
+    for needle in (".chip", ".send-btn", "ButtonText", "CanvasText", ".message-body.is-error"):
         assert needle in block, needle
 
 
@@ -235,10 +235,13 @@ def test_reply_text_built_by_chat_has_no_glyphs(module: str) -> None:
 
 
 def test_nothing_is_loaded_from_another_origin() -> None:
-    page, script, sheet = (packaged(name).decode("utf-8") for name in ("chat.html", "chat.js", "chat.css"))
+    page, script, sheet, icon = (packaged(name).decode("utf-8")
+                                 for name in ("chat.html", "chat.js", "chat.css", "favicon.svg"))
     assert not re.search(r"(?:src|href)\s*=\s*\"(?!/static/)", page)
     assert re.findall(r"https?://[^'\"\s]+", script) == ["http://www.w3.org/2000/svg"]
     assert "url(" not in sheet and "http" not in sheet and "@font-face" not in sheet
+    assert re.findall(r"https?://[^'\"\s]+", icon) == ["http://www.w3.org/2000/svg"]
+    assert "<style" not in icon and "<script" not in icon and "href" not in icon
 
 
 def test_every_static_file_is_allowlisted_and_nothing_else_ships() -> None:
@@ -256,7 +259,7 @@ def test_every_static_file_is_allowlisted_and_nothing_else_ships() -> None:
 def test_icons_are_one_set_at_two_sizes(run_js: Callable[[str], object]) -> None:  # noqa: F811
     assert run_js("return m.ICON_SIZES;") == [16, 20]
     names = run_js("return Object.keys(m.ICONS).sort();")
-    assert names == ["download", "mark", "search", "sort", "sort-asc", "sort-desc", "upload"]
+    assert names == ["download", "help", "mark", "restart", "search", "sort", "sort-asc", "sort-desc", "upload"]
     assert run_js("return m.iconParts('sort', 16).length;") == 2
     assert run_js("return m.ICONS.mark.filter((p) => p.fill).length;") == 1
     for bad in ("m.iconParts('emoji', 16)", "m.iconParts('sort', 24)"):
@@ -268,6 +271,96 @@ def test_every_icon_path_stays_on_the_20_unit_grid(run_js: Callable[[str], objec
     paths = run_js("return Object.values(m.ICONS).flat().map((p) => p.d);")
     assert isinstance(paths, list) and paths
     for d in paths:
-        assert re.fullmatch(r"[MmLlHhVvAaZz0-9.\s,-]+", d), d
+        assert re.fullmatch(r"[MmLlHhVvAaCcSsZz0-9.\s,-]+", d), d
         numbers = [abs(float(n)) for n in re.findall(r"-?\d+(?:\.\d+)?", d)]
         assert max(numbers) <= 20, d
+
+
+# ---------------------------------------------------------------------------
+# The shell and the first minute (Phase 2: T6, T7, T10, T11, the error level)
+# ---------------------------------------------------------------------------
+
+def _script() -> str:
+    return packaged("chat.js").decode("utf-8")
+
+
+def test_only_the_latest_turns_chips_respond(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    result = run_js(
+        "const log = [];"
+        "const group = (id, n) => { const chips = Array.from({ length: n }, () => ({ disabled: false }));"
+        "  return { chips, classList: { add: (c) => log.push(`${id}:${c}`) },"
+        "    setAttribute: (k, v) => log.push(`${id}:${k}=${v}`), querySelectorAll: () => chips }; };"
+        "const groups = [group('a', 2), group('b', 3)];"
+        "return [m.retireChips(groups), groups.map((g) => g.chips.every((c) => c.disabled)), log, m.retireChips([])];"
+    )
+    assert result == [5, [True, True],
+                      ["a:is-retired", "a:aria-label=Earlier suggestions, no longer available",
+                       "b:is-retired", "b:aria-label=Earlier suggestions, no longer available"], 0]
+    script = _script()
+    body = script[script.index("function addUserMessage(text) {"):]
+    body = body[:body.index("\n  }\n")]
+    # Retired at the turn boundary, before the new message is drawn, and only `.chips` groups:
+    # earlier table drill-downs and download links stay live.
+    call = "retireChips(Array.from(messagesEl.querySelectorAll('.chips:not(.is-retired)')))"
+    assert body.index(call) < body.index("createElement")
+    assert script.count("retireChips(") == 2  # the definition and that one call
+    retired = "\n".join(decl for sel, decl in _rules(css()) if ".is-retired" in sel)
+    assert "border-color: transparent" in retired and "cursor: default" in retired
+
+
+def test_markdown_blocks_are_not_followed_by_an_empty_line(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    html = run_js("return m.renderMarkdown('**Analysis**\\n\u2022 one\\n\u2022 two\\n\\nDone');")
+    assert html == ('<strong>Analysis</strong><br><div class="md-bullet">\u2022 one</div>'
+                    '<div class="md-bullet">\u2022 two</div><br>Done')
+
+
+def test_the_header_has_a_drawn_mark_a_wordmark_and_a_matching_favicon() -> None:
+    page = packaged("chat.html").decode("utf-8")
+    assert '<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">' in page
+    assert "<h1>Variance Analysis Agent</h1>" in page
+    assert '<div class="header-icon" aria-hidden="true"></div>' in page
+    assert "createIcon('mark', 20)" in _script()
+    icon = packaged("favicon.svg").decode("utf-8")
+    assert icon.startswith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">')
+    # The favicon draws the same mark: an outlined budget bar beside a taller filled actual bar.
+    assert 'fill="none" stroke="#ffffff"' in icon and 'fill="#ffffff"' in icon
+    assert colour("light", "accent") in icon
+
+
+def test_help_and_start_over_keep_their_words_on_a_phone() -> None:
+    page = packaged("chat.html").decode("utf-8")
+    assert '<span class="btn-label">Help</span>' in page and '<span class="btn-label">Start over</span>' in page
+    narrow = css()[css().index("@media (max-width: 420px)"):]
+    assert ".header-action-btn .btn-label {" in narrow and "display: none" not in narrow.split(".btn-label {")[1][:200]
+
+
+def test_the_working_indicator_waits_then_shows_a_flat_skeleton() -> None:
+    script = _script()
+    show = script[script.index("function showTypingIndicator("):script.index("function removeTypingIndicator()")]
+    assert show.rstrip().endswith("    }, 100);\n  }"), "the indicator does not wait 100 ms"
+    assert "msg.classList.add('is-long'), 900" in show
+    remove = script[script.index("function removeTypingIndicator()"):]
+    remove = remove[:remove.index("\n  }\n")]
+    assert "clearTimeout(indicatorTimer)" in remove and "clearTimeout(skeletonTimer)" in remove
+    skeleton = "\n".join(decl for sel, decl in _rules(css()) if sel.startswith(".skeleton"))
+    assert "gradient" not in skeleton
+    assert set(re.findall(r"opacity:\s*([\d.]+)", skeleton)) == {"0.6"}  # 1 by default, 0.6 on two bars
+
+
+def test_errors_are_styled_from_the_level_field_only() -> None:
+    script = _script()
+    assert "if (level === 'error') body.classList.add('is-error');" in script
+    assert "startsWith(" not in script[script.index("function addAgentMessage("):script.index("function addUserMessage(")]
+    assert "data.level" in script and "view.reply.level" in script
+
+
+def test_copy_on_the_page_is_sentence_case_without_exclamations() -> None:
+    script = _script()
+    labels = re.findall(r"^\s+\w+:\s+'([^']+)',$", script[script.index("PHASE_LABELS = {"):script.index("PHASE_PLACEHOLDERS")], re.M)
+    assert len(labels) == 14
+    for label in labels:
+        words = label.split()
+        assert all(w == w.lower() for w in words[1:]), label
+    for text in re.findall(r"'([A-Z][a-z][^'\n]{10,})'", script):  # prose, not code
+        assert "!" not in text, text
+    assert "..." not in script[script.index("PHASE_PLACEHOLDERS = {"):script.index("export function phaseLabel")]
