@@ -386,6 +386,7 @@ export function isIntakeView(view) {
  * @property {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
  * @property {string[]} notes
  * @property {string | null} table_title
+ * @property {Array<{title: string, columns: Array<{key: string, label: string}>}>} column_groups
  */
 
 /** @param {unknown} rows */
@@ -407,7 +408,9 @@ export function isFiguresView(view) {
       && isOptString(f.compare) && isOptString(f.change) && isOptString(f.status)
       && (f.tone === null || TONE_NAMES.includes(f.tone)))
     && Array.isArray(v.sections) && v.sections.every((sec) => sec && isString(sec.title) && isPairs(sec.rows))
-    && Array.isArray(v.notes) && v.notes.every(isString);
+    && Array.isArray(v.notes) && v.notes.every(isString)
+    && Array.isArray(v.column_groups) && v.column_groups.every((g) => g && isString(g.title)
+      && Array.isArray(g.columns) && g.columns.every((c) => c && isString(c.key) && isString(c.label)));
 }
 
 // ── Tables ──────────────────────────────────────────────────────────────────
@@ -424,8 +427,14 @@ export const STATUS_WORDS = {
   Unclassified: 'Unclassified',
 };
 
-/** @type {Record<string, 'favorable' | 'unfavorable' | 'neutral'>} */
-const STATUS_TONES = { F: 'favorable', U: 'unfavorable', Neutral: 'neutral' };
+/**
+ * Tones of the engine's status values and of the earnings outcomes `display_outcome` gives
+ * (Beat, Miss, In line), which are shown as they are.
+ * @type {Record<string, 'favorable' | 'unfavorable' | 'neutral'>}
+ */
+const STATUS_TONES = {
+  F: 'favorable', U: 'unfavorable', Neutral: 'neutral', Beat: 'favorable', Miss: 'unfavorable', 'In line': 'neutral',
+};
 
 /**
  * The word and tone a status cell shows. Values the page does not know are shown as they are.
@@ -607,7 +616,7 @@ function boot() {
     msg.appendChild(body);
 
     if (table && table.length > 0) {
-      body.appendChild(renderTable(table));
+      body.appendChild(renderTable(table, isFiguresView(view) ? view.column_groups : []));
     }
 
     if (showDropZone) {
@@ -838,9 +847,11 @@ function boot() {
   /**
    * The table, its filter (for long tables) and the narrow-screen cue, in one framed block.
    * @param {Array<Record<string, string>>} initialRows
+   * @param {Array<{title: string, columns: Array<{key: string, label: string}>}>} [groups]
+   *   columns set under a spanning head, each with a short label
    * @returns {HTMLElement}
    */
-  function renderTable(initialRows) {
+  function renderTable(initialRows, groups = []) {
     const wrapper = document.createElement('div');
     wrapper.className = 'data-table-wrapper';
     wrapper.setAttribute('role', 'region');
@@ -857,7 +868,12 @@ function boot() {
     let sortCol = null;
     let sortAsc = true;
 
-    const columns = Object.keys(initialRows[0]);
+    // A column that is empty in every row says nothing; leave it out of the display.
+    const columns = Object.keys(initialRows[0]).filter((col) =>
+      col === 'Line Item' || initialRows.some((r) => String(r[col] ?? '').trim() !== ''));
+    /** @type {Record<string, {group: string, label: string}>} */
+    const grouped = {};
+    groups.forEach((g) => g.columns.forEach((c) => { grouped[c.key] = { group: g.title, label: c.label }; }));
     const numeric = new Set(columns.filter((col) => col !== 'Status' && isNumericColumn(initialRows.map((r) => r[col]))));
     /** @param {string} col */
     function isNumericCol(col) {
@@ -910,7 +926,8 @@ function boot() {
       button.title = 'Click to sort';
 
       const labelSpan = document.createElement('span');
-      labelSpan.textContent = columnLabel(col);
+      labelSpan.textContent = Object.hasOwn(grouped, col) ? grouped[col].label : columnLabel(col);
+      if (Object.hasOwn(grouped, col)) button.setAttribute('aria-label', `${grouped[col].group} ${grouped[col].label}`);
       button.appendChild(labelSpan);
 
       const iconSpan = document.createElement('span');
@@ -945,6 +962,26 @@ function boot() {
       thMap[col] = th;
       headerRow.appendChild(th);
     });
+    if (columns.some((col) => Object.hasOwn(grouped, col))) {
+      // One spanning head per comparison over its columns; other columns get an empty cell.
+      const groupRow = document.createElement('tr');
+      groupRow.className = 'group-row';
+      let i = 0;
+      while (i < columns.length) {
+        const name = Object.hasOwn(grouped, columns[i]) ? grouped[columns[i]].group : '';
+        let span = 1;
+        while (name && i + span < columns.length && Object.hasOwn(grouped, columns[i + span])
+          && grouped[columns[i + span]].group === name) span += 1;
+        const th = document.createElement('th');
+        th.colSpan = span;
+        th.scope = 'colgroup';
+        th.textContent = name;
+        if (name) th.className = 'group-head';
+        groupRow.appendChild(th);
+        i += span;
+      }
+      thead.appendChild(groupRow);
+    }
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
@@ -1004,7 +1041,7 @@ function boot() {
           const td = document.createElement('td');
           const val = row[col] || '';
           if (isNumericCol(col)) td.className = 'num';
-          if (col === 'Status') {
+          if (col === 'Status' || (Object.hasOwn(grouped, col) && grouped[col].label === 'Outcome')) {
             const shown = statusWord(plainText(val));
             td.appendChild(statusEl(shown.word, shown.tone));
           } else if (col === 'Line Item') {

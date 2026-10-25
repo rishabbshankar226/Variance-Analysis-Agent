@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 4. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: Phase 5. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 
@@ -71,9 +71,9 @@ Favorable and unfavorable differ in lightness as well as hue (contrast between t
 | Input bar | Bordered box, filled ink-blue Send | — |
 | Intake panel | A bordered panel, 72 ch wide: title, one hairline row per fact (label left in secondary text, the file's words right), notes under a stronger rule, the question last; stacked on a phone | — |
 | Headline strip | Three or four figures between hairlines: label, 28 px value, comparison and change at 12 px, status word with its shape; one per row on a phone | — |
-| Results table | Framed, hairline rows 40 px, sentence-case 12 px heads, numeric columns right-aligned by value, status words, bars on the variance column only, sticky first column and cue on a phone | Phase 5: comparison sets as column groups |
+| Results table | Framed, hairline rows 40 px, sentence-case 12 px heads, numeric columns right-aligned by value, status words, bars on the variance column only, sticky first column and cue on a phone | — |
 | Drill-down, driver breakdown | Figures view: budget, actual, variance; the decomposition as label/value rows; the evidence status as a sentence | — |
-| Earnings table | Same frame | Phase 5: column groups under spanning heads |
+| Earnings table | Each comparison's columns under one spanning head with short labels; Beat, Miss, In line as words with shapes; units as the engine formats them | — |
 | Error | Attention-coloured rule beside the text, from `level: "error"` | — |
 | Loading | Nothing under 100 ms; then three squares pulsing in opacity and a line saying what is happening; after a second a flat three-bar skeleton | — |
 | Print | Header kept, controls dropped, log height released | Phase 4: results view on paper |

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from variance_agent.comparison import basis_noun, comparison_heading, parse_compare_to
+from variance_agent.comparison import basis_noun, comparison_heading, extended_heading, parse_compare_to
 from variance_agent.comparisons import (TableAnalysis, analyze_comparisons, build_comparison_audit,
                                        read_comparison_input, render_comparisons, detect_comparison_bases)
 from variance_agent.audit import serialize_audit_json, sha256_bytes
@@ -17,7 +17,7 @@ from variance_agent.earnings import display_rows
 from variance_agent.models import MeasureKind
 from variance_agent.xlsx import render_comparison_xlsx
 from .responses import Response
-from .views import earnings_intake_view
+from .views import comparison_groups, earnings_intake_view, figures_view, pair
 from .session import Phase, Session
 
 
@@ -131,8 +131,19 @@ def summary(session: Session) -> Response:
     assert session.table_analysis is not None
     table = session.table_analysis
     titles = ", ".join(comparison_heading(comparison.basis, comparison.label) for comparison in table.comparisons)
+    rows = display_rows(table)
+    group_titles = [extended_heading(c.result.config) if c.result is not None else comparison_heading(c.basis, c.label)
+                    for c in table.comparisons]
+    view = figures_view(
+        "Earnings review",
+        context=[pair("Compared with", titles), pair("Period", table.config.period), pair("Currency", table.config.currency)],
+        notes=["Actual compared with the numbers you supplied. I make no estimates."],
+        table_title=f"{len(rows)} line{'s' if len(rows) != 1 else ''}",
+        column_groups=comparison_groups(list(rows[0]) if rows else [], group_titles),
+    )
     return Response(text=f"Earnings review: Actual compared with supplied {titles}. I make no estimates.",
-                    table=display_rows(table), chips=["Summary", "Export report", "Export audit", "Export Excel"], phase=Phase.EXPLORING)
+                    table=rows, chips=["Summary", "Export report", "Export audit", "Export Excel"], phase=Phase.EXPLORING,
+                    view=view)
 
 
 def explore(session: Session, intent_id: str, captures: dict[str, str]) -> Response:

@@ -403,10 +403,16 @@ def test_status_words_mirror_the_servers_map(run_js: Callable[[str], object]) ->
     from variance_agent.chat.responses import status_label
     from variance_agent.models import Status
     assert run_js("return m.STATUS_WORDS;") == {str(s): status_label(s) for s in Status}
-    shown = run_js("return ['F', 'U', 'Neutral', 'Unclassified', 'Beat'].map(m.statusWord);")
+    shown = run_js("return ['F', 'U', 'Neutral', 'Unclassified', 'Beat', 'Miss', 'In line', 'Other'].map(m.statusWord);")
     assert shown == [{"word": "Favorable", "tone": "favorable"}, {"word": "Unfavorable", "tone": "unfavorable"},
                      {"word": "Neutral", "tone": "neutral"}, {"word": "Unclassified", "tone": None},
-                     {"word": "Beat", "tone": None}]
+                     {"word": "Beat", "tone": "favorable"}, {"word": "Miss", "tone": "unfavorable"},
+                     {"word": "In line", "tone": "neutral"}, {"word": "Other", "tone": None}]
+    # The outcome words are the ones the engine's display_outcome returns.
+    import inspect
+    from variance_agent.comparison import display_outcome
+    source = inspect.getsource(display_outcome)
+    assert all(f'"{word}"' in source for word in ("Beat", "Miss", "In line"))
 
 
 def test_status_cells_show_a_word_and_a_shape() -> None:
@@ -444,14 +450,15 @@ def test_the_page_draws_only_figures_views_it_understands(run_js: Callable[[str]
     good = ('{kind: "figures", title: "Q3 2026 against budget", lead: null, table_title: "4 material variances",'
             ' context: [{label: "Currency", value: "USD"}],'
             ' figures: [{label: "Revenue", value: "$1.00", compare: null, change: null, status: "Favorable", tone: "favorable"}],'
-            ' sections: [], notes: ["x"]}')
+            ' sections: [], notes: ["x"],'
+            ' column_groups: [{title: "Consensus", columns: [{key: "Consensus variance", label: "Variance"}]}]}')
     cases = run_js(
         f"const good = {good};"
         "return [m.isFiguresView(good), m.isFiguresView({...good, figures: [{...good.figures[0], tone: 'green'}]}),"
         " m.isFiguresView({...good, notes: [3]}), m.isFiguresView({...good, kind: 'intake'}),"
-        " m.isIntakeView(good)];"
+        " m.isIntakeView(good), m.isFiguresView({...good, column_groups: [{title: 'x', columns: [{key: 1}]}]})];"
     )
-    assert cases == [True, False, False, False, False]
+    assert cases == [True, False, False, False, False, False]
 
 
 def test_a_narrow_table_keeps_its_first_column_and_cues_the_rest() -> None:

@@ -244,6 +244,7 @@ button, input, textarea { font: inherit; color: inherit; }
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
   font-size: var(--text-code);
+  white-space: nowrap; /* a command is one unit: never break "$10,000 or 5%" across lines */
 }
 
 /* A reply that refuses or could not do what was asked (level "error"): a rule in the
@@ -429,6 +430,11 @@ button, input, textarea { font: inherit; color: inherit; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover td { background: var(--bg-surface); }
 .data-table td.num, .data-table th.num { text-align: right; }
+
+/* A comparison's columns sit under its name; the head spans them with a rule beneath. */
+.data-table .group-row th { border-bottom: 0; padding-bottom: 0; color: var(--text-secondary); }
+.data-table .group-row th.group-head { border-bottom: 1px solid var(--border-strong); text-align: center; }
+.data-table .group-row + tr th { padding-top: var(--space-1); }
 
 /* A status is a word with a marker shape, never a colour alone (T9). */
 .status { font-weight: var(--weight-medium); white-space: nowrap; }
@@ -753,6 +759,8 @@ body.is-busy .drop-zone {
 
 /* ── Print: the conversation as a document ────────────────── */
 @media print {
+  @page { margin: 16mm 14mm; }
+  .message.user { display: none; } /* the analyst's one-word turns say nothing on paper */
   body { height: auto; overflow: visible; display: block; background: #ffffff; color: #000000; }
   .header { border-bottom: 1px solid #000000; }
   .header-actions .header-action-btn, .input-bar, .chips, .drop-zone, .table-toolbar, #typing-indicator { display: none; }

@@ -209,7 +209,7 @@ def test_every_intake_reply_is_plain_language(name: str) -> None:
 # The figures view (`view` kind "figures"): results, a drill-down, drivers, risks, a scenario
 # ---------------------------------------------------------------------------
 
-FIGURES_KEYS = {"kind", "title", "lead", "context", "figures", "sections", "notes", "table_title"}
+FIGURES_KEYS = {"kind", "title", "lead", "context", "figures", "sections", "notes", "table_title", "column_groups"}
 FIGURE_KEYS = {"label", "value", "compare", "change", "status", "tone"}
 
 
@@ -235,7 +235,7 @@ def test_the_results_view_carries_the_same_figures_as_the_text() -> None:
     for f in figures.values():
         assert f["value"] in reply.text
         for part in (f["compare"] or "", f["change"] or ""):
-            for piece in part.replace("Budget ", "").split(", "):
+            for piece in part.replace("Budget ", "").replace("Variance ", "").split(", "):
                 assert piece.lower() in reply.text.lower(), piece
     assert figures["Revenue"]["status"] in {"Favorable", "Unfavorable", "Neutral"}
     assert reply.view["table_title"] == f"{len(reply.table)} material variance{'s' if len(reply.table) != 1 else ''}"
@@ -263,3 +263,38 @@ def test_risks_describe_and_do_not_advise() -> None:
         assert phrase not in reply.text and phrase not in (reply.chips or [])
     assert "Top Financial Risks" in reply.text
     assert reply.table is not None and all(row["Status"] == "U" for row in reply.table)
+
+
+
+def test_earnings_tables_group_each_comparisons_columns() -> None:
+    session = Session()
+    data = (Path(__file__).resolve().parent / "fixtures" / "multi_audience" / "consensus.csv").read_bytes()
+    handle_upload(session, data, "consensus.csv", first_visit=False)
+    for answer in ("Review earnings", "Looks right", "3Q26", "$10,000 or 5%", "USD", "25", "25", "25"):
+        reply = handle_message(session, answer)
+    assert reply.view is not None and reply.table is not None
+    _assert_figures_shape(reply.view)
+    assert reply.view["column_groups"] == [{"title": "Consensus", "columns": [
+        {"key": "Consensus comparison", "label": "Supplied"}, {"key": "Consensus variance", "label": "Variance"},
+        {"key": "Consensus % / bps", "label": "% / bps"}, {"key": "Consensus outcome", "label": "Outcome"}]}]
+    keys = set(reply.table[0])
+    for group in reply.view["column_groups"]:  # type: ignore[union-attr]
+        assert all(column["key"] in keys for column in group["columns"])
+    # Units keep the engine's own formatting.
+    eps = next(row for row in reply.table if row["Line Item"] == "Diluted EPS")
+    assert eps["Actual"].endswith("/sh") and eps["Consensus variance"].endswith("/sh")
+    margin = next(row for row in reply.table if row["Line Item"] == "Gross Margin")
+    assert margin["Consensus variance"].endswith("bps")
+
+
+def test_a_comparison_set_is_a_table_not_markdown_pipes() -> None:
+    session = Session()
+    data = (Path(__file__).resolve().parent / "fixtures" / "multi_audience" / "comparison_set.csv").read_bytes()
+    handle_upload(session, data, "comparison_set.csv", first_visit=False)
+    for answer in ("Looks right", "3Q26", "$10,000 or 5%", "USD", "25"):
+        reply = handle_message(session, answer)
+    assert reply.view is not None and reply.table is not None
+    _assert_figures_shape(reply.view)
+    assert "| Line Item |" in reply.text  # the text is still the report
+    assert [row["Line Item"] for row in reply.table] == ["Revenue", "Diluted EPS"]
+    assert reply.table[1]["Actual"] == "$0.91/sh"

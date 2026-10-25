@@ -86,7 +86,10 @@ def with_lead(response: Response, lead: str) -> Response:
 #                   "status": str | None, "tone": "favorable" | "unfavorable" | "neutral" | None}],
 #      "sections": [{"title": str, "rows": [{"label": str, "value": str}]}],
 #      "notes": [str],
-#      "table_title": str | None}
+#      "table_title": str | None,
+#      "column_groups": [{"title": str, "columns": [{"key": str, "label": str}]}]}
+# `column_groups` sets table columns under a spanning head (one group per comparison); a column in
+# a group shows its short label, and the key stays as the table sent it.
 # Every string is already formatted by the engine's formatters; the page only places it.
 
 TONES = {"Favorable": "favorable", "Unfavorable": "unfavorable", "Neutral": "neutral"}
@@ -105,10 +108,27 @@ def figure(label: str, value: str, compare: str | None = None, change: str | Non
 
 def figures_view(title: str, *, context: Sequence[dict[str, str]] = (), figures: Sequence[dict[str, object]] = (),
                  sections: Sequence[tuple[str, Sequence[dict[str, str]]]] = (), notes: Sequence[str] = (),
-                 table_title: str | None = None, lead: str | None = None) -> dict[str, object]:
+                 table_title: str | None = None, lead: str | None = None,
+                 column_groups: Sequence[dict[str, object]] = ()) -> dict[str, object]:
     return {
         "kind": "figures", "title": title, "lead": lead,
         "context": list(context), "figures": list(figures),
         "sections": [{"title": t, "rows": list(rows)} for t, rows in sections],
-        "notes": list(notes), "table_title": table_title,
+        "notes": list(notes), "table_title": table_title, "column_groups": list(column_groups),
     }
+
+
+# Short labels for the columns of one comparison, by the suffix `display_rows` gives them.
+_GROUP_SUFFIXES = ((" comparison", "Supplied"), (" variance", "Variance"), (" % / bps", "% / bps"),
+                   (" YoY %", "YoY %"), (" outcome", "Outcome"))
+
+
+def comparison_groups(columns: Sequence[str], titles: Sequence[str]) -> list[dict[str, object]]:
+    """Group a comparison table's columns under each comparison's title."""
+    groups: list[dict[str, object]] = []
+    for title in titles:
+        members = [{"key": f"{title}{suffix}", "label": label} for suffix, label in _GROUP_SUFFIXES
+                   if f"{title}{suffix}" in columns]
+        if members:
+            groups.append({"title": title, "columns": members})
+    return groups

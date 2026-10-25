@@ -52,6 +52,10 @@ SCENARIOS: dict[str, list[Step]] = {
     "comparison-set": [("upload", MA + "comparison_set.csv", "intake-summary"), ("say", "Looks right", ""),
                        ("say", "3Q26", ""), ("say", "$10,000 or 5%", ""), ("say", "USD", ""),
                        ("say", "25", "result")],
+    "guidance": [("upload", MA + "guidance.csv", ""), ("say", "Review earnings", ""), ("say", "Looks right", ""),
+                 ("say", "3Q26", ""), ("say", "$10,000 or 5%", ""), ("say", "USD", "review")],
+    "loss": [("upload", MA + "loss.csv", ""), ("say", "Review earnings", ""), ("say", "Looks right", ""),
+             ("say", "3Q26", ""), ("say", "$10,000 or 5%", ""), ("say", "USD", ""), ("say", "25", "review")],
     "pdf": [("upload", RW + "fixture_t_halvorsen_fake_eps.pdf", "intake-summary"), ("say", "Looks right", "")]
     + [("say", text, label) for text, label in SETUP],
 }

@@ -27,8 +27,11 @@ from variance_agent.comparison import (
     basis_noun,
     basis_for_header,
     comparison_heading,
+    display_outcome,
+    extended_heading,
     zero_comparison_phrase,
 )
+from variance_agent.measures import format_measure
 from variance_agent.currencies import CURRENCY_SYMBOLS, validate_currency
 from variance_agent.limits import display_text
 from variance_agent.models import AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, LineType, Status
@@ -1339,6 +1342,59 @@ def _rerun_after_classification(session: Session) -> Response:
                      "those items stay Unclassified.\n\n")
 
 
+def _audience_summary(result: AnalysisResult) -> Response:
+    """A comparison set: the report as text, and the same rows as a results view and one table."""
+    cfg = result.config
+    heading = extended_heading(cfg)
+    money = [row for row in result.rows if currency_row(row)]
+    complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
+                and any(row.line_type is LineType.REVENUE for row in money)
+                and any(row.line_type is LineType.EXPENSE for row in money))
+    figures: list[dict[str, object]] = []
+    notes: list[str] = []
+    if complete:
+        for label, total in (("Revenue", result.revenue), ("Expenses", result.expenses)):
+            figures.append(figure(label, format_money(total.actual, cfg.currency),
+                                  f"{heading} {format_money(total.budget, cfg.currency)}",
+                                  f"Variance {format_money(total.variance_dollars, cfg.currency)}, "
+                                  f"{format_pct(total.budget, total.variance_dollars, total.percent_label)}",
+                                  status_label(total.status)))
+        with financial_context():
+            net = result.revenue.variance_dollars - result.expenses.variance_dollars
+        figures.append(figure("Net operating variance", format_money(net, cfg.currency), tone=_tone(net)))
+    else:
+        notes.append("Currency totals are incomplete; net operating impact is unavailable.")
+    segmented = any(row.segment_declared for row in result.rows)
+    table: list[dict[str, str]] = []
+    for row in result.rows:
+        variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
+        assert variance is not None
+        record = {"Line Item": row.line_item}
+        if segmented:
+            record["Segment"] = row.segment
+        record.update({"Measure": str(row.measure), heading: format_measure(row.budget, row.measure, cfg.currency),
+                       "Actual": format_measure(row.actual, row.measure, cfg.currency),
+                       "Variance": format_measure(variance, row.measure, cfg.currency, variance=True),
+                       "Var (%)": format_pct(row.budget, row.variance_dollars, row.percent_label),
+                       "Status": display_outcome(row, cfg.comparison_basis), "Material": "Yes" if row.material else "No"})
+        table.append(record)
+        detail = row.comparison_details
+        for position in (detail.guidance_position, detail.consensus_range_position) if detail is not None else ():
+            if position:
+                notes.append(f"{row.line_item}: {position}.")
+    view = figures_view(
+        f"{cfg.period} against {heading}",
+        context=[pair("Currency", cfg.currency)],
+        figures=figures,
+        sections=[("How the file was read", [pair(*note.split(": ", 1)) if ": " in note else pair("Note", note)
+                                             for note in result.warnings])] if result.warnings else (),
+        notes=notes,
+        table_title=f"{len(table)} line{'s' if len(table) != 1 else ''}, each in its own unit",
+    )
+    return Response(text=render_markdown(result), table=table, chips=["Summary", "Export Excel", "Export audit"],
+                    phase=Phase.EXPLORING, view=view)
+
+
 def _build_analysis_summary(session: Session) -> Response:
     """Build the initial analysis summary after successful analysis."""
     if session.earnings_mode and session.table_analysis is not None:
@@ -1347,7 +1403,7 @@ def _build_analysis_summary(session: Session) -> Response:
     result = session.result
     assert result is not None
     if is_audience_result(result):
-        return Response(text=render_markdown(result), chips=["Summary", "Export Excel", "Export audit"], phase=Phase.EXPLORING)
+        return _audience_summary(result)
     cfg = result.config
     places = report_places(result)
 
@@ -1386,7 +1442,7 @@ def _build_analysis_summary(session: Session) -> Response:
             pct = format_pct(total.budget, total.variance_dollars, total.percent_label)
             word = status_label(total.status)
             lines.append(f"**Total {label}:** {actual} vs. {compared} ({variance}, {pct}, {word})")
-            figures.append(figure(label, actual, f"{heading} {compared}", f"{variance}, {pct}", word))
+            figures.append(figure(label, actual, f"{heading} {compared}", f"Variance {variance}, {pct}", word))
         else:
             reason = "classification incomplete" if classification_incomplete else missing
             lines.append(f"**Total {label}:** N/A ({reason})")

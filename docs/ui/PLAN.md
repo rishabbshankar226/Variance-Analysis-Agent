@@ -12,8 +12,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | done: approved | (this commit) |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | `0995c16` |
-| 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | (this commit) |
-| 5 | Earnings and equity views; emoji allowlist empty | todo | |
+| 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | `8f30c42` |
+| 5 | Earnings and equity views; emoji allowlist empty | done | (this commit) |
 | 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | todo | |
 | — | **STOP 2** | todo | |
 | 7 | Command line help (droppable at STOP 2) | todo | |
@@ -101,6 +101,23 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Copy.** Phase labels and placeholders are sentence case without ellipses; the first screen says what the file needs and what happens next; Markdown no longer leaves an empty line after each bullet.
 - **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
+## Fresh-eyes review (end of Phase 4)
+
+Verdict: "the individual blocks are designed ... the container around them is still a generated chat app"; held back most by results arriving as new turns in an append-only thread. Triage:
+
+- Fixed: inline code no longer breaks inside a command; headline change lines are labelled ("Variance $12,500.00, 8.3%"); print gets page margins and leaves out the analyst's one-word turns.
+- Decided, not changed: a persistent results panel beside the conversation was the layout rejected in Phase 1 (`DESIGN.md`, Decisions) and the owner approved the one-column direction at STOP 1; raised again as an option at STOP 2. Retired chips stay as "Offered:" (T7, decided at STOP 1). The short welcome is the T6 outcome the spec asks for. A clean file skips the confirmation step by the existing flow, which Phase 3 does not change.
+- Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
+- Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
+
+## Phase 5 record
+
+- **Earnings review.** `chat/earnings.py` `summary` returns a figures view ("Earnings review", compared with, period, currency, the no-estimates sentence) and `column_groups` from `comparison_groups`: each comparison's columns sit under one spanning head with short labels (Supplied, Variance, % / bps, Outcome); the keys stay `display_rows`' keys. Outcomes Beat, Miss and In line show as words with the favorable, unfavorable and neutral shapes (the words are the ones `display_outcome` returns, tested). A column empty in every row (Segment, here) is left out of the display only.
+- **Comparison sets.** `_audience_summary` replaces the bare report reply: the text is still `render_markdown` (so the raw pipes stay in the text), and a view plus one table are built with the report's own formatters (`format_measure`, `_pct`, `display_outcome`), so currency, per-share, basis points and counts keep their engine formatting. The file-reading notes become label/value rows by line name.
+- **Units.** Tested: per-share values keep "/sh", rates keep "bps", counts keep "units" (`test_earnings_tables_group_each_comparisons_columns`, `test_a_comparison_set_is_a_table_not_markdown_pipes`).
+- **Screenshots.** `docs/ui/evidence/phase-5/`: earnings (consensus), comparison set, guidance and loss fixtures × light and dark × 1280 and 375 px, 46 JPEGs, every one opened; before images for consensus and the comparison set are in `before/` (guidance and loss were added to the harness in this phase, so they have no before image).
+- **Gates** (`gates.sh dist`): ruff, mypy (63 files), **2092 passed in 36.29s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS. `phone_tables.py` still PASS.
 
 ## Phase 4 record
 
