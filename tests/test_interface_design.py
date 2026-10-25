@@ -477,3 +477,12 @@ def test_the_figures_view_sets_every_string_as_text() -> None:
     assert "innerHTML" not in view
     helper = script[script.index("function textEl(tag, className, text) {"):]
     assert "el.textContent = text;" in helper[:helper.index("\n  }\n")]
+
+
+def test_a_phone_table_leads_with_status_and_variance(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    cols = ["Line Item", "Type", "Budget", "Actual", "Var ($)", "Var (%)", "Status"]
+    assert run_js(f"return m.phoneColumnOrder({json.dumps(cols)});") == [
+        "Line Item", "Var ($)", "Var (%)", "Status", "Type", "Budget", "Actual"]
+    drivers = ["Line Item", "Variance", "Model", "Reconciliation", "Driver Components"]
+    assert run_js(f"return m.phoneColumnOrder({json.dumps(drivers)});") == drivers
+    assert "narrow && groups.length === 0 ? phoneColumnOrder(shown) : shown" in _script()

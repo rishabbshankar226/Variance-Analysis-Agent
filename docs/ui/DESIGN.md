@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 6. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: final (Phase 8). Report: [REPORT.md](REPORT.md). The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 

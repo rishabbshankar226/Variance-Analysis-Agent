@@ -472,6 +472,19 @@ export function isNumericColumn(values) {
   return filled.length > 0 && filled.every((v) => AMOUNT.test(v));
 }
 
+/**
+ * The column order a narrow screen shows: the line, its status and its variance first, so the
+ * reason to open the table is visible without scrolling; every other column follows in its order.
+ * @param {string[]} columns
+ * @returns {string[]}
+ */
+export function phoneColumnOrder(columns) {
+  const first = columns.slice(0, 1);
+  const lead = columns.filter((col, i) => i > 0 && (col === 'Status' || col.endsWith(' outcome')
+    || /^Var \(/.test(col) || col === 'Variance' || col.endsWith(' variance')));
+  return [...first, ...lead, ...columns.filter((col, i) => i > 0 && !lead.includes(col))];
+}
+
 // ── The page ────────────────────────────────────────────────────────────────
 
 function boot() {
@@ -869,8 +882,11 @@ function boot() {
     let sortAsc = true;
 
     // A column that is empty in every row says nothing; leave it out of the display.
-    const columns = Object.keys(initialRows[0]).filter((col) =>
+    const shown = Object.keys(initialRows[0]).filter((col) =>
       col === 'Line Item' || initialRows.some((r) => String(r[col] ?? '').trim() !== ''));
+    // Column groups need their columns side by side, so a grouped table keeps its order.
+    const narrow = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches;
+    const columns = narrow && groups.length === 0 ? phoneColumnOrder(shown) : shown;
     /** @type {Record<string, {group: string, label: string}>} */
     const grouped = {};
     groups.forEach((g) => g.columns.forEach((c) => { grouped[c.key] = { group: g.title, label: c.label }; }));

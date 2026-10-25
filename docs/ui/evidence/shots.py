@@ -21,7 +21,7 @@ from pathlib import Path
 from playwright.sync_api import Page, sync_playwright
 
 HERE = Path(__file__).resolve().parent
-SIZES = {"d": (1280, 800), "t": (768, 1024), "m": (375, 760)}
+SIZES = {"d": (1280, 800), "t": (768, 1024), "m": (375, 760), "w": (1920, 1080)}
 SAMPLE = "examples/sample_variance.csv"
 MA = "tests/fixtures/multi_audience/"
 RW = "tests/fixtures/realworld/"

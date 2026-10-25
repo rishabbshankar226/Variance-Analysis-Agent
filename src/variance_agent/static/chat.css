@@ -709,7 +709,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .md-h2 { font-size: var(--text-lead); font-weight: var(--weight-strong); margin: var(--space-3) 0 var(--space-1); }
 .md-h3 { font-size: var(--text-body); font-weight: var(--weight-strong); margin: var(--space-3) 0 var(--space-1); }
 .md-h4 { font-size: var(--text-body); font-weight: var(--weight-medium); margin: var(--space-2) 0 var(--space-1); color: var(--text-secondary); }
-.md-bullet { padding-left: var(--space-4); }
+.md-bullet { padding-left: var(--space-8); text-indent: calc(-1 * var(--space-4)); } /* wrapped lines hang under the text */
 
 /* ── Accessibility ────────────────────────────────────────── */
 .sr-only {
@@ -748,6 +748,7 @@ body.is-busy .drop-zone {
 /* Windows high-contrast and other forced palettes: keep every edge and state visible. */
 @media (forced-colors: active) {
   .chip, .header-action-btn, .download-btn, .send-btn, .table-search, .drop-zone { border: 1px solid ButtonText; }
+  .chips.is-retired .chip { border-color: transparent; color: GrayText; }
   .message.user .message-body, .table-block { border: 1px solid CanvasText; }
   .status::before { forced-color-adjust: none; border-color: CanvasText; }
   .message-body.is-error { border-left: 2px solid Highlight; }

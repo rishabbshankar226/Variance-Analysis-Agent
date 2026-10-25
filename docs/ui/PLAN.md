@@ -16,8 +16,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 5 | Earnings and equity views; emoji allowlist empty | done | `35759be` |
 | 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | done | `d3ad507` |
 | — | **STOP 2** | done: "do what you recommend and continue" | `43f60fa` |
-| 7 | Command line help (droppable at STOP 2) | done | (this commit) |
-| 8 | Hardening, `REPORT.md`, CHANGELOG, README screenshots | todo | |
+| 7 | Command line help (droppable at STOP 2) | done | `34bf0b9` |
+| 8 | Hardening, `REPORT.md`, CHANGELOG, README screenshots | done | (this commit) |
 
 ## Baseline (against `822e522`)
 
@@ -110,6 +110,21 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - Decided, not changed: a persistent results panel beside the conversation was the layout rejected in Phase 1 (`DESIGN.md`, Decisions) and the owner approved the one-column direction at STOP 1; raised again as an option at STOP 2. Retired chips stay as "Offered:" (T7, decided at STOP 1). The short welcome is the T6 outcome the spec asks for. A clean file skips the confirmation step by the existing flow, which Phase 3 does not change.
 - Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
 - Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
+
+## Final gate run (Phase 8)
+
+`sh docs/ui/evidence/gates.sh dist`:
+- PASS ruff: All checks passed!
+- PASS mypy: Success: no issues found in 63 source files
+- PASS pytest: 2100 passed in 43.92s
+- PASS compileall
+- PASS pip-check: No broken requirements found.
+- PASS contracts: 19 contract fixtures unchanged since 822e522 (19 tracked)
+- PASS build, twine, distribution
+- PASS installation --without-excel --without-pdf (wheel and sdist), pip check for each
+- PASS installation --without-excel (rules file)
+
+Also: `phone_tables.py` PASS; `hardening.py` 23 passed, 0 failed. Phase 8 fixes after the final fresh-eyes review: on a phone, tables lead with the line item and variance and status columns (`phoneColumnOrder`, tested); wrapped Help bullets hang; retired chips are muted in forced colours.
 
 ## Phase 7 record
 

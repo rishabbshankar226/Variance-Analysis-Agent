@@ -2,6 +2,32 @@
 
 ## 0.3.0 — Unreleased
 
+### Interface
+
+Presentation only: every figure, status, rule, contract fixture, default report and audit,
+and every workbook cell value and sheet name is unchanged. Record in `docs/ui/REPORT.md`.
+
+- Chat page: light and dark themes that follow the system setting, a warm grey palette
+  with one ink-blue accent, no gradients or glow, a six-size type scale, a 4 px spacing
+  scale and two radii. Emoji and arrows are replaced by one drawn icon set; a drawn mark
+  and a matching favicon (`static/favicon.svg`, now served and packaged).
+- Replies carry an optional `view` (an intake panel, or a results view with the headline
+  figures first) and a `level` (`"error"` for a refusal) through `/message`, `/upload` and
+  `/status`; `text` still carries every figure. The page draws the view and styles errors
+  from the field instead of a warning sign in the text.
+- Statuses read as words with a shape (Favorable, Unfavorable, Neutral; Beat, Miss, In
+  line), never colour alone. Earnings comparisons sit under spanning heads; comparison
+  sets render as a table instead of raw Markdown. On a phone the first column stays in
+  view and a cue shows more columns. A print stylesheet drops the controls.
+- The first reply after an upload is a short welcome and the next question; the
+  capability list moved into Help. Earlier turns' suggestion chips are disabled.
+  Chat-only advice wording is now descriptive.
+- Excel workbook: quiet header band, status as a coloured word with no fill, totals set
+  apart by rules, numeric headings over their numbers, print header and footer, and the
+  header row repeated on every printed page.
+- `variance-agent --help` is grouped (Input, Analysis, Outputs, Surprise history and
+  panels, Chat) with a short usage line; every flag and default is unchanged.
+
 ### Multi-audience expansion — behavior changes first
 
 - Opt-in supplied Consensus, Estimate and Guidance comparisons, including explicit
