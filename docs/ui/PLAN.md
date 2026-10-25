@@ -14,9 +14,9 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | `0995c16` |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | `8f30c42` |
 | 5 | Earnings and equity views; emoji allowlist empty | done | `35759be` |
-| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | done | (this commit) |
+| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | done | `d3ad507` |
 | — | **STOP 2** | done: "do what you recommend and continue" | `43f60fa` |
-| 7 | Command line help (droppable at STOP 2) | todo | |
+| 7 | Command line help (droppable at STOP 2) | done | (this commit) |
 | 8 | Hardening, `REPORT.md`, CHANGELOG, README screenshots | todo | |
 
 ## Baseline (against `822e522`)
@@ -110,6 +110,13 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - Decided, not changed: a persistent results panel beside the conversation was the layout rejected in Phase 1 (`DESIGN.md`, Decisions) and the owner approved the one-column direction at STOP 1; raised again as an option at STOP 2. Retired chips stay as "Offered:" (T7, decided at STOP 1). The short welcome is the T6 outcome the spec asks for. A clean file skips the confirmation step by the existing flow, which Phase 3 does not change.
 - Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
 - Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
+
+## Phase 7 record
+
+- `--help` is grouped (Input, Analysis, Outputs, Surprise history and panels, Chat), each with a one-line description, a two-line usage (a report run and `--chat`) and an example in the epilog. Every flag, destination, type, default, choice, help string and the mutually exclusive pair is unchanged: a dump of all 36 parser actions is identical before and after. Exit codes and error strings are untouched. Before and after: `docs/ui/evidence/phase-7/help_before.txt`, `help_after.txt`.
+- The `--assisted` notes on stderr were already one plain line per adjustment, and tests read their `[assisted intake]` prefix; left as they are.
+- New test: `test_cli_help_is_grouped_and_starts_with_short_usage`.
+- **Gates** (`gates.sh dist`): ruff, mypy (63 files), **2099 passed in 42.53s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
 
 ## STOP 2 decisions (2026-10-24)
 

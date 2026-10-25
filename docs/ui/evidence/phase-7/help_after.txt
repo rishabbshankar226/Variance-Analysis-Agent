@@ -1,0 +1,106 @@
+usage: variance-agent INPUT --period PERIOD --dollar-threshold N --percent-threshold N [options]
+       variance-agent --chat [--no-browser | --hosted]
+
+Compare supplied actuals with budgets, consensus, estimates, guidance or prior
+periods in auditable reports and panels.
+
+options:
+  -h, --help            show this help message and exit
+
+Input:
+  The file to analyze and how to read it.
+
+  input                 Input CSV, JSON, XLSX, or XLSM file, or a PDF filing
+                        with --assisted.
+  --sheet SHEET         Exact Excel worksheet name (default: active
+                        worksheet), or the statement to read from a PDF.
+  --assisted            Enable assisted file intake (detect header rows, map
+                        column synonyms, and convert accounting dashes).
+  --mapping MAPPING     Path to saved layout mapping JSON file.
+  --type-map TYPE_MAP   Optional JSON mapping of line item to Revenue/Expense.
+  --currency {USD,EUR,GBP}
+                        Reporting currency (default USD); conflicting amounts
+                        are rejected.
+  --percent-values {points,fractions}
+                        Interpret bare Percent values explicitly.
+
+Analysis:
+  The period, what Actual is compared with, and what counts as material.
+
+  --period PERIOD       Reporting period shown in the report.
+  --dollar-threshold DOLLAR_THRESHOLD
+                        Absolute dollar materiality threshold. Uses strict >
+                        semantics.
+  --percent-threshold PERCENT_THRESHOLD
+                        Percentage threshold as a percent number (for example,
+                        5 for 5%).
+  --compare-to COMPARE_TO
+                        Comparison basis or comma list: budget, forecast,
+                        prior-period, consensus, estimate, guidance.
+  --per-share-threshold PER_SHARE_THRESHOLD
+                        Required absolute cutoff for its measure; strict >.
+  --count-threshold COUNT_THRESHOLD
+                        Required absolute cutoff for its measure; strict >.
+  --bps-threshold BPS_THRESHOLD
+                        Required absolute cutoff for its measure; strict >.
+  --preset {fpa,earnings,quant}
+                        fpa: legacy headers/layout, per-share off; earnings:
+                        new headers, earnings layout, per-share on; quant: new
+                        headers, long output required, no Markdown stdout,
+                        per-share off. No thresholds supplied.
+  --layout {standard,earnings}
+                        Override the preset report layout.
+  --headline HEADLINE   Headline line-item name; repeat to replace earnings
+                        defaults.
+  --per-share-lines     Keep EPS/share counts in assisted filing intake
+                        (earnings preset default).
+  --no-per-share-lines  Omit filing EPS/share counts.
+
+Outputs:
+  Without an output flag the Markdown report is printed.
+
+  -o OUTPUT, --output OUTPUT
+                        Write Markdown report to this path.
+  --xlsx XLSX           Write a formatted Excel workbook to this path.
+  --audit-json AUDIT_JSON
+                        Write a machine-readable audit/agent-context record
+                        with source provenance.
+  --audit-schema-version {1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8}
+                        Audit JSON format version (legacy 1.7; explicit
+                        measures 1.8).
+  --commentary          Include verified deterministic executive commentary in
+                        the Markdown report.
+  --check-only          Validate/analyze input and print a summary without
+                        writing outputs.
+
+Surprise history and panels:
+  Supplied earnings history, and many entities at once.
+
+  --history HISTORY     CSV/JSON supplied surprise history, keyed by entity,
+                        metric and period.
+  --surprise-window SURPRISE_WINDOW
+                        Most recent prior surprises (default 8, minimum 4).
+  --entity ENTITY       Entity identity for a single history comparison;
+                        otherwise read Ticker/Entity.
+  --group-by GROUP_BY   Panel keys, for example Ticker,Period. Mixed success
+                        exits 3; global errors exit 2.
+  --long-output LONG_OUTPUT
+                        Write deterministic exact-number CSV.
+  --long-output-jsonl LONG_OUTPUT_JSONL
+                        Write deterministic exact-number JSON Lines.
+  --errors-output ERRORS_OUTPUT
+                        Write one CSV error row per failed panel group
+                        (required with --group-by).
+
+Chat:
+  The browser interface instead of a one-off report.
+
+  --chat                Launch the interactive chatbot UI in your browser.
+  --hosted              With --chat: serve on 0.0.0.0:$PORT for a hosting
+                        platform, without opening a browser or writing exports
+                        to server paths.
+  --no-browser          With --chat: print the local URL instead of opening
+                        the system browser.
+
+Example: variance-agent examples/sample_variance.csv --period 'Q3 2026'
+--dollar-threshold 10000 --percent-threshold 5 -o report.md
