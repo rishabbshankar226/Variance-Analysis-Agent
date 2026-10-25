@@ -1,5 +1,8 @@
 # Variance Analysis Agent
 
+- **Repository:** https://github.com/rishabbshankar226/Variance-Analysis-Agent
+- **Live chat demo:** https://variance-analysis-chatbot.onrender.com. The demo is a free Render instance and a single shared session, so it may take about a minute to wake, and you should upload only fictional data. See [Hosting the chatbot](#hosting-the-chatbot).
+
 A Python application for descriptive variance analysis against supplied budgets, forecasts, prior periods, consensus, estimates and guidance. It reads CSV, JSON, XLSX, or XLSM, or the income statement in a 10-K or 10-Q PDF (with `--assisted`), validates financial inputs, and produces a Markdown report and optional versioned audit JSON.
 
 All financial arithmetic runs in deterministic code. The application makes no model or network calls, requires no credentials, and has no third-party runtime dependencies for CSV or JSON. Excel and PDF support are optional. Python 3.11 or later is required; CI covers Python 3.11–3.14 and Windows output contracts.
@@ -21,6 +24,55 @@ python -m pip install -e '.[excel]'
 Install PDF support (10-K and 10-Q filings) with `python -m pip install -e '.[pdf]'`. See [PDF filings](docs/input-contract.md#pdf-filings---assisted).
 
 Direct dependencies and the build backend are pinned in `pyproject.toml`; `requirements-typecheck.txt` pins the development checker and its supporting packages. Other transitive dependencies are resolved by pip for the selected Python version and platform; these pins are not a complete cross-platform environment lock.
+
+## How it works
+
+There are three ways to use the same engine. Each produces identical figures.
+
+| Entry point | Start it with | Best for |
+|---|---|---|
+| Command line | `variance-agent FILE --period … --dollar-threshold … --percent-threshold …` | Repeatable reports, audit files and workbooks; scripts and CI |
+| Chat in the browser | `variance-agent --chat` | Uploading a file, confirming how it was read, then asking questions about the results |
+| Python API | `from variance_agent import analyze_rows, analyze_table, analyze_file, analyze_panel` | Calling the analysis from other code ([API contract](docs/api.md)) |
+
+Every run follows the same five steps:
+
+1. **Read.** The file is captured once, with size limits: CSV, JSON, XLSX/XLSM or a 10-K/10-Q PDF. Strict mode needs canonical headers (Line Item, Budget, Actual). `--assisted` mode, which the chat always uses, finds the header row, maps synonyms such as "Budget YTD", reads accounting dashes, and leaves out subtotals. It lists every adjustment it made.
+2. **Validate.** Amounts are parsed to exact `Decimal` values. Anything that cannot be read stops the run with the row and column to fix; it is never guessed as zero. See [Input contract](#input-contract).
+3. **Analyze.** Each line is compared with Budget, Forecast, Prior Period, Consensus, Estimate or Guidance. The engine computes the variance, the percentage, materiality against both thresholds, and whether the line is favorable or unfavorable. It also checks driver models such as volume and price. See [Financial methodology](#financial-methodology).
+4. **Verify.** Totals, driver components and every derived figure are re-checked before anything is written.
+5. **Present.** The verified facts become a Markdown report, a versioned audit JSON, an Excel workbook, long CSV/JSONL, or chat replies. Presentation only formats figures; it never recalculates them.
+
+Nothing is estimated or predicted. The tool calls no model and no network service, and the same file and settings always give the same output.
+
+### The chat, step by step
+
+Upload a file on the first screen, or paste a table. The chat then asks one question at a time, in this order:
+
+1. Questions that only some files need: how to treat blank budgets, which period of a multi-period file to read, or which comparison to use when the file has more than one.
+2. **How I read your file.** A panel lists the worksheet, header row, column mapping, rows read and every adjustment. Choose **Looks right** or **Change something**. It appears only when intake had to interpret the file.
+3. **Period**, for example `Q3 2026`.
+4. **Materiality thresholds**, for example `$10,000 or 5%`. A line is material when either is exceeded.
+5. **Currency:** USD, EUR or GBP.
+6. **Labeling**, only for lines the file did not mark as revenue or expense.
+
+The results then show the headline figures (revenue, expenses, net operating impact) and the material variances, each with a status word. From there, type or click:
+- `why [line]` or a line's name to drill down, with volume and price when the file has them;
+- `drivers`, `biggest risks`, `biggest wins`, `waterfall`, `what if marketing is 10% lower`, `run rate`, `memo`;
+- `export report`, `export excel`, `export csv`, `export audit`.
+
+`help` lists every question. Files with supplied Consensus, Estimate or Guidance columns are offered an **earnings review** instead, with Beat, Miss and In line outcomes.
+
+Under the hood, `variance-agent --chat` starts a small standard-library web server on your machine. The server holds one session. The page is plain HTML, CSS and a single JavaScript module served under a strict Content-Security-Policy. It loads nothing from other sites.
+
+The page sends each message to `/message` and each file to `/upload`. The server answers in JSON:
+- `text` holds every figure and sentence;
+- `table` holds rows for the page to draw;
+- `chips` holds the suggested next messages;
+- `view`, when present, is a designed panel of the same facts;
+- `level` is `"error"` when the reply refuses.
+
+Messages are routed by ordered patterns in `chat/intent.py`, with no language model. Each answer is built from the same verified result as the CLI report. The interface design and its decisions are documented in [docs/ui/DESIGN.md](docs/ui/DESIGN.md).
 
 ## Operation
 
@@ -101,7 +153,14 @@ For the supplied sample and the command above, material variances are Subscripti
 
 ## Architecture and trust boundary
 
-`parsing.py` captures and validates source data; `excel.py` bounds OOXML expansion and preserves stored decimals. `analysis.py` computes and verifies rows, aggregates, classification, and driver evidence. `numeric.py` isolates arithmetic policy. `report.py` formats verified facts; `audit.py` records versioned facts and provenance. `output.py` stages filesystem writes. `cli.py` coordinates these modules without performing independent financial analysis.
+`parsing.py` captures and validates source data; `excel.py` bounds OOXML expansion and preserves stored decimals. `analysis.py` computes and verifies rows, aggregates, classification, and driver evidence. `numeric.py` isolates arithmetic policy. `report.py` formats verified facts; `audit.py` records versioned facts and provenance. `output.py` stages filesystem writes. `cli.py` coordinates these modules without performing independent financial analysis. `intake.py` and `pdf_tables.py` handle assisted reading. `comparisons.py` and `earnings.py` cover multi-basis and earnings output, and `xlsx.py` writes the workbook. The chat lives in `chat/`:
+- `server.py` serves the page and the JSON endpoints;
+- `session.py` holds the conversation state;
+- `intent.py` routes messages;
+- `handlers.py` builds replies;
+- `views.py` builds the designed views.
+
+The page itself is in `src/variance_agent/static/`.
 
 The source capture is limited to 32 MiB. Excel permits at most 2,048 archive members, 64 MiB total expanded content, 100,000 physical row positions including the header, 256 columns, and 1,000,000 cells per worksheet. CSV/JSON permit up to 100,000 data rows subject to the column/value limits. Text fields are limited to 128 KiB, numeric text to 4,096 characters, and JSON/XML nesting to 128 containers. Duplicate archive members, XML DTD/entities, invalid or unordered physical coordinates, and malformed structures are rejected before worksheet expansion. Inflated producer dimensions do not override physical content checks.
 
