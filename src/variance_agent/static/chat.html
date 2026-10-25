@@ -11,14 +11,14 @@
 
 <!-- Header -->
 <header class="header">
-  <div class="header-icon" aria-hidden="true">📊</div>
+  <div class="header-icon" aria-hidden="true"></div>
   <div class="header-text">
     <h1>Variance Analysis Agent</h1>
     <p>Deterministic Financial Assistant</p>
   </div>
   <div class="header-actions">
-    <button type="button" id="btn-quick-help" class="header-action-btn" title="Show available commands">? Help</button>
-    <button type="button" id="btn-quick-reset" class="header-action-btn" title="Reset session">↺ Reset</button>
+    <button type="button" id="btn-quick-help" class="header-action-btn" title="Show available commands">Help</button>
+    <button type="button" id="btn-quick-reset" class="header-action-btn" title="Reset session">Reset</button>
     <div class="header-status">
       <div class="dot" aria-hidden="true"></div>
       <span id="phase-label" role="status">Ready</span>
@@ -41,9 +41,7 @@
     autocomplete="off"
     enterkeyhint="send"
   ></textarea>
-  <button type="button" class="send-btn" id="send-btn" title="Send (Enter)" aria-label="Send message">
-    ➤
-  </button>
+  <button type="button" class="send-btn" id="send-btn" title="Send (Enter)" aria-label="Send message">Send</button>
 </div>
 
 <noscript>This page needs JavaScript. The command line (<code>variance-agent --help</code>) works without it.</noscript>

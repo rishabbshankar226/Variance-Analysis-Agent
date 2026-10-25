@@ -7,8 +7,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 
 | Phase | Task | State | Commit |
 |---|---|---|---|
-| 0 | Read, baseline, harness, before screenshots, renders, this plan, `DESIGN.md` skeleton, `CLAUDE.md` | done | (this commit) |
-| 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | todo | |
+| 0 | Read, baseline, harness, before screenshots, renders, this plan, `DESIGN.md` skeleton, `CLAUDE.md` | done | `9bcf130` |
+| 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | (this commit) |
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | todo | |
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | todo | |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | todo | |
@@ -80,6 +80,17 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Report** (Markdown): read for reference only; its bytes are contract and do not change.
 - **CLI `--help`**: 104 lines, one ungrouped "options" list, with the surprise-history flags first.
 
+## Phase 1 record
+
+- **Mock.** `docs/ui/evidence/mock/results.html` and `mock.css`, built from the sample's real strings, shot in both themes at 1280 and 375 px and blurred (Gaussian, radius 6): the three headline figures still read first, then the title, then the table rows. A 375 px overflow (the page grew to 812 px) and a mark that read as a menu icon were fixed before porting.
+- **Port.** `chat.css` is a full replacement of the token layer: 4 gradients, the glow, 7 radii, 11 sizes and every transition removed. The page and script lose every emoji and arrow: an icon helper (`ICONS`, `ICON_SIZES`, `iconParts`, `createIcon`) draws the mark, sort, search, upload and download icons. Client-side warnings pass a `level` instead of the `⚠️` prefix.
+- **Interim, until Phase 2's `level` field.** `chat.js` still marks a server reply as a warning when its text starts with U+26A0, and it writes that as the escape `⚠`, so the glyph itself is not in the asset.
+- **Screenshots.** `docs/ui/evidence/phase-1/`: 100 JPEGs (first, sample, error, earnings and comparison-set scenarios × light and dark × 1280 and 375 px), every one opened. The first screen reads the same in both themes. One defect was found and fixed: the phone header's title ran into Help; it now truncates (Phase 2 redesigns the shell). Still to come, as planned: the capability essay (Phase 2), raw Markdown tables in the comparison-set reply (Phase 5), single-letter F/U status (Phase 4), phone tables that scroll sideways (Phase 4).
+- **Tabular figures** checked in Chromium with the page stylesheet: "111,111.11" and "000,000.00" both 77.36 px wide (57.27 and 75.17 px proportional), so the system stack delivers them and no font is bundled.
+- **Design hook.** The impeccable hook flags `#000000` on `#1b1b1a` in `chat.html`. Computed styles show that pair never renders: print is `#000000` on `#ffffff` in both themes, and dark screen text is `#edece8` on `#1b1b1a`. The hook offers only a file-wide ignore for this rule, which would hide real findings, so the finding is left standing and recorded here.
+- **Tests.** `tests/frontend_helpers.py` holds the stylesheet readers (theme blocks, `var()` resolution, contrast); `test_frontend_contract.py` imports them and its two contrast tests now run per theme. `tests/test_interface_design.py`: 72 cases. The emoji allowlist starts as `handlers.py` and `knowledge.py`: `earnings.py` and `responses.py` already carry no T1 glyph, and the test fails if an allowlisted file is already clean. The T1 check is a superset of the spec's ranges (it adds U+2300–23FF, U+25A0–25FF and U+FE0F).
+- **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2036 passed in 36.74s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS. `check_distribution.py` now also asserts that no `docs/ui/evidence` path is in the sdist.
+
 ## Assertions likely to need edits
 
 Each edit is listed again in `REPORT.md` with the reason.
@@ -98,7 +109,9 @@ Presentation assertions (pass the "same text, different markup" test):
 
 Kept unchanged: `tests/test_chat_upload_state.py` lines 76 and 127 (`intro_shown`), every escaping, `textContent`, `role="log"`, label, `tabIndex` and `aria-sort` string in `test_frontend_contract.py`, and the `@media (max-width: 420px)` / `autoGrow();` checks.
 
-Extended, not loosened: `_tokens()` in `test_frontend_contract.py` reads only the first `:root` and `#rrggbb`; Phase 1 makes it read every theme block and fail on a block it cannot parse, and parametrises the two contrast tests per theme.
+Extended, not loosened (Phase 1, done): `_tokens()`, `_luminance()` and `_contrast()` in `test_frontend_contract.py` moved to `tests/frontend_helpers.py`, which reads both theme blocks, resolves `var()` and fails on a token that is not `#rrggbb`. `test_text_colours_reach_wcag_aa_on_every_surface` and `test_white_text_on_filled_controls_reaches_wcag_aa` keep every pair and threshold and now run once per theme (48 + 8 cases, was 24 + 4).
+
+Edited so far: 2 assertions extended (above), 0 pinning meaning.
 
 ## Decisions
 

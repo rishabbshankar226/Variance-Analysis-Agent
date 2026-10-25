@@ -244,6 +244,64 @@ export function parseNumericVal(val) {
   return isNegParen ? -num : num;
 }
 
+// ── Icons ───────────────────────────────────────────────────────────────────
+// One drawn set on a 20-unit grid, stroked at one width (chat.css `.icon`) and shown at two sizes.
+// The page carries no emoji, arrows or dingbats: they render differently on every system.
+
+/** @typedef {{d: string, fill?: boolean}} IconPart */
+
+/** @type {Record<string, IconPart[]>} */
+export const ICONS = {
+  mark: [{ d: 'M3.75 7.75h5.5v9.5h-5.5z' }, { d: 'M11 3h6v15h-6z', fill: true }, { d: 'M1 18.25h18' }],
+  sort: [{ d: 'M7 8l3-3 3 3' }, { d: 'M7 12l3 3 3-3' }],
+  'sort-asc': [{ d: 'M7 12l3-3 3 3' }],
+  'sort-desc': [{ d: 'M7 8l3 3 3-3' }],
+  search: [{ d: 'M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12z' }, { d: 'M17 17l-3.75-3.75' }],
+  download: [{ d: 'M10 3v10' }, { d: 'M6 9.5l4 4 4-4' }, { d: 'M4 17h12' }],
+  upload: [{ d: 'M10 13V3' }, { d: 'M6 6.5l4-4 4 4' }, { d: 'M4 17h12' }],
+};
+
+/** The two sizes an icon is drawn at, in CSS pixels. */
+export const ICON_SIZES = [16, 20];
+
+/**
+ * The parts of a named icon, checked: an unknown name or size is a bug, not a blank space.
+ * @param {string} name
+ * @param {number} size
+ * @returns {IconPart[]}
+ */
+export function iconParts(name, size) {
+  if (!Object.hasOwn(ICONS, name)) throw new Error(`Unknown icon: ${name}`);
+  if (!ICON_SIZES.includes(size)) throw new Error(`Icons are drawn at ${ICON_SIZES.join(' or ')} px, not ${size}`);
+  return ICONS[name];
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * A decorative SVG icon, built with createElementNS (the CSP allows no inline markup or style).
+ * @param {string} name
+ * @param {number} size
+ * @returns {SVGSVGElement}
+ */
+export function createIcon(name, size) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  for (const part of iconParts(name, size)) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', part.d);
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (part.fill) path.setAttribute('class', 'icon-fill');
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
 // ── The page ────────────────────────────────────────────────────────────────
 
 function boot() {
@@ -288,6 +346,9 @@ function boot() {
     });
     inputEl.addEventListener('input', autoGrow);
     sendBtn.addEventListener('click', sendMessage);
+
+    const markEl = document.querySelector('.header-icon');
+    if (markEl) markEl.appendChild(createIcon('mark', 20));
 
     byId('btn-quick-help').addEventListener('click', () => sendText('help'));
     byId('btn-quick-reset').addEventListener('click', () => sendText('reset'));
@@ -350,21 +411,23 @@ function boot() {
    * @param {Array<Record<string, string>> | null | undefined} table
    * @param {string[] | null | undefined} chips
    * @param {boolean} [showDropZone]
+   * @param {'warning'} [level]  set for a reply that needs attention (a refusal or a failure)
    * @returns {HTMLElement} the new message
    */
-  function addAgentMessage(text, table, chips, showDropZone) {
+  function addAgentMessage(text, table, chips, showDropZone, level) {
     const msg = document.createElement('div');
     msg.className = 'message agent';
 
     const sender = document.createElement('div');
     sender.className = 'message-sender';
-    sender.textContent = 'AGENT';
+    sender.textContent = 'Agent';
     msg.appendChild(sender);
 
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    if (text && text.startsWith('⚠️')) {
+    // Until the reply carries its own level, a server warning still opens with U+26A0.
+    if (level === 'warning' || (text && text.startsWith('\u26a0'))) {
       body.classList.add('warning');
     }
 
@@ -405,7 +468,7 @@ function boot() {
 
     const sender = document.createElement('div');
     sender.className = 'message-sender';
-    sender.textContent = 'YOU';
+    sender.textContent = 'You';
     msg.appendChild(sender);
 
     const body = document.createElement('div');
@@ -427,7 +490,8 @@ function boot() {
     link.className = 'download-btn';
     link.href = url;
     link.download = filename || '';
-    link.textContent = '⬇ Download ' + (filename || 'file');
+    link.appendChild(createIcon('download', 16));
+    link.appendChild(document.createTextNode('Download ' + (filename || 'file')));
     msg.appendChild(link);
   }
 
@@ -465,19 +529,23 @@ function boot() {
     const toolbar = document.createElement('div');
     toolbar.className = 'table-toolbar';
 
+    const search = document.createElement('label');
+    search.className = 'table-search';
+    search.appendChild(createIcon('search', 16));
     const searchInput = document.createElement('input');
-    searchInput.type = 'text';
+    searchInput.type = 'search';
     searchInput.className = 'table-search-input';
-    searchInput.placeholder = '🔍 Filter rows...';
+    searchInput.placeholder = 'Filter rows';
     searchInput.title = 'Filter rows by account name, type, amount, or status';
     searchInput.setAttribute('aria-label', 'Filter rows');
+    search.appendChild(searchInput);
 
     const countSpan = document.createElement('span');
     countSpan.className = 'table-row-count';
     countSpan.setAttribute('aria-live', 'polite');
     countSpan.textContent = `${initialRows.length} rows`;
 
-    toolbar.appendChild(searchInput);
+    toolbar.appendChild(search);
     toolbar.appendChild(countSpan);
     wrapper.appendChild(toolbar);
 
@@ -504,7 +572,7 @@ function boot() {
       const iconSpan = document.createElement('span');
       iconSpan.className = 'sort-icon';
       iconSpan.setAttribute('aria-hidden', 'true');
-      iconSpan.textContent = '↕';
+      iconSpan.appendChild(createIcon('sort', 16));
       button.appendChild(iconSpan);
       th.appendChild(button);
 
@@ -520,12 +588,12 @@ function boot() {
           thMap[c].classList.remove('sorted-asc', 'sorted-desc');
           thMap[c].setAttribute('aria-sort', 'none');
           const ic = thMap[c].querySelector('.sort-icon');
-          if (ic) ic.textContent = '↕';
+          if (ic) ic.replaceChildren(createIcon('sort', 16));
         });
 
         th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
         th.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
-        iconSpan.textContent = sortAsc ? '▲' : '▼';
+        iconSpan.replaceChildren(createIcon(sortAsc ? 'sort-asc' : 'sort-desc', 16));
 
         updateTable();
       });
@@ -665,10 +733,16 @@ function boot() {
     zone.setAttribute('aria-label', 'Upload a file: press Enter to browse, or drop one here');
     zone.tabIndex = 0;
 
-    zone.innerHTML =
-      '<div class="drop-zone-icon" aria-hidden="true">📁</div>' +
-      '<div class="drop-zone-title">Drop file here or click to browse</div>' +
-      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)</div>';
+    const zoneIcon = document.createElement('div');
+    zoneIcon.className = 'drop-zone-icon';
+    zoneIcon.appendChild(createIcon('upload', 20));
+    const zoneTitle = document.createElement('div');
+    zoneTitle.className = 'drop-zone-title';
+    zoneTitle.textContent = 'Drop file here or click to browse';
+    const zoneSubtitle = document.createElement('div');
+    zoneSubtitle.className = 'drop-zone-subtitle';
+    zoneSubtitle.textContent = '.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)';
+    zone.append(zoneIcon, zoneTitle, zoneSubtitle);
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -749,7 +823,7 @@ function boot() {
   function showResult(result, fromUpload) {
     const data = result.data;
     if (!result.ok || !data || data.error) {
-      addAgentMessage('⚠️ ' + describeFailure(result.status, data), null, null, fromUpload);
+      addAgentMessage(describeFailure(result.status, data), null, null, fromUpload, 'warning');
       return;
     }
 
@@ -790,22 +864,22 @@ function boot() {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) {
       addAgentMessage(
-        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
-        null, null, true
+        'Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
+        null, null, true, 'warning'
       );
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       addAgentMessage(
-        `⚠️ That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
+        `That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
         `${MAX_UPLOAD_BYTES / 1048576} MB.`,
-        null, null, true
+        null, null, true, 'warning'
       );
       return;
     }
 
     await runExclusive(async () => {
-      addUserMessage('📎 ' + file.name);
+      addUserMessage(file.name);
       document.querySelectorAll('.drop-zone').forEach((z) => z.remove());
 
       const formData = new FormData();
@@ -822,7 +896,7 @@ function boot() {
         inputEl.focus();
       } catch (err) {
         removeTypingIndicator();
-        addAgentMessage('⚠️ Upload failed: ' + errorMessage(err), null, null, true);
+        addAgentMessage('Upload failed: ' + errorMessage(err), null, null, true, 'warning');
       }
     });
   }
@@ -836,9 +910,9 @@ function boot() {
     if (!text) return;
     if (text.length > MAX_MESSAGE_CHARS) {
       addAgentMessage(
-        `⚠️ That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
+        `That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
         `limit is ${MAX_MESSAGE_CHARS.toLocaleString('en-US')}). Upload large data as a file instead.`,
-        null, null, false
+        null, null, false, 'warning'
       );
       return;
     }
@@ -871,7 +945,7 @@ function boot() {
       showResult(result, false);
     } catch (err) {
       removeTypingIndicator();
-      addAgentMessage('⚠️ ' + errorMessage(err), null, null, false);
+      addAgentMessage(errorMessage(err), null, null, false, 'warning');
     }
   }
 
