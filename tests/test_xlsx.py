@@ -159,3 +159,58 @@ def test_markdown_keeps_status_codes():
     report = render_markdown(fixture_result("complete"))
     assert "at $320.00 (F)." in report
     assert "largest material U variance" in report
+
+
+# ---------------------------------------------------------------------------
+# The redesign changes how the workbook looks, never what it holds
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", ["sample", "consensus", "comparison_set"])
+def test_every_value_and_address_is_unchanged_by_the_redesign(name):
+    """The snapshots were written by tests/xlsx_values.py from the workbook code at 822e522."""
+    pytest.importorskip("openpyxl")
+    from tests.xlsx_values import SNAPSHOTS, WORKBOOKS, values
+    before = json.loads((SNAPSHOTS / f"{name}.json").read_text(encoding="utf-8"))
+    assert values(WORKBOOKS[name]()) == before
+
+
+def _styles(data):
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        return archive.read("xl/styles.xml").decode("utf-8")
+
+
+def test_shading_never_carries_meaning():
+    styles = _styles(render_xlsx(fixture_result("complete")))
+    fills = ET.fromstring(styles).find("m:fills", NS)
+    solid = [f.find("m:patternFill/m:fgColor", NS).get("rgb") for f in fills
+             if f.find("m:patternFill", NS).get("patternType") == "solid"]
+    assert solid == ["FFF2F1EE"]  # the header band only
+    xfs = ET.fromstring(styles).find("m:cellXfs", NS)
+    for index in (S_FAVORABLE, S_UNFAVORABLE):
+        assert xfs[index].get("fillId") == "0"  # the status word carries the meaning, not a fill
+    assert "4C1D95" not in styles and "16213E" not in styles  # no violet, no navy
+
+
+def test_earnings_outcomes_take_their_colour_from_the_word():
+    pytest.importorskip("openpyxl")
+    import openpyxl
+    from tests.xlsx_values import WORKBOOKS
+    sheet = openpyxl.load_workbook(io.BytesIO(WORKBOOKS["consensus"]()))["Earnings"]
+    heads = [cell.value for cell in sheet[1]]
+    col = heads.index("Consensus outcome") + 1
+    colours = {sheet.cell(r, col).value: sheet.cell(r, col).font.color.rgb for r in range(2, sheet.max_row + 1)}
+    assert colours["Beat"] == "FF175F40" and colours["Miss"] == "FFB03E1B" and colours["In line"] == "FF4A4844"
+    actual = heads.index("Actual") + 1
+    assert sheet.cell(1, actual).alignment.horizontal == "right" == sheet.cell(2, actual).alignment.horizontal
+
+
+def test_every_sheet_prints_a_title_page_numbers_and_its_header_row():
+    data = render_xlsx(fixture_result("complete"))
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        workbook = archive.read("xl/workbook.xml").decode("utf-8")
+        for index in range(1, 5):
+            sheet = archive.read(f"xl/worksheets/sheet{index}.xml").decode("utf-8")
+            assert "<oddHeader>&amp;L&amp;\"Calibri,Bold\"Variance report: " in sheet
+            assert "Page &amp;P of &amp;N</oddFooter>" in sheet
+    assert workbook.count('name="_xlnm.Print_Titles"') == 2  # the two tables with a frozen header
+    assert "'Material Variances'!$1:$1" in workbook

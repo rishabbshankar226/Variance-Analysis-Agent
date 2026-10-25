@@ -4,25 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Variance Analysis Agent</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/chat.css">
 <script type="module" src="/static/chat.js"></script>
 </head>
 <body>
 
-<!-- Header -->
+<!-- Header: the mark and name, the current step, Help and Start over -->
 <header class="header">
-  <div class="header-icon" aria-hidden="true">📊</div>
+  <div class="header-icon" aria-hidden="true"></div>
   <div class="header-text">
     <h1>Variance Analysis Agent</h1>
-    <p>Deterministic Financial Assistant</p>
+  </div>
+  <div class="header-status">
+    <span class="sr-only">Step:</span>
+    <span id="phase-label" role="status">Ready</span>
   </div>
   <div class="header-actions">
-    <button type="button" id="btn-quick-help" class="header-action-btn" title="Show available commands">? Help</button>
-    <button type="button" id="btn-quick-reset" class="header-action-btn" title="Reset session">↺ Reset</button>
-    <div class="header-status">
-      <div class="dot" aria-hidden="true"></div>
-      <span id="phase-label" role="status">Ready</span>
-    </div>
+    <button type="button" id="btn-quick-help" class="header-action-btn" title="Show everything you can ask"><span class="btn-label">Help</span></button>
+    <button type="button" id="btn-quick-reset" class="header-action-btn" title="Clear this session and upload a new file"><span class="btn-label">Start over</span></button>
   </div>
 </header>
 
@@ -37,13 +37,11 @@
   <textarea
     id="input"
     rows="1"
-    placeholder="Upload a file above or ask a financial question..."
+    placeholder="Upload a file above, or ask a question"
     autocomplete="off"
     enterkeyhint="send"
   ></textarea>
-  <button type="button" class="send-btn" id="send-btn" title="Send (Enter)" aria-label="Send message">
-    ➤
-  </button>
+  <button type="button" class="send-btn" id="send-btn" title="Send (Enter)" aria-label="Send message">Send</button>
 </div>
 
 <noscript>This page needs JavaScript. The command line (<code>variance-agent --help</code>) works without it.</noscript>

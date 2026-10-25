@@ -1,0 +1,23 @@
+PASS axe first light 1280: no violations
+PASS axe first light 375: no violations
+PASS axe first dark 1280: no violations
+PASS axe first dark 375: no violations
+PASS axe intake light 1280: no violations
+PASS axe intake light 375: no violations
+PASS axe intake dark 1280: no violations
+PASS axe intake dark 375: no violations
+PASS axe results light 1280: no violations
+PASS axe results light 375: no violations
+PASS axe results dark 1280: no violations
+PASS axe results dark 375: no violations
+PASS axe earnings light 1280: no violations
+PASS axe earnings light 375: no violations
+PASS axe earnings dark 1280: no violations
+PASS axe earnings dark 375: no violations
+PASS keyboard focus: 9 stops ['btn-quick-help', 'btn-quick-reset', 'messages', 'drop-zone', 'chip', 'chip', 'chip', 'input', 'send-btn'], all show a focus outline
+PASS keyboard flow: file chosen with Enter, setup typed, drill-down opened for 'Services Revenue' ('Driver evidence: Services Revenue')
+PASS reflow 320 px (400% zoom): page overflows sideways by 0 px
+PASS reflow 640 px (200% zoom): page overflows sideways by 0 px
+PASS reduced motion: 0 elements animate
+PASS forced colours: chip, send, table borders: ['solid', 'solid', 'solid']
+PASS print: results printed to print_results.pdf

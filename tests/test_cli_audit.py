@@ -80,3 +80,14 @@ def test_cli_assisted_flag_processes_messy_fixture(capsys):
     assert "# FP&A Variance Report" in captured.out
     assert "[assisted intake]" in captured.err
     assert "GL Account" in captured.err
+
+
+def test_cli_help_is_grouped_and_starts_with_short_usage(capsys):
+    with pytest.raises(SystemExit) as error:
+        cli.main(["--help"])
+    assert error.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("usage: variance-agent INPUT --period PERIOD")
+    positions = [out.index(f"\n{title}:\n") for title in ("Input", "Analysis", "Outputs", "Surprise history and panels", "Chat")]
+    assert positions == sorted(positions)
+    assert out.index("\n  --chat ") > out.index("\n  --xlsx ")  # the browser interface comes after the report flags

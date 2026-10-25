@@ -23,6 +23,8 @@ from variance_agent.chat import server as server_module
 from variance_agent.chat.server import _ChatHandler
 from variance_agent.chat.session import Session
 
+from tests.frontend_helpers import THEMES, colour, contrast
+
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_STATIC = ROOT / "src" / "variance_agent" / "static"
 
@@ -125,6 +127,7 @@ def test_the_page_is_served_with_a_strict_csp(httpd: HTTPServer) -> None:
         ("/static/chat.js", "text/javascript; charset=utf-8"),
         ("/static/chat.css", "text/css; charset=utf-8"),
         ("/static/chat.html", "text/html; charset=utf-8"),
+        ("/static/favicon.svg", "image/svg+xml"),
     ],
 )
 def test_assets_are_served_from_the_package_with_their_types(
@@ -212,38 +215,19 @@ def _css() -> str:
     return _packaged("chat.css").decode("utf-8")
 
 
-def _tokens() -> dict[str, str]:
-    root = re.search(r":root\s*\{(.*?)\}", _css(), re.DOTALL)
-    assert root
-    return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\b", root[1]))
-
-
-def _luminance(colour: str) -> float:
-    def channel(value: int) -> float:
-        c = value / 255
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-
-    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-
-
-def _contrast(foreground: str, background: str) -> float:
-    lighter, darker = sorted((_luminance(foreground), _luminance(background)), reverse=True)
-    return (lighter + 0.05) / (darker + 0.05)
-
-
+@pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("surface", ["bg-primary", "bg-secondary", "bg-surface", "bg-card"])
 @pytest.mark.parametrize(
     "text", ["text-primary", "text-secondary", "text-muted", "accent-text", "red-text", "green"]
 )
-def test_text_colours_reach_wcag_aa_on_every_surface(text: str, surface: str) -> None:
-    tokens = _tokens()
-    assert _contrast(tokens[text], tokens[surface]) >= 4.5, f"{text} on {surface}"
+def test_text_colours_reach_wcag_aa_on_every_surface(text: str, surface: str, theme: str) -> None:
+    assert contrast(colour(theme, text), colour(theme, surface)) >= 4.5, f"{text} on {surface} ({theme})"
 
 
+@pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("background", ["accent", "accent-hover", "green-strong", "green-strong-hover"])
-def test_white_text_on_filled_controls_reaches_wcag_aa(background: str) -> None:
-    assert _contrast("#ffffff", _tokens()[background]) >= 4.5, background
+def test_white_text_on_filled_controls_reaches_wcag_aa(background: str, theme: str) -> None:
+    assert contrast("#ffffff", colour(theme, background)) >= 4.5, f"{background} ({theme})"
 
 
 def test_the_stylesheet_has_no_remote_import_and_uses_dynamic_viewport_height() -> None:
@@ -316,8 +300,8 @@ def run_js(tmp_path_factory: pytest.TempPathFactory) -> Callable[[str], object]:
 
 def test_unknown_and_inherited_phase_names_still_get_a_readable_label(run_js: Callable[[str], object]) -> None:
     labels = run_js("return ['awaiting_new_step', 'constructor', '', 'exploring'].map(m.phaseLabel);")
-    assert labels == ["New Step", "Constructor", "Ready", "Exploring"]
-    assert run_js("return m.phasePlaceholder('toString');") == "Type a message..."
+    assert labels == ["New step", "Constructor", "Ready", "Results"]
+    assert run_js("return m.phasePlaceholder('toString');") == "Type a message"
 
 
 def test_a_reload_mid_intake_keeps_the_servers_phase(run_js: Callable[[str], object]) -> None:

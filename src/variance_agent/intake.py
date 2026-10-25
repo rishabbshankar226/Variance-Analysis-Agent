@@ -2130,6 +2130,52 @@ def format_intake_summary(result: IntakeResult) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class IntakeSummaryRows:
+    """The facts of `format_intake_summary` as rows, for a page that sets them out as a panel.
+
+    `rows` are (label, value) pairs in reading order; `adjustments` and `attention` are sentences.
+    Values are the file's own labels, unescaped: a page must set them as text, never as markup.
+    """
+
+    rows: list[tuple[str, str]]
+    adjustments: list[str]
+    attention: list[str]
+    more_attention: int
+
+
+def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
+    """The same reading of the file as `format_intake_summary`, one fact per row."""
+    rows: list[tuple[str, str]] = []
+    if result.sheet_name:
+        rows.append(("Statement" if result.source_kind == "pdf" else "Worksheet", result.sheet_name))
+    for t in result.visible_transformations:
+        if t.startswith("Analyzed period:"):
+            rows.append(("Analyzed period", t.split(":")[1].split("(")[0].strip()))
+            break
+    if result.source_kind != "pdf":
+        rows.append(("Header row", f"Row {result.header_row_number}"))
+    if CanonicalRole.LINE_ITEM in result.column_mapping:
+        rows.append(("Line items", f"from '{result.column_mapping[CanonicalRole.LINE_ITEM]}'"))
+    if CanonicalRole.ACCOUNT_ID in result.column_mapping:
+        rows.append(("Account ID", f"from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'"))
+    if CanonicalRole.BUDGET in result.column_mapping:
+        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        rows.append((heading, f"from '{result.column_mapping[CanonicalRole.BUDGET]}'"))
+    if CanonicalRole.ACTUAL in result.column_mapping:
+        rows.append(("Actual", f"from '{result.column_mapping[CanonicalRole.ACTUAL]}'"))
+    read = f"{result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
+    if result.rows_skipped_count > 0:
+        skipped = result.rows_skipped_count
+        read += f" ({skipped} row{'s' if skipped != 1 else ''} skipped: {', '.join(result.skip_reasons)})"
+    rows.append(("Rows read", read))
+    if result.detected_totals:
+        rows.append(("Subtotals left out", f"{', '.join(result.detected_totals)} (so they are not counted twice)"))
+    adjustments = [t for t in result.visible_transformations if not t.startswith("Analyzed period:")]
+    attention = [prob.message for prob in result.problems[:5]]
+    return IntakeSummaryRows(rows, adjustments, attention, max(0, len(result.problems) - 5))
+
+
 _INTERNAL_FIELD_NAMES = frozenset(_ROLE_ALIAS_KEYS | {
     "row_kind", "account_id", "budget_amount", "actual_amount", "line_type", "revenue_expense_type",
 })

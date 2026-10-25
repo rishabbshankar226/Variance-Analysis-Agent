@@ -146,89 +146,103 @@ def _parse_type_map(data: bytes) -> dict[str, LineType]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="variance-agent",
+        usage="%(prog)s INPUT --period PERIOD --dollar-threshold N --percent-threshold N [options]\n"
+              "       %(prog)s --chat [--no-browser | --hosted]",
         description="Compare supplied actuals with budgets, consensus, estimates, guidance or prior periods "
                     "in auditable reports and panels.",
+        epilog="Example: variance-agent examples/sample_variance.csv --period 'Q3 2026' "
+               "--dollar-threshold 10000 --percent-threshold 5 -o report.md",
     )
-    parser.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
-    parser.add_argument("--history", help="CSV/JSON supplied surprise history, keyed by entity, metric and period.")
-    parser.add_argument("--surprise-window", type=_surprise_window, default=8, help="Most recent prior surprises (default 8, minimum 4).")
-    parser.add_argument("--entity", help="Entity identity for a single history comparison; otherwise read Ticker/Entity.")
-    parser.add_argument("--group-by", help="Panel keys, for example Ticker,Period. Mixed success exits 3; global errors exit 2.")
-    parser.add_argument("--long-output", help="Write deterministic exact-number CSV.")
-    parser.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
-    parser.add_argument("--errors-output", help="Write one CSV error row per failed panel group (required with --group-by).")
-    parser.add_argument("--period", help="Reporting period shown in the report.")
-    parser.add_argument(
+    # Groups only change how --help reads; every flag, default and type is as before.
+    source = parser.add_argument_group("Input", "The file to analyze and how to read it.")
+    source.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    source.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
+    source.add_argument(
+        "--assisted",
+        action="store_true",
+        help="Enable assisted file intake (detect header rows, map column synonyms, and convert accounting dashes).",
+    )
+    source.add_argument(
+        "--mapping",
+        help="Path to saved layout mapping JSON file.",
+    )
+    source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
+    source.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
+                        help="Reporting currency (default USD); conflicting amounts are rejected.")
+    source.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
+
+    analysis = parser.add_argument_group("Analysis", "The period, what Actual is compared with, and what counts as material.")
+    analysis.add_argument("--period", help="Reporting period shown in the report.")
+    analysis.add_argument(
         "--dollar-threshold",
         type=_decimal,
         help="Absolute dollar materiality threshold. Uses strict > semantics.",
     )
-    parser.add_argument(
+    analysis.add_argument(
         "--percent-threshold",
         type=_decimal,
         help="Percentage threshold as a percent number (for example, 5 for 5%%).",
     )
-    parser.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
-    parser.add_argument("--check-only", action="store_true",
-                        help="Validate/analyze input and print a summary without writing outputs.")
-    parser.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
-    parser.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
-                        help="Reporting currency (default USD); conflicting amounts are rejected.")
-    parser.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
-                        default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
-    parser.add_argument("-o", "--output", help="Write Markdown report to this path.")
-    parser.add_argument("--xlsx", help="Write a formatted Excel workbook to this path.")
-    parser.add_argument(
+    analysis.add_argument(
+        "--compare-to",
+        type=_comparison_argument,
+        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
+    )
+    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
+        analysis.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
+    analysis.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
+                          help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
+                               "quant: new headers, long output required, no Markdown stdout, per-share off. No thresholds supplied.")
+    analysis.add_argument("--layout", choices=("standard", "earnings"), help="Override the preset report layout.")
+    analysis.add_argument("--headline", action="append", help="Headline line-item name; repeat to replace earnings defaults.")
+    sharing = analysis.add_mutually_exclusive_group()
+    sharing.add_argument("--per-share-lines", dest="per_share_lines", action="store_true", default=None,
+                         help="Keep EPS/share counts in assisted filing intake (earnings preset default).")
+    sharing.add_argument("--no-per-share-lines", dest="per_share_lines", action="store_false", help="Omit filing EPS/share counts.")
+
+    outputs = parser.add_argument_group("Outputs", "Without an output flag the Markdown report is printed.")
+    outputs.add_argument("-o", "--output", help="Write Markdown report to this path.")
+    outputs.add_argument("--xlsx", help="Write a formatted Excel workbook to this path.")
+    outputs.add_argument(
         "--audit-json",
         help="Write a machine-readable audit/agent-context record with source provenance.",
     )
-    parser.add_argument(
+    outputs.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
+                         default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
+    outputs.add_argument(
+        "--commentary",
+        action="store_true",
+        help="Include verified deterministic executive commentary in the Markdown report.",
+    )
+    outputs.add_argument("--check-only", action="store_true",
+                         help="Validate/analyze input and print a summary without writing outputs.")
+
+    history = parser.add_argument_group("Surprise history and panels", "Supplied earnings history, and many entities at once.")
+    history.add_argument("--history", help="CSV/JSON supplied surprise history, keyed by entity, metric and period.")
+    history.add_argument("--surprise-window", type=_surprise_window, default=8, help="Most recent prior surprises (default 8, minimum 4).")
+    history.add_argument("--entity", help="Entity identity for a single history comparison; otherwise read Ticker/Entity.")
+    history.add_argument("--group-by", help="Panel keys, for example Ticker,Period. Mixed success exits 3; global errors exit 2.")
+    history.add_argument("--long-output", help="Write deterministic exact-number CSV.")
+    history.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
+    history.add_argument("--errors-output", help="Write one CSV error row per failed panel group (required with --group-by).")
+
+    chat = parser.add_argument_group("Chat", "The browser interface instead of a one-off report.")
+    chat.add_argument(
         "--chat",
         action="store_true",
         help="Launch the interactive chatbot UI in your browser.",
     )
-    parser.add_argument(
+    chat.add_argument(
         "--hosted",
         action="store_true",
         help="With --chat: serve on 0.0.0.0:$PORT for a hosting platform, without "
              "opening a browser or writing exports to server paths.",
     )
-    parser.add_argument(
+    chat.add_argument(
         "--no-browser",
         action="store_true",
         help="With --chat: print the local URL instead of opening the system browser.",
     )
-    parser.add_argument(
-        "--commentary",
-        action="store_true",
-        help="Include verified deterministic executive commentary in the Markdown report.",
-    )
-    parser.add_argument(
-        "--assisted",
-        action="store_true",
-        help="Enable assisted file intake (detect header rows, map column synonyms, and convert accounting dashes).",
-    )
-    parser.add_argument(
-        "--mapping",
-        help="Path to saved layout mapping JSON file.",
-    )
-    parser.add_argument(
-        "--compare-to",
-        type=_comparison_argument,
-        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
-    )
-    parser.add_argument("--layout", choices=("standard", "earnings"), help="Override the preset report layout.")
-    sharing = parser.add_mutually_exclusive_group()
-    sharing.add_argument("--per-share-lines", dest="per_share_lines", action="store_true", default=None,
-                         help="Keep EPS/share counts in assisted filing intake (earnings preset default).")
-    sharing.add_argument("--no-per-share-lines", dest="per_share_lines", action="store_false", help="Omit filing EPS/share counts.")
-    parser.add_argument("--headline", action="append", help="Headline line-item name; repeat to replace earnings defaults.")
-    parser.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
-                        help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
-                             "quant: new headers, long output required, no Markdown stdout, per-share off. No thresholds supplied.")
-    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
-        parser.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
-    parser.add_argument("--percent-values", choices=("points", "fractions"), help="Interpret bare Percent values explicitly.")
     return parser
 
 

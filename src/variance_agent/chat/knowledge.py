@@ -33,7 +33,7 @@ def explain_favorable_unfavorable() -> str:
         "**2. Expense Lines:**\n"
         "• **Actual > Budget (Variance > 0):** **Unfavorable (U)** — overspent relative to budget.\n"
         "• **Actual < Budget (Variance < 0):** **Favorable (F)** — underspent, preserving cash/margin.\n\n"
-        "💡 **Key Rule:** A *positive* expense variance is *unfavorable* because spending exceeded the budget allocation."
+        "**Key Rule:** A *positive* expense variance is *unfavorable* because spending exceeded the budget allocation."
     )
 
 
@@ -62,7 +62,7 @@ def explain_net_impact() -> str:
         "**Interpretation:**\n"
         "• **Positive Net Impact:** The company generated more net operating income than budgeted (revenue overperformance exceeded expense overruns, or cost savings offset revenue shortfalls).\n"
         "• **Negative Net Impact:** Net operating income fell below budget expectations.\n\n"
-        "⚠️ *Note: Unclassified line items are excluded from net impact until classified as Revenue or Expense, ensuring sign-reversal integrity.*"
+        "*Note: Unclassified line items are excluded from net impact until classified as Revenue or Expense, ensuring sign-reversal integrity.*"
     )
 
 
@@ -112,15 +112,17 @@ def explain_audit_trail() -> str:
 
 def explain_mitigation_actions() -> str:
     return (
-        "**FP&A Action Playbook for Material Variances**\n\n"
-        "When material variances are identified, finance leaders should execute targeted actions:\n\n"
-        "**For Unfavorable Expense Overruns:**\n"
-        "1. **Discretionary Freeze:** Pause non-committed spend (travel, external contractor extensions, marketing pilots).\n"
-        "2. **Rate vs. Volume Diagnostic:** If driven by headcount/volume, adjust hiring plans; if driven by vendor rate, initiate supplier renegotiation.\n"
-        "3. **Forecast Re-baselining:** Update remaining quarters in the rolling forecast to reflect permanent run-rate shifts.\n\n"
-        "**For Favorable Revenue Beats:**\n"
-        "1. **Analyze Sustainability:** Determine whether the beat was one-time timing (early contract close) or structural organic demand.\n"
-        "2. **Reinvestment Strategy:** Allocate excess gross margin toward high-ROI pipeline generation or a profit reserve."
+        "**Following up a material variance**\n\n"
+        "This tool reports what moved and by how much; what to do about it is the reviewer's decision. "
+        "A variance review usually asks these questions:\n\n"
+        "**For an expense over budget:**\n"
+        "1. **Rate or volume:** did the price per unit change, or the number of units (headcount, hours, orders)? "
+        "`why [line]` shows the split when the file has driver columns.\n"
+        "2. **Timing or lasting:** is it spending brought forward, or a new run rate? `run rate` shows the pace.\n"
+        "3. **Committed or discretionary:** is the spending already contracted, or could it still change?\n\n"
+        "**For revenue above budget:**\n"
+        "1. **One-time or recurring:** an early contract close, or ongoing demand?\n"
+        "2. **Price or volume:** more units sold, or a higher price per unit?"
     )
 
 
@@ -162,7 +164,7 @@ def explain_budget_vs_forecast() -> str:
         "**3. Prior Period (YoY / MoM Historicals):**\n"
         "• **Nature:** Historical actuals from the comparable prior timeframe.\n"
         "• **Purpose:** Measures organic growth, margin expansion, and seasonal trends.\n\n"
-        "💡 **Key Rule:** Budget variance holds teams accountable to commitments; Forecast variance manages real-time trajectory."
+        "**Key Rule:** Budget variance holds teams accountable to commitments; Forecast variance manages real-time trajectory."
     )
 
 
@@ -243,7 +245,7 @@ def explain_ebitda_margin() -> str:
         "$$\\text{Flow-Through Rate} = \\frac{\\Delta \\text{Operating Profit}}{\\Delta \\text{Revenue Variance}} \\times 100\\%$$\n"
         "• **High Flow-Through (> 70%):** Operating leverage is working effectively; revenue expansion is not being consumed by incremental variable overhead.\n"
         "• **Low Flow-Through (< 30%):** Indicates cost bloat or escalating variable costs diluting incremental revenue gains.\n\n"
-        "💡 **Integrity Standard:** Subtotal rows (Gross Margin, Operating Income, Total Revenue) are marked `excluded_from_aggregation` "
+        "**Integrity Standard:** Subtotal rows (Gross Margin, Operating Income, Total Revenue) are marked `excluded_from_aggregation` "
         "in this engine to prevent double-counting line items."
     )
 

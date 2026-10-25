@@ -16,6 +16,8 @@
  * @property {string} [error]
  * @property {string} [download_url]
  * @property {string} [download_filename]
+ * @property {'error'} [level]  set when the reply refuses or could not do what was asked
+ * @property {Record<string, unknown>} [view]  a designed view of the same reply (see chat/views.py)
  * @property {ChatReply} [initial_response]  Only on /status, when a file was loaded at start-up.
  */
 
@@ -38,38 +40,38 @@ const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
 // ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
 /** @type {Record<string, string>} */
 export const PHASE_LABELS = {
-  awaiting_earnings_review:            'Choose Review',
-  awaiting_comparison_choice:         'Choose Comparisons',
-  awaiting_file:                      'Upload File',
-  awaiting_sheet_choice:              'Choose Sheet',
-  awaiting_header_choice:             'Choose Header Row',
-  awaiting_blank_budget_confirmation: 'Confirm Blank Budgets',
-  awaiting_period_choice:             'Choose Period',
-  awaiting_intake_confirmation:       'Confirm Intake',
-  awaiting_period:                    'Set Period',
-  awaiting_thresholds:                'Set Thresholds',
-  awaiting_currency:                  'Set Currency',
-  awaiting_measure_options:           'Confirm Measure',
-  resolve_unclassified:               'Classify Items',
-  exploring:                          'Exploring',
+  awaiting_earnings_review:           'Choose a review',
+  awaiting_comparison_choice:         'Choose a comparison',
+  awaiting_file:                      'Upload a file',
+  awaiting_sheet_choice:              'Choose a sheet',
+  awaiting_header_choice:             'Choose the header row',
+  awaiting_blank_budget_confirmation: 'Confirm blank budgets',
+  awaiting_period_choice:             'Choose a period',
+  awaiting_intake_confirmation:       'Confirm how the file was read',
+  awaiting_period:                    'Set the period',
+  awaiting_thresholds:                'Set the thresholds',
+  awaiting_currency:                  'Set the currency',
+  awaiting_measure_options:           'Confirm a measure',
+  resolve_unclassified:               'Label lines',
+  exploring:                          'Results',
 };
 
 /** @type {Record<string, string>} */
 export const PHASE_PLACEHOLDERS = {
-  awaiting_earnings_review:            'Review earnings or upload another file...',
-  awaiting_comparison_choice:         'Choose a comparison or all of them...',
-  awaiting_file:                      'Upload a file above or ask a financial question (e.g., "what is materiality?")...',
-  awaiting_sheet_choice:              'Pick a worksheet from the options above...',
-  awaiting_header_choice:             'Pick the header row from the options above...',
-  awaiting_blank_budget_confirmation: 'Choose how to treat the blank values...',
-  awaiting_period_choice:             'Pick the period to analyze...',
-  awaiting_intake_confirmation:       'Confirm the summary above, or say what to change...',
-  awaiting_period:                    'Enter the reporting period (e.g., Q3 2026)...',
-  awaiting_thresholds:                'Set thresholds (e.g., $10,000 or 5%)...',
-  awaiting_currency:                  'Enter currency (USD, EUR, GBP)...',
-  awaiting_measure_options:           'Choose a direction, scale, or threshold...',
-  resolve_unclassified:               'Revenue, Expense, or Skip...',
-  exploring:                          'Ask a question (e.g., "why marketing?", "biggest risks")...',
+  awaiting_earnings_review:           'Review earnings, or upload another file',
+  awaiting_comparison_choice:         'Choose a comparison, or all of them',
+  awaiting_file:                      'Upload a file above, or ask a question such as what is materiality',
+  awaiting_sheet_choice:              'Choose a worksheet from the options above',
+  awaiting_header_choice:             'Choose the header row from the options above',
+  awaiting_blank_budget_confirmation: 'Choose how to treat the blank values',
+  awaiting_period_choice:             'Choose the period to analyze',
+  awaiting_intake_confirmation:       'Confirm the summary above, or say what to change',
+  awaiting_period:                    'Reporting period, for example Q3 2026',
+  awaiting_thresholds:                'Thresholds, for example $10,000 or 5%',
+  awaiting_currency:                  'Currency, for example USD',
+  awaiting_measure_options:           'Choose a direction, a scale or a threshold',
+  resolve_unclassified:               'Revenue, Expense or Skip',
+  exploring:                          'Ask about the results, for example why marketing',
 };
 
 /**
@@ -80,7 +82,8 @@ export const PHASE_PLACEHOLDERS = {
 export function phaseLabel(phase) {
   if (Object.hasOwn(PHASE_LABELS, phase)) return PHASE_LABELS[phase];
   const words = String(phase).replace(/^awaiting_/, '').split('_').filter(Boolean);
-  return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Ready';
+  const label = words.join(' ');
+  return label ? label[0].toUpperCase() + label.slice(1) : 'Ready';
 }
 
 /**
@@ -88,7 +91,7 @@ export function phaseLabel(phase) {
  * @returns {string}
  */
 export function phasePlaceholder(phase) {
-  return Object.hasOwn(PHASE_PLACEHOLDERS, phase) ? PHASE_PLACEHOLDERS[phase] : 'Type a message...';
+  return Object.hasOwn(PHASE_PLACEHOLDERS, phase) ? PHASE_PLACEHOLDERS[phase] : 'Type a message';
 }
 
 /**
@@ -211,6 +214,8 @@ export function renderMarkdown(text) {
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
   html = html.replace(/^[•-]\s+(.+)$/gm, '<div class="md-bullet">• $1</div>');
   html = html.replace(/\n/g, '<br>');
+  // A block (a bullet, a heading or a rule) already ends its line: drop the break after it.
+  html = html.replace(/(<\/div>|<\/h[234]>|<hr class="md-hr">)<br>/g, '$1');
 
   return html.replace(/\u0000(\d+)\u0000/g, (_, i) => literals[Number(i)]);
 }
@@ -242,6 +247,242 @@ export function parseNumericVal(val) {
   const num = parseFloat(s);
   if (isNaN(num)) return 0;
   return isNegParen ? -num : num;
+}
+
+// ── Icons ───────────────────────────────────────────────────────────────────
+// One drawn set on a 20-unit grid, stroked at one width (chat.css `.icon`) and shown at two sizes.
+// The page carries no emoji, arrows or dingbats: they render differently on every system.
+
+/** @typedef {{d: string, fill?: boolean}} IconPart */
+
+/** @type {Record<string, IconPart[]>} */
+export const ICONS = {
+  mark: [{ d: 'M3.75 7.75h5.5v9.5h-5.5z' }, { d: 'M11 3h6v15h-6z', fill: true }, { d: 'M1 18.25h18' }],
+  sort: [{ d: 'M7 8l3-3 3 3' }, { d: 'M7 12l3 3 3-3' }],
+  'sort-asc': [{ d: 'M7 12l3-3 3 3' }],
+  'sort-desc': [{ d: 'M7 8l3 3 3-3' }],
+  search: [{ d: 'M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12z' }, { d: 'M17 17l-3.75-3.75' }],
+  download: [{ d: 'M10 3v10' }, { d: 'M6 9.5l4 4 4-4' }, { d: 'M4 17h12' }],
+  upload: [{ d: 'M10 13V3' }, { d: 'M6 6.5l4-4 4 4' }, { d: 'M4 17h12' }],
+  help: [{ d: 'M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16z' }, { d: 'M7.75 7.75a2.25 2.25 0 1 1 3.25 2c-.6.35-1 .8-1 1.5v.5' },
+    { d: 'M10 14.25v.5' }],
+  restart: [{ d: 'M4 10a6 6 0 1 0 1.76-4.24' }, { d: 'M4 3v3.5h3.5' }],
+  more: [{ d: 'M8 5l5 5-5 5' }],
+};
+
+/** The two sizes an icon is drawn at, in CSS pixels. */
+export const ICON_SIZES = [16, 20];
+
+/**
+ * The parts of a named icon, checked: an unknown name or size is a bug, not a blank space.
+ * @param {string} name
+ * @param {number} size
+ * @returns {IconPart[]}
+ */
+export function iconParts(name, size) {
+  if (!Object.hasOwn(ICONS, name)) throw new Error(`Unknown icon: ${name}`);
+  if (!ICON_SIZES.includes(size)) throw new Error(`Icons are drawn at ${ICON_SIZES.join(' or ')} px, not ${size}`);
+  return ICONS[name];
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * A decorative SVG icon, built with createElementNS (the CSP allows no inline markup or style).
+ * @param {string} name
+ * @param {number} size
+ * @returns {SVGSVGElement}
+ */
+export function createIcon(name, size) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'icon');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  for (const part of iconParts(name, size)) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', part.d);
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (part.fill) path.setAttribute('class', 'icon-fill');
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
+/**
+ * Retire the suggestion chips of earlier turns: only the latest turn's chips respond (T7). Earlier
+ * chips stay on the page as a record of what was offered, since a reply may say "choose one below",
+ * but they are disabled, so assistive technology announces them as unavailable, and they are styled
+ * as plain text. Table drill-downs and download links in earlier results are not chips and stay live.
+ * @param {Iterable<{classList: {add: (name: string) => void}, setAttribute: (name: string, value: string) => void,
+ *   querySelectorAll: (selector: string) => Iterable<{disabled: boolean}>}>} groups  the live `.chips` groups
+ * @returns {number} how many chips were retired
+ */
+export function retireChips(groups) {
+  let retired = 0;
+  for (const group of groups) {
+    group.classList.add('is-retired');
+    group.setAttribute('aria-label', 'Earlier suggestions, no longer available');
+    for (const chip of group.querySelectorAll('button')) {
+      chip.disabled = true;
+      retired += 1;
+    }
+  }
+  return retired;
+}
+
+// ── Designed views ──────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} IntakeView  How the file was read, one fact per row (chat/views.py).
+ * @property {'intake'} kind
+ * @property {string} title
+ * @property {string | null} lead  the server's Markdown, shown above the panel
+ * @property {Array<{label: string, value: string}>} rows
+ * @property {Array<{title: string, items: string[], more: number}>} notes
+ * @property {string} question
+ */
+
+/** @param {unknown} value @returns {value is string} */
+const isString = (value) => typeof value === 'string';
+
+/**
+ * Whether a reply's `view` is an intake panel this page can draw. Anything else falls back to
+ * the reply's text, which always carries the same facts.
+ * @param {unknown} view
+ * @returns {view is IntakeView}
+ */
+export function isIntakeView(view) {
+  if (!view || typeof view !== 'object') return false;
+  const v = /** @type {Record<string, unknown>} */ (view);
+  return v.kind === 'intake' && isString(v.title) && isString(v.question)
+    && (v.lead === null || isString(v.lead))
+    && Array.isArray(v.rows) && v.rows.length > 0
+    && v.rows.every((r) => r && isString(r.label) && isString(r.value))
+    && Array.isArray(v.notes)
+    && v.notes.every((n) => n && isString(n.title) && Array.isArray(n.items) && n.items.every(isString)
+      && Number.isInteger(n.more) && n.more >= 0);
+}
+
+/**
+ * @typedef {Object} Figure  One headline figure; every string is formatted by the engine.
+ * @property {string} label
+ * @property {string} value
+ * @property {string | null} compare
+ * @property {string | null} change
+ * @property {string | null} status  a status word
+ * @property {'favorable' | 'unfavorable' | 'neutral' | null} tone
+ */
+
+/**
+ * @typedef {Object} FiguresView  Results, a drill-down, a scenario (chat/views.py).
+ * @property {'figures'} kind
+ * @property {string} title
+ * @property {string | null} lead
+ * @property {Array<{label: string, value: string}>} context
+ * @property {Figure[]} figures
+ * @property {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
+ * @property {string[]} notes
+ * @property {string | null} table_title
+ * @property {Array<{title: string, columns: Array<{key: string, label: string}>}>} column_groups
+ */
+
+/** @param {unknown} rows */
+const isPairs = (rows) => Array.isArray(rows) && rows.every((r) => r && isString(r.label) && isString(r.value));
+/** @param {unknown} value */
+const isOptString = (value) => value === null || isString(value);
+const TONE_NAMES = ['favorable', 'unfavorable', 'neutral'];
+
+/**
+ * @param {unknown} view
+ * @returns {view is FiguresView}
+ */
+export function isFiguresView(view) {
+  if (!view || typeof view !== 'object') return false;
+  const v = /** @type {Record<string, unknown>} */ (view);
+  return v.kind === 'figures' && isString(v.title) && isOptString(v.lead) && isOptString(v.table_title)
+    && isPairs(v.context)
+    && Array.isArray(v.figures) && v.figures.every((f) => f && isString(f.label) && isString(f.value)
+      && isOptString(f.compare) && isOptString(f.change) && isOptString(f.status)
+      && (f.tone === null || TONE_NAMES.includes(f.tone)))
+    && Array.isArray(v.sections) && v.sections.every((sec) => sec && isString(sec.title) && isPairs(sec.rows))
+    && Array.isArray(v.notes) && v.notes.every(isString)
+    && Array.isArray(v.column_groups) && v.column_groups.every((g) => g && isString(g.title)
+      && Array.isArray(g.columns) && g.columns.every((c) => c && isString(c.key) && isString(c.label)));
+}
+
+// ── Tables ──────────────────────────────────────────────────────────────────
+
+/**
+ * Status words for the engine's status values. This mirrors `status_label` in
+ * chat/responses.py, and a test keeps the two equal. The record keeps the engine's value.
+ * @type {Record<string, string>}
+ */
+export const STATUS_WORDS = {
+  F: 'Favorable',
+  U: 'Unfavorable',
+  Neutral: 'Neutral',
+  Unclassified: 'Unclassified',
+};
+
+/**
+ * Tones of the engine's status values and of the earnings outcomes `display_outcome` gives
+ * (Beat, Miss, In line), which are shown as they are.
+ * @type {Record<string, 'favorable' | 'unfavorable' | 'neutral'>}
+ */
+const STATUS_TONES = {
+  F: 'favorable', U: 'unfavorable', Neutral: 'neutral', Beat: 'favorable', Miss: 'unfavorable', 'In line': 'neutral',
+};
+
+/**
+ * The word and tone a status cell shows. Values the page does not know are shown as they are.
+ * @param {string} value
+ * @returns {{word: string, tone: 'favorable' | 'unfavorable' | 'neutral' | null}}
+ */
+export function statusWord(value) {
+  return {
+    word: Object.hasOwn(STATUS_WORDS, value) ? STATUS_WORDS[value] : value,
+    tone: Object.hasOwn(STATUS_TONES, value) ? STATUS_TONES[value] : null,
+  };
+}
+
+/**
+ * The heading a column shows, in sentence case. The key stays as the server sent it.
+ * @param {string} key
+ * @returns {string}
+ */
+export function columnLabel(key) {
+  const variance = /^Var \((.+)\)$/.exec(key);
+  if (variance) return variance[1] === '%' ? 'Variance %' : 'Variance';
+  return key.split(' ').map((word, i) => (i > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word)).join(' ');
+}
+
+const AMOUNT = /^[(\-\u2212+]?\s*[$\u20ac\u00a3\u00a5]?\s*\(?\d[\d,]*(\.\d+)?\)?\s*(%|bps|pts|\/sh|units?)?$/i;
+const EMPTY_CELL = new Set(['', '\u2014', '-', 'N/A']);
+
+/**
+ * Whether a column holds figures (right-aligned, sorted by value): every filled cell is an amount.
+ * @param {unknown[]} values
+ * @returns {boolean}
+ */
+export function isNumericColumn(values) {
+  const filled = values.map((v) => String(v ?? '').trim()).filter((v) => !EMPTY_CELL.has(v));
+  return filled.length > 0 && filled.every((v) => AMOUNT.test(v));
+}
+
+/**
+ * The column order a narrow screen shows: the line, its status and its variance first, so the
+ * reason to open the table is visible without scrolling; every other column follows in its order.
+ * @param {string[]} columns
+ * @returns {string[]}
+ */
+export function phoneColumnOrder(columns) {
+  const first = columns.slice(0, 1);
+  const lead = columns.filter((col, i) => i > 0 && (col === 'Status' || col.endsWith(' outcome')
+    || /^Var \(/.test(col) || col === 'Variance' || col.endsWith(' variance')));
+  return [...first, ...lead, ...columns.filter((col, i) => i > 0 && !lead.includes(col))];
 }
 
 // ── The page ────────────────────────────────────────────────────────────────
@@ -289,6 +530,11 @@ function boot() {
     inputEl.addEventListener('input', autoGrow);
     sendBtn.addEventListener('click', sendMessage);
 
+    const markEl = document.querySelector('.header-icon');
+    if (markEl) markEl.appendChild(createIcon('mark', 20));
+    byId('btn-quick-help').prepend(createIcon('help', 16));
+    byId('btn-quick-reset').prepend(createIcon('restart', 16));
+
     byId('btn-quick-help').addEventListener('click', () => sendText('help'));
     byId('btn-quick-reset').addEventListener('click', () => sendText('reset'));
 
@@ -302,18 +548,18 @@ function boot() {
     updatePhase(view.phase);
     if (view.kind === 'restored' && view.reply) {
       markIntroSeen();
-      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false);
+      addAgentMessage(view.reply.text, view.reply.table, view.reply.chips, false, view.reply.level, view.reply.view);
     } else if (view.kind === 'resumed') {
       addAgentMessage(
         'Welcome back. This server already has an analysis in progress (step: **' +
-        phaseLabel(view.phase) + '**). Carry on where it left off, or reset to start over.',
+        phaseLabel(view.phase) + '**). Carry on where it left off, or start over.',
         null, ['help', 'reset'], false
       );
     } else {
       addAgentMessage(
-        'Welcome! Upload your financial data to get started.\n\n' +
-        'Supported formats: **CSV**, **JSON**, **XLSX**, **XLSM**, and **PDF** 10-K / 10-Q filings.\n\n' +
-        'You can also ask financial domain questions anytime (e.g., *What is materiality?* or *Budget vs Forecast*).',
+        '**Upload a budget-versus-actual file to start.**\n\n' +
+        'It needs an Actual column and a Budget, Forecast or Prior Period column. I show how I read ' +
+        'the file, ask for the period and the materiality thresholds, then compare each line.',
         null, ['Supported file formats', 'What is materiality?', 'Budget vs forecast'], true
       );
     }
@@ -350,29 +596,40 @@ function boot() {
    * @param {Array<Record<string, string>> | null | undefined} table
    * @param {string[] | null | undefined} chips
    * @param {boolean} [showDropZone]
+   * @param {'error'} [level]  set for a reply that refuses or could not do what was asked
+   * @param {unknown} [view]  a designed view of the same reply, drawn in place of the text
    * @returns {HTMLElement} the new message
    */
-  function addAgentMessage(text, table, chips, showDropZone) {
+  function addAgentMessage(text, table, chips, showDropZone, level, view) {
     const msg = document.createElement('div');
     msg.className = 'message agent';
 
     const sender = document.createElement('div');
     sender.className = 'message-sender';
-    sender.textContent = 'AGENT';
+    sender.textContent = 'Agent';
     msg.appendChild(sender);
 
     const body = document.createElement('div');
     body.className = 'message-body';
 
-    if (text && text.startsWith('⚠️')) {
-      body.classList.add('warning');
-    }
+    if (level === 'error') body.classList.add('is-error');
 
-    body.innerHTML = renderMarkdown(text || '');
+    if (isIntakeView(view) || isFiguresView(view)) {
+      if (view.lead) {
+        const lead = document.createElement('div');
+        lead.className = 'view-lead';
+        lead.innerHTML = renderMarkdown(view.lead); // the server's own text, escaped by renderMarkdown
+        body.appendChild(lead);
+      }
+      body.appendChild(isIntakeView(view) ? renderIntakePanel(view) : renderFiguresView(view));
+      body.classList.add('has-view');
+    } else {
+      body.innerHTML = renderMarkdown(text || '');
+    }
     msg.appendChild(body);
 
     if (table && table.length > 0) {
-      body.appendChild(renderTable(table));
+      body.appendChild(renderTable(table, isFiguresView(view) ? view.column_groups : []));
     }
 
     if (showDropZone) {
@@ -398,14 +655,181 @@ function boot() {
     return msg;
   }
 
+  /**
+   * The intake panel. Every label and value is the file's own text, so it is set with textContent.
+   * @param {IntakeView} view
+   * @returns {HTMLElement}
+   */
+  function renderIntakePanel(view) {
+    const panel = document.createElement('section');
+    panel.className = 'panel intake-panel';
+    const title = document.createElement('h3');
+    title.className = 'panel-title';
+    title.textContent = view.title;
+    panel.setAttribute('aria-label', view.title);
+    panel.appendChild(title);
+
+    const facts = document.createElement('dl');
+    facts.className = 'facts';
+    view.rows.forEach((row) => {
+      const fact = document.createElement('div');
+      fact.className = 'fact';
+      const dt = document.createElement('dt');
+      dt.textContent = row.label;
+      const dd = document.createElement('dd');
+      dd.textContent = row.value;
+      fact.append(dt, dd);
+      facts.appendChild(fact);
+    });
+    panel.appendChild(facts);
+
+    view.notes.forEach((note) => {
+      const block = document.createElement('div');
+      block.className = 'panel-note';
+      const heading = document.createElement('h4');
+      heading.textContent = note.title;
+      const list = document.createElement('ul');
+      note.items.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+      });
+      if (note.more > 0) {
+        const li = document.createElement('li');
+        li.className = 'more';
+        li.textContent = `and ${note.more} more`;
+        list.appendChild(li);
+      }
+      block.append(heading, list);
+      panel.appendChild(block);
+    });
+
+    const question = document.createElement('p');
+    question.className = 'panel-question';
+    question.textContent = view.question;
+    panel.appendChild(question);
+    return panel;
+  }
+
+  /**
+   * A text element, or nothing for an empty string.
+   * @param {string} tag
+   * @param {string} className
+   * @param {string | null} text
+   * @returns {HTMLElement | null}
+   */
+  function textEl(tag, className, text) {
+    if (!text) return null;
+    const el = document.createElement(tag);
+    el.className = className;
+    el.textContent = text;
+    return el;
+  }
+
+  /**
+   * A status word with its marker: a dot for favorable, a square for unfavorable, a ring for neutral.
+   * @param {string} word
+   * @param {string | null} tone
+   * @returns {HTMLElement}
+   */
+  function statusEl(word, tone) {
+    const el = document.createElement('span');
+    el.className = 'status' + (tone ? ` is-${tone}` : '');
+    el.textContent = word;
+    return el;
+  }
+
+  /**
+   * Results, a drill-down or a scenario: the title and context, the headline figures, the
+   * sections and notes, and the title of the table that follows. Every string is set as text.
+   * @param {FiguresView} view
+   * @returns {HTMLElement}
+   */
+  function renderFiguresView(view) {
+    const root = document.createElement('section');
+    root.className = 'figures-view';
+    root.setAttribute('aria-label', view.title);
+
+    const head = document.createElement('div');
+    head.className = 'view-head';
+    const title = document.createElement('h3');
+    title.className = 'view-title';
+    title.textContent = view.title;
+    head.appendChild(title);
+    if (view.context.length) {
+      const context = document.createElement('dl');
+      context.className = 'view-context';
+      view.context.forEach((item) => {
+        const pairEl = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = item.label;
+        const dd = document.createElement('dd');
+        dd.textContent = item.value;
+        pairEl.append(dt, dd);
+        context.appendChild(pairEl);
+      });
+      head.appendChild(context);
+    }
+    root.appendChild(head);
+
+    if (view.figures.length) {
+      const strip = document.createElement('div');
+      strip.className = 'headline';
+      view.figures.forEach((fig) => {
+        const cell = document.createElement('div');
+        cell.className = 'figure' + (fig.tone ? ` is-${fig.tone}` : '');
+        for (const el of [
+          textEl('span', 'figure-label', fig.label),
+          textEl('span', 'figure-value', fig.value),
+          textEl('span', 'figure-meta', fig.compare),
+          textEl('span', 'figure-meta', fig.change),
+        ]) if (el) cell.appendChild(el);
+        if (fig.status) cell.appendChild(statusEl(fig.status, fig.tone));
+        strip.appendChild(cell);
+      });
+      root.appendChild(strip);
+    }
+
+    view.sections.forEach((section) => {
+      const block = document.createElement('div');
+      block.className = 'view-section';
+      const heading = document.createElement('h4');
+      heading.textContent = section.title;
+      const facts = document.createElement('dl');
+      facts.className = 'facts';
+      section.rows.forEach((row) => {
+        const fact = document.createElement('div');
+        fact.className = 'fact';
+        const dt = document.createElement('dt');
+        dt.textContent = row.label;
+        const dd = document.createElement('dd');
+        dd.className = 'num';
+        dd.textContent = row.value;
+        fact.append(dt, dd);
+        facts.appendChild(fact);
+      });
+      block.append(heading, facts);
+      root.appendChild(block);
+    });
+
+    view.notes.forEach((note) => {
+      const el = textEl('p', 'view-note', note);
+      if (el) root.appendChild(el);
+    });
+    const tableTitle = textEl('h4', 'table-title', view.table_title);
+    if (tableTitle) root.appendChild(tableTitle);
+    return root;
+  }
+
   /** @param {string} text */
   function addUserMessage(text) {
+    retireChips(Array.from(messagesEl.querySelectorAll('.chips:not(.is-retired)')));
     const msg = document.createElement('div');
     msg.className = 'message user';
 
     const sender = document.createElement('div');
     sender.className = 'message-sender';
-    sender.textContent = 'YOU';
+    sender.textContent = 'You';
     msg.appendChild(sender);
 
     const body = document.createElement('div');
@@ -427,16 +851,20 @@ function boot() {
     link.className = 'download-btn';
     link.href = url;
     link.download = filename || '';
-    link.textContent = '⬇ Download ' + (filename || 'file');
+    link.appendChild(createIcon('download', 16));
+    link.appendChild(document.createTextNode('Download ' + (filename || 'file')));
     msg.appendChild(link);
   }
 
   // ── Table rendering ──────────────────────────────────────
   /**
+   * The table, its filter (for long tables) and the narrow-screen cue, in one framed block.
    * @param {Array<Record<string, string>>} initialRows
+   * @param {Array<{title: string, columns: Array<{key: string, label: string}>}>} [groups]
+   *   columns set under a spanning head, each with a short label
    * @returns {HTMLElement}
    */
-  function renderTable(initialRows) {
+  function renderTable(initialRows, groups = []) {
     const wrapper = document.createElement('div');
     wrapper.className = 'data-table-wrapper';
     wrapper.setAttribute('role', 'region');
@@ -453,33 +881,49 @@ function boot() {
     let sortCol = null;
     let sortAsc = true;
 
-    const columns = Object.keys(initialRows[0]);
+    // A column that is empty in every row says nothing; leave it out of the display.
+    const shown = Object.keys(initialRows[0]).filter((col) =>
+      col === 'Line Item' || initialRows.some((r) => String(r[col] ?? '').trim() !== ''));
+    // Column groups need their columns side by side, so a grouped table keeps its order.
+    const narrow = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches;
+    const columns = narrow && groups.length === 0 ? phoneColumnOrder(shown) : shown;
+    /** @type {Record<string, {group: string, label: string}>} */
+    const grouped = {};
+    groups.forEach((g) => g.columns.forEach((c) => { grouped[c.key] = { group: g.title, label: c.label }; }));
+    const numeric = new Set(columns.filter((col) => col !== 'Status' && isNumericColumn(initialRows.map((r) => r[col]))));
     /** @param {string} col */
     function isNumericCol(col) {
-      return col.startsWith('Var ') || col === 'Budget' || col === 'Actual' || col === 'Status' ||
-        col.includes('Impact') || col.includes('Profit') || col.includes('Cumulative');
+      return numeric.has(col);
     }
+    // Bars go under the first currency variance column only, scaled to that column.
+    const barCol = columns.find((col) => /^Var \((?!%)/.test(col) || col.includes('Impact')) || null;
 
     // Toolbar: quick filter search & row count indicator
     let filterQuery = '';
     const toolbar = document.createElement('div');
     toolbar.className = 'table-toolbar';
 
+    const search = document.createElement('label');
+    search.className = 'table-search';
+    search.appendChild(createIcon('search', 16));
     const searchInput = document.createElement('input');
-    searchInput.type = 'text';
+    searchInput.type = 'search';
     searchInput.className = 'table-search-input';
-    searchInput.placeholder = '🔍 Filter rows...';
+    searchInput.placeholder = 'Filter rows';
     searchInput.title = 'Filter rows by account name, type, amount, or status';
     searchInput.setAttribute('aria-label', 'Filter rows');
+    search.appendChild(searchInput);
 
     const countSpan = document.createElement('span');
     countSpan.className = 'table-row-count';
     countSpan.setAttribute('aria-live', 'polite');
     countSpan.textContent = `${initialRows.length} rows`;
 
-    toolbar.appendChild(searchInput);
+    toolbar.appendChild(search);
     toolbar.appendChild(countSpan);
-    wrapper.appendChild(toolbar);
+    const block = document.createElement('div');
+    block.className = 'table-block';
+    if (initialRows.length > 8) block.appendChild(toolbar); // a short table needs no filter
 
     // Header
     const thead = document.createElement('thead');
@@ -498,13 +942,14 @@ function boot() {
       button.title = 'Click to sort';
 
       const labelSpan = document.createElement('span');
-      labelSpan.textContent = col;
+      labelSpan.textContent = Object.hasOwn(grouped, col) ? grouped[col].label : columnLabel(col);
+      if (Object.hasOwn(grouped, col)) button.setAttribute('aria-label', `${grouped[col].group} ${grouped[col].label}`);
       button.appendChild(labelSpan);
 
       const iconSpan = document.createElement('span');
       iconSpan.className = 'sort-icon';
       iconSpan.setAttribute('aria-hidden', 'true');
-      iconSpan.textContent = '↕';
+      iconSpan.appendChild(createIcon('sort', 16));
       button.appendChild(iconSpan);
       th.appendChild(button);
 
@@ -513,19 +958,19 @@ function boot() {
           sortAsc = !sortAsc;
         } else {
           sortCol = col;
-          sortAsc = isNumericCol(col) && col !== 'Status' ? false : true;
+          sortAsc = !isNumericCol(col);
         }
 
         columns.forEach((c) => {
           thMap[c].classList.remove('sorted-asc', 'sorted-desc');
           thMap[c].setAttribute('aria-sort', 'none');
           const ic = thMap[c].querySelector('.sort-icon');
-          if (ic) ic.textContent = '↕';
+          if (ic) ic.replaceChildren(createIcon('sort', 16));
         });
 
         th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
         th.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
-        iconSpan.textContent = sortAsc ? '▲' : '▼';
+        iconSpan.replaceChildren(createIcon(sortAsc ? 'sort-asc' : 'sort-desc', 16));
 
         updateTable();
       });
@@ -533,6 +978,26 @@ function boot() {
       thMap[col] = th;
       headerRow.appendChild(th);
     });
+    if (columns.some((col) => Object.hasOwn(grouped, col))) {
+      // One spanning head per comparison over its columns; other columns get an empty cell.
+      const groupRow = document.createElement('tr');
+      groupRow.className = 'group-row';
+      let i = 0;
+      while (i < columns.length) {
+        const name = Object.hasOwn(grouped, columns[i]) ? grouped[columns[i]].group : '';
+        let span = 1;
+        while (name && i + span < columns.length && Object.hasOwn(grouped, columns[i + span])
+          && grouped[columns[i + span]].group === name) span += 1;
+        const th = document.createElement('th');
+        th.colSpan = span;
+        th.scope = 'colgroup';
+        th.textContent = name;
+        if (name) th.className = 'group-head';
+        groupRow.appendChild(th);
+        i += span;
+      }
+      thead.appendChild(groupRow);
+    }
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
@@ -547,7 +1012,7 @@ function boot() {
         filtered.sort((a, b) => {
           const valA = a[column] || '';
           const valB = b[column] || '';
-          if (isNumericCol(column) && column !== 'Status') {
+          if (isNumericCol(column)) {
             const numA = parseNumericVal(valA);
             const numB = parseNumericVal(valB);
             return sortAsc ? numA - numB : numB - numA;
@@ -578,30 +1043,23 @@ function boot() {
       tbody.textContent = '';
 
       let maxVar = 0;
-      currentRows.forEach((row) => {
-        columns.forEach((col) => {
-          if (col.startsWith('Var ') || col.includes('Impact')) {
-            const v = Math.abs(parseNumericVal(row[col]));
-            if (v > maxVar) maxVar = v;
-          }
+      if (barCol) {
+        currentRows.forEach((row) => {
+          maxVar = Math.max(maxVar, Math.abs(parseNumericVal(row[barCol])));
         });
-      });
+      }
 
       currentRows.forEach((row) => {
         const tr = document.createElement('tr');
         const status = row['Status'] || '';
-        if (status === 'F') tr.className = 'row-favorable';
-        else if (status === 'U') tr.className = 'row-unfavorable';
-        else if (status === 'Neutral') tr.className = 'row-neutral';
 
         columns.forEach((col) => {
           const td = document.createElement('td');
           const val = row[col] || '';
           if (isNumericCol(col)) td.className = 'num';
-          if (col === 'Status') {
-            td.textContent = val;
-            if (val === 'F') td.className += ' status-f';
-            else if (val === 'U') td.className += ' status-u';
+          if (col === 'Status' || (Object.hasOwn(grouped, col) && grouped[col].label === 'Outcome')) {
+            const shown = statusWord(plainText(val));
+            td.appendChild(statusEl(shown.word, shown.tone));
           } else if (col === 'Line Item') {
             const name = plainText(val);
             const link = document.createElement('button');
@@ -614,7 +1072,7 @@ function boot() {
               sendText(question);
             });
             td.appendChild(link);
-          } else if (col.startsWith('Var ') || col.includes('Impact')) {
+          } else if (col === barCol) {
             const numVal = parseNumericVal(val);
             const absVal = Math.abs(numVal);
             const pct = maxVar > 0 ? Math.min(100, Math.round((absVal / maxVar) * 100)) : 0;
@@ -624,7 +1082,7 @@ function boot() {
 
             const valSpan = document.createElement('span');
             valSpan.className = 'variance-val';
-            valSpan.textContent = val;
+            valSpan.textContent = plainText(val);
             cellWrapper.appendChild(valSpan);
 
             if (maxVar > 0 && absVal > 0) {
@@ -632,10 +1090,9 @@ function boot() {
               barTrack.className = 'variance-bar-track';
               barTrack.setAttribute('aria-hidden', 'true');
               const barFill = document.createElement('div');
-              const isFav = status === 'F' || (status !== 'U' && numVal > 0);
-              const isUnfav = status === 'U' || (status !== 'F' && numVal < 0);
+              const tone = statusWord(status).tone;
               barFill.className = 'variance-bar-fill ' +
-                (isFav ? 'bar-favorable' : (isUnfav ? 'bar-unfavorable' : 'bar-neutral'));
+                (tone === 'favorable' ? 'bar-favorable' : tone === 'unfavorable' ? 'bar-unfavorable' : 'bar-neutral');
               barFill.style.width = Math.max(5, pct) + '%'; // CSSOM, which a strict CSP allows
               barTrack.appendChild(barFill);
               cellWrapper.appendChild(barTrack);
@@ -654,7 +1111,24 @@ function boot() {
     table.appendChild(tbody);
 
     wrapper.appendChild(table);
-    return wrapper;
+    const scroller = wrapper;
+
+    // On a narrow screen the first column stays put and a cue says more columns exist (T8).
+    const cue = document.createElement('div');
+    cue.className = 'table-cue';
+    cue.setAttribute('aria-hidden', 'true');
+    cue.appendChild(document.createTextNode('More columns'));
+    cue.appendChild(createIcon('more', 16));
+    block.append(wrapper, cue);
+    const updateCue = () => {
+      const overflow = scroller.scrollWidth > scroller.clientWidth + 1;
+      const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
+      block.classList.toggle('has-more', overflow && !atEnd);
+    };
+    scroller.addEventListener('scroll', updateCue, { passive: true });
+    window.addEventListener('resize', updateCue);
+    requestAnimationFrame(updateCue);
+    return block;
   }
 
   // ── Drop zone ────────────────────────────────────────────
@@ -665,10 +1139,17 @@ function boot() {
     zone.setAttribute('aria-label', 'Upload a file: press Enter to browse, or drop one here');
     zone.tabIndex = 0;
 
-    zone.innerHTML =
-      '<div class="drop-zone-icon" aria-hidden="true">📁</div>' +
-      '<div class="drop-zone-title">Drop file here or click to browse</div>' +
-      '<div class="drop-zone-subtitle">.csv, .json, .xlsx, .xlsm, .pdf (10-K / 10-Q)</div>';
+    const zoneIcon = document.createElement('div');
+    zoneIcon.className = 'drop-zone-icon';
+    zoneIcon.appendChild(createIcon('upload', 20));
+    const zoneTitle = document.createElement('div');
+    zoneTitle.className = 'drop-zone-title';
+    zoneTitle.textContent = 'Drop a file here, or choose one';
+    const zoneSubtitle = document.createElement('div');
+    zoneSubtitle.className = 'drop-zone-subtitle';
+    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to ' +
+      `${MAX_UPLOAD_BYTES / 1048576} MB`;
+    zone.append(zoneIcon, zoneTitle, zoneSubtitle);
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -710,32 +1191,51 @@ function boot() {
     return zone;
   }
 
-  function showTypingIndicator() {
+  // The working indicator: nothing for the first 100 ms, then a line saying what is happening,
+  // and after a second a flat skeleton where the reply will go.
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let indicatorTimer;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let skeletonTimer;
+
+  /** @param {string} [what]  shown beside the dots, for example "Reading the file" */
+  function showTypingIndicator(what = 'Working on it') {
     removeTypingIndicator();
-    const msg = document.createElement('div');
-    msg.className = 'message agent';
-    msg.id = 'typing-indicator';
-    msg.setAttribute('role', 'status');
+    indicatorTimer = setTimeout(() => {
+      const msg = document.createElement('div');
+      msg.className = 'message agent working';
+      msg.id = 'typing-indicator';
+      msg.setAttribute('role', 'status');
 
-    const sender = document.createElement('div');
-    sender.className = 'message-sender';
-    sender.textContent = 'Agent';
-    msg.appendChild(sender);
+      const sender = document.createElement('div');
+      sender.className = 'message-sender';
+      sender.textContent = 'Agent';
+      msg.appendChild(sender);
 
-    const body = document.createElement('div');
-    body.className = 'message-body typing-dots';
-    body.innerHTML = '<span></span><span></span><span></span>';
-    const label = document.createElement('span');
-    label.className = 'sr-only';
-    label.textContent = 'Agent is working on it';
-    body.appendChild(label);
-    msg.appendChild(body);
+      const body = document.createElement('div');
+      body.className = 'message-body typing-dots';
+      for (let i = 0; i < 3; i += 1) body.appendChild(document.createElement('span'));
+      const label = document.createElement('span');
+      label.className = 'working-label';
+      label.textContent = what;
+      body.appendChild(label);
+      msg.appendChild(body);
 
-    messagesEl.appendChild(msg);
-    scrollToBottom();
+      const skeleton = document.createElement('div');
+      skeleton.className = 'skeleton';
+      skeleton.setAttribute('aria-hidden', 'true');
+      for (let i = 0; i < 3; i += 1) skeleton.appendChild(document.createElement('div'));
+      msg.appendChild(skeleton);
+
+      messagesEl.appendChild(msg);
+      scrollToBottom();
+      skeletonTimer = setTimeout(() => msg.classList.add('is-long'), 900);
+    }, 100);
   }
 
   function removeTypingIndicator() {
+    clearTimeout(indicatorTimer);
+    clearTimeout(skeletonTimer);
     const el = document.getElementById('typing-indicator');
     if (el) el.remove();
   }
@@ -749,7 +1249,7 @@ function boot() {
   function showResult(result, fromUpload) {
     const data = result.data;
     if (!result.ok || !data || data.error) {
-      addAgentMessage('⚠️ ' + describeFailure(result.status, data), null, null, fromUpload);
+      addAgentMessage(describeFailure(result.status, data), null, null, fromUpload, 'error');
       return;
     }
 
@@ -759,7 +1259,7 @@ function boot() {
     if (data.phase) updatePhase(data.phase);
 
     const showDrop = !fromUpload && data.phase === 'awaiting_file';
-    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop);
+    const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level, data.view);
     if (data.download_url) {
       addDownloadLink(msg, data.download_url, data.download_filename);
     }
@@ -790,29 +1290,29 @@ function boot() {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) {
       addAgentMessage(
-        '⚠️ Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
-        null, null, true
+        'Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
+        null, null, true, 'error'
       );
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       addAgentMessage(
-        `⚠️ That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
+        `That file is ${(file.size / 1048576).toFixed(1)} MB; the limit is ` +
         `${MAX_UPLOAD_BYTES / 1048576} MB.`,
-        null, null, true
+        null, null, true, 'error'
       );
       return;
     }
 
     await runExclusive(async () => {
-      addUserMessage('📎 ' + file.name);
+      addUserMessage(file.name);
       document.querySelectorAll('.drop-zone').forEach((z) => z.remove());
 
       const formData = new FormData();
       formData.append('file', file, file.name);
       formData.append('first_visit', introSeen ? '0' : '1');
 
-      showTypingIndicator();
+      showTypingIndicator('Reading the file');
       try {
         const result = await requestJson(
           '/upload', { method: 'POST', body: formData }, UPLOAD_TIMEOUT_MS
@@ -822,7 +1322,7 @@ function boot() {
         inputEl.focus();
       } catch (err) {
         removeTypingIndicator();
-        addAgentMessage('⚠️ Upload failed: ' + errorMessage(err), null, null, true);
+        addAgentMessage('Upload failed: ' + errorMessage(err), null, null, true, 'error');
       }
     });
   }
@@ -836,9 +1336,9 @@ function boot() {
     if (!text) return;
     if (text.length > MAX_MESSAGE_CHARS) {
       addAgentMessage(
-        `⚠️ That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
+        `That message is too long (${text.length.toLocaleString('en-US')} characters; the ` +
         `limit is ${MAX_MESSAGE_CHARS.toLocaleString('en-US')}). Upload large data as a file instead.`,
-        null, null, false
+        null, null, false, 'error'
       );
       return;
     }
@@ -871,7 +1371,7 @@ function boot() {
       showResult(result, false);
     } catch (err) {
       removeTypingIndicator();
-      addAgentMessage('⚠️ ' + errorMessage(err), null, null, false);
+      addAgentMessage(errorMessage(err), null, null, false, 'error');
     }
   }
 
