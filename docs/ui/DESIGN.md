@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 5. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: Phase 6. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 
@@ -78,6 +78,10 @@ Favorable and unfavorable differ in lightness as well as hue (contrast between t
 | Loading | Nothing under 100 ms; then three squares pulsing in opacity and a line saying what is happening; after a second a flat three-bar skeleton | — |
 | Print | Header kept, controls dropped, log height released | Phase 4: results view on paper |
 | Forced colours | Controls, panels and the attention rule keep system-colour borders | — |
+
+## Workbook
+
+The chat page's ink and status colours in Calibri; a light grey header band with a medium rule (the only fill); status and outcome as a coloured word, no fill; totals set apart by a rule above and a double rule below; numeric heads right-aligned over their numbers; a print header (report title, sheet name) and footer (page n of N) on every sheet; the header row repeated on every printed page. Rejected: banded rows (zebra) and red and green cell fills, which carried meaning by colour and made an immaterial miss read red.
 
 ## Glyphs kept by name (T1 allowlist)
 

@@ -3,6 +3,7 @@ from dataclasses import replace
 from decimal import Decimal
 from fractions import Fraction
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -122,7 +123,11 @@ def test_legacy_sample_workbook_and_report_are_byte_identical():
     root = Path(__file__).resolve().parents[1]
     result = analyze_rows(load_file(root / "examples/sample_variance.csv"),
                           AnalysisConfig("Q3 2026", Decimal("10000"), Decimal("0.05")))
-    assert hashlib.sha256(render_xlsx(result)).hexdigest() == "11db3182fb2f5b377e7973016e9b51fc0780e96fd80d6b3471e1c6633025ee43"
+    # The workbook's styling was redesigned (docs/ui, Phase 6, approved at STOP 2), so its bytes moved; what it
+    # holds did not: every cell value and address still matches the snapshot written at 822e522.
+    pytest.importorskip("openpyxl")
+    from tests.xlsx_values import SNAPSHOTS, values
+    assert values(render_xlsx(result)) == json.loads((SNAPSHOTS / "sample.json").read_text(encoding="utf-8"))
     assert hashlib.sha256(render_markdown(result).encode()).hexdigest() == (
         "63f5d2d61de895f715d8270d948fb1b6d54208fa582f461c95a4e49b637d8587")
     assert build_audit_record(result)["schema_version"] == "1.7"

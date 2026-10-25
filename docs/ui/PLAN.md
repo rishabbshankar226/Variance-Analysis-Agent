@@ -14,8 +14,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | `0995c16` |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | `8f30c42` |
 | 5 | Earnings and equity views; emoji allowlist empty | done | `35759be` |
-| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | open: STOP-ASK (workbook byte hash), code uncommitted | |
-| — | **STOP 2** | open: waiting for the owner | |
+| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | done | (this commit) |
+| — | **STOP 2** | done: "do what you recommend and continue" | `43f60fa` |
 | 7 | Command line help (droppable at STOP 2) | todo | |
 | 8 | Hardening, `REPORT.md`, CHANGELOG, README screenshots | todo | |
 
@@ -111,7 +111,11 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
 - Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
 
-## Phase 6 record (uncommitted until the STOP-ASK is answered)
+## STOP 2 decisions (2026-10-24)
+
+The owner answered "do what you recommend and continue". Read as: (1) replace only the workbook hash line of `test_legacy_sample_workbook_and_report_are_byte_identical` with the value-and-address comparison, keep its report hash and schema lines, and commit Phase 6; (2) keep the print stylesheet and do Phase 7; (3) no results panel beside the conversation.
+
+## Phase 6 record
 
 - **Styles** (`xlsx.py`, strings only, no openpyxl): the ink and status colours of the chat page; the header band is a light grey (`F2F1EE`) with a medium rule, the only fill in the workbook; status and outcome cells are the word in its status colour with no fill; totals are set apart by a thin rule above and a double rule below, no fill; the title and section heads lose violet; left-aligned cells get a one-step indent so a word never touches the figure before it.
 - **Meaning by colour alone, fixed:** an earnings outcome now takes its colour from the word shown (`_outcome_cell`), so an immaterial miss that reads "In line" is no longer red-filled.
@@ -120,7 +124,8 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - **Values:** `tests/xlsx_values.py` writes and reads `{sheet: {address: value}}` with openpyxl; the snapshots in `tests/fixtures/xlsx_values/` were written from the untouched code (diff against `822e522` empty for every workbook module) for the sample, a consensus earnings and a comparison-set workbook; `test_every_value_and_address_is_unchanged_by_the_redesign` passes for all three.
 - **Left as cell values (constraint 3):** the comparison-set Status cells hold "F" (the engine's value), and the Root Causes sheet's Mitigation, Optimization and Data Request text (it mirrors the contract report).
 - **Rendered and looked at:** LibreOffice to PDF, before and after, `docs/ui/evidence/phase-6/` (13 page images, all opened).
-- **Gates:** ruff and mypy pass; pytest **2097 passed, 1 failed**: `test_legacy_sample_workbook_and_report_are_byte_identical`, which pins the workbook's SHA-256. STOP-ASK in `docs/ui/evidence/stop-2/README.md`.
+- **Assertion edited (approved at STOP 2):** `test_multi_audience_measures.py`, the workbook SHA-256 line of `test_legacy_sample_workbook_and_report_are_byte_identical` → every value and address equals the `822e522` snapshot. The report SHA-256 and the audit schema lines are unchanged.
+- **Gates** (`gates.sh dist`): ruff, mypy (63 files), **2098 passed in 37.55s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
 
 ## Phase 5 record
 
@@ -213,7 +218,9 @@ Edited in Phase 2:
 
 Edited in Phase 4: `test_chat.py:1078` waterfall cell `"🏁 Actual Operating Profit"` → `"Actual Operating Profit"` (presentation, T1); `test_interface_design.py` size pin now includes 20 and 28 px (own test, the sizes came into use).
 
-Totals so far: 12 `level` migrations, 4 presentation edits, 2 assertions extended to both themes, 0 assertions that pin meaning edited otherwise. New tests: `tests/test_chat_reply_shape.py` (5, the JSON shape across `/message`, `/upload`, `/status`) and 7 Phase 2 cases in `tests/test_interface_design.py`.
+Edited in Phase 6 (STOP-ASK approved): the workbook hash line above.
+
+Totals so far: 12 `level` migrations, 4 presentation edits, 1 approved STOP-ASK edit (workbook hash), 2 assertions extended to both themes, 0 assertions that pin meaning edited otherwise. New tests: `tests/test_chat_reply_shape.py` (5, the JSON shape across `/message`, `/upload`, `/status`) and 7 Phase 2 cases in `tests/test_interface_design.py`.
 
 ## Decisions
 

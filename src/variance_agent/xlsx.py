@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 import io
 import math
+import re
 import zipfile
 from dataclasses import dataclass, field
 from decimal import Context, Decimal
@@ -114,6 +115,8 @@ class _Sheet:
     autofilter: bool = False
     gridlines: bool = True
     merges: list[str] = field(default_factory=list)
+    # Printed at the top left of every page; titles never go in the sheet's own cells.
+    print_title: str = ""
 
     def add(self, *cells: _Cell, height: float | None = None) -> int:
         self.rows.append(_Row(tuple(cells), height))
@@ -216,9 +219,19 @@ def _sheet_xml(sheet: _Sheet, *, selected: bool) -> str:
     parts += [
         '<pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>',
         '<pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/>',
+        _header_footer_xml(sheet),
         "</worksheet>",
     ]
     return "".join(parts)
+
+
+def _header_footer_xml(sheet: _Sheet) -> str:
+    """Print header and footer: the report title and sheet name above, page numbers below."""
+    title = sheet.print_title.replace("&", "&&")
+    header = (f'&L&"Calibri,Bold"{title}' if title else "") + "&R&A"
+    footer = "&LVariance Analysis Agent&RPage &P of &N"
+    return (f"<headerFooter><oddHeader>{escape(header)}</oddHeader>"
+            f"<oddFooter>{escape(footer)}</oddFooter></headerFooter>")
 
 
 def _autofilter_bounds(sheet: _Sheet) -> tuple[str, int]:
@@ -233,39 +246,38 @@ def _autofilter_ref(sheet: _Sheet) -> str:
 def _styles_xml(places: int) -> str:
     fraction = "0" * places
     money = f"#,##0.{fraction};[Red]-#,##0.{fraction}"
+    # The chat page's ink and status colours. Status is always a word; colour only supports it.
     fonts = [
-        '<font><sz val="11"/><color rgb="FF1F2937"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="11"/><color rgb="FF1F2937"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="16"/><color rgb="FF4C1D95"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="11"/><color rgb="FF065F46"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="11"/><color rgb="FF991B1B"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="11"/><color rgb="FF374151"/><name val="Calibri"/><family val="2"/></font>',
-        '<font><b/><sz val="12"/><color rgb="FF4C1D95"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><sz val="11"/><color rgb="FF1C1B19"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="11"/><color rgb="FF1C1B19"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="11"/><color rgb="FF4A4844"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="16"/><color rgb="FF1C1B19"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><i/><sz val="10"/><color rgb="FF67655F"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="11"/><color rgb="FF175F40"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="11"/><color rgb="FFB03E1B"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="11"/><color rgb="FF4A4844"/><name val="Calibri"/><family val="2"/></font>',
+        '<font><b/><sz val="12"/><color rgb="FF1C1B19"/><name val="Calibri"/><family val="2"/></font>',
     ]
     solid = ('<fill><patternFill patternType="solid"><fgColor rgb="FF{0}"/>'
              '<bgColor indexed="64"/></patternFill></fill>')
     fills = [
         '<fill><patternFill patternType="none"/></fill>',
         '<fill><patternFill patternType="gray125"/></fill>',
-        solid.format("16213E"),  # 2 header
-        solid.format("D1FAE5"),  # 3 favorable
-        solid.format("FEE2E2"),  # 4 unfavorable
-        solid.format("F3F4F6"),  # 5 neutral
-        solid.format("EDE9FE"),  # 6 section
-        solid.format("F9FAFB"),  # 7 total row
+        solid.format("F2F1EE"),  # 2 header band: a light grey, the only fill in the workbook
     ]
+    rule = '<{0} style="{1}"><color rgb="FF{2}"/></{0}>'
     borders = [
         "<border><left/><right/><top/><bottom/><diagonal/></border>",
-        ('<border><left/><right/><top/><bottom style="thin"><color rgb="FFD1D5DB"/></bottom>'
-         "<diagonal/></border>"),
-        ('<border><left/><right/><top style="thin"><color rgb="FF6B7280"/></top>'
-         '<bottom style="double"><color rgb="FF6B7280"/></bottom><diagonal/></border>'),
+        f"<border><left/><right/><top/>{rule.format('bottom', 'thin', 'DCDBD5')}<diagonal/></border>",
+        # totals: set apart by a rule above and a double rule below, never by a fill
+        (f"<border><left/><right/>{rule.format('top', 'thin', '67655F')}"
+         f"{rule.format('bottom', 'double', '67655F')}<diagonal/></border>"),
+        f"<border><left/><right/><top/>{rule.format('bottom', 'medium', 'C4C2BB')}<diagonal/></border>",
+        f"<border><left/><right/><top/>{rule.format('bottom', 'thin', 'C4C2BB')}<diagonal/></border>",
     ]
 
     def xf(num: int = 0, font: int = 0, fill: int = 0, border: int = 0,
-           horizontal: str | None = None, wrap: bool = False, top: bool = False) -> str:
+           horizontal: str | None = None, wrap: bool = False, top: bool = False, indent: bool = False) -> str:
         attrs = f'numFmtId="{num}" fontId="{font}" fillId="{fill}" borderId="{border}" xfId="0"'
         attrs += "".join(
             f' {name}="1"' for name, used in (
@@ -279,32 +291,34 @@ def _styles_xml(places: int) -> str:
             align += f' horizontal="{horizontal}"' if horizontal else ""
             align += ' vertical="top"' if top else ' vertical="center"'
             align += ' wrapText="1"' if wrap else ""
+            # A left-aligned word after a right-aligned figure needs a gap ("8.3%  Favorable").
+            align += ' indent="1"' if indent else ""
             align += "/>"
         return f"<xf {attrs}>{align}</xf>" if align else f"<xf {attrs}/>"
 
     xfs = [
         xf(),                                                     # S_DEFAULT
-        xf(font=2, fill=2, horizontal="left", wrap=True),         # S_HEADER
-        xf(font=2, fill=2, horizontal="right", wrap=True),        # S_HEADER_NUM
-        xf(border=1, top=True),                                   # S_TEXT
+        xf(font=2, fill=2, border=3, horizontal="left", wrap=True, indent=True),  # S_HEADER
+        xf(font=2, fill=2, border=3, horizontal="right", wrap=True),   # S_HEADER_NUM
+        xf(border=1, horizontal="left", top=True, indent=True),   # S_TEXT
         xf(num=164, border=1),                                    # S_MONEY
         xf(num=165, border=1),                                    # S_PCT
         xf(border=1, horizontal="right"),                         # S_TEXT_RIGHT
-        xf(font=5, fill=3, border=1, horizontal="center"),        # S_FAVORABLE
-        xf(font=6, fill=4, border=1, horizontal="center"),        # S_UNFAVORABLE
-        xf(font=7, fill=5, border=1, horizontal="center"),        # S_NEUTRAL
+        xf(font=5, border=1, horizontal="left", indent=True),     # S_FAVORABLE
+        xf(font=6, border=1, horizontal="left", indent=True),     # S_UNFAVORABLE
+        xf(font=7, border=1, horizontal="left", indent=True),     # S_NEUTRAL
         xf(font=3),                                               # S_TITLE
         xf(font=1, top=True),                                     # S_LABEL
-        xf(font=8, fill=6),                                       # S_SECTION
+        xf(font=8, border=4),                                     # S_SECTION
         xf(border=1, wrap=True, top=True),                        # S_WRAP
         xf(font=4, wrap=True, top=True),                          # S_NOTE
-        xf(font=1, fill=7, border=2),                             # S_TOTAL_LABEL
-        xf(num=164, font=1, fill=7, border=2),                    # S_TOTAL_MONEY
-        xf(num=165, font=1, fill=7, border=2),                    # S_TOTAL_PCT
-        xf(font=1, fill=7, border=2, horizontal="right"),         # S_TOTAL_TEXT_RIGHT
+        xf(font=1, border=2),                                     # S_TOTAL_LABEL
+        xf(num=164, font=1, border=2),                            # S_TOTAL_MONEY
+        xf(num=165, font=1, border=2),                            # S_TOTAL_PCT
+        xf(font=1, border=2, horizontal="right"),                 # S_TOTAL_TEXT_RIGHT
         xf(wrap=True, top=True),                                  # S_BODY
         xf(horizontal="left"),                                    # S_VALUE_LEFT
-        xf(font=2, fill=2, horizontal="center", wrap=True),       # S_HEADER_CENTER
+        xf(font=2, fill=2, border=3, horizontal="center", wrap=True),  # S_HEADER_CENTER
         xf(border=1, horizontal="center", top=True),              # S_TEXT_CENTER
         xf(font=1, border=1, top=True),                           # S_LABEL_CELL
     ]
@@ -336,6 +350,22 @@ def _pct_cell(percent: Decimal | None, label: str | None, *, total: bool = False
 
 def _status_cell(status: Status) -> _Cell:
     return _Cell(_STATUS_WORD[status], _STATUS_STYLE[status])
+
+
+_OUTCOME_STYLE = {"Beat": S_FAVORABLE, "Miss": S_UNFAVORABLE, "In line": S_NEUTRAL}
+
+
+def _outcome_cell(word: str, status: Status) -> _Cell:
+    """An earnings outcome: its colour follows the word (an immaterial miss reads "In line")."""
+    return _Cell(word, _OUTCOME_STYLE.get(word, _STATUS_STYLE[status]))
+
+
+def _is_figure(text: str) -> bool:
+    """Whether a formatted cell holds a figure, so it sits right-aligned under a right-aligned head."""
+    return bool(_FIGURE.match(text.strip()))
+
+
+_FIGURE = re.compile(r"^[(\-\u2212+]?\s*[$\u20ac\u00a3\u00a5]?\s*\(?\d[\d,]*(\.\d+)?\)?\s*(%|bps|pts|/sh|units?)?$", re.I)
 
 
 def _heading(cfg: AnalysisConfig) -> str:
@@ -408,7 +438,7 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
         _Cell("Metric", S_HEADER), _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_NUM),
         _Cell(f"Actual ({cfg.currency})", S_HEADER_NUM),
         _Cell(f"Variance ({cfg.currency})", S_HEADER_NUM), _Cell("Var %", S_HEADER_NUM),
-        _Cell("Status", S_HEADER_CENTER), height=20,
+        _Cell("Status", S_HEADER), height=20,
     )
     for label, aggregate, present in (
         ("Total Revenue", result.revenue, has_revenue),
@@ -485,9 +515,9 @@ def _material_sheet(result: AnalysisResult) -> _Sheet:
                    freeze_header=True, autofilter=True)
     sheet.add(
         _Cell("Line Item", S_HEADER), _Cell("Type", S_HEADER),
-        _Cell(f"{heading} ({currency})", S_HEADER_CENTER), _Cell(f"Actual ({currency})", S_HEADER_CENTER),
-        _Cell(f"Variance ({currency})", S_HEADER_CENTER), _Cell("Var %", S_HEADER_CENTER),
-        _Cell("Status", S_HEADER_CENTER), _Cell("Driver Evidence", S_HEADER),
+        _Cell(f"{heading} ({currency})", S_HEADER_NUM), _Cell(f"Actual ({currency})", S_HEADER_NUM),
+        _Cell(f"Variance ({currency})", S_HEADER_NUM), _Cell("Var %", S_HEADER_NUM),
+        _Cell("Status", S_HEADER), _Cell("Driver Evidence", S_HEADER),
         _Cell("Why Material", S_HEADER), height=20,
     )
     if not result.material_rows:
@@ -550,10 +580,10 @@ def _all_rows_sheet(result: AnalysisResult, places: int) -> _Sheet:
                    freeze_header=True, autofilter=True)
     sheet.add(
         _Cell("Line Item", S_HEADER), _Cell("Type", S_HEADER),
-        _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_CENTER),
-        _Cell(f"Actual ({cfg.currency})", S_HEADER_CENTER),
-        _Cell(f"Variance ({cfg.currency})", S_HEADER_CENTER), _Cell("Var %", S_HEADER_CENTER),
-        _Cell("Status", S_HEADER_CENTER), _Cell("Material", S_HEADER),
+        _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_NUM),
+        _Cell(f"Actual ({cfg.currency})", S_HEADER_NUM),
+        _Cell(f"Variance ({cfg.currency})", S_HEADER_NUM), _Cell("Var %", S_HEADER_NUM),
+        _Cell("Status", S_HEADER), _Cell("Material", S_HEADER),
         _Cell("Excluded From Totals", S_HEADER), _Cell("Classification Source", S_HEADER),
         _Cell("Driver Evidence", S_HEADER), height=32,
     )
@@ -582,7 +612,9 @@ def _quoted(name: str) -> str:
     return "'" + name.replace("'", "''") + "'"
 
 
-def _package(sheets: list[_Sheet], places: int) -> bytes:
+def _package(sheets: list[_Sheet], places: int, title: str = "") -> bytes:
+    for sheet in sheets:
+        sheet.print_title = sheet.print_title or title
     names = [sheet.name for sheet in sheets]
     for name in names:
         if len(name) > 31 or any(char in name for char in "[]:*?/\\"):
@@ -596,6 +628,10 @@ def _package(sheets: list[_Sheet], places: int) -> bytes:
         f"{escape(_quoted(sheet.name))}!$A$1:${'$'.join(map(str, _autofilter_bounds(sheet)))}"
         "</definedName>"
         for index, sheet in enumerate(sheets) if sheet.autofilter
+    ) + "".join(
+        # A table's header row prints at the top of every page.
+        f'<definedName name="_xlnm.Print_Titles" localSheetId="{index}">{escape(_quoted(sheet.name))}!$1:$1</definedName>'
+        for index, sheet in enumerate(sheets) if sheet.freeze_header
     )
     workbook = (
         f'{_XML_DECL}<workbook xmlns="{_MAIN_NS}" xmlns:r="{_REL_NS}">'
@@ -662,15 +698,16 @@ def render_xlsx(result: AnalysisResult, *, top_root_causes: int = 5) -> bytes:
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
     places = _report_places(result)
+    title = f"Variance report: {display_text(result.config.period)}"
     if is_audience_result(result):
-        return _package(_audience_sheets(result), places)
+        return _package(_audience_sheets(result), places, title)
     sheets = [
         _summary_sheet(result, places),
         _material_sheet(result),
         _actions_sheet(result, places, top_root_causes),
         _all_rows_sheet(result, places),
     ]
-    return _package(sheets, places)
+    return _package(sheets, places, title)
 
 
 def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
@@ -682,7 +719,7 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
         sheets = _audience_sheets(result)
         if table.statistics:
             sheets.append(_statistics_sheet(table))
-        return _package(sheets, _report_places(result))
+        return _package(sheets, _report_places(result), f"Variance report: {display_text(result.config.period)}")
     column_count = 5 * len(table.comparisons) + (2 if table.estimate_vs_consensus else 0)
     sheet = _Sheet("Comparisons", tuple([34, 16, 24] + [22] * column_count), freeze_header=True, autofilter=True)
     headers = ["Line Item", "Measure", "Segment"]
@@ -706,7 +743,9 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
     if table.estimate_vs_consensus:
         headers.extend(["Estimate - Consensus", "Estimate - Consensus % / bps"])
     gaps = {(gap.line_item.casefold(), gap.segment.casefold(), gap.measure): gap for gap in table.estimate_vs_consensus}
-    sheet.add(*(_Cell(header, S_HEADER) for header in headers))
+    figure_heads = {h for h in headers if h.split(": ")[-1] in {"Comparison", "Actual", "Variance", "Var %"}
+                    or h.startswith("Estimate - Consensus")}
+    sheet.add(*(_Cell(header, S_HEADER_NUM if header in figure_heads else S_HEADER) for header in headers))
     from .report import _pct
     for key, (name, kind, segment) in names.items():
         cells = [_Cell(name, S_TEXT), _Cell(str(kind), S_TEXT), _Cell(segment, S_TEXT)]
@@ -719,7 +758,7 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
                               _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
                               _Cell(format_measure(variance, kind, table.config.currency, variance=True), S_TEXT_RIGHT),
                               _Cell(_pct(entry.budget, entry.variance_dollars, entry.percent_label), S_TEXT_RIGHT),
-                              _Cell(display_outcome(entry, comparison.basis), _STATUS_STYLE[entry.status])])
+                              _outcome_cell(display_outcome(entry, comparison.basis), entry.status)])
             elif isinstance(entry, UnavailableComparison):
                 cells.extend([_Cell(entry.reason, S_TEXT), _Cell(format_measure(entry.actual, kind, table.config.currency), S_TEXT_RIGHT),
                               _Cell("", S_TEXT), _Cell("", S_TEXT), _Cell("", S_TEXT)])
@@ -739,7 +778,7 @@ def render_comparison_xlsx(table: "TableAnalysis") -> bytes:
         sheets.insert(0, _earnings_sheet(table))
     if table.statistics:
         sheets.append(_statistics_sheet(table))
-    return _package(sheets, 2)
+    return _package(sheets, 2, f"Variance report: {display_text(table.config.period)}")
 
 
 def _table_for_result(result: AnalysisResult) -> "TableAnalysis":
@@ -751,7 +790,8 @@ def _table_for_result(result: AnalysisResult) -> "TableAnalysis":
 @financial_context()
 def _audience_sheets(result: AnalysisResult) -> list[_Sheet]:
     sheet = _Sheet("Measures", (34, 16, 20, 20, 20, 14, 14, 14, 24), freeze_header=True, autofilter=True)
-    sheet.add(*(_Cell(text, S_HEADER) for text in
+    numeric_heads = {_heading(result.config), "Actual", "Variance", "Var %"}
+    sheet.add(*(_Cell(text, S_HEADER_NUM if text in numeric_heads else S_HEADER) for text in
                 ("Line Item", "Measure", _heading(result.config), "Actual", "Variance", "Var %", "Status", "Material", "Segment")))
     for row in result.rows:
         variance = row.variance_bps if row.measure is MeasureKind.PERCENT else row.variance_dollars
@@ -762,7 +802,7 @@ def _audience_sheets(result: AnalysisResult) -> list[_Sheet]:
                   _Cell(format_measure(row.actual, row.measure, result.config.currency), S_TEXT_RIGHT),
                   _Cell(format_measure(variance, row.measure, result.config.currency, variance=True), S_TEXT_RIGHT),
                   _Cell(_pct(row.budget, row.variance_dollars, row.percent_label), S_TEXT_RIGHT),
-                  _Cell(display_outcome(row, result.config.comparison_basis), _STATUS_STYLE[row.status]),
+                  _outcome_cell(display_outcome(row, result.config.comparison_basis), row.status),
                   _Cell("Yes" if row.material else "No", S_TEXT), _Cell(row.segment, S_TEXT))
     sheets = [sheet]
     if effective_layout(result.config) == "earnings":
@@ -777,10 +817,17 @@ def _earnings_sheet(table: "TableAnalysis") -> _Sheet:
     ordered = [row for row, key in zip(rows, table.metric_order, strict=True) if key in headline]
     ordered.extend(row for row, key in zip(rows, table.metric_order, strict=True) if key not in headline)
     columns = list(rows[0]) if rows else ["Line Item"]
-    sheet = _Sheet("Earnings", tuple([26] * len(columns)), freeze_header=True, autofilter=True)
-    sheet.add(*(_Cell(column, S_HEADER) for column in columns))
+    figures = {column for column in columns
+               if any(row[column].strip() for row in rows) and all(not row[column].strip() or _is_figure(row[column])
+                                                                   for row in rows)}
+    widths = tuple(float(min(30, max(12, len(column) + 2, *(len(row[column]) + 2 for row in rows))))
+                   for column in columns)
+    sheet = _Sheet("Earnings", widths, freeze_header=True, autofilter=True)
+    sheet.add(*(_Cell(column, S_HEADER_NUM if column in figures else S_HEADER) for column in columns), height=32)
     for row in ordered:
-        sheet.add(*(_Cell(row[column], S_TEXT) for column in columns))
+        sheet.add(*(_Cell(row[column], S_TEXT_RIGHT if column in figures else
+                          _OUTCOME_STYLE.get(row[column], S_TEXT) if column.endswith(" outcome") else S_TEXT)
+                    for column in columns))
     return sheet
 
 
