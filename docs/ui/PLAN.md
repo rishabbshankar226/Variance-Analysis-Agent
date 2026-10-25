@@ -10,7 +10,7 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 0 | Read, baseline, harness, before screenshots, renders, this plan, `DESIGN.md` skeleton, `CLAUDE.md` | done | `9bcf130` |
 | 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | `c978cf1` |
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
-| — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | open: waiting for the owner | |
+| — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | done: approved | (this commit) |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | todo | |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | todo | |
 | 5 | Earnings and equity views; emoji allowlist empty | todo | |
@@ -101,6 +101,17 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Copy.** Phase labels and placeholders are sentence case without ellipses; the first screen says what the file needs and what happens next; Markdown no longer leaves an empty line after each bullet.
 - **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
+## STOP 1 decisions (2026-10-24)
+
+The owner answered "do what you recommend". Read as:
+
+1. Direction approved: ink blue on warm grey, light and dark.
+2. Type: the system stack; no bundled font.
+3. Advice wording: reword in Phase 4. "Recommended Action: Focus operational reviews…", the "Action playbook" chip and the `recommendations` reply describe what the numbers show rather than what to do. This is the owner's approval of that STOP-ASK; each pinned assertion it touches is listed in the edits table with this reason.
+4. "Start over" stays as the label of the reset button; it still sends `reset`.
+
+Design hook: two file-scoped ignores recorded in `.impeccable/config.json` (excluded from git through `info/exclude`): `pulsing-dot` on `chat.html` (no status dot exists; the working indicator pulses only during a request) and `cramped-padding` on the Phase 1 mock (review evidence, never served).
 
 ## Fresh-eyes review (end of Phase 2)
 
