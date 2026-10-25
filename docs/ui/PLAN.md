@@ -13,9 +13,9 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | done: approved | (this commit) |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | `0995c16` |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | `8f30c42` |
-| 5 | Earnings and equity views; emoji allowlist empty | done | (this commit) |
-| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | todo | |
-| — | **STOP 2** | todo | |
+| 5 | Earnings and equity views; emoji allowlist empty | done | `35759be` |
+| 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | open: STOP-ASK (workbook byte hash), code uncommitted | |
+| — | **STOP 2** | open: waiting for the owner | |
 | 7 | Command line help (droppable at STOP 2) | todo | |
 | 8 | Hardening, `REPORT.md`, CHANGELOG, README screenshots | todo | |
 
@@ -110,6 +110,17 @@ Verdict: "the individual blocks are designed ... the container around them is st
 - Decided, not changed: a persistent results panel beside the conversation was the layout rejected in Phase 1 (`DESIGN.md`, Decisions) and the owner approved the one-column direction at STOP 1; raised again as an option at STOP 2. Retired chips stay as "Offered:" (T7, decided at STOP 1). The short welcome is the T6 outcome the spec asks for. A clean file skips the confirmation step by the existing flow, which Phase 3 does not change.
 - Constraint 2, not changed: no K/M scaling or dropped cents; the $0.00 what-if line is "Favorable" by the handler's rule; the net impact figure carries a tone and its direction words, with no status word, because the engine gives it none.
 - Low, left: chip rows wrapping on a phone; the sticky column clipping scrolled header text (the divider and cue mark it).
+
+## Phase 6 record (uncommitted until the STOP-ASK is answered)
+
+- **Styles** (`xlsx.py`, strings only, no openpyxl): the ink and status colours of the chat page; the header band is a light grey (`F2F1EE`) with a medium rule, the only fill in the workbook; status and outcome cells are the word in its status colour with no fill; totals are set apart by a thin rule above and a double rule below, no fill; the title and section heads lose violet; left-aligned cells get a one-step indent so a word never touches the figure before it.
+- **Meaning by colour alone, fixed:** an earnings outcome now takes its colour from the word shown (`_outcome_cell`), so an immaterial miss that reads "In line" is no longer red-filled.
+- **Alignment and widths:** numeric heads are right-aligned over right-aligned numbers (Summary, Material Variances, All Rows, Measures, Comparisons, Earnings); the Earnings sheet detects figure columns from their formatted values and sizes each column to its content (12 to 30).
+- **Print:** every sheet prints "Variance report: <period>" and the sheet name at the top and "Variance Analysis Agent" and "Page n of N" at the bottom; sheets with a frozen header repeat it on every page (`_xlnm.Print_Titles`). Titles stay out of the sheets' cells; row 1 is still the header and data still starts in row 2.
+- **Values:** `tests/xlsx_values.py` writes and reads `{sheet: {address: value}}` with openpyxl; the snapshots in `tests/fixtures/xlsx_values/` were written from the untouched code (diff against `822e522` empty for every workbook module) for the sample, a consensus earnings and a comparison-set workbook; `test_every_value_and_address_is_unchanged_by_the_redesign` passes for all three.
+- **Left as cell values (constraint 3):** the comparison-set Status cells hold "F" (the engine's value), and the Root Causes sheet's Mitigation, Optimization and Data Request text (it mirrors the contract report).
+- **Rendered and looked at:** LibreOffice to PDF, before and after, `docs/ui/evidence/phase-6/` (13 page images, all opened).
+- **Gates:** ruff and mypy pass; pytest **2097 passed, 1 failed**: `test_legacy_sample_workbook_and_report_are_byte_identical`, which pins the workbook's SHA-256. STOP-ASK in `docs/ui/evidence/stop-2/README.md`.
 
 ## Phase 5 record
 
