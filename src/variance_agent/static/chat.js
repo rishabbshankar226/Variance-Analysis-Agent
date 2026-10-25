@@ -267,6 +267,7 @@ export const ICONS = {
   help: [{ d: 'M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16z' }, { d: 'M7.75 7.75a2.25 2.25 0 1 1 3.25 2c-.6.35-1 .8-1 1.5v.5' },
     { d: 'M10 14.25v.5' }],
   restart: [{ d: 'M4 10a6 6 0 1 0 1.76-4.24' }, { d: 'M4 3v3.5h3.5' }],
+  more: [{ d: 'M8 5l5 5-5 5' }],
 };
 
 /** The two sizes an icon is drawn at, in CSS pixels. */
@@ -363,6 +364,103 @@ export function isIntakeView(view) {
     && Array.isArray(v.notes)
     && v.notes.every((n) => n && isString(n.title) && Array.isArray(n.items) && n.items.every(isString)
       && Number.isInteger(n.more) && n.more >= 0);
+}
+
+/**
+ * @typedef {Object} Figure  One headline figure; every string is formatted by the engine.
+ * @property {string} label
+ * @property {string} value
+ * @property {string | null} compare
+ * @property {string | null} change
+ * @property {string | null} status  a status word
+ * @property {'favorable' | 'unfavorable' | 'neutral' | null} tone
+ */
+
+/**
+ * @typedef {Object} FiguresView  Results, a drill-down, a scenario (chat/views.py).
+ * @property {'figures'} kind
+ * @property {string} title
+ * @property {string | null} lead
+ * @property {Array<{label: string, value: string}>} context
+ * @property {Figure[]} figures
+ * @property {Array<{title: string, rows: Array<{label: string, value: string}>}>} sections
+ * @property {string[]} notes
+ * @property {string | null} table_title
+ */
+
+/** @param {unknown} rows */
+const isPairs = (rows) => Array.isArray(rows) && rows.every((r) => r && isString(r.label) && isString(r.value));
+/** @param {unknown} value */
+const isOptString = (value) => value === null || isString(value);
+const TONE_NAMES = ['favorable', 'unfavorable', 'neutral'];
+
+/**
+ * @param {unknown} view
+ * @returns {view is FiguresView}
+ */
+export function isFiguresView(view) {
+  if (!view || typeof view !== 'object') return false;
+  const v = /** @type {Record<string, unknown>} */ (view);
+  return v.kind === 'figures' && isString(v.title) && isOptString(v.lead) && isOptString(v.table_title)
+    && isPairs(v.context)
+    && Array.isArray(v.figures) && v.figures.every((f) => f && isString(f.label) && isString(f.value)
+      && isOptString(f.compare) && isOptString(f.change) && isOptString(f.status)
+      && (f.tone === null || TONE_NAMES.includes(f.tone)))
+    && Array.isArray(v.sections) && v.sections.every((sec) => sec && isString(sec.title) && isPairs(sec.rows))
+    && Array.isArray(v.notes) && v.notes.every(isString);
+}
+
+// ── Tables ──────────────────────────────────────────────────────────────────
+
+/**
+ * Status words for the engine's status values. This mirrors `status_label` in
+ * chat/responses.py, and a test keeps the two equal. The record keeps the engine's value.
+ * @type {Record<string, string>}
+ */
+export const STATUS_WORDS = {
+  F: 'Favorable',
+  U: 'Unfavorable',
+  Neutral: 'Neutral',
+  Unclassified: 'Unclassified',
+};
+
+/** @type {Record<string, 'favorable' | 'unfavorable' | 'neutral'>} */
+const STATUS_TONES = { F: 'favorable', U: 'unfavorable', Neutral: 'neutral' };
+
+/**
+ * The word and tone a status cell shows. Values the page does not know are shown as they are.
+ * @param {string} value
+ * @returns {{word: string, tone: 'favorable' | 'unfavorable' | 'neutral' | null}}
+ */
+export function statusWord(value) {
+  return {
+    word: Object.hasOwn(STATUS_WORDS, value) ? STATUS_WORDS[value] : value,
+    tone: Object.hasOwn(STATUS_TONES, value) ? STATUS_TONES[value] : null,
+  };
+}
+
+/**
+ * The heading a column shows, in sentence case. The key stays as the server sent it.
+ * @param {string} key
+ * @returns {string}
+ */
+export function columnLabel(key) {
+  const variance = /^Var \((.+)\)$/.exec(key);
+  if (variance) return variance[1] === '%' ? 'Variance %' : 'Variance';
+  return key.split(' ').map((word, i) => (i > 0 && /^[A-Z][a-z]+$/.test(word) ? word.toLowerCase() : word)).join(' ');
+}
+
+const AMOUNT = /^[(\-\u2212+]?\s*[$\u20ac\u00a3\u00a5]?\s*\(?\d[\d,]*(\.\d+)?\)?\s*(%|bps|pts|\/sh|units?)?$/i;
+const EMPTY_CELL = new Set(['', '\u2014', '-', 'N/A']);
+
+/**
+ * Whether a column holds figures (right-aligned, sorted by value): every filled cell is an amount.
+ * @param {unknown[]} values
+ * @returns {boolean}
+ */
+export function isNumericColumn(values) {
+  const filled = values.map((v) => String(v ?? '').trim()).filter((v) => !EMPTY_CELL.has(v));
+  return filled.length > 0 && filled.every((v) => AMOUNT.test(v));
 }
 
 // ── The page ────────────────────────────────────────────────────────────────
@@ -494,14 +592,15 @@ function boot() {
 
     if (level === 'error') body.classList.add('is-error');
 
-    if (isIntakeView(view)) {
+    if (isIntakeView(view) || isFiguresView(view)) {
       if (view.lead) {
         const lead = document.createElement('div');
         lead.className = 'view-lead';
         lead.innerHTML = renderMarkdown(view.lead); // the server's own text, escaped by renderMarkdown
         body.appendChild(lead);
       }
-      body.appendChild(renderIntakePanel(view));
+      body.appendChild(isIntakeView(view) ? renderIntakePanel(view) : renderFiguresView(view));
+      body.classList.add('has-view');
     } else {
       body.innerHTML = renderMarkdown(text || '');
     }
@@ -590,6 +689,116 @@ function boot() {
     return panel;
   }
 
+  /**
+   * A text element, or nothing for an empty string.
+   * @param {string} tag
+   * @param {string} className
+   * @param {string | null} text
+   * @returns {HTMLElement | null}
+   */
+  function textEl(tag, className, text) {
+    if (!text) return null;
+    const el = document.createElement(tag);
+    el.className = className;
+    el.textContent = text;
+    return el;
+  }
+
+  /**
+   * A status word with its marker: a dot for favorable, a square for unfavorable, a ring for neutral.
+   * @param {string} word
+   * @param {string | null} tone
+   * @returns {HTMLElement}
+   */
+  function statusEl(word, tone) {
+    const el = document.createElement('span');
+    el.className = 'status' + (tone ? ` is-${tone}` : '');
+    el.textContent = word;
+    return el;
+  }
+
+  /**
+   * Results, a drill-down or a scenario: the title and context, the headline figures, the
+   * sections and notes, and the title of the table that follows. Every string is set as text.
+   * @param {FiguresView} view
+   * @returns {HTMLElement}
+   */
+  function renderFiguresView(view) {
+    const root = document.createElement('section');
+    root.className = 'figures-view';
+    root.setAttribute('aria-label', view.title);
+
+    const head = document.createElement('div');
+    head.className = 'view-head';
+    const title = document.createElement('h3');
+    title.className = 'view-title';
+    title.textContent = view.title;
+    head.appendChild(title);
+    if (view.context.length) {
+      const context = document.createElement('dl');
+      context.className = 'view-context';
+      view.context.forEach((item) => {
+        const pairEl = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = item.label;
+        const dd = document.createElement('dd');
+        dd.textContent = item.value;
+        pairEl.append(dt, dd);
+        context.appendChild(pairEl);
+      });
+      head.appendChild(context);
+    }
+    root.appendChild(head);
+
+    if (view.figures.length) {
+      const strip = document.createElement('div');
+      strip.className = 'headline';
+      view.figures.forEach((fig) => {
+        const cell = document.createElement('div');
+        cell.className = 'figure' + (fig.tone ? ` is-${fig.tone}` : '');
+        for (const el of [
+          textEl('span', 'figure-label', fig.label),
+          textEl('span', 'figure-value', fig.value),
+          textEl('span', 'figure-meta', fig.compare),
+          textEl('span', 'figure-meta', fig.change),
+        ]) if (el) cell.appendChild(el);
+        if (fig.status) cell.appendChild(statusEl(fig.status, fig.tone));
+        strip.appendChild(cell);
+      });
+      root.appendChild(strip);
+    }
+
+    view.sections.forEach((section) => {
+      const block = document.createElement('div');
+      block.className = 'view-section';
+      const heading = document.createElement('h4');
+      heading.textContent = section.title;
+      const facts = document.createElement('dl');
+      facts.className = 'facts';
+      section.rows.forEach((row) => {
+        const fact = document.createElement('div');
+        fact.className = 'fact';
+        const dt = document.createElement('dt');
+        dt.textContent = row.label;
+        const dd = document.createElement('dd');
+        dd.className = 'num';
+        dd.textContent = row.value;
+        fact.append(dt, dd);
+        facts.appendChild(fact);
+      });
+      block.append(heading, facts);
+      root.appendChild(block);
+    });
+
+    view.notes.forEach((note) => {
+      const el = textEl('p', 'view-note', note);
+      if (el) root.appendChild(el);
+    });
+    const tableTitle = textEl('h4', 'table-title', view.table_title);
+    if (tableTitle) root.appendChild(tableTitle);
+    return root;
+  }
+
   /** @param {string} text */
   function addUserMessage(text) {
     retireChips(Array.from(messagesEl.querySelectorAll('.chips:not(.is-retired)')));
@@ -627,6 +836,7 @@ function boot() {
 
   // ── Table rendering ──────────────────────────────────────
   /**
+   * The table, its filter (for long tables) and the narrow-screen cue, in one framed block.
    * @param {Array<Record<string, string>>} initialRows
    * @returns {HTMLElement}
    */
@@ -648,11 +858,13 @@ function boot() {
     let sortAsc = true;
 
     const columns = Object.keys(initialRows[0]);
+    const numeric = new Set(columns.filter((col) => col !== 'Status' && isNumericColumn(initialRows.map((r) => r[col]))));
     /** @param {string} col */
     function isNumericCol(col) {
-      return col.startsWith('Var ') || col === 'Budget' || col === 'Actual' || col === 'Status' ||
-        col.includes('Impact') || col.includes('Profit') || col.includes('Cumulative');
+      return numeric.has(col);
     }
+    // Bars go under the first currency variance column only, scaled to that column.
+    const barCol = columns.find((col) => /^Var \((?!%)/.test(col) || col.includes('Impact')) || null;
 
     // Toolbar: quick filter search & row count indicator
     let filterQuery = '';
@@ -677,7 +889,9 @@ function boot() {
 
     toolbar.appendChild(search);
     toolbar.appendChild(countSpan);
-    wrapper.appendChild(toolbar);
+    const block = document.createElement('div');
+    block.className = 'table-block';
+    if (initialRows.length > 8) block.appendChild(toolbar); // a short table needs no filter
 
     // Header
     const thead = document.createElement('thead');
@@ -696,7 +910,7 @@ function boot() {
       button.title = 'Click to sort';
 
       const labelSpan = document.createElement('span');
-      labelSpan.textContent = col;
+      labelSpan.textContent = columnLabel(col);
       button.appendChild(labelSpan);
 
       const iconSpan = document.createElement('span');
@@ -711,7 +925,7 @@ function boot() {
           sortAsc = !sortAsc;
         } else {
           sortCol = col;
-          sortAsc = isNumericCol(col) && col !== 'Status' ? false : true;
+          sortAsc = !isNumericCol(col);
         }
 
         columns.forEach((c) => {
@@ -745,7 +959,7 @@ function boot() {
         filtered.sort((a, b) => {
           const valA = a[column] || '';
           const valB = b[column] || '';
-          if (isNumericCol(column) && column !== 'Status') {
+          if (isNumericCol(column)) {
             const numA = parseNumericVal(valA);
             const numB = parseNumericVal(valB);
             return sortAsc ? numA - numB : numB - numA;
@@ -776,30 +990,23 @@ function boot() {
       tbody.textContent = '';
 
       let maxVar = 0;
-      currentRows.forEach((row) => {
-        columns.forEach((col) => {
-          if (col.startsWith('Var ') || col.includes('Impact')) {
-            const v = Math.abs(parseNumericVal(row[col]));
-            if (v > maxVar) maxVar = v;
-          }
+      if (barCol) {
+        currentRows.forEach((row) => {
+          maxVar = Math.max(maxVar, Math.abs(parseNumericVal(row[barCol])));
         });
-      });
+      }
 
       currentRows.forEach((row) => {
         const tr = document.createElement('tr');
         const status = row['Status'] || '';
-        if (status === 'F') tr.className = 'row-favorable';
-        else if (status === 'U') tr.className = 'row-unfavorable';
-        else if (status === 'Neutral') tr.className = 'row-neutral';
 
         columns.forEach((col) => {
           const td = document.createElement('td');
           const val = row[col] || '';
           if (isNumericCol(col)) td.className = 'num';
           if (col === 'Status') {
-            td.textContent = val;
-            if (val === 'F') td.className += ' status-f';
-            else if (val === 'U') td.className += ' status-u';
+            const shown = statusWord(plainText(val));
+            td.appendChild(statusEl(shown.word, shown.tone));
           } else if (col === 'Line Item') {
             const name = plainText(val);
             const link = document.createElement('button');
@@ -812,7 +1019,7 @@ function boot() {
               sendText(question);
             });
             td.appendChild(link);
-          } else if (col.startsWith('Var ') || col.includes('Impact')) {
+          } else if (col === barCol) {
             const numVal = parseNumericVal(val);
             const absVal = Math.abs(numVal);
             const pct = maxVar > 0 ? Math.min(100, Math.round((absVal / maxVar) * 100)) : 0;
@@ -822,7 +1029,7 @@ function boot() {
 
             const valSpan = document.createElement('span');
             valSpan.className = 'variance-val';
-            valSpan.textContent = val;
+            valSpan.textContent = plainText(val);
             cellWrapper.appendChild(valSpan);
 
             if (maxVar > 0 && absVal > 0) {
@@ -830,10 +1037,9 @@ function boot() {
               barTrack.className = 'variance-bar-track';
               barTrack.setAttribute('aria-hidden', 'true');
               const barFill = document.createElement('div');
-              const isFav = status === 'F' || (status !== 'U' && numVal > 0);
-              const isUnfav = status === 'U' || (status !== 'F' && numVal < 0);
+              const tone = statusWord(status).tone;
               barFill.className = 'variance-bar-fill ' +
-                (isFav ? 'bar-favorable' : (isUnfav ? 'bar-unfavorable' : 'bar-neutral'));
+                (tone === 'favorable' ? 'bar-favorable' : tone === 'unfavorable' ? 'bar-unfavorable' : 'bar-neutral');
               barFill.style.width = Math.max(5, pct) + '%'; // CSSOM, which a strict CSP allows
               barTrack.appendChild(barFill);
               cellWrapper.appendChild(barTrack);
@@ -852,7 +1058,24 @@ function boot() {
     table.appendChild(tbody);
 
     wrapper.appendChild(table);
-    return wrapper;
+    const scroller = wrapper;
+
+    // On a narrow screen the first column stays put and a cue says more columns exist (T8).
+    const cue = document.createElement('div');
+    cue.className = 'table-cue';
+    cue.setAttribute('aria-hidden', 'true');
+    cue.appendChild(document.createTextNode('More columns'));
+    cue.appendChild(createIcon('more', 16));
+    block.append(wrapper, cue);
+    const updateCue = () => {
+      const overflow = scroller.scrollWidth > scroller.clientWidth + 1;
+      const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
+      block.classList.toggle('has-more', overflow && !atEnd);
+    };
+    scroller.addEventListener('scroll', updateCue, { passive: true });
+    window.addEventListener('resize', updateCue);
+    requestAnimationFrame(updateCue);
+    return block;
   }
 
   // ── Drop zone ────────────────────────────────────────────

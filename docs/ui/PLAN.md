@@ -11,8 +11,8 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | `c978cf1` |
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
 | — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | done: approved | (this commit) |
-| 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | (this commit) |
-| 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | todo | |
+| 3 | Intake panel (sibling of `format_intake_summary` returning rows) | done | `0995c16` |
+| 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | done | (this commit) |
 | 5 | Earnings and equity views; emoji allowlist empty | todo | |
 | 6 | Workbook styles (raw SpreadsheetML), openpyxl value-equality test | todo | |
 | — | **STOP 2** | todo | |
@@ -102,6 +102,20 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
 
+## Phase 4 record
+
+- **Figures view.** `view` kind "figures" (shape in `chat/views.py`): title, context pairs, headline figures (label, value, compare, change, status word, tone), sections of label/value rows, notes, and the title of the table that follows. Built from the same engine objects and formatters as the text, in `_build_analysis_summary` (results and summary), `_handle_explain` (drill-down), `_handle_driver_summary`, `_handle_biggest_risks` (which now also returns its three rows as a table) and `_handle_what_if`. The text is unchanged apart from glyphs and the advice wording below; every figure in a view is also in the text (tested).
+- **Layout.** One column; a result is not a card: title and a context line, the headline strip between hairlines (three or four figures, 28 px values, comparison and change in 12 px, status as a word with a shape), then the material variances in a framed table. On a phone the strip stacks one figure per row.
+- **Tables (every reply with a table).** Status cells are words from `STATUS_WORDS` (mirrors `status_label`, tested) with a dot (favorable), square (unfavorable) or ring (neutral); numeric columns are detected from their values and right-aligned; heads are sentence case (`columnLabel`; keys unchanged); bars sit under the currency variance column only, scaled to it; the filter shows only above 8 rows; sort icons show on hover, focus or when sorted. On a narrow screen the first column is sticky and a "More columns" cue shows until the right edge.
+- **T8 check.** `docs/ui/evidence/phone_tables.py`: at 375 px every table on the results, drivers, risks, what-if and waterfall replies either fits or shows its cue (output: 5 tables, all "cue visible", PASS); both scroll extremes shot in `phase-4/phone/`.
+- **T12.** `phase-4/phone/print_results.pdf`, rendered and read: five pages, controls and chips dropped, headline strip and tables in black on white, markers still differ by shape.
+- **T1 done for `chat/`.** Every glyph left `handlers.py` and `knowledge.py`; drivers cells read "Reconciled", "Not reconciled", "No driver data". `NOT_YET_CONVERTED` is empty.
+- **Advice (STOP 1 answer 3).** Reworded as description: the risks "Recommended Action" line, the "Action playbook" chip (now "Drivers"; the phrase still routes), the playbook text, and the wins, concentration, unbudgeted-spend, savings and misses notes. Kept: the `recommendations` reply, because it mirrors the "Strategic Recommendations" section of the Markdown report, which is contract (constraint 3); rewording one without the other would make chat and report disagree. Listed for the owner in `REPORT.md`.
+- **Not changed (constraint 2).** Whole-dollar amounts keep ".00" and large values are not scaled to K/M: figures render as the engine formats them. The what-if table marks a $0.00 change "Favorable" because the handler's rule says so; presentation shows it as given.
+- **Counting rules.** The radius count treats `50%` (a circle, the status marker) as a shape, not a corner radius. Type sizes in use: 12, 13, 14, 16, 20, 28 px (six, the ceiling).
+- **Screenshots.** `docs/ui/evidence/phase-4/`: 86 JPEGs (sample, PDF and unclassified flows × light and dark × 1280 and 375 px) plus 10 phone table extremes, every one opened. Fixed before the commit: the drill-down's figures wrapped mid-number (a width rule lost on specificity), variance values sat above the row baseline, and on a phone the driver rows stacked value over label.
+- **Gates** (`gates.sh dist`): ruff, mypy (63 files), **2090 passed in 35.92s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
 ## Phase 3 record
 
 - **The `view` field.** `Response.view: dict | None`, passed through `/message`, `/upload` and `/status` (`initial_response.view`). The page draws a view it recognises (`isIntakeView`) and otherwise the text, which still carries every fact. Builders live in the new `chat/views.py`, so `handlers.py` only calls them. `with_lead` puts a sentence (the first-upload welcome, "Switched to worksheet", "Now comparing Actual against") before both the text and the view.
@@ -169,7 +183,9 @@ Edited in Phase 2:
 | `test_chat.py:1454` | Help contains "Available Commands & Intelligence" | Help contains "What you can ask" | presentation (heading wording) |
 | `test_frontend_contract.py:303-304` | fallback labels "New Step", "Exploring"; placeholder "Type a message..." | "New step", "Results"; "Type a message" | presentation (sentence case) |
 
-Totals so far: 12 `level` migrations, 3 presentation edits, 2 assertions extended to both themes, 0 assertions that pin meaning edited otherwise. New tests: `tests/test_chat_reply_shape.py` (5, the JSON shape across `/message`, `/upload`, `/status`) and 7 Phase 2 cases in `tests/test_interface_design.py`.
+Edited in Phase 4: `test_chat.py:1078` waterfall cell `"🏁 Actual Operating Profit"` → `"Actual Operating Profit"` (presentation, T1); `test_interface_design.py` size pin now includes 20 and 28 px (own test, the sizes came into use).
+
+Totals so far: 12 `level` migrations, 4 presentation edits, 2 assertions extended to both themes, 0 assertions that pin meaning edited otherwise. New tests: `tests/test_chat_reply_shape.py` (5, the JSON shape across `/message`, `/upload`, `/status`) and 7 Phase 2 cases in `tests/test_interface_design.py`.
 
 ## Decisions
 

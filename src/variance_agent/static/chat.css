@@ -292,6 +292,36 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .panel-question { margin-top: var(--space-4); font-weight: var(--weight-medium); }
 
+/* ── A figures view: results, a drill-down, a scenario ───── */
+/* Not a card: the title, a context line, the headline strip between rules, then the table. */
+.message.agent .message-body.has-view { max-width: none; }
+.figures-view { display: grid; gap: var(--space-4); }
+.view-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-6); }
+.view-title { font-size: var(--text-title); font-weight: var(--weight-strong); line-height: 1.25; letter-spacing: -0.01em; }
+.view-context { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-6); font-size: var(--text-meta); }
+.view-context div { display: flex; gap: var(--space-2); }
+.view-context dt { color: var(--text-muted); }
+.view-context dd { color: var(--text-secondary); }
+
+.headline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.figure { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-4) var(--space-6) var(--space-4) 0; }
+.figure + .figure { padding-left: var(--space-6); border-left: 1px solid var(--border); }
+.figure-label { color: var(--text-secondary); font-weight: var(--weight-medium); }
+.figure-value { font-size: var(--text-figure); font-weight: var(--weight-strong); line-height: 1.15; letter-spacing: -0.02em; white-space: nowrap; }
+.figure-meta { font-size: var(--text-meta); color: var(--text-muted); }
+.figure .status { margin-top: var(--space-1); }
+
+.view-section h4, .table-title { font-size: var(--text-body); font-weight: var(--weight-strong); }
+.view-section .facts { max-width: 48ch; grid-template-columns: 1fr max-content; margin-top: var(--space-2); }
+.view-note { color: var(--text-secondary); max-width: 72ch; }
+.table-title { margin-bottom: calc(-1 * var(--space-1)); }
+.figures-view + .table-block { margin-top: var(--space-3); }
+
 /* ── Working indicator ────────────────────────────────────── */
 /* Nothing for 100 ms, then the dots and a line saying what is happening, and after a second a
    flat skeleton where the reply will go (chat.js sets .is-long). */
@@ -334,13 +364,45 @@ button, input, textarea { font: inherit; color: inherit; }
 .skeleton div:nth-child(3) { width: 40%; opacity: 0.6; }
 
 /* ── Tables ───────────────────────────────────────────────── */
-.data-table-wrapper {
+.table-block {
+  position: relative;
   margin-top: var(--space-3);
-  overflow-x: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
+  overflow: hidden;
 }
+.data-table-wrapper { overflow-x: auto; }
+
+/* The first column stays in view while the rest scroll; a cue says more columns exist. */
+.data-table th:first-child,
+.data-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+}
+.table-block.has-more .data-table th:first-child::after,
+.table-block.has-more .data-table td:first-child::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+}
+.table-cue {
+  display: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-meta);
+  color: var(--text-muted);
+}
+.table-block.has-more .table-cue { display: flex; }
 
 .data-table {
   width: 100%;
@@ -366,11 +428,28 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover td { background: var(--bg-surface); }
+.data-table td.num, .data-table th.num { text-align: right; }
+
+/* A status is a word with a marker shape, never a colour alone (T9). */
+.status { font-weight: var(--weight-medium); white-space: nowrap; }
+.status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-2);
+  vertical-align: 1px;
+  border: 1px solid currentColor;
+}
+.status.is-favorable { color: var(--green); }
+.status.is-favorable::before { background: currentColor; border-radius: 50%; }
+.status.is-unfavorable { color: var(--red-text); }
+.status.is-unfavorable::before { background: currentColor; }
+.status.is-neutral { color: var(--text-secondary); }
+.status.is-neutral::before { border-radius: 50%; }
 
 .data-table .num { text-align: right; }
 
-.data-table .status-f { color: var(--green); font-weight: var(--weight-medium); }
-.data-table .status-u { color: var(--red-text); font-weight: var(--weight-medium); }
 
 .data-table th .th-btn {
   display: inline-flex;
@@ -386,8 +465,11 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .data-table th.num .th-btn { flex-direction: row-reverse; }
 .data-table th.sortable:hover { color: var(--text-primary); }
-.data-table th .sort-icon { display: inline-flex; color: var(--text-muted); }
-.data-table th .sort-icon .icon { opacity: 0.5; }
+.data-table th .sort-icon { display: inline-flex; color: var(--text-muted); visibility: hidden; }
+.data-table th:hover .sort-icon,
+.data-table th .th-btn:focus-visible .sort-icon,
+.data-table th.sorted-asc .sort-icon,
+.data-table th.sorted-desc .sort-icon { visibility: visible; }
 .data-table th.sorted-asc .sort-icon .icon,
 .data-table th.sorted-desc .sort-icon .icon { opacity: 1; }
 .data-table th.sorted-asc,
@@ -404,14 +486,17 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .data-table .item-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
+/* The bar hangs under the figure, so the figure keeps the row's baseline. */
 .variance-cell {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-1);
+  position: relative;
+  display: inline-block;
   width: 100%;
+  text-align: right;
 }
 .variance-bar-track {
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--space-2));
   width: 100%;
   min-width: 48px;
   max-width: 72px;
@@ -657,7 +742,8 @@ body.is-busy .drop-zone {
 /* Windows high-contrast and other forced palettes: keep every edge and state visible. */
 @media (forced-colors: active) {
   .chip, .header-action-btn, .download-btn, .send-btn, .table-search, .drop-zone { border: 1px solid ButtonText; }
-  .message.user .message-body, .data-table-wrapper { border: 1px solid CanvasText; }
+  .message.user .message-body, .table-block { border: 1px solid CanvasText; }
+  .status::before { forced-color-adjust: none; border-color: CanvasText; }
   .message-body.is-error { border-left: 2px solid Highlight; }
   .panel { border: 1px solid CanvasText; }
   .skeleton div { background: GrayText; }
@@ -673,7 +759,14 @@ body.is-busy .drop-zone {
   .messages { overflow: visible; height: auto; padding: var(--space-4) 0; display: block; }
   .message { animation: none; break-inside: avoid-page; margin-bottom: var(--space-4); }
   .message.user .message-body { max-height: none; overflow: visible; }
-  .data-table-wrapper { overflow: visible; border-color: #000000; }
+  .table-block { overflow: visible; border-color: #000000; }
+  .data-table-wrapper { overflow: visible; }
+  .table-cue { display: none !important; }
+  .data-table th:first-child, .data-table td:first-child { position: static; }
+  .headline { border-color: #000000; }
+  .figure + .figure { border-color: #000000; }
+  .status, .status.is-favorable, .status.is-unfavorable { color: #000000; }
+  .figure-value { font-size: var(--text-title); }
   .data-table th { color: #000000; }
   .data-table tr { break-inside: avoid; }
   .data-table .item-link { color: #000000; }
@@ -683,9 +776,13 @@ body.is-busy .drop-zone {
 @media (max-width: 640px) {
   .header { padding: var(--space-2) var(--space-4); gap: var(--space-2); }
   .panel { padding: var(--space-3) var(--space-4); }
-  .facts { grid-template-columns: 1fr; }
-  .fact dt { padding-bottom: 0; }
-  .fact dd { border-top: 0; padding-top: 0; }
+  .headline { grid-template-columns: 1fr; }
+  .figure, .figure + .figure { padding: var(--space-3) 0; border-left: 0; }
+  .figure + .figure { border-top: 1px solid var(--border); }
+  .figure-value { font-size: var(--text-title); }
+  .intake-panel .facts { grid-template-columns: 1fr; }
+  .intake-panel .fact dt { padding-bottom: 0; }
+  .intake-panel .fact dd { border-top: 0; padding-top: 0; }
   .messages { padding: var(--space-4); gap: var(--space-4); }
   .input-bar { padding: var(--space-2) var(--space-4) var(--space-3); }
   .drop-zone { padding: var(--space-6) var(--space-4); }

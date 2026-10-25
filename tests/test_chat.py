@@ -1075,7 +1075,7 @@ def test_waterfall_bridge_analysis() -> None:
     table = resp.table
     assert table[0]["Line Item"] == "1. Budget Operating Profit"
     assert table[0]["Type"] == "Baseline"
-    assert table[-1]["Line Item"] == "🏁 Actual Operating Profit"
+    assert table[-1]["Line Item"] == "Actual Operating Profit"
     assert table[-1]["Type"] == "Summary"
 
     # Verify table columns include Profit Impact

@@ -203,3 +203,63 @@ def test_every_intake_reply_is_plain_language(name: str) -> None:
         for text in _view_strings(each.view):
             assert_plain_language(text)
         assert banned_glyphs(each.text) == [], (name, banned_glyphs(each.text))
+
+
+# ---------------------------------------------------------------------------
+# The figures view (`view` kind "figures"): results, a drill-down, drivers, risks, a scenario
+# ---------------------------------------------------------------------------
+
+FIGURES_KEYS = {"kind", "title", "lead", "context", "figures", "sections", "notes", "table_title"}
+FIGURE_KEYS = {"label", "value", "compare", "change", "status", "tone"}
+
+
+def _assert_figures_shape(view: dict[str, Any]) -> None:
+    view = json.loads(json.dumps(view))
+    assert set(view) == FIGURES_KEYS and view["kind"] == "figures" and isinstance(view["title"], str)
+    assert all(set(f) == FIGURE_KEYS and isinstance(f["value"], str) for f in view["figures"])
+    assert all(f["tone"] in {None, "favorable", "unfavorable", "neutral"} for f in view["figures"])
+    assert all(set(p) == {"label", "value"} for p in view["context"])
+    assert all(set(s) == {"title", "rows"} for s in view["sections"])
+    assert all(isinstance(n, str) for n in view["notes"])
+
+
+def test_the_results_view_carries_the_same_figures_as_the_text() -> None:
+    from tests.chat_helpers import analysed
+    session = analysed()
+    reply = handle_message(session, "summary")
+    assert reply.view is not None and reply.table is not None
+    _assert_figures_shape(reply.view)
+    assert reply.view["title"] == "Q3 2026 against budget"
+    figures = {f["label"]: f for f in reply.view["figures"]}  # type: ignore[index, union-attr]
+    assert list(figures) == ["Revenue", "Expenses", "Net operating impact"]
+    for f in figures.values():
+        assert f["value"] in reply.text
+        for part in (f["compare"] or "", f["change"] or ""):
+            for piece in part.replace("Budget ", "").split(", "):
+                assert piece.lower() in reply.text.lower(), piece
+    assert figures["Revenue"]["status"] in {"Favorable", "Unfavorable", "Neutral"}
+    assert reply.view["table_title"] == f"{len(reply.table)} material variance{'s' if len(reply.table) != 1 else ''}"
+    assert "Analysis Complete" in reply.text and "✅" not in reply.text
+
+
+def test_drill_down_drivers_risks_and_scenarios_have_views() -> None:
+    from tests.chat_helpers import analysed
+    session = analysed()
+    for ask, title in (("why marketing", "Driver evidence: Marketing"), ("drivers", "Driver data"),
+                       ("biggest risks", "Top financial risks"), ("what if marketing is 10% lower", "Scenario: Marketing")):
+        reply = handle_message(session, ask)
+        assert reply.view is not None, ask
+        _assert_figures_shape(reply.view)
+        assert str(reply.view["title"]).startswith(title), (ask, reply.view["title"])
+        for text in _view_strings(reply.view):
+            assert_plain_language(text)
+        assert banned_glyphs(reply.text) == [], ask
+
+
+def test_risks_describe_and_do_not_advise() -> None:
+    from tests.chat_helpers import analysed
+    reply = handle_message(analysed(), "biggest risks")
+    for phrase in ("Recommended Action", "Focus operational reviews", "Action playbook"):
+        assert phrase not in reply.text and phrase not in (reply.chips or [])
+    assert "Top Financial Risks" in reply.text
+    assert reply.table is not None and all(row["Status"] == "U" for row in reply.table)

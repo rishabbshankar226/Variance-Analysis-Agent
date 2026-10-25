@@ -1,6 +1,6 @@
 # Variance Analysis Agent: interface design
 
-Status: Phase 3. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
+Status: Phase 4. The tokens below are in `src/variance_agent/static/chat.css`; `tests/test_interface_design.py` holds what a test can hold. Each decision names the alternative it rejected.
 
 ## Direction
 
@@ -70,9 +70,9 @@ Favorable and unfavorable differ in lightness as well as hue (contrast between t
 | Chips | Bordered 4 px buttons in body text; earlier turns' chips are disabled, announced as no longer available, and set as small muted text | — |
 | Input bar | Bordered box, filled ink-blue Send | — |
 | Intake panel | A bordered panel, 72 ch wide: title, one hairline row per fact (label left in secondary text, the file's words right), notes under a stronger rule, the question last; stacked on a phone | — |
-| Headline strip | — | Phase 4: three or four figures, label above, value at 28 px, comparison and variance at 12 px, status as a word |
-| Results table | Framed panel, hairline rows 40 px, 12 px heads, right-aligned tabular numbers, drawn sort icons | Phase 4: `view` field, sentence-case heads, status words, phone layout, totals rule |
-| Drill-down, driver breakdown | Markdown | Phase 4 |
+| Headline strip | Three or four figures between hairlines: label, 28 px value, comparison and change at 12 px, status word with its shape; one per row on a phone | — |
+| Results table | Framed, hairline rows 40 px, sentence-case 12 px heads, numeric columns right-aligned by value, status words, bars on the variance column only, sticky first column and cue on a phone | Phase 5: comparison sets as column groups |
+| Drill-down, driver breakdown | Figures view: budget, actual, variance; the decomposition as label/value rows; the evidence status as a sentence | — |
 | Earnings table | Same frame | Phase 5: column groups under spanning heads |
 | Error | Attention-coloured rule beside the text, from `level: "error"` | — |
 | Loading | Nothing under 100 ms; then three squares pulsing in opacity and a line saying what is happening; after a second a flat three-bar skeleton | — |
@@ -110,7 +110,9 @@ None. `•` (U+2022) in Markdown bullets and `…` (U+2026) in previews are punc
 | Agent replies | Plain text, no bubble | A bubble around every reply: the chat-app default, and it puts a card around the result table. |
 | Sender labels | Announced to screen readers, not shown | Uppercase "AGENT" / "YOU" eyebrows: a generated tell; position and tint already say who spoke. |
 | Icons | One drawn set, 20-unit grid, 1.5 px non-scaling stroke, drawn at 16 and 20 px | Emoji and arrows: render differently on every system (T1). An icon font: a new asset and a remote-looking dependency. |
-| Status marker shapes | (Phase 4) a dot for favorable, a square for unfavorable, beside the word | Colour alone (T9). |
+| Status marker shapes | A dot for favorable, a square for unfavorable, a ring for neutral, beside the word | Colour alone (T9). Icons per status: heavier than the word needs. |
+| Phone table | Sticky first column, horizontal scroll, a "More columns" cue until the right edge | Cards per row: loses the column comparison that is the point of the table. A gradient fade: gradients are out (T2). |
+| Chart | None | The budget-to-actual bridge: the waterfall reply already lists each step in a table, and a chart would add a second rendering of the same numbers without answering anything the table does not. |
 | Phone header | Name and icon buttons on one row, the step on a thin second row | Shortening the name to fit one row: the product's name is not this run's to change, and tests and the page title use it. Hiding the step: the tests forbid it and it is the only progress cue. |
 | Old chips | Kept, disabled, announced and muted | Removed: a reply can say "choose a preset below", and a removed chip leaves that sentence pointing at nothing. Left live: a click on an old "USD" sent it again in whatever step was current. |
 | Error marker | A rule in the attention colour, from a `level` field | A warning sign in the text: renders differently everywhere and is not a contract. A red tint: red means unfavorable here. |
@@ -120,15 +122,15 @@ None. `•` (U+2022) in Markdown bullets and `…` (U+2026) in previews are punc
 
 | # | Tell | Status | Proof |
 |---|---|---|---|
-| T1 | Emoji as icons | done for `static/`; reply text in `handlers.py` (results, drivers, risks, what-if) and `knowledge.py` still carries glyphs: Phases 4 and 5 | P (`test_no_emoji_arrows_or_dingbats_in_the_page`, `test_reply_text_built_by_chat_has_no_glyphs`) |
+| T1 | Emoji as icons | done: no glyph in `static/` or `chat/` | P (`test_no_emoji_arrows_or_dingbats_in_the_page`, `test_reply_text_built_by_chat_has_no_glyphs`) |
 | T2 | Violet, gradients, glow | done for the stylesheet; accent reach to be read at STOP 1 | P (`test_no_gradient_glow_or_text_shadow`, theme tests) + S |
 | T3 | Type without a scale | done: 4 sizes and 3 weights in use, tabular figures, mono on code only | P |
 | T4 | Spacing and shape by feel | done for the stylesheet: 4 px scale, 2 radii, 1 overlay shadow | P + S |
-| T5 | Result as a chat bubble | todo (Phase 4) | P + S |
+| T5 | Result as a chat bubble | done: results, drill-down, drivers, risks and what-if render from `view` | P (`test_the_results_view_carries_the_same_figures_as_the_text`) + S |
 | T6 | Capability essay | done | P (`test_first_upload_opens_with_a_short_welcome_and_help_holds_the_capabilities`) + S |
 | T7 | Old chips left live | done | P (`test_only_the_latest_turns_chips_respond`) + S |
-| T8 | Phone table | todo (Phase 4) | S |
-| T9 | Status by colour alone | todo (Phase 4) | P |
+| T8 | Phone table | done: sticky first column and a cue | S (`phone_tables.py`) |
+| T9 | Status by colour alone | done: a word and a shape | P (`test_status_words_mirror_the_servers_map`, `test_status_cells_show_a_word_and_a_shape`) |
 | T10 | Decorative motion | done: 150 ms fade, 1.2 s opacity loader, reduced motion stops both | P |
 | T11 | Emoji brand | done | P (`test_the_header_has_a_drawn_mark_a_wordmark_and_a_matching_favicon`) + S |
-| T12 | Screen-only design | print block in place; results on paper in Phase 4 | P + S |
+| T12 | Screen-only design | done: print stylesheet, results printed and read | P + S |

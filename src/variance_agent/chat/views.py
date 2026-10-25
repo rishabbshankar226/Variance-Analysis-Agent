@@ -73,3 +73,42 @@ def with_lead(response: Response, lead: str) -> Response:
         earlier = view.get("lead")
         view = {**view, "lead": lead.strip() + (f"\n\n{earlier}" if isinstance(earlier, str) and earlier else "")}
     return replace(response, text=lead + response.text, view=view)
+
+
+# ---------------------------------------------------------------------------
+# Figures: results, a drill-down, a scenario, the driver overview, the risks
+# ---------------------------------------------------------------------------
+#
+# Shape of a figures view (`kind` "figures"):
+#     {"kind": "figures", "title": str, "lead": str | None,
+#      "context": [{"label": str, "value": str}],
+#      "figures": [{"label": str, "value": str, "compare": str | None, "change": str | None,
+#                   "status": str | None, "tone": "favorable" | "unfavorable" | "neutral" | None}],
+#      "sections": [{"title": str, "rows": [{"label": str, "value": str}]}],
+#      "notes": [str],
+#      "table_title": str | None}
+# Every string is already formatted by the engine's formatters; the page only places it.
+
+TONES = {"Favorable": "favorable", "Unfavorable": "unfavorable", "Neutral": "neutral"}
+
+
+def pair(label: str, value: str) -> dict[str, str]:
+    return {"label": label, "value": value}
+
+
+def figure(label: str, value: str, compare: str | None = None, change: str | None = None,
+           status: str | None = None, tone: str | None = None) -> dict[str, object]:
+    """One headline figure. `status` is a status word; its tone follows it unless given."""
+    return {"label": label, "value": value, "compare": compare, "change": change,
+            "status": status, "tone": tone if tone is not None else TONES.get(status or "")}
+
+
+def figures_view(title: str, *, context: Sequence[dict[str, str]] = (), figures: Sequence[dict[str, object]] = (),
+                 sections: Sequence[tuple[str, Sequence[dict[str, str]]]] = (), notes: Sequence[str] = (),
+                 table_title: str | None = None, lead: str | None = None) -> dict[str, object]:
+    return {
+        "kind": "figures", "title": title, "lead": lead,
+        "context": list(context), "figures": list(figures),
+        "sections": [{"title": t, "rows": list(rows)} for t, rows in sections],
+        "notes": list(notes), "table_title": table_title,
+    }

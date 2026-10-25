@@ -7,6 +7,7 @@ and checked against the ceiling, and the counter itself is checked one step eith
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -37,7 +38,7 @@ _BANNED = (
     (0x3030, 0x3030), (0x303D, 0x303D), (0xFE0F, 0xFE0F), (0x1F000, 0x1FAFF),
 )
 # chat/ modules whose reply text still carries glyphs; each phase removes the files it converts.
-NOT_YET_CONVERTED = {"handlers.py", "knowledge.py"}
+NOT_YET_CONVERTED: set[str] = set()
 
 
 def banned_glyphs(text: str) -> list[str]:
@@ -140,7 +141,7 @@ def test_the_size_ceiling_is_six(sizes: int, within: bool) -> None:
 
 def test_at_most_six_font_sizes_and_three_weights() -> None:
     sizes, weights = declared("font-size"), declared("font-weight")
-    assert sizes == {"12px", "13px", "14px", "16px"} and len(sizes) <= 6, sizes
+    assert sizes == {"12px", "13px", "14px", "16px", "20px", "28px"} and len(sizes) <= 6, sizes
     assert weights == {"400", "500", "600"} and len(weights) <= 3, weights
 
 
@@ -157,7 +158,7 @@ def test_figures_are_tabular_and_monospace_is_for_code_only() -> None:
 # ---------------------------------------------------------------------------
 
 def test_at_most_two_radii_and_one_overlay_shadow() -> None:
-    radii = declared("border-radius")
+    radii = declared("border-radius") - {"50%"}  # 50% draws a circle (a status marker), not a rounded corner
     assert radii == {"4px", "8px"} and len(radii) <= 2, radii
     shadows = declared("box-shadow")
     assert len(shadows) <= 1 and all(re.fullmatch(r"0 4px 16px #[0-9a-f]{8}", s) for s in shadows), shadows
@@ -259,7 +260,7 @@ def test_every_static_file_is_allowlisted_and_nothing_else_ships() -> None:
 def test_icons_are_one_set_at_two_sizes(run_js: Callable[[str], object]) -> None:  # noqa: F811
     assert run_js("return m.ICON_SIZES;") == [16, 20]
     names = run_js("return Object.keys(m.ICONS).sort();")
-    assert names == ["download", "help", "mark", "restart", "search", "sort", "sort-asc", "sort-desc", "upload"]
+    assert names == ["download", "help", "mark", "more", "restart", "search", "sort", "sort-asc", "sort-desc", "upload"]
     assert run_js("return m.iconParts('sort', 16).length;") == 2
     assert run_js("return m.ICONS.mark.filter((p) => p.fill).length;") == 1
     for bad in ("m.iconParts('emoji', 16)", "m.iconParts('sort', 24)"):
@@ -392,3 +393,80 @@ def test_the_intake_panel_sets_file_labels_as_text() -> None:
         assert f"textContent = {field}" in panel, field
     # The lead is the server's own Markdown and goes through the escaping renderer.
     assert "lead.innerHTML = renderMarkdown(view.lead)" in script
+
+
+# ---------------------------------------------------------------------------
+# The results view and its tables (Phase 4: T5, T8, T9)
+# ---------------------------------------------------------------------------
+
+def test_status_words_mirror_the_servers_map(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    from variance_agent.chat.responses import status_label
+    from variance_agent.models import Status
+    assert run_js("return m.STATUS_WORDS;") == {str(s): status_label(s) for s in Status}
+    shown = run_js("return ['F', 'U', 'Neutral', 'Unclassified', 'Beat'].map(m.statusWord);")
+    assert shown == [{"word": "Favorable", "tone": "favorable"}, {"word": "Unfavorable", "tone": "unfavorable"},
+                     {"word": "Neutral", "tone": "neutral"}, {"word": "Unclassified", "tone": None},
+                     {"word": "Beat", "tone": None}]
+
+
+def test_status_cells_show_a_word_and_a_shape() -> None:
+    script = _script()
+    assert "const shown = statusWord(plainText(val));" in script
+    assert "td.appendChild(statusEl(shown.word, shown.tone));" in script
+    markers = {sel: decl for sel, decl in _rules(css()) if sel.startswith(".status.is-")}
+    assert "border-radius: 50%" in markers[".status.is-favorable::before"]
+    assert "border-radius" not in markers[".status.is-unfavorable::before"]  # a square
+
+
+def test_column_heads_are_sentence_case(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    keys = ["Line Item", "Type", "Budget", "Var ($)", "Var (\u20ac)", "Var (%)", "Prior Period (FY2025)",
+            "Delta vs Baseline", "Consensus % / bps", "Driver Components", "EPS"]
+    assert run_js(f"return {json.dumps(keys)}.map(m.columnLabel);") == [
+        "Line item", "Type", "Budget", "Variance", "Variance", "Variance %", "Prior period (FY2025)",
+        "Delta vs baseline", "Consensus % / bps", "Driver components", "EPS"]
+
+
+def test_figure_columns_are_found_from_their_values(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    cases = {
+        "money": (["$100,000.00", "-$3,000.00", "$(1,234.50)"], True),
+        "units": (["40.6%", "-60 bps", "$0.91/sh", "46,500 units", "+2.0 pts"], True),
+        "with gaps": (["$15,500.00", "\u2014", ""], True),
+        "words": (["Revenue", "Expense"], False),
+        "status": (["F", "U"], False),
+        "empty": (["", "\u2014"], False),
+        "mixed": (["$5.00", "volume / price"], False),
+    }
+    for name, (values, expected) in cases.items():
+        assert run_js(f"return m.isNumericColumn({json.dumps(values)});") is expected, name
+
+
+def test_the_page_draws_only_figures_views_it_understands(run_js: Callable[[str], object]) -> None:  # noqa: F811
+    good = ('{kind: "figures", title: "Q3 2026 against budget", lead: null, table_title: "4 material variances",'
+            ' context: [{label: "Currency", value: "USD"}],'
+            ' figures: [{label: "Revenue", value: "$1.00", compare: null, change: null, status: "Favorable", tone: "favorable"}],'
+            ' sections: [], notes: ["x"]}')
+    cases = run_js(
+        f"const good = {good};"
+        "return [m.isFiguresView(good), m.isFiguresView({...good, figures: [{...good.figures[0], tone: 'green'}]}),"
+        " m.isFiguresView({...good, notes: [3]}), m.isFiguresView({...good, kind: 'intake'}),"
+        " m.isIntakeView(good)];"
+    )
+    assert cases == [True, False, False, False, False]
+
+
+def test_a_narrow_table_keeps_its_first_column_and_cues_the_rest() -> None:
+    sticky = next(decl for sel, decl in _rules(css()) if sel.startswith(".data-table th:first-child"))
+    assert "position: sticky" in sticky and "left: 0" in sticky
+    script = _script()
+    assert "block.classList.toggle('has-more', overflow && !atEnd);" in script
+    cue = {sel: decl for sel, decl in _rules(css())}
+    assert "display: none" in cue[".table-cue"] and "display: flex" in cue[".table-block.has-more .table-cue"]
+
+
+def test_the_figures_view_sets_every_string_as_text() -> None:
+    script = _script()
+    view = script[script.index("function renderFiguresView(view) {"):]
+    view = view[:view.index("\n  }\n")]
+    assert "innerHTML" not in view
+    helper = script[script.index("function textEl(tag, className, text) {"):]
+    assert "el.textContent = text;" in helper[:helper.index("\n  }\n")]
