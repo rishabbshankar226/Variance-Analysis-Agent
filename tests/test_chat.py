@@ -1596,3 +1596,16 @@ def test_conversational_inverted_what_if() -> None:
     assert 'Scenario Analysis ("What-If" Simulation)' in inc_sim.text
     assert "Product Sales" in inc_sim.text
     assert "+5.0%" in inc_sim.text
+
+
+def test_help_offers_result_chips_only_once_there_is_a_result() -> None:
+    before = handle_message(Session(), "help")
+    assert before.chips == ["Supported file formats", "What is materiality?", "Budget vs forecast"]
+    session = Session()
+    handle_upload(session, SAMPLE_CSV, "test.csv")
+    for answer in ("Q3 2026", "$5,000 or 5%", "USD", "Expense", "Expense"):
+        if session.result is not None:
+            break
+        handle_message(session, answer)
+    assert session.result is not None
+    assert handle_message(session, "help").chips == ["Summary", "Biggest risks", "Biggest wins", "Material"]

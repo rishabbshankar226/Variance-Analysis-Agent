@@ -10,7 +10,7 @@ This file is the rules file's "approved Implementation Plan" for this run (spec 
 | 0 | Read, baseline, harness, before screenshots, renders, this plan, `DESIGN.md` skeleton, `CLAUDE.md` | done | `9bcf130` |
 | 1 | Design system: `DESIGN.md` in full, results mock + blur check, tokens light and dark, icon helper, `tests/test_interface_design.py`, contrast helpers per theme | done | `c978cf1` |
 | 2 | Shell, mark, favicon, first screen, chips (T7), first reply after upload (T6), `level` field and the `⚠️` migration | done | (this commit) |
-| — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | todo | |
+| — | **STOP 1** (evidence in `docs/ui/evidence/stop-1/`) | open: waiting for the owner | |
 | 3 | Intake panel (sibling of `format_intake_summary` returning rows) | todo | |
 | 4 | Results `view` (T5, T8, T9, print), drill-down, driver breakdown | todo | |
 | 5 | Earnings and equity views; emoji allowlist empty | todo | |
@@ -101,6 +101,16 @@ Other surfaces, rendered from `examples/sample_variance.csv` and `tests/fixtures
 - **Copy.** Phase labels and placeholders are sentence case without ellipses; the first screen says what the file needs and what happens next; Markdown no longer leaves an empty line after each bullet.
 - **Screenshots.** `docs/ui/evidence/phase-2/`: 138 JPEGs (first, sample, intake, period choice, error, comparison, unclassified, earnings, PDF × light and dark × 1280 and 375 px), every one opened. Fixed before the commit: the ✅ on the "Loaded" line of the first reply. Seen and left for their phases: the result as Markdown with ✅, 🔬, 🚨, 🔮, 💡 headings and single-letter F/U (Phase 4); "Recommended Action" advice copy (Phase 4, a pinned sentence: STOP-ASK); earnings and comparison-set tables (Phase 5); phone tables cut after two columns (Phase 4).
 - **Gates** (`sh docs/ui/evidence/gates.sh dist`): ruff, mypy (62 files), **2050 passed in 39.03s**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, both installation checks: all PASS.
+
+## Fresh-eyes review (end of Phase 2)
+
+A subagent given only the Phase 2 screenshots and the tell table judged the result "a generated chat app with a decent table component dropped in", held back most by results shown as messages rather than a results view. Its findings and where they go:
+
+- Fixed now: retired chips still read as links (now prefixed "Offered:" in muted meta text); Help offered result chips before any file was loaded (now offers the three that work without a file; new test `test_help_offers_result_chips_only_once_there_is_a_result`).
+- Phase 4: the result as prose with ✅ (T5); emoji headings and ✅/❌ marks in drivers, risks and what-if (T1); single-letter F/U and bars by colour (T9); left-aligned number columns in drivers and what-if; phone tables losing Actual, Variance and Status (T8); the variance-percent bars that do not scale; the sort carets on short tables; "Recommended Action" and "mathematically verified causal drivers" copy.
+- Phase 5: the earnings table's clipped last column and left-aligned values; comparison-set Markdown tables.
+- Disagreed: monospace on command names in Help and prompts (these are code spans, which T3 allows); the amber rule on errors (it is the one attention marker, not a box); Help as a long list (the spec moves the capability list there); intake as a form (Phase 3 owns intake and builds a panel for the summary, the questions stay one at a time because each answer changes the next).
+- Not visible in stills: print (T12; the block exists and Phase 4 shoots it), motion (T10, under test).
 
 ## Assertions likely to need edits
 

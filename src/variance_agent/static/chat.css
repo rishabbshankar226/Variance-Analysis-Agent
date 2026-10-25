@@ -445,8 +445,10 @@ button, input, textarea { font: inherit; color: inherit; }
 .chip:hover:not(:disabled) { border-color: var(--text-muted); }
 .chip:active:not(:disabled) { background: var(--bg-card); }
 
-/* Earlier turns' chips: kept as a record of what was offered, disabled, and set as plain text. */
-.chips.is-retired { gap: var(--space-1) var(--space-3); }
+/* Earlier turns' chips: kept as a record of what was offered, disabled, and set as plain text
+   after the word "Offered", so they do not read as links. */
+.chips.is-retired { gap: var(--space-1) var(--space-3); color: var(--text-muted); font-size: var(--text-meta); }
+.chips.is-retired::before { content: "Offered:"; }
 .chips.is-retired .chip {
   padding: 0;
   border-color: transparent;

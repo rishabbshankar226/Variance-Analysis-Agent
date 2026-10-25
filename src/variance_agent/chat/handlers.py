@@ -1631,9 +1631,12 @@ def _handle_help(session: Session) -> Response:
         "• `new`: start over with a new file\n"
         "• `help`: show this list"
     )
+    # Result questions only once there is a result; before that, offer what works without a file.
+    chips = (["Summary", "Biggest risks", "Biggest wins", "Material"] if session.result is not None
+             else ["Supported file formats", "What is materiality?", "Budget vs forecast"])
     return Response(
         text=text,
-        chips=["Summary", "Biggest risks", "Biggest wins", "Material"],
+        chips=chips,
         phase=session.phase,
     )
 
