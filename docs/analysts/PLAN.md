@@ -57,7 +57,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Screenshots (122, `evidence/final/shots/`); Draw C swept once at `cabf9a8`: **0 wrong**, 12/27 (44%, 28-63%); final dist gates PASS (2,493); `REPORT.md` and CHANGELOG drafted | done | `55e23c2` |
 | 7 | Draw C fresh eyes (seed 20261101): 7 label amounts quoted at the filing's printed scale beside whole-dollar columns, systematic across draws | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-c/` |
 | 7 | Decision 40: every filing report states the unit the filing prints in (`cef2664`); Draw A re-swept at `273fd98`, every scored row unchanged (0 wrong) | done | sweep `p8-273fd98`, sha256 `d271f089…` |
-| 7 | Draw D (seed 20261102) swept once, fresh eyes (20261103), `REPORT.md`, CHANGELOG | open | |
+| 7 | Draw D (seed 20261102) swept once at `0f1d284`: **0 wrong**, 11/28 (39%, 24-58%), 12 refusals all plain; screenshots retaken; final dist gates PASS (2,497) | done | sweep `D-0f1d284`, sha256 `b2589644…` |
+| 7 | Draw D fresh eyes (seed 20261103): 3 doubled figures in equity labels (nested hidden spans), systematic across draws (19 labels in 13 filings); 2 wrong section names; 1 wrong credit note | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-d/` |
 
 ## Baseline (measured 2026-10-26)
 

@@ -67,9 +67,22 @@ Drawn as Draw B was: 15 10-K and 15 10-Q from 2025Q4-2026Q3, one per filer, excl
 
 Draw C's final fresh eyes found label amounts quoted at the filing's printed scale (above). Section 5 sends that to a STOP-ASK, and the owner chose the fix and a fresh draw (Decision 40). Draw C stays here as measured.
 
-### Draw D (seed `20261102`), after Decision 40, swept once at DRAW_D_COMMIT
+### Draw D (seed `20261102`), after Decision 40, swept once at `0f1d284`
 
-DRAW_D_TABLE
+Drawn as Draws B and C were, excluding every Draw A, B and C accession and filer. It was swept once and informed no code change. `src/` at `0f1d284` is the same as at `273fd98`. Results file sha256 `b2589644f7bfebd1c2fac405a3959270fbcf9df5dd7fca929d6ed50e8ccc536d`.
+
+| Measure | Draw D (28 Inline XBRL filings) |
+|---|---|
+| Wrong values (lines and every headline figure scored) | **0** |
+| Values verified / unverified | 3,888 / 51 (every unverified one a printed dash or confirmed blank with no fact) |
+| All three statements read | **11 of 28 (39%, 24-58%)**: the 90% target is **not reached** |
+| All three read without a refusal | 19 of 28 (68%, 49-82%) |
+| Read without a refusal, by statement | income 24/28, balance sheet 26/28, cash flow 22/28 |
+| Fully read, by statement | income 15/28, balance sheet 21/28, cash flow 15/28 |
+| Of the 8 read without a refusal but not fully | 1 short only by printed dashes or confirmed blanks; 7 by an oracle line the reader doesn't cover |
+| Refusals | 12, **all plain** |
+
+The two 10-Ks without XBRL are outside the denominator. Run by hand, each refuses plainly with what to upload.
 
 ### Draw A, the development set (seed `20261026`, 40 filings; 33 Inline XBRL)
 
@@ -210,10 +223,10 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 
 ## Gates
 
-`sh docs/ui/evidence/gates.sh dist` at `cabf9a8` on macOS with Python 3.11.16. All PASS:
+`sh docs/ui/evidence/gates.sh dist` on the final code (`src/` as at `273fd98`), on macOS with Python 3.11.16. All PASS:
 - ruff
 - mypy, strict, 71 files: `src/variance_agent`, `scripts` and `deterministic_conditioning` (the evidence tools pass `mypy --strict docs/analysts/evidence` separately)
-- pytest: **2,493 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
+- pytest: **2,497 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
 - compileall
 - pip check
 - contracts: 19 fixtures unchanged
@@ -221,11 +234,11 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 - both artifacts installed without the Excel and PDF extras, each passing `check_installation.py` and pip check
 - the wheel installed with the PDF extra alone
 
-The log is at `~/vaa-edgar-corpus/final-c/gates_dist.log`.
+The log is at `~/vaa-edgar-corpus/final-d/gates_dist.log`.
 
 ## Browser check
 
-`evidence/final/shots/` holds 122 images at 1280 and 375 px of every chat screen changed since STOP 2, all from fictional files (`evidence/shots_analysts.py`):
+`evidence/final/shots/` holds 124 images, retaken on the final code, at 1280 and 375 px of every chat screen changed since STOP 2, all from fictional files (`evidence/shots_analysts.py`):
 - a filing headed by its own printed totals, a question about computed totals, and the exported report
 - each new reader from upload to a first answer: limits, benchmark, target and covenant headroom
 - the balance sheet report, with its table rendered
@@ -263,7 +276,7 @@ This check found two problems, both fixed:
 
 ## Not verified
 
-- **The 90% target.** It is not reached on Draw B or Draw C under Decision 35's strict definition (above).
+- **The 90% target.** It is not reached on Draw B, C or D under Decision 35's strict definition (above).
 - **Cross-reader agreement.** EDGAR carries no PDFs for recent filings, and the SEC no longer publishes `Financial_Report.xlsx` (F2), so the readers could not be compared on the same recent filing (Decision 30).
 - **The new comparisons on real filings.** The sweeps measure one statement per run. LTM, derived metrics and covenants, two-file joins, the limit, benchmark and target bases, and the holdings scorecard were exercised on fictional fixtures and in the guides, never on a drawn filing.
 - **Real analysts.** The per-reader reviews at STOP 2 were subagents given each seat's row of section 3, not people in those seats.
@@ -305,6 +318,7 @@ This check found two problems, both fixed:
   - chat routing for each reader's first questions
 - **Measured.**
   - Draw B: 1 wrong figure, plus 3 headline figures found by fresh eyes, all added up from the lines. Fixed under Decision 39.
-  - Draw C, held out: 0 wrong values, every headline figure scored.
-  - All three statements read on 44% (28-63%) of Draw C, short of the 90% target.
+  - Draw C: 0 wrong values, but its fresh eyes found label amounts quoted at the filing's unit with no unit stated. Fixed under Decision 40.
+  - Draw D, the last held-out draw: 0 wrong values, every headline figure scored.
+  - All three statements read on 39% (24-58%) of Draw D, short of the 90% target.
 - **Unchanged.** The 19 contract fixtures and schemas 1.0-1.8. No new dependency.
