@@ -173,7 +173,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - **Rows.** Every printed line, details and subtotals alike, at its displayed value (constraint 10). Each row carries its statement kind and a Row Kind (Detail or Total). Lines after the statement's closing line (a balance sheet's total liabilities and equity; a cash flow statement's ending cash) are supplemental disclosures. They are listed as left out and recorded as read, like Decision 29.
 - **Comparison.** The newest column against the column `--compare-to` and `--period` choose, as for income statements. Variance is actual minus comparison on displayed values. The percentage is taken against the comparison's absolute value, as today.
 - **Label.** Increase when the variance is above 0, Decrease below 0, No change at 0. The label describes the printed figure, so a cash outflow printed (600) against (500) is a Decrease of 100, and the report says so once. F or U appears only for a line the user gives a Better direction (the mapping's `better_directions`, the 1.8 mechanism), from the variance's sign as for any declared row.
-- **No totals or advice.** These statements have no revenue, expense or net operating totals, and the report shows the identity checks in their place. No recommendation section (constraint 9).
+- **No totals or advice.** These statements have no revenue, expense or net operating totals. Audit 1.9 records `totals` as null for them, since a zero total would trace to no stored value (constraint 2), and records an `identities` block in its place. The report shows the identity checks where totals would be. No recommendation section (constraint 9).
+- **Never typed.** A statement row is never Revenue or Expense: the Statement Kind column short-circuits classification before label inference and any type map (`classification_source` `statement`, new in 1.9), so no label can put cash into a revenue total. The chat never asks to label these rows, and the intake summary does not call kept subtotals "left out".
 - **Boundaries (tests).** Variance exactly 0 is No change. A comparison of 0 with a nonzero actual takes today's percent label. A subtotal is a row like any other, never summed into a total. Better Higher with a variance of -1 is U, and Lower with -1 is F.
 
 ### R8. A cash flow statement's beginning and ending cash take its duration columns
@@ -210,6 +211,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
     - A blank amount in a filing gets a refusal that names a fix for filings, and a line printed only as dashes, with no tag, is listed in the notes. Both are done in Phase 4.
 
 31. **Statements beyond income: Inline XBRL only.** A balance sheet or cash flow statement from a PDF or a `Financial_Report.xlsx` sheet keeps refusing plainly. A PDF figure carries no `decimals` and no concept, so the identities (R9) would rest on guessed tolerances and guessed line roles. The workbook is not published for recent filings (F2). Section 5's 90% target counts Inline XBRL filings only.
+
+32. **No workbook for statement comparisons in Phase 4.** `--xlsx` on a balance sheet or cash flow comparison refuses plainly, since today's workbook prints revenue and expense totals and recommendations. Phase 6 adds a statement sheet if STOP 2 keeps it.
 
 ## STOP 1 settings (committed before the sample is drawn)
 

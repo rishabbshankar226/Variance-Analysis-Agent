@@ -252,7 +252,9 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   for a PDF.
 - `source.document` may also be `{kind: "ixbrl", statement, reader_notes, lines}`, a statement
   read from an Inline XBRL filing. Each line carries its `line_item`, `concept`, `measure`,
-  whether it is a `subtotal` (checked and left out of the analysis) or `left_out` (read but not
+  whether it is a `subtotal` (a line the statement computes from the lines above, checked before
+  use: an income statement leaves it out of the analysis, while a balance sheet or cash flow
+  statement keeps it as a row) or `left_out` (read but not
   analysed, such as the lines below net income), and one entry per column (or null) with the
   column `label` and the fact's `concept`, `context`, `period`, `dims` (axis and member),
   `stored` value (as the XBRL instance holds it), `displayed` value (as printed) and `decimals`.
