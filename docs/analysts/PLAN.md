@@ -32,6 +32,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | Draw A re-sweep with balance sheets and cash flows: zero wrong; 5,506 verified; read income 26/33, balance sheet 32/33, cash flow 32/33; all three 24/33 (73%, 56-85%) | done | sweep `p4b-d5032a1`, sha256 `98eeafcb…` |
 | 4 | LTM (R11) and `--ltm-from` (R10, CLI) | done | this commit |
 | 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
+| 4 | Blank income figures confirmed by footing; all-dash rows listed (Decision 30) | done | `9d3b176` |
+| 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified; read income 28/33 (85%, 69-93%), balance sheet 32/33 (97%, 85-99%), cash flow 32/33; all three read 26/33 (79%, 62-89%), all three fully verified 15/39 primaries | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` |
 | 4 | F4 two-file join | open (STOP-ASK written, awaiting the owner) | `docs/analysts/evidence/stop-ask-f4/` |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
@@ -267,6 +269,12 @@ Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fail
 
 - Read: README, the rules file, `input-contract.md` (amounts, assisted, comparison, PDF and filing EPS sections), `financial-rules.md`, `audit-contract.md` (intro and 1.8), `excel.py`, `models.py`, `measures.py`, `audience.py`, `statement_shape.py`, `numeric.py`, and `intake.py` around `_read_excel_bytes`, `_read_pdf_bytes`, `detect_header_row`, `detect_unit_scale`, `read_input_assisted` and `_process_raw_table`. Also `MULTI_AUDIENCE_2026-10.md`'s interpretation and boundary sections, and the strict and API Excel reads (`parsing.py`, `comparisons.py`).
 - Looked at: the E1 probe report states the overstated totals with a confident thousands note. Nothing in the read says the cells were already full-scale. Phase 0 changed no report, workbook or chat reply.
+
+### Phase 4 (2026-10-27, up to the F4 STOP-ASK)
+
+- **Looked at.** Report: a balance sheet comparison states its identity check and lists every line, subtotals included, as Increase, Decrease or No change, with no revenue totals or recommendations. The LTM report appends a build table that cites FY, YTD and prior YTD per line, and they add up. Workbook: refused plainly for statements (Decision 32). The LTM workbook is consistent but has no build sheet; that sheet goes to Phase 6. Chat reply: choosing a balance sheet answers with the statement report and never asks for revenue or expense labels. "Build LTM" takes the 10-K as a second upload.
+- **Draw A** went from income only (25 of 33) to all three statements on 26 of 33 filings, with zero wrong figures at every sweep. A scorer bug once counted the tool's correct 0 as wrong, and it was fixed in the sweep (`d5032a1`). The oracle stopped counting nil-only concepts (Decision 33).
+- **Remaining income refusals** are 5 subtotals the shaper cannot trace (net income, pre-tax income, gross profit). Each refuses plainly.
 
 ### Phase 3 (2026-10-26)
 
