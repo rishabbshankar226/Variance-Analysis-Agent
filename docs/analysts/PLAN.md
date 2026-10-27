@@ -234,9 +234,11 @@ Each is opt-in (`--compare-to limit|benchmark|target`, `Measure: Multiple`, `--m
 - The comparison column is the row's limit (headers `Limit`, `Covenant`, `Covenant Level`). Each row must declare `Limit Kind`, either `Max` or `Min`; otherwise the run refuses, naming the row. An optional `Buffer` (zero or more, in the row's own unit) is the only source of Near. No buffer is defaulted.
 - **Breach** is strictly beyond the limit: actual > limit for Max, actual < limit for Min. A row equal to its limit is not a Breach, since covenants read "not greater than" or "not less than".
 - **Headroom** is limit - actual for Max and actual - limit for Min, in the row's unit. **Utilization** is actual / limit for both, and `NM` for a zero limit.
-- **Near** applies when the row is not a Breach, declares a buffer, and headroom <= buffer, so a row at its limit with a buffer is Near. **Within** is everything else.
+- **Near** applies when the row declares a buffer and 0 < headroom <= buffer. **Within** is everything else that is not a Breach. Section 3 says "a row equal to its limit is Within", so a row at its limit (headroom 0) is Within whether or not it declares a buffer.
 - **Order.** Breach, then Near, then Within; within each, headroom ascending. Status stays Neutral, never F or U: the label describes the supplied comparison (constraint 9).
-- **Boundaries (tests).** Actual = limit (Within; Near with a buffer). Limit +/- the smallest step. Headroom = buffer (Near) and buffer + the smallest step (Within). A zero limit (utilization NM). Min mirrored. A missing Limit Kind (refuse). A negative buffer (refuse).
+- **Boundaries (tests).** Actual = limit (Within, with or without a buffer). Headroom of the smallest step with a buffer (Near). Limit +/- the smallest step. Headroom = buffer (Near) and buffer + the smallest step (Within). A zero limit (utilization NM). Min mirrored. A missing Limit Kind (refuse). A negative buffer (refuse).
+
+- **Headers come first.** `Limit`, `Benchmark` and `Target` (and their synonyms) are comparison columns. A file carrying one beside Actual is a whole file, never one half of an F4 pair. A test pins this before the bases land.
 
 #### R14. `benchmark` (Theo)
 
@@ -258,7 +260,7 @@ Each is opt-in (`--compare-to limit|benchmark|target`, `Measure: Multiple`, `--m
 #### R17. Derived metrics (Clara, Owen)
 
 - `--metrics PATH` is a closed JSON structure: `{"metrics": [{"name", "numerator": [term...], "denominator": [term...] (optional), "measure": "Currency" | "Multiple"}]}`. A term is `{"concept" or "label", "statement": "income" | "balance_sheet" | "cash_flow", "period": "instant" | "fy" | "ytd" | "ltm", "sign": 1 | -1}`. Unknown keys refuse.
-- Terms are read from the filing's own statements: an XBRL concept matches by concept (dimensionless), a label by exact printed label. `instant` is the balance sheet's latest column, `fy` the 10-K's fiscal year, `ytd` the 10-Q's year to date, and `ltm` the R11 build (needs `--ltm-from`). The value used is the printed figure, as the statement shows it.
+- Terms are read from the filing's own statements: an XBRL concept matches by concept (dimensionless), a label by exact printed label. `instant` is the balance sheet's latest column, `fy` the 10-K's fiscal year, `ytd` the 10-Q's year to date, and `ltm` the R11 build (needs `--ltm-from`). A single cash flow line (D&A for EBITDA, as section 3's example needs) takes LTM by key, just as an income line does; a term resolving to a cash balance (R8's beginning or ending line) refuses. The value used is the printed figure, as the statement shows it.
 - The value is the sum of sign x term, divided by the denominator's sum for a ratio, in exact Decimal. A missing term refuses that metric by name; the other metrics are still read, and a run with none left refuses. A zero or negative denominator shows `NM` with the reason. No expression is ever evaluated.
 - The formula is shown beside the figure, and audit 1.9 records it with every term's cited value (document, statement, column, context). With `--compare-file schedule.xlsx --compare-to limit`, the metrics join a covenant schedule by exact metric name (R12), and Clara's ratios meet her limits.
 
@@ -290,7 +292,7 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
 
 33. **Oracle: a concept whose facts are all nil is not a monetary line.** "Commitments and contingencies (Note 9)" prints no figure, and its instance facts are `xsi:nil`. The reader treats nil as blank (Decision 26), so the line has nothing to verify. The structure oracle counted it as monetary, which made 18 Draw A balance sheets look partly read. A statement still counts as read only when every line with an amount is covered and verified.
 
-34. **LTM is built for income statements in this run.** A cash flow statement's beginning and ending cash are balances, which don't add across periods, and its flows would need their own roll-forward. `--ltm-from` on a cash flow statement refuses plainly, and on a balance sheet it reads the primary as of its latest period with a note (R11).
+34. **LTM statements are built for income statements in this run.** A cash flow statement's beginning and ending cash are balances, which don't add across periods, so `--ltm-from` on a whole cash flow statement refuses plainly; on a balance sheet it reads the primary as of its latest period with a note (R11). A single cash flow *line* used as an LTM term of a derived metric (R17) is a flow and takes LTM by key; a balance line refuses. (Amended before Phase 5's code, to build section 3's own debt-over-LTM-EBITDA example.)
 
 35. **A printed dash stays unverified (owner, 2026-10-27: "do what you recommend").** Section 5 calls a read with no key unverified, never correct, and an untagged dash has no key. The strict "all three read" rate stays the target. The sweep reports beside it how many unverified values are dashes or confirmed blanks, so the gap is visible. Decisions 31-34 stand, for confirmation at STOP 2.
 
