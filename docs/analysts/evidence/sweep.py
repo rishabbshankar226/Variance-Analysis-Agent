@@ -141,7 +141,9 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
         name = str(row.get("line_item", ""))
         columns = [c for c in _items(lines.get(name), "columns")]
         prior = next((c for c in columns if isinstance(c, dict) and c.get("label") == comparison_label), None)
-        current = next((c for c in columns if isinstance(c, dict) and c.get("label") != comparison_label), None)
+        # The actual is the statement's first (newest) column; a blank there has no key and is unverified,
+        # never matched against an older column's fact.
+        current = columns[0] if columns and isinstance(columns[0], dict) and columns[0].get("label") != comparison_label else None
         for field, key in (("actual", current), ("comparison", prior)):
             value = row.get(field)
             if not isinstance(key, dict) or value is None:
