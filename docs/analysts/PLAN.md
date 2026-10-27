@@ -50,7 +50,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | Report cleanup for the new seats: currency line only with currency rows, no revenue-totals boilerplate, notes that restate declarations dropped; audit measure-run fields keep their 1.8 meaning (REPORT.md lists them) | done | this commit |
 | 6 | One guide per new reader (`docs/analysts/{owen,clara,marcus,ines,theo}.md`), written by `build_guides.py` from the commands it runs; inputs committed under `tests/fixtures/analysts/` | done | this commit |
 | 6 | Phase 6 exit: gates green (2,467), every guide command executed, each new reader reaches a first answer in the chat | done | `0ad4f64` |
-| 7 | Draw B, gates, `REPORT.md` | open | seeds committed |
+| 7 | Draw B drawn (seed 20261029) and swept once at `3f731a7`: **1 wrong** (derived revenue subtotal), 4,193 verified, all three read 12/28 (43%, 27-61%); fresh eyes (seed 20261030): 3 more wrong headline figures; dist gates PASS (2,467) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-b/` |
+| 7 | Fix, Draw C, `REPORT.md`, CHANGELOG | waiting for the owner | |
 
 ## Baseline (measured 2026-10-26)
 
