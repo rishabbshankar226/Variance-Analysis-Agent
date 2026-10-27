@@ -162,3 +162,8 @@ def test_a_note_table_titled_near_a_mention_of_the_statement_is_not_the_statemen
             + statement("CONSOLIDATED STATEMENTS OF CASH FLOWS", cash_flow_rows()))
     flows = _statement(_filing(body), "cash_flow")
     assert flows.lines[0].label == "Net income"
+
+
+def test_a_singular_cash_flow_title_is_a_cash_flow_statement() -> None:
+    flows = _statement(_filing(statement("CONSOLIDATED STATEMENTS OF CASH FLOW", cash_flow_rows())), "cash_flow")
+    assert flows.name == "Consolidated Statements of Cash Flow"

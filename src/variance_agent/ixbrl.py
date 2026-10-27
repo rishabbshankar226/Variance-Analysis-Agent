@@ -31,9 +31,9 @@ _TITLE_CHARACTERS = 2000  # text before a table searched for its statement title
 _STATEMENT_TITLE = re.compile(
     r"\b(?:condensed\s+)?(?:consolidated\s+)?(?:combined\s+)?(?:"
     r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?(?:net\s+)?"
-    r"(?:operations|income|earnings|loss|comprehensive\s+(?:income|loss)|cash\s+flows|financial\s+(?:position|condition)"
+    r"(?:operations|income|earnings|loss|comprehensive\s+(?:income|loss)|cash\s+flows?|financial\s+(?:position|condition)"
     r"|condition|assets\s+and\s+liabilities)(?:\s+and\s+comprehensive\s+(?:income|loss))?"
-    r"|statements?\s+cash\s+flows|income\s+statements?|balance\s+sheets?)\b",
+    r"|statements?\s+cash\s+flows?|income\s+statements?|balance\s+sheets?)\b",
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
