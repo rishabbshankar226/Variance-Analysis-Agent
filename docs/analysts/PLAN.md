@@ -21,7 +21,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 1 | Workbook examination summary + audit 1.9 | done | `20f3828` |
 | 1 | Earnings chat path asks about hidden rows (advisor check) | done | `fdc6508` |
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | done | `be7d4dc`, `7c7d38e` |
-| 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; STOP 1 | todo | |
+| 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; Draw A at zero wrong | done | `cd23bf0` … `13de5e8` |
+| 3 | STOP 1 | open (awaiting the owner) | |
 | 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message` (removed), the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help | done | this commit |
 | 3 | `ixbrl.py` reader, `.htm` routing (CLI, chat, file API), audit 1.9 `ixbrl` documents | done | `cd23bf0` |
 | 3 | `Financial_Report.xlsx` reader fixes from Draw A (breakdowns, binary floats) | done | `d7fd9a2` |
@@ -154,10 +155,17 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 
 ### R6. Dimensional facts on a face statement
 
-- Dimensionless facts make the consolidated statement, and only they enter its footing.
-- One-axis facts on a face line (for example revenue by product, on a product/service axis) feed the flat segment dimension, keyed by concept, axis and member, when the run recognizes segments (an earnings or quant preset, or extended headers). On the plain FP&A path, which is the sweep's fixed command, they are left out and listed by line and member, because a Segment column there would not be read as one. This narrows "feed the segment dimension" on the FP&A path, and is a STOP 1 question.
-- Facts on two or more axes are always left out and listed.
+- **Amended in Phase 3 (Draw A).** Leaving one-axis lines out removed the components of totals such as "Total revenues" and "Total cost of revenues", so those totals could not foot. A total whose components were all dimensional would have been dropped as a subtotal, a wrong-total risk. Now a face line printed only with one-axis facts (revenue by product, cost by segment) is read as a printed line, keyed by concept, axis and member. R5 makes its total foot over it, so a breakdown that does not add up refuses the statement. These lines are not written into the Segment column, which the FP&A path does not read as segments; that is a STOP 1 question. The summary notes how many lines are breakdowns.
+- A line's dimensionless facts win over its dimensional ones. Facts on two or more axes are always left out and listed.
 - When a fact appears on the face and again in a note, the face table's copy is read: the first table in document order that holds the statement.
+
+### Phase 3 decisions (2026-10-26)
+
+23. **DOCTYPE (constraint 3).** `html.parser` never reads a DTD, so the Inline XBRL reader refuses an `ENTITY` declaration or a `DOCTYPE` with an internal subset, but reads a plain `<!DOCTYPE html …>` (the four 2018 HTML 10-Ks carry one). Every XML parse in `src/` (the workbook preflight) still refuses any DOCTYPE. This is a STOP 1 question.
+24. **Statement assembly.** A statement is the first table, in document order, titled by the text before it (2,000 characters, with spans joined as printed and block elements as breaks), by its own leading rows, or by a figure-less header table before it. It must also print three or more dimensionless money facts. An untitled following table continues it only when it prints the same periods.
+25. **Subtotals.** Lines are subtotals by the shared shaper's labels, by filing-only labels (`… before income taxes` forms), and by a curated set of us-gaap total concepts, offered as hints. A hint that adds up from nothing is a detail line and is read as one. A subtotal-named first figure is read as a line. No subtotal is left out unless it is shown to foot, or the statement refuses. Each of these is a shaper option the PDF reader does not pass, so its reading is unchanged.
+26. **Blank and nil.** A column with no fact is blank, which refuses as unreadable, unless the line prints an untagged dash, which reads as 0. `xsi:nil` (any prefix) is blank.
+27. **`Financial_Report.xlsx` reads** stop at the first breakdown section and read amounts at the precision their formats show (Phase 3 fixes from Draw A). The SEC no longer publishes the workbook for recent filings (F2), so this reader matters for older filings only.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
@@ -187,6 +195,13 @@ Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fail
 
 - Read: README, the rules file, `input-contract.md` (amounts, assisted, comparison, PDF and filing EPS sections), `financial-rules.md`, `audit-contract.md` (intro and 1.8), `excel.py`, `models.py`, `measures.py`, `audience.py`, `statement_shape.py`, `numeric.py`, and `intake.py` around `_read_excel_bytes`, `_read_pdf_bytes`, `detect_header_row`, `detect_unit_scale`, `read_input_assisted` and `_process_raw_table`. Also `MULTI_AUDIENCE_2026-10.md`'s interpretation and boundary sections, and the strict and API Excel reads (`parsing.py`, `comparisons.py`).
 - Looked at: the E1 probe report states the overstated totals with a confident thousands note. Nothing in the read says the cells were already full-scale. Phase 0 changed no report, workbook or chat reply.
+
+### Phase 3 (2026-10-26)
+
+- **Draw A, after (sweep at `3439e0e`, file sha256 `c520ca97…`, in the corpus):** zero wrong numbers on both readers. Inline XBRL primary documents: 677 lines verified, 13 unverified, 0 wrong; 20 statements fully read; all 91 refusals plain. These are mostly balance sheets and cash flows, refused until Phase 4, plus 6 non-Inline-XBRL documents. Income statements of the 33 Inline XBRL filings: 24 read (73%, Wilson 95% 56-85%), 20 fully verified and covered (61%, 44-75%), and the other 9 refuse plainly (unmatched subtotals, blank cells). `Financial_Report.xlsx` on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
+- **Before (the baseline):** every `.htm` refused, and the Phase 1 workbook reader produced 15 wrong values (39 under the first scoring).
+- Each wrong value or misread found on Draw A became a synthetic fixture before its fix: breakdown sections and binary floats in workbooks; nil prefixes; split, inline and header-table titles; continuation tables; hidden-reference depth; wrapped labels; untagged dashes; breakdown totals; unchecked subtotals.
+- Looked at: the chat shows an HTML filing as a Statement (the panel said Worksheet until `13de5e8`), the hidden-rows question with its two answers, and the formula refusal at 1280 and 375 px (screenshots in `docs/analysts/evidence/stop-1/shots/`). Report: an HTML income statement reads at full scale, with the flipped interest-expense note. No workbook changed this phase.
 
 ### Phase 2 (2026-10-26)
 

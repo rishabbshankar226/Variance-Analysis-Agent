@@ -26,7 +26,7 @@ FILES = {"filing": "hal-20250927.htm", "hidden": "plan_hidden_rows.xlsx", "formu
 
 
 def build(scratch: Path) -> None:
-    from openpyxl import Workbook
+    from openpyxl import Workbook  # type: ignore[import-untyped]
 
     from tests.fixtures.ixbrl.build_ixbrl import income_filing
 
@@ -53,7 +53,7 @@ def build(scratch: Path) -> None:
 
 
 def main(out: Path, scratch: Path) -> None:
-    import shots  # the redesign's harness; needs Playwright
+    import shots  # type: ignore[import-not-found]  # the redesign harness; needs Playwright
 
     files = {key: scratch / name for key, name in FILES.items()}
     shots.SCENARIOS = {
