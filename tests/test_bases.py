@@ -53,6 +53,7 @@ def test_ines_limits_are_labelled_and_ordered_by_severity(tmp_path: Path) -> Non
     assert order == ["Desk B gross exposure", "Desk C liquidity reserve", "Desk A gross exposure",
                      "Desk D liquidity reserve", "Desk E net exposure"]
     assert {row["status"] for row in record["measure_rows"]} == {"Neutral"}  # type: ignore[union-attr, index]
+    assert "**2 Breach, 1 Near, 2 Within.**" in report
     for absent in ("Total Revenue", "Favorable", "Unfavorable", "Mitigation"):
         assert absent not in report
 
@@ -156,7 +157,8 @@ def test_theo_active_returns_in_basis_points_above_or_below(tmp_path: Path) -> N
         "Fund return": "Above", "Tracking fund return": "In line", "Management fee rate": "Above"}
     statuses = {row["line_item"]: row["status"] for row in record["measure_rows"]}  # type: ignore[union-attr, index]
     assert statuses == {"Fund return": "F", "Tracking fund return": "Neutral", "Management fee rate": "U"}
-    assert "| Fund return | 6.8% | 7.25% | 45 bps | 0.1% | Above | Favorable |" in report
+    assert "| Fund return | 6.8% | 7.25% | 45 bps | 10 bps | Above | Favorable |" in report
+    assert "| Management fee rate | 0.8% | 0.82% | 2 bps | none (exact) | Above | Unfavorable |" in report
 
 
 @pytest.mark.parametrize(("actual", "tolerance", "outcome"), [
@@ -189,7 +191,7 @@ def test_marcus_drift_from_target_weights_in_basis_points(tmp_path: Path) -> Non
         "NORDVIK.FAKE": "Over", "HALVORSEN.FAKE": "On target", "OSTRAVA.FAKE": "Under"}
     assert Fraction(str(details["OSTRAVA.FAKE"]["difference_bps"])) == -100
     assert {row["status"] for row in record["measure_rows"]} == {"Neutral"}  # type: ignore[union-attr, index]
-    assert "| OSTRAVA.FAKE | 6% | 5% | -100 bps | 0.25% | Under |  |" in report
+    assert "| OSTRAVA.FAKE | 6% | 5% | -100 bps | 25 bps | Under |" in report
 
 
 def test_a_target_takes_no_better_direction(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
