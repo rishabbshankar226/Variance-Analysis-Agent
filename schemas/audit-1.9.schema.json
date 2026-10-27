@@ -305,7 +305,8 @@
             "non_additive_profit",
             "label_inference",
             "unclassified",
-            "unavailable"
+            "unavailable",
+            "statement"
           ]
         },
         "summary_source": {
@@ -578,6 +579,49 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "statement_kind": {
+                      "enum": [
+                        "balance_sheet",
+                        "cash_flow"
+                      ]
+                    },
+                    "identities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "identity",
+                          "left",
+                          "right",
+                          "columns",
+                          "holds"
+                        ],
+                        "properties": {
+                          "identity": {
+                            "enum": [
+                              "balance_sheet",
+                              "cash_flow"
+                            ]
+                          },
+                          "left": {
+                            "type": "string"
+                          },
+                          "right": {
+                            "type": "string"
+                          },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "holds": {
+                            "const": true
+                          }
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -768,31 +812,39 @@
           "additionalProperties": false
         },
         "totals": {
-          "type": "object",
-          "properties": {
-            "revenue": {
-              "$ref": "#/$defs/aggregate"
-            },
-            "expenses": {
-              "$ref": "#/$defs/aggregate"
-            },
-            "net_operating_variance": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/decimal"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "revenue": {
+                  "$ref": "#/$defs/aggregate"
                 },
-                {
-                  "type": "null"
+                "expenses": {
+                  "$ref": "#/$defs/aggregate"
+                },
+                "net_operating_variance": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/decimal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
-              ]
+              },
+              "required": [
+                "revenue",
+                "expenses",
+                "net_operating_variance"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null",
+              "description": "A balance sheet or cash flow comparison has no revenue, expense or net totals; see source.document.identities."
             }
-          },
-          "required": [
-            "revenue",
-            "expenses",
-            "net_operating_variance"
-          ],
-          "additionalProperties": false
+          ]
         },
         "material_variances": {
           "type": "array",

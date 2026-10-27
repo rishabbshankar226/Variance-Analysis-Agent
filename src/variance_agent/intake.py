@@ -60,6 +60,8 @@ from .ixbrl import BOTTOM_LINE, BOTTOM_LINE_LABEL, FILING_SUBTOTALS, IxbrlError,
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
 from .ixbrl import Line as IxLine
+from .ixbrl import Statement as IxStatement
+from .statement_checks import CheckLine, check_balance_sheet, check_cash_flow
 from .measures import measure_kind
 from .models import MeasureKind
 from .comparison import (
@@ -462,12 +464,20 @@ class IntakeResult:
     source_statement: str | None = None  # the statement an EDGAR-style sheet held
     # An Inline XBRL read: each line's XBRL key per column, for audit 1.9 (PLAN.md R1).
     xbrl_lines: list[dict[str, object]] = field(default_factory=list)
+    # A balance sheet or cash flow statement (PLAN.md R7, R9): its kind, the identity it was checked
+    # against for audit 1.9, and the sentences the report shows in place of totals.
+    statement_kind: str = ""
+    identities: list[dict[str, object]] = field(default_factory=list)
+    statement_checks: list[str] = field(default_factory=list)
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
         if self.source_kind == "ixbrl" and self.source_statement is not None:
-            return {"kind": "ixbrl", "statement": self.source_statement, "reader_notes": list(self.reader_notes),
-                    "lines": list(self.xbrl_lines)}
+            document: dict[str, object] = {"kind": "ixbrl", "statement": self.source_statement,
+                                           "reader_notes": list(self.reader_notes), "lines": list(self.xbrl_lines)}
+            if self.statement_kind:
+                document.update(statement_kind=self.statement_kind, identities=list(self.identities))
+            return document
         if self.source_kind == "edgar_xlsx" and self.sheet_name is not None and self.source_statement is not None:
             return {"kind": "edgar_xlsx", "statement": self.source_statement, "sheet": self.sheet_name,
                     "reader_notes": list(self.reader_notes)}
@@ -2211,7 +2221,7 @@ def _read_ixbrl_bytes(
     except IxbrlError as exc:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc), source_kind="ixbrl")
     names = [s.name for s in statements]
-    comparable = [s.name for s in statements if s.kind not in _NOT_REVENUE_AND_EXPENSE]
+    comparable = names  # balance sheets and cash flows compare as Increase or Decrease (R7)
     ranked = rank_statements(names)
     chosen = next((s for s in statements if s.name == (ranked[0].name if sheet is None else sheet)), None)
     if chosen is None:
@@ -2221,11 +2231,9 @@ def _read_ixbrl_bytes(
         return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl",
                             fatal_error_message=chosen.problem)
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
-        instead = (f" Choose an income statement instead: {', '.join(comparable)}." if comparable
-                   else " Choose the filing's income statement instead.")
-        return IntakeResult(has_fatal_errors=True, available_sheets=comparable, source_kind="ixbrl", fatal_error_message=(
-            f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
-            f"and expense yet.{instead}"))
+        result = _read_ixbrl_position(chosen, filename, treat_blank_budgets_as_zero, selected_period, compare_to)
+        result.candidate_sheets, result.available_sheets, result.comparable_sheets = ranked, names, comparable
+        return result
     all_lines = chosen.lines
     all_names = _unique_names([(line.label, line.section) for line in all_lines])
     # A comprehensive-income statement opens with net income, so only an income statement ends there.
@@ -2286,6 +2294,62 @@ def _read_ixbrl_bytes(
     result.comparable_sheets = comparable
     result.detected_totals[:0] = shaped.subtotals
     result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes]
+    return result
+
+
+_CHANGE_NOTE = ("Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses "
+                "is negative, so a larger outflow or deduction shows as a Decrease")
+_IDENTITY_NAME = {"balance_sheet": "the balance sheet identity", "cash_flow": "the cash roll-forward"}
+
+
+def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets_as_zero: bool,
+                         selected_period: str | None, compare_to: ComparisonBasis | None) -> IntakeResult:
+    """A balance sheet or cash flow statement: every line at its printed value, checked by R9 first (R7)."""
+    money = [line for line in chosen.lines if line.measure == "Currency"]
+    others = [f"Left out '{line.label}' (per-share and share counts are not money totals)"
+              for line in chosen.lines if line.measure != "Currency"]
+    names = _unique_names([(line.label, line.section) for line in money])
+    figures = [CheckLine(names[i], line.concept, tuple(
+        (key.displayed, key.decimals) if key is not None else ((Decimal(0), "INF") if line.dash else None)
+        for key in line.keys), line.balance) for i, line in enumerate(money)]
+    checked = (check_balance_sheet if chosen.kind == "balance_sheet" else check_cash_flow)(figures, chosen.name, chosen.labels)
+    if checked.problem or checked.closing is None or checked.sides is None:
+        return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl",
+                            fatal_error_message=checked.problem or f"I couldn't check the {chosen.name}.")
+    closing, totals = checked.closing, {row for row, _ in checked.matches}
+    raw_rows: list[list[object]] = [["Line Item", *chosen.labels, "Statement Kind", "Row Kind"]]
+    for i, line in enumerate(money[:closing + 1]):
+        # A dash reads as 0 through intake's own dash rule; a blank the footing confirmed is 0 (R9).
+        cells = [format(key.displayed, "f") if key is not None else ("—" if line.dash else "0") for key in line.keys]
+        raw_rows.append([names[i], *cells, chosen.kind, "Total" if i in totals else "Detail"])
+    result = _process_raw_table(raw_rows, filename, sheet_name=chosen.name,
+                                treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                selected_period=selected_period, compare_to=compare_to, signs_resolved=True)
+    if result.has_fatal_errors:
+        return result
+    after = names[closing + 1:]
+    left_out = [f"Left out {item}" for item in chosen.left_out] + others
+    if after:
+        left_out.append(f"Left out {_plural(len(after), 'line')} after '{names[closing]}' (supplemental disclosures): "
+                        + ", ".join(f"'{name}'" for name in after))
+    identity = f"Checked every subtotal and {_IDENTITY_NAME[chosen.kind]}: {checked.identity}"
+    blanks = [f"Read the blank {chosen.labels[column]} figure of '{names[row]}' as 0: the subtotal it sits in adds up "
+              "with it at 0" for row, column in checked.blanks if not money[row].dash]
+    result.source_kind = "ixbrl"
+    result.source_statement = chosen.name
+    result.statement_kind = chosen.kind
+    result.statement_checks = [identity, _CHANGE_NOTE]
+    left, right = checked.sides
+    result.identities = [{"identity": chosen.kind, "left": names[left], "right": names[right],
+                          "columns": list(chosen.labels), "holds": True}]
+    result.reader_notes = [*chosen.notes, *left_out, identity, *blanks, _CHANGE_NOTE]
+    result.xbrl_lines = [
+        {"line_item": names[i], "concept": line.concept, "measure": line.measure,
+         "subtotal": i in totals, "left_out": i > closing,
+         "columns": [_key_record(label, key) for label, key in zip(chosen.labels, line.keys, strict=True)]}
+        for i, line in enumerate(money)]
+    result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, identity,
+                                          *blanks, _CHANGE_NOTE]
     return result
 
 

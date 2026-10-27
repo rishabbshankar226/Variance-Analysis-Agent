@@ -99,6 +99,20 @@ def _required_value(
     return found[1]
 
 
+_STATEMENT_KINDS = frozenset({"balance_sheet", "cash_flow"})
+
+
+def _statement_kind(line_item: str, row: dict[str, object]) -> str:
+    """A balance sheet or cash flow line is never revenue or expense, whatever its label (PLAN.md R7)."""
+    value = row.get("statement_kind")
+    if is_missing(value):
+        return ""
+    kind = str(value).strip().casefold()
+    if kind not in _STATEMENT_KINDS:
+        raise ValueError(f"{line_item}: Statement Kind must be balance_sheet or cash_flow.")
+    return kind
+
+
 def _summary_candidate(line_item: str, row: dict[str, object]) -> tuple[bool, str]:
     if "row_kind" in row and not is_missing(row["row_kind"]):
         kind = str(row["row_kind"]).strip().casefold()
@@ -166,12 +180,15 @@ def _is_material(
             > abs(budget_units) * threshold_units * variance_scale)
 
 
-def _status(line_type: LineType, variance: Decimal, better: BetterDirection | None = None) -> Status:
+def _status(line_type: LineType, variance: Decimal, better: BetterDirection | None = None,
+            statement: bool = False) -> Status:
     if variance == 0:
         return Status.NEUTRAL
     if better is not None:
         favorable = variance > 0 if better is BetterDirection.HIGHER else variance < 0
         return Status.FAVORABLE if favorable else Status.UNFAVORABLE
+    if statement:  # a statement line's change is described, not judged, unless a direction is declared
+        return Status.NEUTRAL
     if line_type == LineType.EXPENSE:
         return Status.UNFAVORABLE if variance > 0 else Status.FAVORABLE
     if line_type == LineType.REVENUE:
@@ -391,7 +408,9 @@ def _verify_result(
             raise _verification_failure(f"comparison metadata mismatch for {row.line_item!r}")
         if row.variance_bps != bps:
             raise _verification_failure(f"basis-point variance mismatch for {row.line_item!r}")
-        if row.status != _status(row.line_type, row.variance_dollars, row.better):
+        if row.statement_kind != _statement_kind(row.line_item, row.raw):
+            raise _verification_failure(f"statement kind mismatch for {row.line_item!r}")
+        if row.status != _status(row.line_type, row.variance_dollars, row.better, bool(row.statement_kind)):
             raise _verification_failure(f"F/U status mismatch for {row.line_item!r}")
         expected_material = _is_material(row.budget, row.variance_dollars, config, row.measure)
         if row.material != expected_material:
@@ -553,7 +572,9 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
             kind=kind, config=config,
         )
 
-        line_type, classification_source = _classify(line_item, row, config)
+        statement_kind = _statement_kind(line_item, row)
+        line_type, classification_source = ((LineType.UNCLASSIFIED, "statement") if statement_kind
+                                             else _classify(line_item, row, config))
         better, direction_source = direction(row.get("better"), kind, line_type, line_item)
         summary_candidate, summary_source = (_summary_candidate(line_item, row)
                                              if kind is MeasureKind.CURRENCY else (False, "noncurrency"))
@@ -574,7 +595,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 variance_dollars=variance,
                 variance_percent=pct,
                 percent_label=pct_label,
-                status=_status(line_type, variance, better),
+                status=_status(line_type, variance, better, bool(statement_kind)),
                 material=material,
                 excluded_from_aggregation=summary_candidate,
                 driver_evidence=driver,
@@ -582,7 +603,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 measure=kind, better=better, direction_source=direction_source,
                 measure_declared="measure" in row,
                 comparison_details=details,
-                segment=segment, segment_declared=segment_declared,
+                segment=segment, segment_declared=segment_declared, statement_kind=statement_kind,
                 variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
                 classification_source=classification_source,
                 summary_source=summary_source,
@@ -614,7 +635,8 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         )
 
     unclassified = [
-        row.line_item for row in analyzed if row.line_type == LineType.UNCLASSIFIED and currency_row(row)
+        row.line_item for row in analyzed
+        if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and not row.statement_kind
     ]
     if unclassified:
         sample = ", ".join(unclassified[:5])

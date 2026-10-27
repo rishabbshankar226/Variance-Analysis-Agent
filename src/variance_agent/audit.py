@@ -180,9 +180,18 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
         lines = document.get("lines")
         if not isinstance(notes, (list, tuple)) or not isinstance(lines, (list, tuple)):
             raise ValueError("source_document reader_notes and lines must be lists.")
-        return {"kind": "ixbrl", "statement": str(statement),
-                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
-                "lines": [_json_value(line) for line in lines]}
+        record: JSONObject = {"kind": "ixbrl", "statement": str(statement),
+                              "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                              "lines": [_json_value(line) for line in lines]}
+        if "statement_kind" in document:  # a balance sheet or cash flow statement and its identity (PLAN.md R9)
+            if document["statement_kind"] not in {"balance_sheet", "cash_flow"}:
+                raise ValueError("source_document statement_kind must be balance_sheet or cash_flow.")
+            identities = document.get("identities")
+            if not isinstance(identities, (list, tuple)):
+                raise ValueError("source_document identities must be a list.")
+            record.update(statement_kind=str(document["statement_kind"]),
+                          identities=[_json_value(identity) for identity in identities])
+        return record
     if kind == "edgar_xlsx":
         validate_text(statement, field="source_document statement", nonblank=True)
         sheet = document.get("sheet")
@@ -317,7 +326,8 @@ def build_audit_record(
             "logic": "absolute_dollar_or_absolute_percent",
         },
         "data_quality": data_quality,
-        "totals": {
+        # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value.
+        "totals": None if any(row.statement_kind for row in result.rows) else {
             "revenue": _aggregate_record(
                 result.revenue,
                 present=has_revenue,

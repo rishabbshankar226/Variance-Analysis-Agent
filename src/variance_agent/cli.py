@@ -546,7 +546,11 @@ def _run(args: Arguments) -> int:
               f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
               f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
-    report = render_markdown(result)
+    statement_checks = intake_res.statement_checks if intake_res is not None else []
+    if statement_checks and args.xlsx:
+        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, "
+                         "or choose the filing's income statement.")
+    report = render_markdown(result, statement_checks=statement_checks) if statement_checks else render_markdown(result)
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)

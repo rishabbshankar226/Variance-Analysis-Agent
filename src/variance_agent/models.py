@@ -118,6 +118,7 @@ class AnalyzedRow:
     comparison_details: ComparisonDetails | None = None
     segment: str = ""
     segment_declared: bool = False
+    statement_kind: str = ""  # "balance_sheet" or "cash_flow": compared as Increase or Decrease (PLAN.md R7)
 
 
 @dataclass(frozen=True)

@@ -183,15 +183,15 @@ def test_the_face_statement_is_read_not_a_note_with_the_same_title() -> None:
     assert _amounts(result)[0][3] == 4100 * M
 
 
-def test_a_balance_sheet_is_listed_but_not_compared_yet() -> None:
+def test_a_balance_sheet_without_its_identity_lines_refuses_plainly() -> None:
     sheet = statement("CONSOLIDATED BALANCE SHEETS", [
         row("Cash", fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
         row("Inventory", fact("us-gaap:InventoryNet", "I25", "300"), fact("us-gaap:InventoryNet", "I24", "250")),
         row("Total assets", fact("us-gaap:Assets", "I25", "800"), fact("us-gaap:Assets", "I24", "650"))])
     result = _read(income_filing(extra=sheet), sheet="Consolidated Balance Sheets")
-    assert result.fatal_error_message == ("'Consolidated Balance Sheets' lists assets, liabilities and equity, which "
-                                          "can't be compared as revenue and expense yet. Choose an income statement "
-                                          "instead: Consolidated Statements of Operations.")
+    assert result.fatal_error_message == ("I couldn't find both total assets and total liabilities and equity in the "
+                                          "Consolidated Balance Sheets, so I can't check that it balances and stopped "
+                                          "instead of guessing. Choose another statement from this filing.")
 
 
 @pytest.mark.parametrize("prolog", [b'<!DOCTYPE html [<!ENTITY x "y">]>', b'<!ENTITY x "y">', b"<!doctype x [ ]>"])

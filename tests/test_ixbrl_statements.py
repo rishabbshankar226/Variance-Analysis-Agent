@@ -167,3 +167,150 @@ def test_a_note_table_titled_near_a_mention_of_the_statement_is_not_the_statemen
 def test_a_singular_cash_flow_title_is_a_cash_flow_statement() -> None:
     flows = _statement(_filing(statement("CONSOLIDATED STATEMENTS OF CASH FLOW", cash_flow_rows())), "cash_flow")
     assert flows.name == "Consolidated Statements of Cash Flow"
+
+
+# R7: comparing a balance sheet or cash flow statement --------------------------------------------
+
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+from jsonschema import Draft202012Validator  # noqa: E402
+
+from variance_agent import cli  # noqa: E402
+from variance_agent.analysis import analyze_rows  # noqa: E402
+from variance_agent.comparison import display_outcome  # noqa: E402
+from variance_agent.intake import IntakeResult, read_input_assisted  # noqa: E402
+from variance_agent.models import AnalysisConfig, ComparisonBasis, LineType, Status  # noqa: E402
+from variance_agent.report import render_markdown  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+BALANCE = "Consolidated Balance Sheets"
+FLOWS = "Consolidated Statements of Cash Flows"
+IDENTITY = ("Checked every subtotal and the balance sheet identity: Total assets equals Total liabilities and stockholders' "
+            "equity in Sep 2025 and Sep 2024, within the rounding each figure's decimals state")
+CHANGE_NOTE = ("Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is "
+               "negative, so a larger outflow or deduction shows as a Decrease")
+
+
+def _read(sheet: str) -> IntakeResult:
+    return read_input_assisted(all_statements_filing(), ".htm", filename="hal-20250927.htm", sheet=sheet,
+                               compare_to=ComparisonBasis.PRIOR_PERIOD)
+
+
+def _analyse(result: IntakeResult, period: str = "Sep 2025") -> tuple[object, ...]:
+    config = AnalysisConfig(period, Decimal("1"), Decimal("0.01"), comparison_basis=ComparisonBasis.PRIOR_PERIOD,
+                            comparison_label=result.comparison_label)
+    analysis = analyze_rows(result.rows, config)
+    return analysis, config
+
+
+def test_a_balance_sheet_reads_every_line_and_subtotal_at_its_printed_value() -> None:
+    result = _read(BALANCE)
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert [(r["line_item"], r["Row Kind"]) for r in result.rows][:5] == [
+        ("Cash and cash equivalents", "Detail"), ("Accounts receivable, net", "Detail"), ("Total current assets", "Total"),
+        ("Property and equipment, net", "Detail"), ("Total assets", "Total")]
+    treasury = next(r for r in result.rows if r["line_item"] == "Treasury stock, at cost")
+    assert (treasury["actual"], treasury["budget"], treasury["Statement Kind"]) == (-100 * M, -100 * M, "balance_sheet")
+    assert IDENTITY in result.visible_transformations
+    assert CHANGE_NOTE in result.visible_transformations
+    assert result.detected_totals == []
+    record = result.source_document()
+    assert record is not None
+    assert (record["statement_kind"], record["identities"]) == ("balance_sheet", [{
+        "identity": "balance_sheet", "left": "Total assets", "right": "Total liabilities and stockholders' equity",
+        "columns": ["Sep 2025", "Sep 2024"], "holds": True}])
+
+
+def test_a_cash_flow_statement_ends_at_ending_cash_and_lists_the_supplemental_lines() -> None:
+    result = _read(FLOWS)
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert [r["line_item"] for r in result.rows][-2:] == [
+        "Cash, cash equivalents and restricted cash, beginning of year", "Cash, cash equivalents and restricted cash, end of year"]
+    assert ("Left out 1 line after 'Cash, cash equivalents and restricted cash, end of year' (supplemental disclosures): "
+            "'Cash paid for interest'") in result.visible_transformations
+    record = result.source_document()
+    assert record is not None
+    assert [line["line_item"] for line in record["lines"] if line["left_out"]] == ["Cash paid for interest"]  # type: ignore[index, union-attr]
+
+
+def test_statement_lines_are_never_revenue_or_expense_and_carry_no_judgement() -> None:
+    analysis, config = _analyse(_read(BALANCE))
+    rows = analysis.rows  # type: ignore[attr-defined]
+    assert {(row.line_type, row.classification_source) for row in rows} == {(LineType.UNCLASSIFIED, "statement")}
+    assert {row.status for row in rows} == {Status.NEUTRAL}
+    assert analysis.revenue.actual == 0 and analysis.expenses.actual == 0  # type: ignore[attr-defined]
+    assert not any("Unclassified" in warning for warning in analysis.warnings)  # type: ignore[attr-defined]
+    labels = {row.line_item: display_outcome(row, ComparisonBasis.PRIOR_PERIOD) for row in rows}
+    assert (labels["Cash and cash equivalents"], labels["Long-term debt"], labels["Treasury stock, at cost"]) == (
+        "Increase", "No change", "No change")
+
+
+def test_a_cash_outflow_that_grows_is_a_decrease_of_its_printed_figure() -> None:
+    analysis, _ = _analyse(_read(FLOWS), "FY2025")
+    capex = next(row for row in analysis.rows if row.line_item == "Purchases of property and equipment")  # type: ignore[attr-defined]
+    assert (capex.actual, capex.budget, capex.variance_dollars) == (-600 * M, -500 * M, -100 * M)
+    assert display_outcome(capex, ComparisonBasis.PRIOR_PERIOD) == "Decrease"
+
+
+@pytest.mark.parametrize(("better", "label"), [("Higher", "Decrease (U)"), ("Lower", "Decrease (F)")])
+def test_a_declared_better_direction_gives_a_statement_line_f_or_u(better: str, label: str) -> None:
+    result = _read(FLOWS)
+    for row_dict in result.rows:
+        if row_dict["line_item"] == "Purchases of property and equipment":
+            row_dict["Better"] = better
+    analysis, _ = _analyse(result, "FY2025")
+    capex = next(row for row in analysis.rows if row.line_item == "Purchases of property and equipment")  # type: ignore[attr-defined]
+    assert display_outcome(capex, ComparisonBasis.PRIOR_PERIOD) == label
+
+
+def test_the_report_shows_the_identity_and_each_change_without_totals_or_advice() -> None:
+    result = _read(BALANCE)
+    analysis, _ = _analyse(result)
+    report = render_markdown(analysis, statement_checks=result.statement_checks)  # type: ignore[arg-type]
+    assert report.startswith("# Statement Comparison: Sep 2025\n")
+    assert IDENTITY in report
+    assert "| Cash and cash equivalents | $2,000,000,000.00 | $2,600,000,000.00 | $600,000,000.00 | 30.0% | Increase | Yes |" in report
+    for absent in ("Total Revenue", "Total Expenses", "Net operating", "Mitigation", "Optimization", "Unclassified"):
+        assert absent not in report
+
+
+def _cli(tmp_path: Path, sheet: str, period: str, *extra: str) -> list[str]:
+    path = tmp_path / "hal-20250927.htm"
+    path.write_bytes(all_statements_filing())
+    return [str(path), "--assisted", "--sheet", sheet, "--compare-to", "prior-period", "--period", period,
+            "--dollar-threshold", "1", "--percent-threshold", "1", *extra]
+
+
+def test_the_cli_records_a_statement_comparison_in_audit_19(tmp_path: Path) -> None:
+    audit = tmp_path / "audit.json"
+    assert cli.main(_cli(tmp_path, BALANCE, "Sep 2025", "--audit-json", str(audit), "-o", str(tmp_path / "r.md"))) == 0
+    record = json.loads(audit.read_text(encoding="utf-8"))
+    Draft202012Validator(json.loads((ROOT / "schemas/audit-1.9.schema.json").read_text(encoding="utf-8"))).validate(record)
+    assert (record["schema_version"], record["totals"]) == ("1.9", None)
+    assert record["source"]["document"]["statement_kind"] == "balance_sheet"
+    assert {row["classification_source"] for row in record["material_variances"]} == {"statement"}
+    assert record["source"]["document"]["identities"][0]["left"] == "Total assets"
+    assert "# Statement Comparison" in (tmp_path / "r.md").read_text(encoding="utf-8")
+
+
+def test_the_cli_refuses_a_workbook_for_a_statement_comparison(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(_cli(tmp_path, FLOWS, "FY2025", "--xlsx", str(tmp_path / "out.xlsx")))
+    assert ("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, or choose the "
+            "filing's income statement.") in capsys.readouterr().err.replace("\n", " ")
+    assert not (tmp_path / "out.xlsx").exists()
+
+
+def test_a_balance_sheet_that_does_not_balance_refuses_on_the_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    tag = (b'name="us-gaap:LiabilitiesAndStockholdersEquity" contextRef="I25" unitRef="usd" decimals="-6" scale="6" '
+           b'format="ixt:num-dot-decimal">')
+    data = all_statements_filing().replace(tag + b"6,500", tag + b"6,503")
+    assert data != all_statements_filing()
+    path = tmp_path / "hal-20250927.htm"
+    path.write_bytes(data)
+    with pytest.raises(SystemExit):
+        cli.main([str(path), "--assisted", "--sheet", BALANCE, "--compare-to", "prior-period", "--period", "Sep 2025",
+                  "--dollar-threshold", "1", "--percent-threshold", "1"])
+    assert "so I can't check it and stopped instead of guessing" in capsys.readouterr().err.replace("\n", " ")

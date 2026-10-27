@@ -51,6 +51,7 @@ class Checked:
     identity: str = ""  # the identity that held, in words
     problem: str = ""  # why the statement is refused
     blanks: list[tuple[int, int]] = field(default_factory=list)  # (line, column) blank cells read as 0
+    sides: tuple[int, int] | None = None  # the identity's two lines: assets and claims, or ending and beginning cash
 
 
 def half_width(decimals: str) -> Decimal:
@@ -203,7 +204,7 @@ def check_balance_sheet(lines: list[CheckLine], statement: str, columns: list[st
                 f"more than their rounding in {label}, so I stopped instead of guessing. {_REFUSE_FIX}"))
     return Checked(closing, matches, identity=(
         f"{lines[assets].name} equals {lines[claims].name} in {_columns(columns)}, within the rounding each figure's "
-        "decimals state"), blanks=_blanks(lines, closing))
+        "decimals state"), blanks=_blanks(lines, closing), sides=(assets, claims))
 
 
 def check_cash_flow(lines: list[CheckLine], statement: str, columns: list[str]) -> Checked:
@@ -224,4 +225,4 @@ def check_cash_flow(lines: list[CheckLine], statement: str, columns: list[str]) 
             f"instead of guessing. {_REFUSE_FIX}"))
     return Checked(ending, matches, identity=(
         f"Ending cash equals beginning cash plus the flows printed between them in {_columns(columns)}, within the "
-        "rounding each figure's decimals state"), blanks=_blanks(lines, ending))
+        "rounding each figure's decimals state"), blanks=_blanks(lines, ending), sides=(ending, beginning))

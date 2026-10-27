@@ -264,10 +264,35 @@ def _data_request(top_rows: tuple[AnalyzedRow, ...], *, plain: bool = False) -> 
 
 
 @financial_context()
-def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
+def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
+    """A balance sheet or cash flow comparison: the checks the read passed, then each line's change (PLAN.md R7)."""
+    cfg = result.config
+    places = _report_places(result)
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    lines = [f"# Statement Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
+             *("- " + _safe_inline(check) for check in checks),
+             "- No revenue, expense or net totals apply to this statement; lines marked Total are its own subtotals.",
+             "", "## Lines", "",
+             f"| Line Item | {heading} | Actual | Change | Change (%) | Direction | Material |",
+             "|---|---:|---:|---:|---:|---|---|"]
+    for row in result.rows:
+        name = _safe_inline(row.line_item) + (" (Total)" if str(row.raw.get("row_kind", "")).casefold() == "total" else "")
+        lines.append("| " + " | ".join([
+            name, _money(row.budget, cfg.currency, places), _money(row.actual, cfg.currency, places),
+            _money(row.variance_dollars, cfg.currency, places), _pct(row.budget, row.variance_dollars, row.percent_label),
+            display_outcome(row, cfg.comparison_basis), "Yes" if row.material else "No"]) + " |")
+    if result.warnings:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    return "\n".join([*lines, ""])
+
+
+@financial_context()
+def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None) -> str:
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
+    if any(row.statement_kind for row in result.rows):
+        return render_statement_report(result, statement_checks or [])
     if effective_layout(result.config) == "earnings":
         from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
         from .earnings import render_earnings

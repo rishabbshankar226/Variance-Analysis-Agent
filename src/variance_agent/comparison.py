@@ -252,6 +252,9 @@ def extended_heading(config: AnalysisConfig) -> str:
 
 
 def display_outcome(row: AnalyzedRow, basis: ComparisonBasis) -> str:
+    if row.statement_kind:  # a balance sheet or cash flow line: the change of its printed figure (PLAN.md R7)
+        word = "Increase" if row.variance_dollars > 0 else "Decrease" if row.variance_dollars < 0 else "No change"
+        return f"{word} ({row.status})" if row.better is not None and row.variance_dollars != 0 else word
     if (basis is not ComparisonBasis.CONSENSUS or row.status is Status.UNCLASSIFIED
             or (row.line_type is LineType.UNCLASSIFIED and row.better is None)):
         return str(row.status)
