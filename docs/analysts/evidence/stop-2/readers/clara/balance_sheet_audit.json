@@ -1,5 +1,5 @@
 {
-  "analysis_fingerprint": "9815867ea7e9b86b63b97cb2cc86b3f0baac61350f82623661a36643e06788a6",
+  "analysis_fingerprint": "d92a3b39f4d5993914f688963c6cd88394bda23af4c3ab625d004031e7a45afa",
   "audience": {
     "actual_label": null,
     "bps_threshold": null,
@@ -841,7 +841,7 @@
       "variance_percent": "0.18829981718464351005484460694698354661791590493601"
     }
   ],
-  "payload_sha256": "1ae30260c9d737d43c8c64e2a83ca64aa365dd9b75b87da882755cef4f25f6d0",
+  "payload_sha256": "5e494d542f3ca003849dc348d9dc33b68a35d460a3a3ca03dacc77c0249ac902",
   "period": "Sep 2025",
   "provenance": {
     "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
@@ -863,10 +863,95 @@
             "Sep 2025",
             "Sep 2024"
           ],
+          "footing": [
+            {
+              "subtotal": "Total current assets",
+              "terms": [
+                {
+                  "line_item": "Cash and cash equivalents",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Accounts receivable, net",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Total assets",
+              "terms": [
+                {
+                  "line_item": "Total current assets",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Property and equipment, net",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Total current liabilities",
+              "terms": [
+                {
+                  "line_item": "Accounts payable",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Total liabilities",
+              "terms": [
+                {
+                  "line_item": "Total current liabilities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Long-term debt",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Total stockholders' equity",
+              "terms": [
+                {
+                  "line_item": "Common stock, $0.01 par value; 500 shares authorized; 120 and 118 shares issued",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Additional paid-in capital",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Retained earnings",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Treasury stock, at cost",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Total liabilities and stockholders' equity",
+              "terms": [
+                {
+                  "line_item": "Total liabilities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Total stockholders' equity",
+                  "weight": 1
+                }
+              ]
+            }
+          ],
           "holds": true,
           "identity": "balance_sheet",
           "left": "Total assets",
-          "right": "Total liabilities and stockholders' equity"
+          "right": "Total liabilities and stockholders' equity",
+          "rule": "total assets = total liabilities and equity"
         }
       ],
       "kind": "ixbrl",

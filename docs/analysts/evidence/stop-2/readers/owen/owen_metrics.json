@@ -27,7 +27,7 @@
      "concept": "us-gaap:InterestExpense",
      "statement": "income",
      "period": "ltm",
-     "sign": -1
+     "sign": 1
     },
     {
      "label": "Depreciation and amortization",

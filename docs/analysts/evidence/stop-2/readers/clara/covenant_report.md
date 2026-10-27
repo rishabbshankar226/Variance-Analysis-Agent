@@ -2,8 +2,10 @@
 
 Reporting currency: USD
 
-- Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min; utilization is actual over limit.
+- Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a negative headroom is a Breach for either kind. Utilization is actual over limit: above 100% is beyond a Max, and below 100% is short of a Min.
 - No revenue, expense or net totals apply to this comparison.
+
+**0 Breach, 1 Near, 1 Within.**
 
 ## Lines, by severity
 
@@ -18,6 +20,14 @@ Reporting currency: USD
 
 ## Metrics
 
-- Gross leverage = 0.88x = (Long-term debt \[balance sheet, instant\]) / (Net income \[income, fy\] - Interest expense \[income, fy\] + Depreciation and amortization \[cash flow, fy\])
-- Interest cover = 34x = (Net income \[income, fy\] - Interest expense \[income, fy\] + Depreciation and amortization \[cash flow, fy\]) / (- Interest expense \[income, fy\])
+- Gross leverage = 0.88x = (Long-term debt \[balance sheet, instant\]) / (Net income \[income, fy\] + Interest expense \[income, fy\] + Depreciation and amortization \[cash flow, fy\])
+  - Long-term debt \[balance sheet, instant\]: $1,500,000,000.00 (Sep 2025, hal-20250927.htm)
+  - Net income \[income, fy\]: $1,450,000,000.00 (FY2025, hal-20250927.htm)
+  - Interest expense \[income, fy\]: $50,000,000.00 (FY2025, hal-20250927.htm)
+  - Depreciation and amortization \[cash flow, fy\]: $200,000,000.00 (FY2025, hal-20250927.htm)
+- Interest cover = 34x = (Net income \[income, fy\] + Interest expense \[income, fy\] + Depreciation and amortization \[cash flow, fy\]) / (Interest expense \[income, fy\])
+  - Net income \[income, fy\]: $1,450,000,000.00 (FY2025, hal-20250927.htm)
+  - Interest expense \[income, fy\]: $50,000,000.00 (FY2025, hal-20250927.htm)
+  - Depreciation and amortization \[cash flow, fy\]: $200,000,000.00 (FY2025, hal-20250927.htm)
+  - Interest expense \[income, fy\]: $50,000,000.00 (FY2025, hal-20250927.htm)
 - Left out 'Fixed charge cover': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed

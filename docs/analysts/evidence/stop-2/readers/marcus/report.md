@@ -2,16 +2,16 @@
 
 Reporting currency: USD
 
-- Difference is actual minus target (basis points for rates). On target needs a declared tolerance, or exact equality. A target is neutral: no F or U.
+- Difference is actual minus target (basis points for rates). A row is On target when the difference is within its declared tolerance, edge included, or exactly zero without one. A target is neutral: no F or U.
 - No revenue, expense or net totals apply to this comparison.
 
 ## Lines
 
-| Line Item | Target | Actual | Difference | Tolerance | Outcome | Status |
-|---|---:|---:|---:|---:|---|---|
-| NORDVIK.FAKE | 12% | 12.4% | 40 bps | 0.25% | Over |  |
-| HALVORSEN.FAKE | 8% | 7.9% | -10 bps | 0.25% | On target |  |
-| OSTRAVA.FAKE | 6% | 5% | -100 bps | 0.25% | Under |  |
+| Line Item | Target | Actual | Difference | Tolerance | Outcome |
+|---|---:|---:|---:|---:|---|
+| NORDVIK.FAKE | 12% | 12.4% | 40 bps | 25 bps | Over |
+| HALVORSEN.FAKE | 8% | 7.9% | -10 bps | 25 bps | On target |
+| OSTRAVA.FAKE | 6% | 5% | -100 bps | 25 bps | Under |
 
 ## How the file was read
 - NORDVIK.FAKE: read Measure as Percent.

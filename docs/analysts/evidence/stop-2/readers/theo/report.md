@@ -2,16 +2,16 @@
 
 Reporting currency: USD
 
-- Active difference is actual minus benchmark (basis points for rates). In line needs a declared tolerance, or exact equality; F or U follows each row's declared Better direction.
+- Active difference is actual minus benchmark (basis points for rates). A row is In line when the difference is within its declared tolerance, edge included, or exactly zero without one; In line is Neutral. Otherwise F or U follows the row's declared Better direction. Above and Below say only whether the figure is higher or lower than its benchmark.
 - No revenue, expense or net totals apply to this comparison.
 
 ## Lines
 
 | Line Item | Benchmark | Actual | Difference | Tolerance | Outcome | Status |
 |---|---:|---:|---:|---:|---|---|
-| Fund return | 6.8% | 7.25% | 45 bps | 0.1% | Above | Favorable |
-| Tracking fund return | 5.05% | 5% | -5 bps | 0.05% | In line | Neutral |
-| Management fee rate | 0.8% | 0.82% | 2 bps |  | Above | Unfavorable |
+| Fund return | 6.8% | 7.25% | 45 bps | 10 bps | Above | Favorable |
+| Tracking fund return | 5.05% | 5% | -5 bps | 5 bps | In line | Neutral |
+| Management fee rate | 0.8% | 0.82% | 2 bps | none (exact) | Above | Unfavorable |
 
 ## How the file was read
 - Fund return: read Measure as Percent.

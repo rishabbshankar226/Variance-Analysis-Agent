@@ -1,5 +1,5 @@
 {
-  "analysis_fingerprint": "12fba00755f159d610325529250e00e8a518145a57c2dbaf69477f3afcd90bf3",
+  "analysis_fingerprint": "2545ca0542fd7cf0e005e8a44e87404243a243398e40cf45e61fe0686d3daaf3",
   "audience": {
     "actual_label": null,
     "bps_threshold": null,
@@ -738,7 +738,7 @@
       "variance_percent": "0.3"
     }
   ],
-  "payload_sha256": "940ba38c9c7ab4e26820013f1d9580558c9d77c15f2b71d9afe7322148c20cf6",
+  "payload_sha256": "1f7dd7e2e321aeb317a7f8fc23c255b9f4c7831df9987c4814e3267eb5e6b0c9",
   "period": "FY2025",
   "provenance": {
     "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
@@ -760,10 +760,82 @@
             "FY2025",
             "FY2024"
           ],
+          "footing": [
+            {
+              "subtotal": "Net cash provided by operating activities",
+              "terms": [
+                {
+                  "line_item": "Net income",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Depreciation and amortization",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Increase in accounts receivable",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net cash used in investing activities",
+              "terms": [
+                {
+                  "line_item": "Purchases of property and equipment",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net cash used in financing activities",
+              "terms": [
+                {
+                  "line_item": "Dividends paid",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net increase in cash, cash equivalents and restricted cash",
+              "terms": [
+                {
+                  "line_item": "Net cash provided by operating activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Net cash used in investing activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Net cash used in financing activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Effect of exchange rate changes on cash",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Cash, cash equivalents and restricted cash, end of year",
+              "terms": [
+                {
+                  "line_item": "Net increase in cash, cash equivalents and restricted cash",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Cash, cash equivalents and restricted cash, beginning of year",
+                  "weight": 1
+                }
+              ]
+            }
+          ],
           "holds": true,
           "identity": "cash_flow",
           "left": "Cash, cash equivalents and restricted cash, end of year",
-          "right": "Cash, cash equivalents and restricted cash, beginning of year"
+          "right": "Cash, cash equivalents and restricted cash, beginning of year",
+          "rule": "ending cash = beginning cash + the flows printed between them"
         }
       ],
       "kind": "ixbrl",

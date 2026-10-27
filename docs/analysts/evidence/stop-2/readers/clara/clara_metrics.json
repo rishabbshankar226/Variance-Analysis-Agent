@@ -1,15 +1,88 @@
-{"metrics": [
-  {"name": "Gross leverage", "measure": "Multiple",
-   "numerator": [{"concept": "us-gaap:LongTermDebtNoncurrent", "statement": "balance_sheet", "period": "instant", "sign": 1}],
-   "denominator": [{"concept": "us-gaap:NetIncomeLoss", "statement": "income", "period": "fy", "sign": 1},
-                   {"concept": "us-gaap:InterestExpense", "statement": "income", "period": "fy", "sign": -1},
-                   {"concept": "us-gaap:DepreciationDepletionAndAmortization", "statement": "cash_flow", "period": "fy", "sign": 1}]},
-  {"name": "Interest cover", "measure": "Multiple",
-   "numerator": [{"concept": "us-gaap:NetIncomeLoss", "statement": "income", "period": "fy", "sign": 1},
-                 {"concept": "us-gaap:InterestExpense", "statement": "income", "period": "fy", "sign": -1},
-                 {"concept": "us-gaap:DepreciationDepletionAndAmortization", "statement": "cash_flow", "period": "fy", "sign": 1}],
-   "denominator": [{"concept": "us-gaap:InterestExpense", "statement": "income", "period": "fy", "sign": -1}]},
-  {"name": "Fixed charge cover", "measure": "Multiple",
-   "numerator": [{"concept": "us-gaap:NetIncomeLoss", "statement": "income", "period": "fy", "sign": 1}],
-   "denominator": [{"concept": "us-gaap:OperatingLeasePayments", "statement": "cash_flow", "period": "fy", "sign": 1}]}
-]}
+{
+ "metrics": [
+  {
+   "name": "Gross leverage",
+   "measure": "Multiple",
+   "numerator": [
+    {
+     "concept": "us-gaap:LongTermDebtNoncurrent",
+     "statement": "balance_sheet",
+     "period": "instant",
+     "sign": 1
+    }
+   ],
+   "denominator": [
+    {
+     "concept": "us-gaap:NetIncomeLoss",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    },
+    {
+     "concept": "us-gaap:InterestExpense",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    },
+    {
+     "concept": "us-gaap:DepreciationDepletionAndAmortization",
+     "statement": "cash_flow",
+     "period": "fy",
+     "sign": 1
+    }
+   ]
+  },
+  {
+   "name": "Interest cover",
+   "measure": "Multiple",
+   "numerator": [
+    {
+     "concept": "us-gaap:NetIncomeLoss",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    },
+    {
+     "concept": "us-gaap:InterestExpense",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    },
+    {
+     "concept": "us-gaap:DepreciationDepletionAndAmortization",
+     "statement": "cash_flow",
+     "period": "fy",
+     "sign": 1
+    }
+   ],
+   "denominator": [
+    {
+     "concept": "us-gaap:InterestExpense",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    }
+   ]
+  },
+  {
+   "name": "Fixed charge cover",
+   "measure": "Multiple",
+   "numerator": [
+    {
+     "concept": "us-gaap:NetIncomeLoss",
+     "statement": "income",
+     "period": "fy",
+     "sign": 1
+    }
+   ],
+   "denominator": [
+    {
+     "concept": "us-gaap:OperatingLeasePayments",
+     "statement": "cash_flow",
+     "period": "fy",
+     "sign": 1
+    }
+   ]
+  }
+ ]
+}

@@ -10,8 +10,8 @@
 [assisted intake] Joined 'clara_covenants.csv' to 'the metrics' by 'line item': 2 lines, each in both files
 [assisted intake] Took Actual from 'the metrics' and the comparison from 'clara_covenants.csv'
 [assisted intake] Left out 'Fixed charge cover' of 'clara_covenants.csv': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed
-[assisted intake] the metrics: Gross leverage = 0.88x = (Long-term debt [balance sheet, instant]) / (Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy])
-[assisted intake] the metrics: Interest cover = 34x = (Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy]) / (- Interest expense [income, fy])
+[assisted intake] the metrics: Gross leverage = 0.88x = (Long-term debt [balance sheet, instant]) / (Net income [income, fy] + Interest expense [income, fy] + Depreciation and amortization [cash flow, fy])
+[assisted intake] the metrics: Interest cover = 34x = (Net income [income, fy] + Interest expense [income, fy] + Depreciation and amortization [cash flow, fy]) / (Interest expense [income, fy])
 [assisted intake] the metrics: Left out 'Fixed charge cover': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed
 [assisted intake] clara_covenants.csv: Gross leverage: read Measure as Multiple.
 [assisted intake] clara_covenants.csv: Interest cover: read Measure as Multiple.

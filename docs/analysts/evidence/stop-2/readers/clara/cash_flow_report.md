@@ -3,6 +3,7 @@
 Reporting currency: USD
 
 - Checked every subtotal and the cash roll-forward: Ending cash equals beginning cash plus the flows printed between them in FY2025 and FY2024, within the rounding each figure's decimals state
+- Left out 1 line after 'Cash, cash equivalents and restricted cash, end of year' (supplemental disclosures): 'Cash paid for interest'
 - Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease
 - No revenue, expense or net totals apply to this statement; lines marked Total are its own subtotals.
 

@@ -9,7 +9,7 @@
 [assisted intake] Joined 'owen_case.csv' to 'the metrics' by 'line item': 2 lines, each in both files
 [assisted intake] Took Actual from 'the metrics' and the comparison from 'owen_case.csv'
 [assisted intake] the metrics: LTM revenue = $4,300,000,000.00 = Net sales [income, ltm]
-[assisted intake] the metrics: LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] - Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]
+[assisted intake] the metrics: LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] + Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]
 [assisted intake] owen_case.csv: Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands).
 [measure intake] LTM revenue: read Better to Higher.
 [measure intake] LTM EBITDA: read Better to Higher.

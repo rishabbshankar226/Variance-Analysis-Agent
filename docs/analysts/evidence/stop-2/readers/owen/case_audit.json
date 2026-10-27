@@ -1,5 +1,5 @@
 {
-  "analysis_fingerprint": "d654d2ca48a5a01e9c98e55a3372f055fade861ff7de729c2c6a78ee93cf7ac9",
+  "analysis_fingerprint": "010737de91816cf91907bb43e623c81340f257efd5cce81202ed72dd784684f7",
   "audience": {
     "actual_label": null,
     "bps_threshold": null,
@@ -163,7 +163,7 @@
       "variance_percent": "0.028571428571428571428571428571428571428571428571429"
     }
   ],
-  "payload_sha256": "bb39ce0901ded69bc5e7fc5b18cdb1346e98764987f4f8b53e069463c2ae095f",
+  "payload_sha256": "ee838290429f1696ac814def69c2b3c1d0c58859e61addea37eae6cc438cfa5e",
   "period": "LTM Mar 2026",
   "provenance": {
     "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
@@ -220,6 +220,7 @@
               "column": "FY2025",
               "concept": "us-gaap:Revenues",
               "context": "FY25",
+              "displayed": "4100000000",
               "document": "hal-20250927.htm",
               "line_item": "Net sales",
               "period": "ltm",
@@ -229,9 +230,10 @@
               "value": "4100000000"
             },
             {
-              "column": "Mar 2026",
+              "column": "6 months to Mar 2026",
               "concept": "us-gaap:Revenues",
               "context": "YTD26",
+              "displayed": "2200000000",
               "document": "hal-20260328.htm",
               "line_item": "Net sales",
               "period": "ltm",
@@ -241,9 +243,10 @@
               "value": "2200000000"
             },
             {
-              "column": "Mar 2025",
+              "column": "6 months to Mar 2025",
               "concept": "us-gaap:Revenues",
               "context": "YTD25",
+              "displayed": "2000000000",
               "document": "hal-20260328.htm",
               "line_item": "Net sales",
               "period": "ltm",
@@ -257,7 +260,7 @@
           "value": "4300000000"
         },
         {
-          "formula": "Net income [income, ltm] - Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
+          "formula": "Net income [income, ltm] + Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
           "name": "LTM EBITDA",
           "reason": null,
           "terms": [
@@ -265,6 +268,7 @@
               "column": "FY2025",
               "concept": "us-gaap:NetIncomeLoss",
               "context": "FY25",
+              "displayed": "1450000000",
               "document": "hal-20250927.htm",
               "line_item": "Net income",
               "period": "ltm",
@@ -274,9 +278,10 @@
               "value": "1450000000"
             },
             {
-              "column": "Mar 2026",
+              "column": "6 months to Mar 2026",
               "concept": "us-gaap:NetIncomeLoss",
               "context": "YTD26",
+              "displayed": "815000000",
               "document": "hal-20260328.htm",
               "line_item": "Net income",
               "period": "ltm",
@@ -286,9 +291,10 @@
               "value": "815000000"
             },
             {
-              "column": "Mar 2025",
+              "column": "6 months to Mar 2025",
               "concept": "us-gaap:NetIncomeLoss",
               "context": "YTD25",
+              "displayed": "730000000",
               "document": "hal-20260328.htm",
               "line_item": "Net income",
               "period": "ltm",
@@ -302,43 +308,47 @@
               "column": "FY2025",
               "concept": "us-gaap:InterestExpense",
               "context": "FY25",
+              "displayed": "-50000000",
               "document": "hal-20250927.htm",
               "line_item": "Interest expense",
               "period": "ltm",
               "side": "numerator",
-              "sign": -1,
+              "sign": 1,
               "statement": "Consolidated Statements of Operations",
-              "value": "-50000000"
+              "value": "50000000"
             },
             {
-              "column": "Mar 2026",
+              "column": "6 months to Mar 2026",
               "concept": "us-gaap:InterestExpense",
               "context": "YTD26",
+              "displayed": "-25000000",
               "document": "hal-20260328.htm",
               "line_item": "Interest expense",
               "period": "ltm",
               "side": "numerator",
-              "sign": -1,
+              "sign": 1,
               "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
-              "value": "-25000000"
+              "value": "25000000"
             },
             {
-              "column": "Mar 2025",
+              "column": "6 months to Mar 2025",
               "concept": "us-gaap:InterestExpense",
               "context": "YTD25",
+              "displayed": "-20000000",
               "document": "hal-20260328.htm",
               "line_item": "Interest expense",
               "period": "ltm",
               "side": "numerator",
-              "sign": -1,
+              "sign": 1,
               "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
-              "value": "-20000000",
+              "value": "20000000",
               "weight": -1
             },
             {
               "column": "FY2025",
               "concept": "us-gaap:DepreciationDepletionAndAmortization",
               "context": "FY25",
+              "displayed": "200000000",
               "document": "hal-20250927.htm",
               "line_item": "Depreciation and amortization",
               "period": "ltm",
@@ -348,9 +358,10 @@
               "value": "200000000"
             },
             {
-              "column": "Mar 2026",
+              "column": "6 months to Mar 2026",
               "concept": "us-gaap:DepreciationDepletionAndAmortization",
               "context": "YTD26",
+              "displayed": "110000000",
               "document": "hal-20260328.htm",
               "line_item": "Depreciation and amortization",
               "period": "ltm",
@@ -360,9 +371,10 @@
               "value": "110000000"
             },
             {
-              "column": "Mar 2025",
+              "column": "6 months to Mar 2025",
               "concept": "us-gaap:DepreciationDepletionAndAmortization",
               "context": "YTD25",
+              "displayed": "100000000",
               "document": "hal-20260328.htm",
               "line_item": "Depreciation and amortization",
               "period": "ltm",
@@ -378,7 +390,7 @@
       ],
       "reader_notes": [
         "LTM revenue = $4,300,000,000.00 = Net sales [income, ltm]",
-        "LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] - Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
+        "LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] + Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
         "Joined 'owen_case.csv' to 'the metrics' by 'line item': 2 lines, each in both files",
         "Took Actual from 'the metrics' and the comparison from 'owen_case.csv'",
         "owen_case.csv: Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands)."
@@ -393,7 +405,7 @@
     "classification_rules": null,
     "column_mapping": {
       "actual": "value",
-      "budget": "Budget' in 'owen_case.csv",
+      "budget": "Budget in owen_case.csv",
       "line_item": "metric"
     },
     "excluded_totals": [],

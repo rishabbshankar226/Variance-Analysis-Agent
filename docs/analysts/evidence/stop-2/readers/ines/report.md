@@ -2,8 +2,10 @@
 
 Reporting currency: USD
 
-- Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min; utilization is actual over limit.
+- Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a negative headroom is a Breach for either kind. Utilization is actual over limit: above 100% is beyond a Max, and below 100% is short of a Min.
 - No revenue, expense or net totals apply to this comparison.
+
+**2 Breach, 1 Near, 2 Within.**
 
 ## Lines, by severity
 
