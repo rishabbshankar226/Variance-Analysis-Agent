@@ -56,6 +56,7 @@ _JARGON = re.compile(r"Traceback|Error:|Exception|\bschema\b|\bpayload\b|\bXML\b
 class Score:
     verified: int = 0
     unverified: int = 0
+    unverified_no_fact: int = 0  # of those, a printed dash or confirmed blank: no XBRL fact exists (Decision 35)
     wrong: int = 0
     covered: int = 0
     monetary: int = 0
@@ -148,6 +149,7 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
             value = row.get(field)
             if not isinstance(key, dict) or value is None:
                 score.unverified += 1
+                score.unverified_no_fact += not isinstance(key, dict)
                 continue
             period = tuple(str(part) for part in _items(key, "period"))
             dims = tuple(sorted((str(d.get("axis")), str(d.get("member"))) for d in _items(key, "dims") if isinstance(d, dict)))
@@ -383,7 +385,8 @@ def sweep(draw: str, readers: list[str], tag: str) -> dict[str, object]:
                     "accession": row["accession"], "label": row["label"], "form": row["form"],
                     "inline_xbrl": row["inline_xbrl"], "reader": reader, "statement": statement.kind,
                     "exit": code, "statement_read": read, "verified": score.verified, "unverified": score.unverified,
-                    "wrong": score.wrong, "covered": score.covered, "monetary_lines": score.monetary,
+                    "unverified_no_fact": score.unverified_no_fact, "wrong": score.wrong,
+                    "covered": score.covered, "monetary_lines": score.monetary,
                     "refusal": message, "plain_refusal": code == 2 and _plain(message), "seconds": round(seconds, 2),
                     "details": score.details,
                 })
@@ -417,6 +420,7 @@ def aggregate(results: list[dict[str, object]], results_path: Path) -> dict[str,
             "other_failures": sum(1 for r in rows if r["exit"] not in (0, 2)),
             "lines_verified": sum(int(str(r["verified"])) for r in rows),
             "lines_unverified": sum(int(str(r["unverified"])) for r in rows),
+            "lines_unverified_no_fact": sum(int(str(r.get("unverified_no_fact", 0) or 0)) for r in rows),
             "lines_wrong": sum(int(str(r["wrong"])) for r in rows),
         }
     return summary
