@@ -203,7 +203,7 @@ def draw_a(seed: int) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
 
 def draw_b(seed: int, earlier: tuple[str, ...] = ("A",)) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
     """A held-out draw (section 5): 30 filings, 15 of each form, uniform over the same four quarters, one per
-    filer, excluding every accession and filer of the earlier draws (Draw B: A; C: A and B; D: A-C; E: A-D)."""
+    filer, excluding every accession and filer of the earlier draws (Draw B: A; C: A and B; D: A-C; E: A-D; F: A-E)."""
     recent = [f for quarter in _RECENT for f in parse_index(fetch_index(quarter).decode("latin-1"), quarter)]
     drawn = [row for name in earlier for row in csv.DictReader((CORPUS / f"draw_{name}.csv").open(encoding="utf-8"))]
     excluded = {row["cik"] for row in drawn} | {row["accession"] for row in drawn}
@@ -332,10 +332,10 @@ def main(argv: list[str] | None = None) -> int:
     index = sub.add_parser("index")
     index.add_argument("quarters", nargs="+")
     draw = sub.add_parser("draw")
-    draw.add_argument("name", choices=("A", "B", "C", "D", "E"))
+    draw.add_argument("name", choices=("A", "B", "C", "D", "E", "F"))
     draw.add_argument("--seed", type=int, required=True)
     get = sub.add_parser("fetch")
-    get.add_argument("name", choices=("A", "B", "C", "D", "E"))
+    get.add_argument("name", choices=("A", "B", "C", "D", "E", "F"))
     args = parser.parse_args(argv)
     try:
         if args.command == "index":
@@ -345,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"10-Q {sum(r.form == '10-Q' for r in rows):,}, 10-K/A {sum(r.form == '10-K/A' for r in rows):,}")
         elif args.command == "draw":
             # Each held-out draw excludes every earlier one (Decisions 39, 40).
-            picks, sizes = draw_a(args.seed) if args.name == "A" else draw_b(args.seed, tuple("ABCD"[:"BCDE".index(args.name) + 1]))
+            picks, sizes = draw_a(args.seed) if args.name == "A" else draw_b(args.seed, tuple("ABCDE"[:"BCDEF".index(args.name) + 1]))
             with (CORPUS / f"draw_{args.name}.csv").open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["label", "accession", "form", "cik", "company", "date_filed", "quarter", "seed"])
