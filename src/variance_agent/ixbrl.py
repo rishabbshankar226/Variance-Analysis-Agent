@@ -33,7 +33,7 @@ _STATEMENT_TITLE = re.compile(
     r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?(?:net\s+)?"
     r"(?:operations|income|earnings|loss|comprehensive\s+(?:income|loss)|cash\s+flows|financial\s+(?:position|condition)"
     r"|condition|assets\s+and\s+liabilities)(?:\s+and\s+comprehensive\s+(?:income|loss))?"
-    r"|income\s+statements?|balance\s+sheets?)\b",
+    r"|statements?\s+cash\s+flows|income\s+statements?|balance\s+sheets?)\b",
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
@@ -447,9 +447,15 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         money = [f for f in facts if _monetary(reader.units.get(f.unit, "")) and f.context in reader.contexts
                  and not reader.contexts[f.context].dims]
         titled = match is not None and "parenthetical" not in table.title[match.start():].lower()
+        kind = _kind(match.group(0)) if match is not None else ""
+        # A balance sheet is a statement of instants; the others cover durations. A cash table of
+        # instants titled like the cash flow statement (a reconciliation) is not the statement.
+        wanted = "instant" if kind == "balance_sheet" else "duration"
+        titled = titled and any(reader.contexts[f.context].period[0] == wanted for f in money)
         if titled and len(money) >= 3 and match is not None:
-            kind = _kind(match.group(0))
-            if pending is not None and pending[0] == kind and "continued" in table.title.lower():
+            # The statement runs on in a table titled for it again ("... — Liabilities and Equity").
+            if pending is not None and pending[0] == kind and (
+                    "continued" in table.title.lower() or _same_periods(pending[2][0], table, reader)):
                 pending[2].append(table)
                 continue
             if pending is not None:
@@ -551,6 +557,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
     # A cash flow statement's beginning and ending cash are instants that belong in its duration
     # columns (R8), not a statement of their own.
     place_instants = kind == "cash_flow" and any(months and len(group) > 1 for months, group in groups.items())
+    durations = [p for p in periods if p[0] == "duration"] if place_instants else []
     if place_instants:
         groups.pop(0, None)
     statements = []
@@ -559,7 +566,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
             continue
         group.sort(key=lambda p: p[-1], reverse=True)
         name = title if len(groups) == 1 or months == 0 else f"{title}, {months} Months Ended"
-        statements.append(_statement(kind, name, group, rows, reader, per_share_lines, place_instants))
+        statements.append(_statement(kind, name, group, rows, reader, per_share_lines, durations))
     return statements
 
 
@@ -576,19 +583,18 @@ def _printed_text(cell: _Cell, reader: _Reader, by_id: dict[str, int]) -> str:
     return "".join(parts)
 
 
-def _placement(dates: set[str], periods: list[tuple[str, ...]], label: str) -> tuple[dict[str, int], str]:
-    """Where a line's instants sit among duration columns (R8): each column's end, or the day before its start."""
-    ends = {p[2]: n for n, p in enumerate(periods) if p[0] == "duration"}
-    starts = {(date.fromisoformat(p[1]) - timedelta(days=1)).isoformat(): n for n, p in enumerate(periods) if p[0] == "duration"}
-    as_end, as_start = dates <= ends.keys(), dates <= starts.keys()
-    if as_end and as_start:  # one shared date: the label says which balance it is
+def _day_before(start: str) -> str:
+    return (date.fromisoformat(start) - timedelta(days=1)).isoformat()
+
+
+def _balance(dates: set[str], durations: list[tuple[str, ...]], label: str) -> str:
+    """Whether a line's instants are ending or beginning balances of the table's durations (R8)."""
+    as_end = dates <= {p[2] for p in durations}
+    as_start = dates <= {_day_before(p[1]) for p in durations}
+    if as_end and as_start:  # every date is both: the label says which balance it is
         as_end = not re.search(r"\bbeginning\b|\bstart\b", label, re.IGNORECASE)
         as_start = not as_end
-    if as_end:
-        return {d: ends[d] for d in dates}, "ending"
-    if as_start:
-        return {d: starts[d] for d in dates}, "beginning"
-    return {}, "its balances fall at the end of one column and the start of another"
+    return "ending" if as_end else "beginning" if as_start else ""
 
 
 def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -> str:
@@ -603,7 +609,7 @@ def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -
 
 def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]], reader: _Reader,
-               per_share_lines: bool, place_instants: bool = False) -> Statement:
+               per_share_lines: bool, durations: list[tuple[str, ...]] | None = None) -> Statement:
     labels = [_period_label(p) for p in periods]
     statement = Statement(kind, name, periods, labels, [])
     if len(set(labels)) != len(labels):
@@ -616,14 +622,17 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
         plain = any(not reader.contexts[f.context].dims for f, _ in figures if f.context in reader.contexts)
         placed: dict[str, int] = {}
         balance = ""
-        if place_instants:
+        if durations:
             instants = {reader.contexts[f.context].period[1] for f, _ in figures if f.context in reader.contexts
                         and reader.contexts[f.context].period[0] == "instant" and not reader.contexts[f.context].dims
                         and _monetary(reader.units.get(f.unit, ""))}
             if instants:
-                placed, balance = _placement(instants, periods, label)
-                if not placed:
-                    problem, balance = balance, ""
+                balance = _balance(instants, durations, label)
+                edge = {"ending": lambda p: p[2], "beginning": lambda p: _day_before(p[1])}.get(balance)
+                if edge is None:
+                    problem = "its balances fall at the end of one column and the start of another"
+                else:
+                    placed = {edge(p): n for n, p in enumerate(periods) if p[0] == "duration"}
         for fact, negated in figures:
             context = reader.contexts.get(fact.context)
             unit = reader.units.get(fact.unit, "")

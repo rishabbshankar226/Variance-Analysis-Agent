@@ -196,7 +196,8 @@ def test_beginning_cash_may_come_first() -> None:
     lines.insert(0, begin)
     checked = check_cash_flow(lines, FLOWS, FLOW_COLUMNS)
     assert checked.problem == ""
-    assert [lines[t].name for t, _ in dict(checked.matches)[11]][-1] == "Net increase in cash, cash equivalents and restricted cash"
+    assert {lines[t].name for t, _ in dict(checked.matches)[11]} == {
+        "Net increase in cash, cash equivalents and restricted cash", "Cash, cash equivalents and restricted cash, beginning of year"}
 
 
 def test_without_a_net_change_line_ending_cash_foots_on_the_activities() -> None:
@@ -255,3 +256,62 @@ def test_a_subtotal_straddles_its_terms_summed_half_widths(printed: str, foots: 
                           property=line("Property and equipment, net", str(6500 - Decimal(printed)), "2700"))
     problem = check_balance_sheet(lines, STATEMENT, COLUMNS).problem
     assert (problem == "") is foots, problem
+
+
+# Shapes from Draw A, rebuilt with invented figures -----------------------------------------------
+
+
+def test_a_blank_inside_a_footed_subtotal_reads_as_zero_and_is_reported() -> None:
+    lines = balance_sheet()
+    lines.insert(4, CheckLine("Long-term prepaid insurance", "", (None, (Decimal(0), "-6"))))
+    checked = check_balance_sheet(lines, STATEMENT, COLUMNS)
+    assert (checked.problem, checked.blanks) == ("", [(4, 0)])
+
+
+def test_a_line_no_subtotal_takes_in_refuses() -> None:
+    lines = balance_sheet()
+    lines.insert(5, line("Unexplained line", "5", "5"))
+    checked = check_balance_sheet(lines, STATEMENT, COLUMNS)
+    assert checked.problem == ("I couldn't tell which total 'Unexplained line' belongs to in the Consolidated Balance "
+                               "Sheets, so I can't check it and stopped instead of guessing. Choose another statement "
+                               "from this filing.")
+
+
+def test_a_total_label_that_nothing_adds_up_to_is_a_line_when_its_concept_is_no_total() -> None:
+    lines = balance_sheet(property=line("Total loans held for investment", "3100", "2700",
+                                        concept="us-gaap:FinancingReceivableExcludingAccruedInterestAfterAllowanceForCreditLoss"))
+    checked = check_balance_sheet(lines, STATEMENT, COLUMNS)
+    assert checked.problem == ""
+    assert 5 not in dict(checked.matches)
+
+
+def test_a_net_line_sums_every_gross_line_down_to_its_contra() -> None:
+    lines = balance_sheet()
+    at = next(i for i, x in enumerate(lines) if x.name == "Property and equipment, net")
+    lines[at:at] = [line("Land", "100", "100"), line("Buildings", "1900", "1700"), line("Machinery", "3000", "2500"),
+                    line("Allowance for depreciation", "-1900", "-1600")]
+    checked = check_balance_sheet(lines, STATEMENT, COLUMNS)
+    assert checked.problem == ""
+    assert [lines[t].name for t, _ in dict(checked.matches)[at + 4]] == [
+        "Land", "Buildings", "Machinery", "Allowance for depreciation"]
+
+
+def test_net_income_less_discontinued_operations_is_a_net_line() -> None:
+    lines = cash_flow()
+    lines[0:1] = [line("Net income", "1500", "1300", concept="us-gaap:ProfitLoss"),
+                  line("Income from discontinued operations", "50", "-30"),
+                  line("Net income from continuing operations", "1450", "1330")]
+    checked = check_cash_flow(lines, FLOWS, FLOW_COLUMNS)
+    assert checked.problem == ""
+    assert dict(checked.matches)[2] == [(0, 1), (1, -1)]
+
+
+def test_beginning_cash_between_the_activities_and_the_net_change() -> None:
+    lines = cash_flow()
+    begin = lines.pop(10)
+    lines.insert(9, begin)  # financing, FX, beginning, net change, ending
+    checked = check_cash_flow(lines, FLOWS, FLOW_COLUMNS)
+    assert checked.problem == ""
+    assert [lines[t].name for t, _ in dict(checked.matches)[11]] == [
+        "Net increase in cash, cash equivalents and restricted cash",
+        "Cash, cash equivalents and restricted cash, beginning of year"]
