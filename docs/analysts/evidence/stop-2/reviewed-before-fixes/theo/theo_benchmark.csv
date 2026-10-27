@@ -1,0 +1,4 @@
+Line Item,Actual,Benchmark,Better,Tolerance,Measure
+Fund return,7.25%,6.80%,Higher,0.10,Percent
+Tracking fund return,5.00%,5.05%,Higher,0.05,Percent
+Management fee rate,0.82%,0.80%,Lower,,Percent

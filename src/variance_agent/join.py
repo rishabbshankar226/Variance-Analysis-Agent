@@ -31,6 +31,8 @@ def _fail(message: str) -> IntakeResult:
 def half_role(data: bytes, filename: str) -> tuple[CanonicalRole, str] | None:
     """Which value column a file lacks (Budget or Actual) when it is one half of a pair, and its join key name."""
     suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in {".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls"}:
+        return None  # only a table can be half of a pair; a refused filing is not read again
     for missing in (CanonicalRole.ACTUAL, CanonicalRole.BUDGET):
         result = read_input_assisted(data, suffix, filename=filename, missing_column=missing,
                                      treat_blank_budgets_as_zero=True)

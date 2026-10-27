@@ -27,6 +27,7 @@ The final sweep ran at `1d903a6` (`p5e`, after the fresh-eyes fixes); the result
 | All three read without a refusal | 26 of 33 (79%, 62-89%) |
 | Read without a refusal, by statement | income 27/33, balance sheet 32/33, cash flow 32/33 |
 | Refusals | 25, every one plain |
+| Of the 26 read without a refusal but not 15 fully | 6 short only by printed dashes or confirmed blanks (no fact behind them, Decision 35); 5 missing an oracle line the reader doesn't cover |
 
 The `Financial_Report.xlsx` reader on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
 
@@ -52,7 +53,7 @@ What their findings changed, before this stop:
 - **Ines.** The limit report opens with its Breach/Near/Within count and says how to read a Min limit's utilization.
 - **Chat.** The screenshot run found that a request for a second file (LTM's 10-K, the other half of a pair) showed no drop zone. That reply now carries one.
 
-The reviewed outputs are kept in the corpus scratch copy. The outputs under `readers/` were regenerated after the fixes.
+The outputs as reviewed are in `reviewed-before-fixes/`, which the reviewers' line numbers refer to. The outputs under `readers/` were regenerated after the fixes.
 
 Raised for the owner, since they are rules or Phase 6 work, not defects:
 - the Increase/Decrease wording on printed negatives (R7)
@@ -65,6 +66,9 @@ Raised for the owner, since they are rules or Phase 6 work, not defects:
 - a percentage shown on a sign flip
 
 ## Fresh eyes
+
+The sweep verifies values by XBRL key, and Total Revenue only where a filing prints one dimensionless revenue fact. It cannot see a wrong label on a right value, or wrong typing behind a bank's headline totals; fresh eyes on 5 filings caught both. After the fixes, the bank's balance sheet (sweep `p5e`) names its unlabeled subtotal by concept, beside one 'Total shareholders' equity', and its income read credits no line among costs.
+
 
 Five Draw A Inline XBRL filings were drawn with `random.Random(20261028).sample`, the seed committed before the draw. A subagent with none of the plan's reasoning checked the tool's balance sheet, cash flow and income outputs (sweep `p5-f3e0a5f`) against each printed filing and its instance, defaulting to "wrong" under doubt. It reported **4 wrong figures in 2 filings**:
 - **W1.** A SPAC's "income" output was its balance sheet.

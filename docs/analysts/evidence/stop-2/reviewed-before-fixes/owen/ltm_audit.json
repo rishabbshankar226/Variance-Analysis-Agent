@@ -1,0 +1,500 @@
+{
+  "analysis_fingerprint": "84d8496a9ce15a426b75ed78b9fa95ee01beb67a27f5f71ca3cad9600a18b2cb",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": null,
+    "comparison_title": "Prior Period (FY2025)",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": null,
+    "preset": "fpa",
+    "type_map": []
+  },
+  "comparison": {
+    "basis": "prior_period",
+    "label": "FY2025"
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net sales"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Cost of sales"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Research and development"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Interest expense"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "100.00",
+    "classified_count": 4,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 4,
+    "material_variance_count": 4,
+    "net_operating_impact_available": true,
+    "row_count": 4,
+    "summary_verifications": [],
+    "supported_driver_count": 0,
+    "totals_complete": true,
+    "unclassified_count": 0,
+    "warnings": []
+  },
+  "inferences": [],
+  "material_variances": [
+    {
+      "actual": "4300000000",
+      "budget": "4100000000",
+      "classification_source": "explicit_type",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net sales",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "F",
+      "summary_source": "detail",
+      "type": "Revenue",
+      "variance_dollars": "200000000",
+      "variance_percent": "0.048780487804878048780487804878048780487804878048780"
+    },
+    {
+      "actual": "2400000000",
+      "budget": "2300000000",
+      "classification_source": "explicit_type",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Cost of sales",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "U",
+      "summary_source": "detail",
+      "type": "Expense",
+      "variance_dollars": "100000000",
+      "variance_percent": "0.043478260869565217391304347826086956521739130434783"
+    },
+    {
+      "actual": "310000000",
+      "budget": "300000000",
+      "classification_source": "explicit_type",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Research and development",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "U",
+      "summary_source": "detail",
+      "type": "Expense",
+      "variance_dollars": "10000000",
+      "variance_percent": "0.033333333333333333333333333333333333333333333333333"
+    },
+    {
+      "actual": "55000000",
+      "budget": "50000000",
+      "classification_source": "explicit_type",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Interest expense",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "U",
+      "summary_source": "detail",
+      "type": "Expense",
+      "variance_dollars": "5000000",
+      "variance_percent": "0.1"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "4300000000",
+      "better": null,
+      "comparison": "4100000000",
+      "direction_source": "type",
+      "display_label": "F",
+      "excluded_from_aggregation": false,
+      "line_item": "Net sales",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "F",
+      "type": "Revenue",
+      "variance": "200000000",
+      "variance_bps": null,
+      "variance_percent": "0.048780487804878048780487804878048780487804878048780"
+    },
+    {
+      "actual": "2400000000",
+      "better": null,
+      "comparison": "2300000000",
+      "direction_source": "type",
+      "display_label": "U",
+      "excluded_from_aggregation": false,
+      "line_item": "Cost of sales",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "U",
+      "type": "Expense",
+      "variance": "100000000",
+      "variance_bps": null,
+      "variance_percent": "0.043478260869565217391304347826086956521739130434783"
+    },
+    {
+      "actual": "310000000",
+      "better": null,
+      "comparison": "300000000",
+      "direction_source": "type",
+      "display_label": "U",
+      "excluded_from_aggregation": false,
+      "line_item": "Research and development",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "U",
+      "type": "Expense",
+      "variance": "10000000",
+      "variance_bps": null,
+      "variance_percent": "0.033333333333333333333333333333333333333333333333333"
+    },
+    {
+      "actual": "55000000",
+      "better": null,
+      "comparison": "50000000",
+      "direction_source": "type",
+      "display_label": "U",
+      "excluded_from_aggregation": false,
+      "line_item": "Interest expense",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "U",
+      "type": "Expense",
+      "variance": "5000000",
+      "variance_bps": null,
+      "variance_percent": "0.1"
+    }
+  ],
+  "payload_sha256": "8e741cca7551b37d844d0414882bd047998c78edeb8585bfcf87a56f355d79b2",
+  "period": "LTM Mar 2026",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "2795a1fde2ba46c938221e868529d1853d78b7e67101384f1cec74fa57aee1d1",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": {
+      "documents": [
+        {
+          "name": "hal-20250927.htm",
+          "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808",
+          "statement": "Consolidated Statements of Operations"
+        },
+        {
+          "name": "hal-20260328.htm",
+          "sha256": "40fb6cf39d039b82c59a746b443727fff51ef819bd569754810f2b14fc8e747a",
+          "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended"
+        }
+      ],
+      "kind": "ltm",
+      "lines": [
+        {
+          "comparison": "4100000000",
+          "components": [
+            {
+              "column": "FY2025",
+              "context": "FY25",
+              "displayed": "4100000000",
+              "document": "hal-20250927.htm",
+              "used": "4100000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2026",
+              "context": "YTD26",
+              "displayed": "2200000000",
+              "document": "hal-20260328.htm",
+              "used": "2200000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2025",
+              "context": "YTD25",
+              "displayed": "2000000000",
+              "document": "hal-20260328.htm",
+              "used": "2000000000",
+              "weight": -1
+            }
+          ],
+          "concept": "us-gaap:Revenues",
+          "line_item": "Net sales",
+          "ltm": "4300000000"
+        },
+        {
+          "comparison": "2300000000",
+          "components": [
+            {
+              "column": "FY2025",
+              "context": "FY25",
+              "displayed": "2300000000",
+              "document": "hal-20250927.htm",
+              "used": "2300000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2026",
+              "context": "YTD26",
+              "displayed": "1200000000",
+              "document": "hal-20260328.htm",
+              "used": "1200000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2025",
+              "context": "YTD25",
+              "displayed": "1100000000",
+              "document": "hal-20260328.htm",
+              "used": "1100000000",
+              "weight": -1
+            }
+          ],
+          "concept": "us-gaap:CostOfRevenue",
+          "line_item": "Cost of sales",
+          "ltm": "2400000000"
+        },
+        {
+          "comparison": "300000000",
+          "components": [
+            {
+              "column": "FY2025",
+              "context": "FY25",
+              "displayed": "300000000",
+              "document": "hal-20250927.htm",
+              "used": "300000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2026",
+              "context": "YTD26",
+              "displayed": "160000000",
+              "document": "hal-20260328.htm",
+              "used": "160000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2025",
+              "context": "YTD25",
+              "displayed": "150000000",
+              "document": "hal-20260328.htm",
+              "used": "150000000",
+              "weight": -1
+            }
+          ],
+          "concept": "us-gaap:ResearchAndDevelopmentExpense",
+          "line_item": "Research and development",
+          "ltm": "310000000"
+        },
+        {
+          "comparison": "50000000",
+          "components": [
+            {
+              "column": "FY2025",
+              "context": "FY25",
+              "displayed": "-50000000",
+              "document": "hal-20250927.htm",
+              "used": "50000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2026",
+              "context": "YTD26",
+              "displayed": "-25000000",
+              "document": "hal-20260328.htm",
+              "used": "25000000",
+              "weight": 1
+            },
+            {
+              "column": "6 months to Mar 2025",
+              "context": "YTD25",
+              "displayed": "-20000000",
+              "document": "hal-20260328.htm",
+              "used": "20000000",
+              "weight": -1
+            }
+          ],
+          "concept": "us-gaap:InterestExpense",
+          "line_item": "Interest expense",
+          "ltm": "55000000"
+        }
+      ],
+      "reader_notes": [
+        "Built LTM as FY2025 from 'hal-20250927.htm' plus 6 months to Mar 2026 less 6 months to Mar 2025 from 'hal-20260328.htm', line by line by XBRL concept",
+        "Checked continuity: the prior year to date starts where FY2025 starts (2024-09-29), and the year to date starts the day after it ends (2025-09-28)",
+        "Left out 'Basic (in dollars per share)': per-share amounts and share counts are not computable as LTM",
+        "Read the column for 2026-03-28 as Mar 2026",
+        "Read the column for 2025-03-29 as Mar 2025",
+        "Left out 'Basic (in dollars per share)' (per-share and share counts are not money totals)",
+        "Left out 2 subtotals the statement computes from the lines above: Gross margin, Net income",
+        "Labeled 1 line revenue and 3 lines expense from how the statement adds up",
+        "Read 'Interest expense' as an expense: the statement prints it as -25000000 and adds it",
+        "Labeled 'Net sales' as revenue",
+        "Labeled 'Cost of sales' as expense",
+        "Labeled 'Research and development' as expense",
+        "Labeled 'Interest expense' as expense"
+      ],
+      "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended"
+    },
+    "name": "hal-20260328.htm",
+    "sha256": "40fb6cf39d039b82c59a746b443727fff51ef819bd569754810f2b14fc8e747a",
+    "worksheet": "Condensed Consolidated Statements of Operations, 6 Months Ended"
+  },
+  "totals": {
+    "expenses": {
+      "actual": "2765000000",
+      "budget": "2650000000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "U",
+      "variance_dollars": "115000000",
+      "variance_percent": "0.043396226415094339622641509433962264150943396226415"
+    },
+    "net_operating_variance": "85000000",
+    "revenue": {
+      "actual": "4300000000",
+      "budget": "4100000000",
+      "complete": true,
+      "percent_label": null,
+      "present": true,
+      "status": "F",
+      "variance_dollars": "200000000",
+      "variance_percent": "0.048780487804878048780487804878048780487804878048780"
+    }
+  },
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "LTM = FY2025 + 6 months to Mar 2026 - 6 months to Mar 2025",
+      "budget": "FY2025 in hal-20250927.htm",
+      "line_item": "Line Item",
+      "type": "Type"
+    },
+    "excluded_totals": [
+      "Gross margin",
+      "Net income"
+    ],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}
