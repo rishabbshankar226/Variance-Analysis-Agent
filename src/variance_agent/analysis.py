@@ -124,12 +124,15 @@ def _direction(row: dict[str, object], kind: MeasureKind, line_type: LineType, l
 
 
 def _row_status(line_type: LineType, variance: Decimal, better: BetterDirection | None, statement_kind: str,
-                details: BasisDetails | None) -> Status:
-    """A limit or target is never F or U, nor a benchmark row within its tolerance (PLAN.md R13-R15)."""
+                details: BasisDetails | None, metric: bool = False) -> Status:
+    """A limit or target is never F or U, nor a benchmark row within its tolerance (PLAN.md R13-R15); a metric
+    is F or U only with a declared Better (R17)."""
     if details is not None:
         if details.basis in {"limit", "target"} or details.outcome == "In line":
             return Status.NEUTRAL
         return _status(line_type, variance, better)
+    if metric and better is None:
+        return Status.NEUTRAL
     return _status(line_type, variance, better, bool(statement_kind))
 
 
@@ -434,7 +437,8 @@ def _verify_result(
         expected_details = basis_details(row.raw, row.budget, row.actual, row.measure, config.comparison_basis, row.better)
         if row.basis_details != expected_details:
             raise _verification_failure(f"limit, benchmark or target outcome mismatch for {row.line_item!r}")
-        if row.status != _row_status(row.line_type, row.variance_dollars, row.better, row.statement_kind, expected_details):
+        if row.status != _row_status(row.line_type, row.variance_dollars, row.better, row.statement_kind, expected_details,
+                                     not is_missing(row.raw.get("metric_formula"))):
             raise _verification_failure(f"F/U status mismatch for {row.line_item!r}")
         expected_material = _is_material(row.budget, row.variance_dollars, config, row.measure)
         if row.material != expected_material:
@@ -598,7 +602,9 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
 
         statement_kind = _statement_kind(line_item, row)
         opt_in = config.comparison_basis in OPT_IN_BASES
+        metric = not is_missing(row.get("metric_formula"))  # a declared metric (PLAN.md R17), never revenue or expense
         line_type, classification_source = ((LineType.UNCLASSIFIED, "statement") if statement_kind
+                                             else (LineType.UNCLASSIFIED, "metric") if metric
                                              else (LineType.UNCLASSIFIED, "basis") if opt_in
                                              else _classify(line_item, row, config))
         better, direction_source = _direction(row, kind, line_type, line_item, config.comparison_basis)
@@ -622,7 +628,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
                 variance_dollars=variance,
                 variance_percent=pct,
                 percent_label=pct_label,
-                status=_row_status(line_type, variance, better, statement_kind, assessed),
+                status=_row_status(line_type, variance, better, statement_kind, assessed, metric),
                 material=material,
                 excluded_from_aggregation=summary_candidate,
                 driver_evidence=driver,
@@ -665,7 +671,7 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     unclassified = [
         row.line_item for row in analyzed
         if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and not row.statement_kind
-        and row.basis_details is None
+        and row.basis_details is None and is_missing(row.raw.get("metric_formula"))
     ]
     if unclassified:
         sample = ", ".join(unclassified[:5])

@@ -308,7 +308,8 @@
             "unclassified",
             "unavailable",
             "statement",
-            "basis"
+            "basis",
+            "metric"
           ]
         },
         "summary_source": {
@@ -804,6 +805,190 @@
                               "actual",
                               "comparison"
                             ]
+                          }
+                        }
+                      }
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "line_item",
+                          "key",
+                          "comparison_line_item"
+                        ],
+                        "properties": {
+                          "line_item": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "comparison_line_item": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Derived metrics declared in a mapping file, read from filings and joined with a case or schedule (R17).",
+                  "required": [
+                    "kind",
+                    "key",
+                    "documents",
+                    "metrics",
+                    "reader_notes",
+                    "lines"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "metrics"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "sha256",
+                          "role"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "$ref": "#/$defs/sha256"
+                          },
+                          "role": {
+                            "enum": [
+                              "filing",
+                              "comparison"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "metrics": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "formula",
+                          "value",
+                          "reason",
+                          "terms"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "formula": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "value": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/decimal"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "terms": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "document",
+                                "statement",
+                                "column",
+                                "context",
+                                "concept",
+                                "value",
+                                "line_item",
+                                "sign",
+                                "period",
+                                "side"
+                              ],
+                              "properties": {
+                                "document": {
+                                  "type": "string"
+                                },
+                                "statement": {
+                                  "type": "string"
+                                },
+                                "column": {
+                                  "type": "string"
+                                },
+                                "context": {
+                                  "type": "string"
+                                },
+                                "concept": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "$ref": "#/$defs/decimal"
+                                },
+                                "line_item": {
+                                  "type": "string"
+                                },
+                                "sign": {
+                                  "enum": [
+                                    1,
+                                    -1
+                                  ]
+                                },
+                                "period": {
+                                  "enum": [
+                                    "instant",
+                                    "fy",
+                                    "ytd",
+                                    "ltm"
+                                  ]
+                                },
+                                "side": {
+                                  "enum": [
+                                    "numerator",
+                                    "denominator"
+                                  ]
+                                },
+                                "weight": {
+                                  "enum": [
+                                    -1
+                                  ]
+                                }
+                              }
+                            }
                           }
                         }
                       }

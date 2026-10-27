@@ -104,6 +104,7 @@ class Arguments(Protocol):
     hidden_rows: str | None
     ltm_from: str | None
     compare_file: str | None
+    metrics: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -190,6 +191,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="A second file holding the comparison column (budget, forecast or prior period) for the "
                              "input's actuals, joined on an account column both carry, or else the exact line item. "
                              "Needs --assisted.")
+    source.add_argument("--metrics", metavar="PATH",
+                        help="A JSON file of derived metrics (name, signed numerator and denominator terms by XBRL "
+                             "concept or exact label, statement and period) read from the input filing; needs "
+                             "--compare-file with the case or covenant schedule. See docs/financial-rules.md.")
     source.add_argument("--hidden-rows", choices=("include", "exclude"),
                         help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
     source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
@@ -354,7 +359,13 @@ def _run(args: Arguments) -> int:
             raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
     if args.ltm_from and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
         raise ValueError("--ltm-from needs --assisted (and no --mapping): LTM is built from the filings' own statements.")
-    if args.compare_file and (not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.ltm_from):
+    if args.metrics and not args.compare_file:
+        raise ValueError("--metrics needs --compare-file: the metrics are compared with the case or covenant schedule "
+                         "that file holds.")
+    if args.metrics and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError("--metrics needs --assisted (and no --mapping): the metrics are read from the filing's statements.")
+    if args.compare_file and not args.metrics and (
+            not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.ltm_from):
         raise ValueError("--compare-file needs --assisted (and no --mapping or --ltm-from): each file is read on its own, "
                          "then the two are joined.")
     validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
@@ -470,7 +481,15 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
-        if args.compare_file:
+        if args.metrics:
+            from .metrics import compare_metrics
+            assert args.compare_file is not None  # checked with the other flags above
+            other, annual_path = Path(args.compare_file), Path(args.ltm_from) if args.ltm_from else None
+            intake_res = compare_metrics(read_input_bytes(Path(args.metrics)), source_bytes, input_path.name,
+                                         read_input_bytes(other), other.name,
+                                         annual=read_input_bytes(annual_path) if annual_path else None,
+                                         annual_name=annual_path.name if annual_path else None, compare_to=compare_to_basis)
+        elif args.compare_file:
             from .join import join_files
             other = Path(args.compare_file)
             intake_res = join_files(source_bytes, input_path.name, read_input_bytes(other), other.name, sheet=args.sheet,

@@ -223,3 +223,38 @@ def quarter_filing(rows: list[str] | None = None, *, title: str = "CONDENSED CON
     body = statement(title, rows or quarter_rows())
     resources = _contexts(periods or QUARTER_CONTEXTS)
     return document(body).replace("</ix:resources>", resources + "</ix:resources>").encode("utf-8")
+
+
+# The same 10-Q with a year-to-date cash flow statement (derived metrics take D&A from it, R17).
+QUARTER_INSTANTS = {"E26": "2026-03-28", "E25": "2025-03-29"}
+
+
+def quarter_cash_flow_rows() -> list[str]:
+    def flow(label: str, concept: str, now: str, before: str, *, out: bool = False, negative: bool = False) -> str:
+        cells = [fact(concept, c, v, sign="-" if negative else None) for c, v in (("YTD26", now), ("YTD25", before))]
+        return row(label, *(f"({cell})" if out else cell for cell in cells))
+
+    cash = "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
+    return [
+        flow("Net income", "us-gaap:NetIncomeLoss", "815", "730"),
+        flow("Depreciation and amortization", "us-gaap:DepreciationDepletionAndAmortization", "110", "100"),
+        flow("Net cash provided by operating activities", "us-gaap:NetCashProvidedByUsedInOperatingActivities", "925", "830"),
+        flow("Purchases of property and equipment", "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment", "300", "250", out=True),
+        flow("Net cash used in investing activities", "us-gaap:NetCashProvidedByUsedInInvestingActivities", "300", "250",
+             out=True, negative=True),
+        flow("Net increase in cash", "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+             "625", "580"),
+        row("Cash at beginning of period", fact(cash, "I25", "2,600"), fact(cash, "I24", "2,000")),
+        row("Cash at end of period", fact(cash, "E26", "3,225"), fact(cash, "E25", "2,580")),
+    ]
+
+
+def quarter_all_filing() -> bytes:
+    body = (statement("CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS", quarter_rows())
+            + statement("CONDENSED CONSOLIDATED STATEMENTS OF CASH FLOWS", quarter_cash_flow_rows()))
+    instants = "".join(
+        f'<xbrli:context id="{cid}"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0009999999'
+        f'</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:instant>{day}</xbrli:instant></xbrli:period></xbrli:context>'
+        for cid, day in QUARTER_INSTANTS.items())
+    resources = _contexts(QUARTER_CONTEXTS) + instants
+    return document(body).replace("</ix:resources>", resources + "</ix:resources>").encode("utf-8")

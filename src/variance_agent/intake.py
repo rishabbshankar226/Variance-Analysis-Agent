@@ -1562,12 +1562,14 @@ def read_input_assisted(
             _OPT_IN_BASIS.reset(opt_in)
     holder: dict[str, object] = {"missing": missing_column, "filled": False}
     token = _HALF.set(holder)
+    opt_in_token = _OPT_IN_BASIS.set(compare_to if compare_to in OPT_IN_SYNONYMS else None)
     try:
         result = _read_input_assisted(data, suffix, filename=filename, sheet=sheet,
                                       treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
                                       selected_period=selected_period, compare_to=compare_to,
                                       per_share_lines=per_share_lines, hidden_rows=hidden_rows)
     finally:
+        _OPT_IN_BASIS.reset(opt_in_token)
         _HALF.reset(token)
     result.half_filled = bool(holder["filled"])
     return result
@@ -1575,8 +1577,8 @@ def read_input_assisted(
 
 def _fill_half(raw_rows: list[list[object]], missing: CanonicalRole) -> tuple[list[list[object]], bool]:
     """Append a placeholder column for the value a half file lacks, if it lacks it (PLAN.md R12)."""
-    if detect_header_row(raw_rows)[0] is not None or _opt_in_header(raw_rows) is not None:
-        return raw_rows, False  # a limit, benchmark or target file is whole, never half of a pair
+    if detect_header_row(raw_rows)[0] is not None or (_OPT_IN_BASIS.get() is None and _opt_in_header(raw_rows) is not None):
+        return raw_rows, False  # without --compare-to naming it, a limit, benchmark or target file is never a half
     present = CanonicalRole.ACTUAL if missing is CanonicalRole.BUDGET else CanonicalRole.BUDGET
     for header_at, row in enumerate(raw_rows[:25]):
         roles = {match_column_synonym(str(cell).strip())[0] for cell in row if cell is not None and str(cell).strip()}

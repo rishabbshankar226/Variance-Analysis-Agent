@@ -193,6 +193,17 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
             record.update(statement_kind=str(document["statement_kind"]),
                           identities=[_json_value(identity) for identity in identities])
         return record
+    if kind == "metrics":  # declared metrics joined with a case or schedule (PLAN.md R17)
+        documents, lines, key, metrics = (document.get("documents"), document.get("lines"), document.get("key"),
+                                          document.get("metrics"))
+        if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines, metrics)):
+            raise ValueError("source_document reader_notes, documents, metrics and lines must be lists.")
+        assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple))
+        assert isinstance(lines, (list, tuple)) and isinstance(metrics, (list, tuple))
+        return {"kind": "metrics", "key": validate_text(key, field="source_document key", nonblank=True),
+                "documents": [_json_value(item) for item in documents], "metrics": [_json_value(m) for m in metrics],
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                "lines": [_json_value(line) for line in lines]}
     if kind == "join":  # budget and actuals from two files (PLAN.md R12)
         documents, lines, key = document.get("documents"), document.get("lines"), document.get("key")
         if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines)):
@@ -261,7 +272,7 @@ def build_audit_record(
     multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
         isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
     needs_19 = workbook is not None or opt_in or multiple or (
-        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join"})
+        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join", "metrics"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:
@@ -356,7 +367,8 @@ def build_audit_record(
         },
         "data_quality": data_quality,
         # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value.
-        "totals": None if opt_in or any(row.statement_kind for row in result.rows) else {
+        "totals": None if opt_in or any(row.statement_kind or row.classification_source == "metric"
+                                        for row in result.rows) else {
             "revenue": _aggregate_record(
                 result.revenue,
                 present=has_revenue,

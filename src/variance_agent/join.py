@@ -63,6 +63,17 @@ def join_files(actual: bytes, actual_name: str, comparison: bytes, comparison_na
     if not a.half_filled:
         return _fail(f"'{actual_name}' already has a comparison column, so it isn't the actuals half of a pair. "
                      "Run it on its own, without --compare-file.")
+    return join_results(a, actual_name, [{"name": actual_name, "sha256": hashlib.sha256(actual).hexdigest(),
+                                          "role": "actual"}], b, comparison_name, comparison)
+
+
+_DECLARATIONS = ("line_item", "actual", "budget", "account_id")
+
+
+def join_results(a: IntakeResult, actual_name: str, actual_documents: list[dict[str, object]], b: IntakeResult,
+                 comparison_name: str, comparison: bytes, excused: dict[str, str] | None = None) -> IntakeResult:
+    """Join two read halves: the actuals' rows, each with the matching comparison row's figure and declarations."""
+    excused = excused or {}
     by_account = CanonicalRole.ACCOUNT_ID in a.column_mapping and CanonicalRole.ACCOUNT_ID in b.column_mapping
     field = "account_id" if by_account else "line_item"
     key_name = str(a.column_mapping[CanonicalRole.ACCOUNT_ID]) if by_account else "line item"
@@ -79,18 +90,23 @@ def join_files(actual: bytes, actual_name: str, comparison: bytes, comparison_na
     a_rows, b_rows = keyed
     for (one, one_name), (other, other_name) in (((a_rows, actual_name), (b_rows, comparison_name)),
                                                  ((b_rows, comparison_name), (a_rows, actual_name))):
-        only = [key for key in one if key not in other]
+        only = [key for key in one if key not in other and not (one is b_rows and key in excused)]
         if only:
             shown = ", ".join(key + (f" ({one[key]['line_item']})" if by_account else "") for key in only[:5])
             more = f" and {len(only) - 5} more" if len(only) > 5 else ""
             return _fail(f"In '{one_name}' but not in '{other_name}': {shown}{more}. Joining without them would change "
                          f"the totals without a trace. {_FIX}")
-    joined_rows: list[dict[str, object]] = [{**row, "budget": b_rows[key]["budget"]} for key, row in a_rows.items()]
+    # The comparison file's own declarations (Limit Kind, Buffer, Better, Tolerance, Measure) come with its figure,
+    # where the actuals row doesn't declare them itself.
+    joined_rows: list[dict[str, object]] = [
+        {**{k: v for k, v in b_rows[key].items() if k not in _DECLARATIONS}, **row, "budget": b_rows[key]["budget"]}
+        for key, row in a_rows.items()]
     renamed = [(str(row["line_item"]), str(b_rows[key]["line_item"])) for key, row in a_rows.items()
                if str(row["line_item"]) != str(b_rows[key]["line_item"])]
     joined = (f"Joined '{comparison_name}' to '{actual_name}' by '{key_name}': {len(joined_rows)} line"
               f"{'s' if len(joined_rows) != 1 else ''}, each in both files")
     notes = [joined, f"Took Actual from '{actual_name}' and the comparison from '{comparison_name}'"]
+    notes += [f"Left out '{key}' of '{comparison_name}': {reason}" for key, reason in excused.items() if key in b_rows]
     if renamed:
         notes.append("Kept the actuals file's labels where the files differ: "
                      + "; ".join(f"'{mine}' is '{theirs}' in '{comparison_name}'" for mine, theirs in renamed[:5])
@@ -102,8 +118,8 @@ def join_files(actual: bytes, actual_name: str, comparison: bytes, comparison_na
     comparing = [t for t in b.visible_transformations if t.startswith("Comparing ")]
     record: dict[str, object] = {
         "kind": "join", "key": key_name,
-        "documents": [{"name": name, "sha256": hashlib.sha256(data).hexdigest(), "role": role}
-                      for name, data, role in ((actual_name, actual, "actual"), (comparison_name, comparison, "comparison"))],
+        "documents": [*actual_documents, {"name": comparison_name, "sha256": hashlib.sha256(comparison).hexdigest(),
+                                          "role": "comparison"}],
         "reader_notes": [*notes, *halves],
         "lines": [{"line_item": str(row["line_item"]), "key": key, "comparison_line_item": str(b_rows[key]["line_item"])}
                   for key, row in a_rows.items()],

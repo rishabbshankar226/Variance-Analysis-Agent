@@ -113,6 +113,12 @@ def format_measure(value: Decimal, kind: MeasureKind, currency: str = "USD", *, 
         return _money(value, currency, max(2, -int(value.as_tuple().exponent)))
     if kind is MeasureKind.PER_SHARE:
         return _money(value, currency, max(2, -int(value.as_tuple().exponent))) + "/sh"
+    if kind is MeasureKind.MULTIPLE and value.as_tuple().exponent < -2:  # type: ignore[operator]
+        # A computed ratio repeats; it is shown to two places, and the audit keeps it exact.
+        from decimal import ROUND_HALF_EVEN, Inexact
+        with financial_context() as context:
+            context.traps[Inexact] = False
+            value = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
     number = format(value, ",f")
     if "." in number:
         number = number.rstrip("0").rstrip(".")

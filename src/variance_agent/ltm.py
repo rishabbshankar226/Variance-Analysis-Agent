@@ -30,6 +30,19 @@ def _months(period: tuple[str, ...]) -> int:
     return round((end - start).days / 30.44)
 
 
+def continuity_problem(fiscal: tuple[str, ...], current: tuple[str, ...], prior: tuple[str, ...], fy_label: str,
+                       annual_name: str) -> str | None:
+    """R11: the prior year to date starts where the year starts; the year to date the day after it ends."""
+    day_after = (date.fromisoformat(fiscal[2]) + timedelta(days=1)).isoformat()
+    if current[1] != day_after:
+        return (f"The 10-Q's year to date starts {current[1]}, but {fy_label} in '{annual_name}' ends {fiscal[2]}, so "
+                f"the year to date should start {day_after}. {_FIX}")
+    if prior[1] != fiscal[1]:
+        return (f"The 10-Q's prior year to date starts {prior[1]}, but {fy_label} in '{annual_name}' starts "
+                f"{fiscal[1]}, so the two years don't line up. {_FIX}")
+    return None
+
+
 def _fail(message: str) -> IntakeResult:
     return IntakeResult(has_fatal_errors=True, fatal_error_message=message, source_kind="ixbrl")
 
@@ -94,12 +107,9 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
         result.visible_transformations.insert(0, f"There is no later 10-Q, so LTM equals {ytd.labels[0]} as printed")
         return result
     day_after = (date.fromisoformat(fiscal[2]) + timedelta(days=1)).isoformat()
-    if current[1] != day_after:
-        return _fail(f"The 10-Q's year to date starts {current[1]}, but {fy_label} in '{annual_name}' ends {fiscal[2]}, so "
-                     f"the year to date should start {day_after}. {_FIX}")
-    if prior[1] != fiscal[1]:
-        return _fail(f"The 10-Q's prior year to date starts {prior[1]}, but {fy_label} in '{annual_name}' starts "
-                     f"{fiscal[1]}, so the two years don't line up. {_FIX}")
+    problem = continuity_problem(fiscal, current, prior, fy_label, annual_name)
+    if problem:
+        return _fail(problem)
     q_read = _read_ixbrl_bytes(quarter, quarter_name, ytd.name, treat_blank_budgets_as_zero, None,
                                ComparisonBasis.PRIOR_PERIOD)
     if q_read.has_fatal_errors:
