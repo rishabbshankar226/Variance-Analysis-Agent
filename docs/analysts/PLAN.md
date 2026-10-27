@@ -22,7 +22,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 1 | Earnings chat path asks about hidden rows (advisor check) | done | `fdc6508` |
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | done | `be7d4dc`, `7c7d38e` |
 | 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; Draw A at zero wrong | done | `cd23bf0` … `13de5e8` |
-| 3 | Fresh-eyes fixes: Total Revenue is the filing's revenue; statements end at net income | done | `13a79e1` … `d72d710` |
+| 3 | Fresh-eyes fixes: Total Revenue is the filing's revenue; statements end at net income | done | `13a79e1` … `69d8366`, docs `6d7d40c` |
 | 3 | STOP 1 | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-1/` |
 | 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message` (removed), the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help | done | this commit |
 | 3 | `ixbrl.py` reader, `.htm` routing (CLI, chat, file API), audit 1.9 `ixbrl` documents | done | `cd23bf0` |
@@ -99,6 +99,13 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 - Strict intake refuses an uncached formula in any headed column, `Var %` included. Assisted intake exempts ignored computed columns. This is approved (R4 "every column the read uses", where strict reads every headed column), but the two paths are inconsistent, and the report says so.
 - The earnings/quant CLI and file-API paths (`read_comparison_input`) apply no unit caption at all. This was already so before this run. E1 has nothing to reconcile there.
 - E3 has only met synthetic shapes. Real `Financial_Report.xlsx` sheets (title merged A1:A2, footnote-mark columns, `(Parenthetical)` sheets, abstract rows) are tried on Draw A at the end of Phase 2, with hit and miss counts in the corpus folder.
+
+## Known limits left by Phase 3 (for REPORT.md)
+
+- A filing with a blank amount refuses with the shared message "Fix these cells and upload the file again", which is the wrong fix for an EDGAR filing. Two Draw A income statements stop this way.
+- Five Draw A income statements stop on a subtotal whose lines the reader cannot trace (net income, pre-tax income, other income/expense, gross profit). Each refuses plainly. Reading them is structure work, not a sign or scale question.
+- Other income on a bank or insurer with no printed revenue total keeps the shaper's labels (Decision 28). A $1k securities loss on one bank therefore sits among expenses, which the fresh-eyes reviewer noted and did not count as wrong.
+- An untagged all-dash line is read as 0 only where it holds a column; one Draw A line that is all dashes is not listed. No figure changes.
 
 ## Rules written before code
 
@@ -202,7 +209,7 @@ Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fail
 
 ### Phase 3 (2026-10-26)
 
-- **Fresh eyes (STOP 1):** 4 wrong figures in two filings, all headline Total Revenue, from the shaper labeling other income as revenue. They were fixed (Decisions 28-29), the sweep gained a Total Revenue check, and the re-sweep at `d72d710` (sha256 `ebfca286…`) has zero wrong figures: 1,041 verified, 13 unverified. Income: 25 of 33 read (76%, 59-87%), 21 fully (64%, 47-78%).
+- **Fresh eyes (STOP 1):** 4 wrong figures in two filings, all headline Total Revenue, from the shaper labeling other income as revenue. They were fixed (Decisions 28-29), the sweep gained a Total Revenue check, and the re-sweep at `69d8366` (sha256 `6805a39a…`; dist gates 2317 passed) has zero wrong figures: 1,041 verified, 13 unverified. Income: 25 of 33 read (76%, 59-87%), 21 fully (64%, 47-78%).
 - **Draw A, after the first round (sweep at `3439e0e`, file sha256 `c520ca97…`, in the corpus):** zero wrong line values on both readers. Inline XBRL primary documents: 677 lines verified, 13 unverified, 0 wrong; 20 statements fully read; all 91 refusals plain. These are mostly balance sheets and cash flows, refused until Phase 4, plus 6 non-Inline-XBRL documents. Income statements of the 33 Inline XBRL filings: 24 read (73%, Wilson 95% 56-85%), 20 fully verified and covered (61%, 44-75%), and the other 9 refuse plainly (unmatched subtotals, blank cells). `Financial_Report.xlsx` on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
 - **Before (the baseline):** every `.htm` refused, and the Phase 1 workbook reader produced 15 wrong values (39 under the first scoring).
 - Each wrong value or misread found on Draw A became a synthetic fixture before its fix: breakdown sections and binary floats in workbooks; nil prefixes; split, inline and header-table titles; continuation tables; hidden-reference depth; wrapped labels; untagged dashes; breakdown totals; unchecked subtotals.
