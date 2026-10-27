@@ -23,6 +23,7 @@ class MeasureKind(StrEnum):
     PER_SHARE = "Per Share"
     PERCENT = "Percent"
     COUNT = "Count"
+    MULTIPLE = "Multiple"  # 3.25x, in turns (PLAN.md R16)
 
 
 class BetterDirection(StrEnum):
@@ -37,6 +38,9 @@ class ComparisonBasis(StrEnum):
     CONSENSUS = "consensus"
     ESTIMATE = "estimate"
     GUIDANCE = "guidance"
+    LIMIT = "limit"  # opt-in (PLAN.md R13-R15): each row's limit, benchmark or target
+    BENCHMARK = "benchmark"
+    TARGET = "target"
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,23 @@ class ComparisonDetails:
 
 
 @dataclass(frozen=True)
+class BasisDetails:
+    """A row compared with a limit, benchmark or target (PLAN.md R13-R15): its declarations and outcome."""
+
+    basis: str
+    outcome: str  # Breach | Near | Within; Above | Below | In line; Over | Under | On target
+    difference: Decimal  # actual - comparison, in the row's unit
+    difference_bps: Decimal | None = None  # for Percent rows
+    limit_kind: str | None = None  # Max | Min
+    buffer: Decimal | None = None
+    headroom: Decimal | None = None
+    utilization: Decimal | None = None  # None is NM: a zero limit
+    tolerance: Decimal | None = None
+    severity: int | None = None  # 0 Breach, 1 At limit, 2 Near, 3 Within
+    headroom_percent: Decimal | None = None  # headroom over the limit's absolute value; None is NM
+
+
+@dataclass(frozen=True)
 class AnalyzedRow:
     line_item: str
     line_type: LineType
@@ -118,6 +139,8 @@ class AnalyzedRow:
     comparison_details: ComparisonDetails | None = None
     segment: str = ""
     segment_declared: bool = False
+    statement_kind: str = ""  # "balance_sheet" or "cash_flow": compared as Increase or Decrease (PLAN.md R7)
+    basis_details: BasisDetails | None = None  # a limit, benchmark or target comparison (PLAN.md R13-R15)
 
 
 @dataclass(frozen=True)

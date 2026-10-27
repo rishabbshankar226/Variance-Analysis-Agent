@@ -7,8 +7,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
-from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, ComparisonDetails, LineType
-from .audience import AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
+from .models import (Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, BasisDetails, ComparisonBasis, ComparisonDetails,
+                     LineType, MeasureKind)
+from .audience import OPT_IN_BASES, AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
 from .measures import currency_row, metric_inferences
 from .comparison import display_outcome, extended_heading
 from .output import write_text_outputs
@@ -19,7 +20,7 @@ from .limits import validate_text
 from .version import __version__
 
 CURRENT_SCHEMA_VERSION = "1.7"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8")
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -166,12 +167,102 @@ def write_audit_json(path: str | Path, record: Mapping[str, object]) -> None:
 
 
 @financial_context()
+def _headline_record(headline: object) -> JSONObject:
+    """A filing's own printed totals heading its report (Decision 39): items and notes."""
+    if not isinstance(headline, Mapping) or not isinstance(headline.get("items"), (list, tuple)) \
+            or not isinstance(headline.get("notes"), (list, tuple)):
+        raise ValueError("source_document headline must hold items and notes lists.")
+    items, notes = headline["items"], headline["notes"]
+    assert isinstance(items, (list, tuple)) and isinstance(notes, (list, tuple))
+    record: JSONObject = {"items": [_json_value(item) for item in items],
+                          "notes": [validate_text(note, field="source_document headline note") for note in notes]}
+    if "unit" in headline:  # the unit the filing prints in (Decision 40)
+        record["unit"] = validate_text(headline["unit"], field="source_document headline unit")
+    return record
+
+
 def _document_record(document: Mapping[str, object] | None) -> JSONObject | None:
-    """Validate how a PDF statement was read: its name, pages and the reader's notes."""
+    """Validate how a PDF statement was read: its name, pages and the reader's notes.
+
+    Audit 1.9 also records an EDGAR-style statement sheet: its statement, sheet and notes.
+    """
     if document is None:
         return None
     kind, statement = document.get("kind"), document.get("statement")
     pages, notes = document.get("pages"), document.get("reader_notes")
+    if kind == "ixbrl":
+        validate_text(statement, field="source_document statement", nonblank=True)
+        lines = document.get("lines")
+        if not isinstance(notes, (list, tuple)) or not isinstance(lines, (list, tuple)):
+            raise ValueError("source_document reader_notes and lines must be lists.")
+        record: JSONObject = {"kind": "ixbrl", "statement": str(statement),
+                              "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                              "lines": [_json_value(line) for line in lines]}
+        if "headline" in document:
+            record["headline"] = _headline_record(document["headline"])
+        if "statement_kind" in document:  # a balance sheet or cash flow statement and its identity (PLAN.md R9)
+            if document["statement_kind"] not in {"balance_sheet", "cash_flow"}:
+                raise ValueError("source_document statement_kind must be balance_sheet or cash_flow.")
+            identities = document.get("identities")
+            if not isinstance(identities, (list, tuple)):
+                raise ValueError("source_document identities must be a list.")
+            record.update(statement_kind=str(document["statement_kind"]),
+                          identities=[_json_value(identity) for identity in identities])
+        return record
+    if kind == "scorecard":  # holdings labeled by a deciding metric against consensus (PLAN.md R18)
+        lists = [document.get(name) for name in ("documents", "holdings", "shares")]
+        if not all(isinstance(value, (list, tuple)) for value in (notes, *lists)):
+            raise ValueError("source_document reader_notes, documents, holdings and shares must be lists.")
+        assert isinstance(notes, (list, tuple))
+        card: JSONObject = {"kind": "scorecard",
+                            "key": validate_text(document.get("key"), field="scorecard key", nonblank=True),
+                            "metric": validate_text(document.get("metric"), field="scorecard metric", nonblank=True)}
+        for name, value in zip(("documents", "holdings", "shares"), lists, strict=True):
+            assert isinstance(value, (list, tuple))
+            card[name] = [_json_value(item) for item in value]
+        card["reader_notes"] = [validate_text(note, field="source_document reader note") for note in notes]
+        return card
+    if kind == "metrics":  # declared metrics joined with a case or schedule (PLAN.md R17)
+        documents, lines, key, metrics = (document.get("documents"), document.get("lines"), document.get("key"),
+                                          document.get("metrics"))
+        if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines, metrics)):
+            raise ValueError("source_document reader_notes, documents, metrics and lines must be lists.")
+        assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple))
+        assert isinstance(lines, (list, tuple)) and isinstance(metrics, (list, tuple))
+        return {"kind": "metrics", "key": validate_text(key, field="source_document key", nonblank=True),
+                "documents": [_json_value(item) for item in documents], "metrics": [_json_value(m) for m in metrics],
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                "lines": [_json_value(line) for line in lines]}
+    if kind == "join":  # budget and actuals from two files (PLAN.md R12)
+        documents, lines, key = document.get("documents"), document.get("lines"), document.get("key")
+        if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines)):
+            raise ValueError("source_document reader_notes, documents and lines must be lists.")
+        assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple)) and isinstance(lines, (list, tuple))
+        return {"kind": "join", "key": validate_text(key, field="source_document key", nonblank=True),
+                "documents": [_json_value(item) for item in documents],
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                "lines": [_json_value(line) for line in lines]}
+    if kind == "ltm":  # an LTM build: both filings and each line's cited components (PLAN.md R11)
+        validate_text(statement, field="source_document statement", nonblank=True)
+        documents, lines = document.get("documents"), document.get("lines")
+        if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines)):
+            raise ValueError("source_document reader_notes, documents and lines must be lists.")
+        assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple)) and isinstance(lines, (list, tuple))
+        ltm: JSONObject = {"kind": "ltm", "statement": str(statement),
+                           "documents": [_json_value(item) for item in documents],
+                           "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                           "lines": [_json_value(line) for line in lines]}
+        if "headline" in document:
+            ltm["headline"] = _headline_record(document["headline"])
+        return ltm
+    if kind == "edgar_xlsx":
+        validate_text(statement, field="source_document statement", nonblank=True)
+        sheet = document.get("sheet")
+        validate_text(sheet, field="source_document sheet", nonblank=True)
+        if not isinstance(notes, (list, tuple)):
+            raise ValueError("source_document reader_notes must be a list of text.")
+        return {"kind": "edgar_xlsx", "statement": str(statement), "sheet": str(sheet),
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes]}
     if kind != "pdf":
         raise ValueError("source_document kind must be 'pdf'.")
     validate_text(statement, field="source_document statement", nonblank=True)
@@ -207,19 +298,36 @@ def build_audit_record(
     """
     verify_result(result)
     extended = is_audience_result(result)
-    schema_version = ("1.8" if extended else CURRENT_SCHEMA_VERSION) if schema_version is None else schema_version
-    if extended and schema_version != "1.8":
+    # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
+    workbook = transformations.get("workbook") if transformations is not None else None
+    opt_in = result.config.comparison_basis in OPT_IN_BASES  # limit, benchmark, target (PLAN.md R13-R15)
+    headline = source_document is not None and "headline" in source_document
+    multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
+        isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
+    needs_19 = workbook is not None or opt_in or multiple or (
+        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join", "metrics", "scorecard"})
+    if schema_version is None:
+        schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
+    if extended and schema_version not in {"1.8", "1.9"}:
         raise ValueError("Audit schema 1.8 is required to record measure and direction choices.")
+    if multiple and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record a Multiple measure; use --audit-schema-version 1.9.")
+    if opt_in and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record a limit, benchmark or target comparison; "
+                         "use --audit-schema-version 1.9.")
+    if needs_19 and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record what the workbook examination found; "
+                         "use --audit-schema-version 1.9.")
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
-    if source_document is not None and schema_version not in {"1.7", "1.8"}:
+    if source_document is not None and schema_version not in {"1.7", "1.8", "1.9"}:
         raise ValueError(
             f"Audit schema {schema_version} cannot record how a PDF statement was read; "
             "use --audit-schema-version 1.7 for PDF input."
         )
-    if schema_version not in {"1.6", "1.7", "1.8"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
+    if schema_version not in {"1.6", "1.7", "1.8", "1.9"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
         raise ValueError(
             f"Audit schema {schema_version} records the comparison amount as a budget; "
             "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
@@ -236,7 +344,7 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}
 
     quality_rows = tuple(row for row in result.rows if currency_row(row))
     row_count = len(quality_rows)
@@ -291,7 +399,10 @@ def build_audit_record(
             "logic": "absolute_dollar_or_absolute_percent",
         },
         "data_quality": data_quality,
-        "totals": {
+        # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value. A filing's
+        # income statement records its own printed totals as its headline instead of computed ones (Decision 39).
+        "totals": None if opt_in or headline or any(row.statement_kind or row.classification_source == "metric"
+                                                    for row in result.rows) else {
             "revenue": _aggregate_record(
                 result.revenue,
                 present=has_revenue,
@@ -320,15 +431,15 @@ def build_audit_record(
         "basis": str(result.config.comparison_basis),
         "label": result.config.comparison_label,
     }
-    if schema_version in {"1.6", "1.7", "1.8"}:
+    if schema_version in {"1.6", "1.7", "1.8", "1.9"}:
         record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         source["worksheet"] = source_worksheet
-    if schema_version in {"1.7", "1.8"}:
+    if schema_version in {"1.7", "1.8", "1.9"}:
         source["document"] = _document_record(source_document)
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -336,11 +447,11 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
+        if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
             config_identity["worksheet"] = source_worksheet
-        if schema_version in {"1.6", "1.7", "1.8"}:
+        if schema_version in {"1.6", "1.7", "1.8", "1.9"}:
             config_identity["comparison"] = comparison
-        if schema_version == "1.8":
+        if schema_version in {"1.8", "1.9"}:
             config_identity["audience"] = audience_configuration(result.config)
         record["provenance"] = {
             "tool_version": __version__,
@@ -357,7 +468,7 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
-    if schema_version in {"1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.5", "1.6", "1.7", "1.8", "1.9"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
         zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
@@ -378,7 +489,12 @@ def build_audit_record(
             "classification_rules": _json_value(t_raw.get("classification_rules")),
             "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
         }
-    if schema_version == "1.8":
+    if schema_version == "1.9":
+        record["workbook"] = _json_value(workbook) if isinstance(workbook, dict) else None
+        if opt_in:
+            record["basis_details"] = [basis_details_record(row.line_item, row.basis_details)
+                                       for row in result.rows if row.basis_details is not None]
+    if schema_version in {"1.8", "1.9"}:
         record["audience"] = audience_configuration(result.config)
         record["segments"] = segment_records(result)
         record["inferences"] = list(metric_inferences(result.rows, result.config))
@@ -389,11 +505,11 @@ def build_audit_record(
         record["comparison_details"] = [_comparison_record(row) for row in result.rows]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
-            (_measure_record(row) if schema_version == "1.8" else
+            (_measure_record(row) if schema_version in {"1.8", "1.9"} else
              _row_record(row, include_diagnostics=include_diagnostics)) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         record["payload_sha256"] = payload_sha256(record)
     return record
 
@@ -410,6 +526,9 @@ def audience_configuration(cfg: AnalysisConfig) -> JSONObject:
         "preset": cfg.preset if isinstance(cfg, AudienceConfig) else "fpa",
         "layout": effective_layout(cfg), "per_share_lines": effective_per_share_lines(cfg),
         "headline_items": list(cfg.headline_items) if isinstance(cfg, AudienceConfig) else [],
+        # Only a 1.9 record holds it: a Multiple threshold selects 1.9 (PLAN.md R16).
+        **({"multiple_threshold": _decimal(cfg.multiple_threshold)}
+           if isinstance(cfg, AudienceConfig) and cfg.multiple_threshold is not None else {}),
         "currency": cfg.currency, "dollar_threshold": _decimal(cfg.dollar_threshold),
         "percent_threshold": _decimal(cfg.percent_threshold),
         "type_map": [{"line_item": key, "type": str(value)} for key, value in sorted(cfg.type_map.items())],
@@ -431,6 +550,15 @@ def _measure_record(row: AnalyzedRow) -> JSONObject:
 
 def _comparison_record(row: AnalyzedRow) -> JSONObject:
     return comparison_details_record(row.line_item, row.comparison_details)
+
+
+def basis_details_record(line_item: str, detail: BasisDetails) -> JSONObject:
+    from dataclasses import fields
+    record: JSONObject = {"line_item": line_item}
+    for item in fields(BasisDetails):
+        value = getattr(detail, item.name)
+        record[item.name] = _decimal(value) if isinstance(value, Decimal) else value
+    return record
 
 
 def comparison_details_record(line_item: str, detail: ComparisonDetails | None) -> JSONObject:

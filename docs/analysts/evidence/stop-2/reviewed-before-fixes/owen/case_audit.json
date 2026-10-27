@@ -1,0 +1,419 @@
+{
+  "analysis_fingerprint": "d654d2ca48a5a01e9c98e55a3372f055fade861ff7de729c2c6a78ee93cf7ac9",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": null,
+    "comparison_title": "Budget",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": null,
+    "preset": "fpa",
+    "type_map": []
+  },
+  "comparison": {
+    "basis": "budget",
+    "label": null
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "LTM revenue"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "LTM EBITDA"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 2,
+    "material_variance_count": 2,
+    "net_operating_impact_available": false,
+    "row_count": 2,
+    "summary_verifications": [],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 2,
+    "warnings": [
+      "LTM revenue: read Better to Higher.",
+      "LTM EBITDA: read Better to Higher."
+    ]
+  },
+  "inferences": [
+    "LTM revenue: read Better to Higher.",
+    "LTM EBITDA: read Better to Higher."
+  ],
+  "material_variances": [
+    {
+      "actual": "4300000000",
+      "budget": "4250000000",
+      "classification_source": "metric",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "LTM revenue",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "F",
+      "summary_source": "detail",
+      "type": "Unclassified",
+      "variance_dollars": "50000000",
+      "variance_percent": "0.011764705882352941176470588235294117647058823529412"
+    },
+    {
+      "actual": "1800000000",
+      "budget": "1750000000",
+      "classification_source": "metric",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "LTM EBITDA",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "F",
+      "summary_source": "detail",
+      "type": "Unclassified",
+      "variance_dollars": "50000000",
+      "variance_percent": "0.028571428571428571428571428571428571428571428571429"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "4300000000",
+      "better": "Higher",
+      "comparison": "4250000000",
+      "direction_source": "explicit_better",
+      "display_label": "F",
+      "excluded_from_aggregation": true,
+      "line_item": "LTM revenue",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "F",
+      "type": "Unclassified",
+      "variance": "50000000",
+      "variance_bps": null,
+      "variance_percent": "0.011764705882352941176470588235294117647058823529412"
+    },
+    {
+      "actual": "1800000000",
+      "better": "Higher",
+      "comparison": "1750000000",
+      "direction_source": "explicit_better",
+      "display_label": "F",
+      "excluded_from_aggregation": true,
+      "line_item": "LTM EBITDA",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "F",
+      "type": "Unclassified",
+      "variance": "50000000",
+      "variance_bps": null,
+      "variance_percent": "0.028571428571428571428571428571428571428571428571429"
+    }
+  ],
+  "payload_sha256": "bb39ce0901ded69bc5e7fc5b18cdb1346e98764987f4f8b53e069463c2ae095f",
+  "period": "LTM Mar 2026",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "c52cd137ab7148e1f13b5adc9533489fac57f49cad6352a719554f2f4c3a957f",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": {
+      "documents": [
+        {
+          "name": "hal-20260328.htm",
+          "role": "filing",
+          "sha256": "40fb6cf39d039b82c59a746b443727fff51ef819bd569754810f2b14fc8e747a"
+        },
+        {
+          "name": "hal-20250927.htm",
+          "role": "filing",
+          "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808"
+        },
+        {
+          "name": "owen_case.csv",
+          "role": "comparison",
+          "sha256": "c0f6489e7eaa48e68b91cfa6252494d6567f5a80eeb08257e7f612d535ff4749"
+        }
+      ],
+      "key": "line item",
+      "kind": "metrics",
+      "lines": [
+        {
+          "comparison_line_item": "LTM revenue",
+          "key": "LTM revenue",
+          "line_item": "LTM revenue"
+        },
+        {
+          "comparison_line_item": "LTM EBITDA",
+          "key": "LTM EBITDA",
+          "line_item": "LTM EBITDA"
+        }
+      ],
+      "metrics": [
+        {
+          "formula": "Net sales [income, ltm]",
+          "name": "LTM revenue",
+          "reason": null,
+          "terms": [
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:Revenues",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Net sales",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "4100000000"
+            },
+            {
+              "column": "Mar 2026",
+              "concept": "us-gaap:Revenues",
+              "context": "YTD26",
+              "document": "hal-20260328.htm",
+              "line_item": "Net sales",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "2200000000"
+            },
+            {
+              "column": "Mar 2025",
+              "concept": "us-gaap:Revenues",
+              "context": "YTD25",
+              "document": "hal-20260328.htm",
+              "line_item": "Net sales",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "2000000000",
+              "weight": -1
+            }
+          ],
+          "value": "4300000000"
+        },
+        {
+          "formula": "Net income [income, ltm] - Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
+          "name": "LTM EBITDA",
+          "reason": null,
+          "terms": [
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Net income",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "1450000000"
+            },
+            {
+              "column": "Mar 2026",
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "YTD26",
+              "document": "hal-20260328.htm",
+              "line_item": "Net income",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "815000000"
+            },
+            {
+              "column": "Mar 2025",
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "YTD25",
+              "document": "hal-20260328.htm",
+              "line_item": "Net income",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "730000000",
+              "weight": -1
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:InterestExpense",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Interest expense",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": -1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "-50000000"
+            },
+            {
+              "column": "Mar 2026",
+              "concept": "us-gaap:InterestExpense",
+              "context": "YTD26",
+              "document": "hal-20260328.htm",
+              "line_item": "Interest expense",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": -1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "-25000000"
+            },
+            {
+              "column": "Mar 2025",
+              "concept": "us-gaap:InterestExpense",
+              "context": "YTD25",
+              "document": "hal-20260328.htm",
+              "line_item": "Interest expense",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": -1,
+              "statement": "Condensed Consolidated Statements of Operations, 6 Months Ended",
+              "value": "-20000000",
+              "weight": -1
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Depreciation and amortization",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Cash Flows",
+              "value": "200000000"
+            },
+            {
+              "column": "Mar 2026",
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "YTD26",
+              "document": "hal-20260328.htm",
+              "line_item": "Depreciation and amortization",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Cash Flows",
+              "value": "110000000"
+            },
+            {
+              "column": "Mar 2025",
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "YTD25",
+              "document": "hal-20260328.htm",
+              "line_item": "Depreciation and amortization",
+              "period": "ltm",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Condensed Consolidated Statements of Cash Flows",
+              "value": "100000000",
+              "weight": -1
+            }
+          ],
+          "value": "1800000000"
+        }
+      ],
+      "reader_notes": [
+        "LTM revenue = $4,300,000,000.00 = Net sales [income, ltm]",
+        "LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] - Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]",
+        "Joined 'owen_case.csv' to 'the metrics' by 'line item': 2 lines, each in both files",
+        "Took Actual from 'the metrics' and the comparison from 'owen_case.csv'",
+        "owen_case.csv: Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands)."
+      ]
+    },
+    "name": "hal-20260328.htm",
+    "sha256": "40fb6cf39d039b82c59a746b443727fff51ef819bd569754810f2b14fc8e747a",
+    "worksheet": null
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "value",
+      "budget": "Budget' in 'owen_case.csv",
+      "line_item": "metric"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

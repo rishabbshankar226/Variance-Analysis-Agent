@@ -227,3 +227,81 @@ panel audit root: group keys and captured source identity are in long output.
 The long-format number contract uses strings even for counts; audit metadata
 counts remain JSON integers as the schema specifies. Missing comparisons never
 occupy an analyzed row's numeric comparison field with a fabricated zero.
+
+## Unreleased 1.9: workbook examination and EDGAR statements
+
+Schema 1.9 is selectable and unreleased. It is audit 1.8 plus closed additions, and every
+1.0 to 1.8 schema keeps its bytes. A run selects 1.9 automatically only when it has something
+1.8 cannot hold: a workbook examination finding, a statement read from a sheet laid out like
+EDGAR's `Financial_Report.xlsx`, or a statement read from an Inline XBRL filing. A clean workbook keeps its 1.7 record. Choosing 1.0 to 1.8
+explicitly for such a run is refused before any output is written: "Audit schema {version}
+cannot record what the workbook examination found; use --audit-schema-version 1.9."
+
+- `workbook` is null, or the examination of the sheet that was read: `sheet`; every sheet's
+  `name` and `visibility`; the Excel `tables` on the sheet; `merged_header_ranges`;
+  `hidden_rows` (row, line item, whether an outline group collapsed it) and the person's
+  `hidden_rows_choice` (`include`, `exclude` or null); `hidden_columns` that hold data;
+  `error_cells` with their saved error; `unsaved_formulas` outside the read (inside it they stop
+  intake); `external_links`; `outline_levels`; `recalculate_on_open` (the flag, on a sheet with
+  formulas); `display_scaled_cells` (cell, format, how it is shown); `reading_notes`, the
+  sentences intake wrote for these reads; and the `findings` that selected 1.9 (`hidden_rows`,
+  `hidden_columns`, `error_cells`, `unsaved_formulas`, `display_scaling`, `layout`,
+  `external_links`, `recalculate_on_open`). Each list keeps at most 100 entries.
+- `source.document` may also be `{kind: "edgar_xlsx", statement, sheet, reader_notes}`, the
+  statement a `Financial_Report.xlsx`-style sheet held and every adjustment the reader made, as
+  for a PDF.
+- `source.document` may also be `{kind: "ixbrl", statement, reader_notes, lines}`, a statement
+  read from an Inline XBRL filing. Each line carries its `line_item`, `concept`, `measure`,
+  whether it is a `subtotal` (a line the statement computes from the lines above, checked before
+  use: an income statement leaves it out of the analysis, while a balance sheet or cash flow
+  statement keeps it as a row) or `left_out` (read but not
+  analysed, such as the lines below net income), and one entry per column (or null) with the
+  column `label` and the fact's `concept`, `context`, `period`, `dims` (axis and member),
+  `stored` value (as the XBRL instance holds it), `displayed` value (as printed) and `decimals`.
+- A balance sheet or cash flow comparison read from Inline XBRL adds `statement_kind`
+  (`balance_sheet` or `cash_flow`) and `identities` to that document: each identity checked
+  (`identity`), its two lines (`left`, `right`: total assets against total liabilities and
+  equity, or ending cash against beginning cash), the `columns` it held in, and `holds: true`
+  (a failed identity refuses, so none is recorded). Its rows have `classification_source`
+  `statement`, never revenue or expense, and the record's `totals` is null, because no revenue,
+  expense or net total applies.
+- An income statement read from Inline XBRL adds `headline` (Decision 39): `items`, the filing's
+  own printed totals in statement order, each with its `role` (`revenue`, `expenses`,
+  `operating_income`, `net_income`), `line_item`, `concept`, the `actual` and `comparison` fact
+  keys (as a line's columns record them), the `change` (actual minus comparison, as printed) and
+  `change_percent` (the change over the comparison's absolute value, or null at zero); and
+  `notes`, each total left out and why; and `unit`, the sentence stating the unit the filing
+  prints in, whose amounts inside line labels keep that unit (Decision 40; every Inline XBRL
+  statement's `reader_notes` carry it too, as `Units: …`). The record's `totals` is null: the
+  report shows these printed totals, never revenue, expense or net totals added up from the lines.
+- `source.document` may also be `{kind: "ltm", statement, documents, reader_notes, lines}`, an
+  LTM build from a 10-K and a later 10-Q (`--ltm-from`). `documents` names both filings with
+  their sha256 and statement. Each line carries its `line_item` and `concept`, the `ltm` value,
+  the `comparison` (the fiscal year), and three `components`: fiscal year (weight 1), year to
+  date (1) and prior year to date (-1). Each component gives its `document`, `column`,
+  `context`, printed `displayed` value and the value `used` after the statement's own sign
+  conventions. Its `headline` gives LTM of each printed total heading both filings (matched by
+  concept): `components` cited the same way, the `ltm` value, the `comparison` (the fiscal year),
+  `change` and `change_percent`; `totals` is null.
+- `source.document` may also be `{kind: "join", key, documents, reader_notes, lines}`, budget and
+  actuals from two files (`--compare-file`, or two uploads in the chat). `key` names the join
+  column (an account ID both files carry) or `line item`. `documents` gives both files' `name`,
+  `sha256` and `role` (`actual` or `comparison`). Each line gives its `line_item` (from the
+  actuals file), its `key`, and its `comparison_line_item` (the label in the other file).
+
+- A `limit`, `benchmark` or `target` run (`comparison.basis`), a `Multiple` row, a
+  `--multiple-threshold` (recorded as `audience.multiple_threshold`), or derived metrics select
+  1.9; an older version refuses. These runs record `totals` as null. `basis_details` gives each
+  row's `basis`, `outcome`, `difference` (and `difference_bps` for rates), and its declarations
+  and results: `limit_kind`, `buffer`, `headroom`, `utilization` (null is NM), `tolerance` and
+  `severity`. Rows have `classification_source` `basis` or `metric`, never a revenue or expense
+  label.
+- `source.document` may also be `{kind: "metrics", key, documents, metrics, reader_notes, lines}`.
+  Each metric gives its `name`, `formula`, `value` (null when left out or NM), the `reason`, and
+  every term with its `document`, `statement`, `column`, `context`, `concept`, printed `value`,
+  `line_item`, `sign`, `period` and `side`. An LTM term lists its three components, the prior
+  year to date with `weight: -1`.
+
+These facts are source-derived data and enter the payload digest and analysis fingerprint.
+Comparison-set records stay 1.8; their intake notes, these included, are in each child's
+`inferences`.

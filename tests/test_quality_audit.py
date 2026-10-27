@@ -274,7 +274,8 @@ def test_output_paths_cannot_contain_one_another(tmp_path):
     assert not report.exists()
 
 
-@pytest.mark.parametrize("basis", list(ComparisonBasis))
+# Limit, benchmark and target need per-row declarations (R13-R15) and have their own oracles in test_bases.py.
+@pytest.mark.parametrize("basis", [b for b in ComparisonBasis if b.value not in {"limit", "benchmark", "target"}])
 def test_financial_invariants_against_independent_fraction_oracle(basis):
     from fractions import Fraction
     from random import Random

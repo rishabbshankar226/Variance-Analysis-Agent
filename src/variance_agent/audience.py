@@ -14,6 +14,7 @@ class AudienceConfig(AnalysisConfig):
     per_share_threshold: Decimal | None = None
     count_threshold: Decimal | None = None
     bps_threshold: Decimal | None = None
+    multiple_threshold: Decimal | None = None  # turns, for Multiple rows (PLAN.md R16)
     percent_values: str | None = None
     actual_label: str | None = None
     comparison_title: str | None = None
@@ -39,7 +40,8 @@ def validate_audience_config(config: AnalysisConfig) -> None:
         raise ValueError("Headline items must be distinct line-item names.")
     if config.percent_values not in {None, "points", "fractions"}:
         raise ValueError("--percent-values must be points or fractions.")
-    for name in ("dollar_threshold", "percent_threshold", "per_share_threshold", "count_threshold", "bps_threshold"):
+    for name in ("dollar_threshold", "percent_threshold", "per_share_threshold", "count_threshold", "bps_threshold",
+                 "multiple_threshold"):
         value = getattr(config, name)
         if value is not None:
             if not isinstance(value, Decimal):
@@ -64,12 +66,14 @@ def validate_audience_config(config: AnalysisConfig) -> None:
 
 
 def is_audience_result(result: AnalysisResult) -> bool:
-    return result.config.comparison_basis in NEW_BASES or isinstance(result.config, AudienceConfig) or any(
+    return result.config.comparison_basis in NEW_BASES | OPT_IN_BASES or isinstance(result.config, AudienceConfig) or any(
         row.measure_declared or row.better is not None for row in result.rows
     )
 
 
 NEW_BASES = frozenset({ComparisonBasis.CONSENSUS, ComparisonBasis.ESTIMATE, ComparisonBasis.GUIDANCE})
+# Opt-in bases read from one table with per-row declarations (PLAN.md R13-R15); not the multi-comparison path.
+OPT_IN_BASES = frozenset({ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET})
 
 
 def audience_config(config: AnalysisConfig, *, extended_headers: bool = True) -> AudienceConfig:

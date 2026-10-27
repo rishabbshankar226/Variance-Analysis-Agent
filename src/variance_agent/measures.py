@@ -13,6 +13,7 @@ _ALIASES = {
     "per_share": MeasureKind.PER_SHARE, "eps": MeasureKind.PER_SHARE,
     "percent": MeasureKind.PERCENT, "percentage": MeasureKind.PERCENT, "rate": MeasureKind.PERCENT,
     "count": MeasureKind.COUNT, "units": MeasureKind.COUNT,
+    "multiple": MeasureKind.MULTIPLE, "multiples": MeasureKind.MULTIPLE, "turns": MeasureKind.MULTIPLE,
 }
 
 
@@ -20,7 +21,7 @@ def measure_kind(value: object, line_item: str) -> MeasureKind:
     if is_missing(value):
         return MeasureKind.CURRENCY
     if not isinstance(value, str) or normalize_key(value) not in _ALIASES:
-        raise ValueError(f"{line_item}: Measure must be Currency, Per Share, Percent, or Count.")
+        raise ValueError(f"{line_item}: Measure must be Currency, Per Share, Percent, Count, or Multiple.")
     return _ALIASES[normalize_key(value)]
 
 
@@ -28,7 +29,7 @@ def direction(value: object, kind: MeasureKind, line_type: LineType, line_item: 
     if is_missing(value):
         if kind is MeasureKind.PER_SHARE:
             return BetterDirection.HIGHER, "default_higher"
-        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT}:
+        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT, MeasureKind.MULTIPLE}:
             raise ValueError(f"{line_item}: is Higher or Lower better? Supply Better as Higher or Lower.")
         return None, "type"
     if not isinstance(value, str) or value.strip().casefold() not in {"higher", "lower"}:
@@ -45,6 +46,12 @@ def direction(value: object, kind: MeasureKind, line_type: LineType, line_item: 
 def parse_measure_amount(value: object, *, kind: MeasureKind, config: AnalysisConfig, field: str, line_item: str) -> Decimal:
     if isinstance(value, float) and (kind is not MeasureKind.CURRENCY or isinstance(config, AudienceConfig)):
         raise ValueError(f"{line_item}: {field} cannot be a float; supply exact numeric text.")
+    turns = isinstance(value, str) and value.strip().casefold().endswith("x")
+    if turns and kind is not MeasureKind.MULTIPLE:
+        raise ValueError(f"{line_item}: {field} uses x but Measure is {kind}.")
+    if turns:
+        assert isinstance(value, str)
+        value = value.strip()[:-1]
     if kind is MeasureKind.CURRENCY:
         return parse_decimal(value, field=field, line_item=line_item, currency=config.currency)
     if isinstance(value, float):
@@ -69,7 +76,7 @@ def absolute_cutoff(config: AnalysisConfig, kind: MeasureKind, line_item: str = 
     if kind is MeasureKind.CURRENCY:
         return config.dollar_threshold
     name = {MeasureKind.PER_SHARE: "per_share_threshold", MeasureKind.COUNT: "count_threshold",
-            MeasureKind.PERCENT: "bps_threshold"}[kind]
+            MeasureKind.PERCENT: "bps_threshold", MeasureKind.MULTIPLE: "multiple_threshold"}[kind]
     value = getattr(config, name, None)
     if not isinstance(value, Decimal):
         raise ValueError(f"{line_item}: supply --{name.replace('_', '-')} for {kind} rows.")
@@ -106,7 +113,15 @@ def format_measure(value: Decimal, kind: MeasureKind, currency: str = "USD", *, 
         return _money(value, currency, max(2, -int(value.as_tuple().exponent)))
     if kind is MeasureKind.PER_SHARE:
         return _money(value, currency, max(2, -int(value.as_tuple().exponent))) + "/sh"
+    if kind is MeasureKind.MULTIPLE and value.as_tuple().exponent < -2:  # type: ignore[operator]
+        # A computed ratio repeats; it is shown to two places, and the audit keeps it exact.
+        from decimal import ROUND_HALF_EVEN, Inexact
+        with financial_context() as context:
+            context.traps[Inexact] = False
+            value = value.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
     number = format(value, ",f")
     if "." in number:
         number = number.rstrip("0").rstrip(".")
+    if kind is MeasureKind.MULTIPLE:
+        return number + "x"
     return number + (" bps" if variance else "%") if kind is MeasureKind.PERCENT else number + " units"

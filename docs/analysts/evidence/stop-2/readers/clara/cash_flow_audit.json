@@ -1,0 +1,1363 @@
+{
+  "analysis_fingerprint": "2545ca0542fd7cf0e005e8a44e87404243a243398e40cf45e61fe0686d3daaf3",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": null,
+    "comparison_title": "Prior Period (FY2024)",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": null,
+    "preset": "fpa",
+    "type_map": []
+  },
+  "comparison": {
+    "basis": "prior_period",
+    "label": "FY2024"
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net income"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Depreciation and amortization"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Increase in accounts receivable"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net cash provided by operating activities"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Purchases of property and equipment"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net cash used in investing activities"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Dividends paid"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net cash used in financing activities"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Effect of exchange rate changes on cash"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Net increase in cash, cash equivalents and restricted cash"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Cash, cash equivalents and restricted cash, beginning of year"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Cash, cash equivalents and restricted cash, end of year"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 12,
+    "material_variance_count": 12,
+    "net_operating_impact_available": false,
+    "row_count": 12,
+    "summary_verifications": [
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Net cash provided by operating activities",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Net cash used in investing activities",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Net cash used in financing activities",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Net increase in cash, cash equivalents and restricted cash",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Cash, cash equivalents and restricted cash, end of year",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      }
+    ],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 12,
+    "warnings": []
+  },
+  "inferences": [],
+  "material_variances": [
+    {
+      "actual": "2000000000",
+      "budget": "1350000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Cash, cash equivalents and restricted cash, beginning of year",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "650000000",
+      "variance_percent": "0.48148148148148148148148148148148148148148148148148"
+    },
+    {
+      "actual": "2600000000",
+      "budget": "2000000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Cash, cash equivalents and restricted cash, end of year",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "600000000",
+      "variance_percent": "0.3"
+    },
+    {
+      "actual": "1620000000",
+      "budget": "1490000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net cash provided by operating activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "130000000",
+      "variance_percent": "0.087248322147651006711409395973154362416107382550336"
+    },
+    {
+      "actual": "1450000000",
+      "budget": "1330000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net income",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "120000000",
+      "variance_percent": "0.090225563909774436090225563909774436090225563909774"
+    },
+    {
+      "actual": "-600000000",
+      "budget": "-500000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Purchases of property and equipment",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "-100000000",
+      "variance_percent": "-0.2"
+    },
+    {
+      "actual": "-600000000",
+      "budget": "-500000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net cash used in investing activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "-100000000",
+      "variance_percent": "-0.2"
+    },
+    {
+      "actual": "-400000000",
+      "budget": "-350000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Dividends paid",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "-50000000",
+      "variance_percent": "-0.14285714285714285714285714285714285714285714285714"
+    },
+    {
+      "actual": "-400000000",
+      "budget": "-350000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net cash used in financing activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "-50000000",
+      "variance_percent": "-0.14285714285714285714285714285714285714285714285714"
+    },
+    {
+      "actual": "600000000",
+      "budget": "650000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Net increase in cash, cash equivalents and restricted cash",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "-50000000",
+      "variance_percent": "-0.076923076923076923076923076923076923076923076923077"
+    },
+    {
+      "actual": "-20000000",
+      "budget": "10000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Effect of exchange rate changes on cash",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "-30000000",
+      "variance_percent": "-3"
+    },
+    {
+      "actual": "200000000",
+      "budget": "180000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Depreciation and amortization",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "20000000",
+      "variance_percent": "0.11111111111111111111111111111111111111111111111111"
+    },
+    {
+      "actual": "-30000000",
+      "budget": "-20000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Increase in accounts receivable",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "-10000000",
+      "variance_percent": "-0.5"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "1450000000",
+      "better": null,
+      "comparison": "1330000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Net income",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "120000000",
+      "variance_bps": null,
+      "variance_percent": "0.090225563909774436090225563909774436090225563909774"
+    },
+    {
+      "actual": "200000000",
+      "better": null,
+      "comparison": "180000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Depreciation and amortization",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "20000000",
+      "variance_bps": null,
+      "variance_percent": "0.11111111111111111111111111111111111111111111111111"
+    },
+    {
+      "actual": "-30000000",
+      "better": null,
+      "comparison": "-20000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Increase in accounts receivable",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-10000000",
+      "variance_bps": null,
+      "variance_percent": "-0.5"
+    },
+    {
+      "actual": "1620000000",
+      "better": null,
+      "comparison": "1490000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Net cash provided by operating activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "130000000",
+      "variance_bps": null,
+      "variance_percent": "0.087248322147651006711409395973154362416107382550336"
+    },
+    {
+      "actual": "-600000000",
+      "better": null,
+      "comparison": "-500000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Purchases of property and equipment",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-100000000",
+      "variance_bps": null,
+      "variance_percent": "-0.2"
+    },
+    {
+      "actual": "-600000000",
+      "better": null,
+      "comparison": "-500000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Net cash used in investing activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-100000000",
+      "variance_bps": null,
+      "variance_percent": "-0.2"
+    },
+    {
+      "actual": "-400000000",
+      "better": null,
+      "comparison": "-350000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Dividends paid",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-50000000",
+      "variance_bps": null,
+      "variance_percent": "-0.14285714285714285714285714285714285714285714285714"
+    },
+    {
+      "actual": "-400000000",
+      "better": null,
+      "comparison": "-350000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Net cash used in financing activities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-50000000",
+      "variance_bps": null,
+      "variance_percent": "-0.14285714285714285714285714285714285714285714285714"
+    },
+    {
+      "actual": "-20000000",
+      "better": null,
+      "comparison": "10000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Effect of exchange rate changes on cash",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-30000000",
+      "variance_bps": null,
+      "variance_percent": "-3"
+    },
+    {
+      "actual": "600000000",
+      "better": null,
+      "comparison": "650000000",
+      "direction_source": "type",
+      "display_label": "Decrease",
+      "excluded_from_aggregation": true,
+      "line_item": "Net increase in cash, cash equivalents and restricted cash",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-50000000",
+      "variance_bps": null,
+      "variance_percent": "-0.076923076923076923076923076923076923076923076923077"
+    },
+    {
+      "actual": "2000000000",
+      "better": null,
+      "comparison": "1350000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Cash, cash equivalents and restricted cash, beginning of year",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "650000000",
+      "variance_bps": null,
+      "variance_percent": "0.48148148148148148148148148148148148148148148148148"
+    },
+    {
+      "actual": "2600000000",
+      "better": null,
+      "comparison": "2000000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Cash, cash equivalents and restricted cash, end of year",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "600000000",
+      "variance_bps": null,
+      "variance_percent": "0.3"
+    }
+  ],
+  "payload_sha256": "1f7dd7e2e321aeb317a7f8fc23c255b9f4c7831df9987c4814e3267eb5e6b0c9",
+  "period": "FY2025",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "662ce760a81b72677e5203a7b5f848eee34119c9b73d6cf0a38ae1ea657377fa",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": {
+      "identities": [
+        {
+          "columns": [
+            "FY2025",
+            "FY2024"
+          ],
+          "footing": [
+            {
+              "subtotal": "Net cash provided by operating activities",
+              "terms": [
+                {
+                  "line_item": "Net income",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Depreciation and amortization",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Increase in accounts receivable",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net cash used in investing activities",
+              "terms": [
+                {
+                  "line_item": "Purchases of property and equipment",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net cash used in financing activities",
+              "terms": [
+                {
+                  "line_item": "Dividends paid",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Net increase in cash, cash equivalents and restricted cash",
+              "terms": [
+                {
+                  "line_item": "Net cash provided by operating activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Net cash used in investing activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Net cash used in financing activities",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Effect of exchange rate changes on cash",
+                  "weight": 1
+                }
+              ]
+            },
+            {
+              "subtotal": "Cash, cash equivalents and restricted cash, end of year",
+              "terms": [
+                {
+                  "line_item": "Net increase in cash, cash equivalents and restricted cash",
+                  "weight": 1
+                },
+                {
+                  "line_item": "Cash, cash equivalents and restricted cash, beginning of year",
+                  "weight": 1
+                }
+              ]
+            }
+          ],
+          "holds": true,
+          "identity": "cash_flow",
+          "left": "Cash, cash equivalents and restricted cash, end of year",
+          "right": "Cash, cash equivalents and restricted cash, beginning of year",
+          "rule": "ending cash = beginning cash + the flows printed between them"
+        }
+      ],
+      "kind": "ixbrl",
+      "lines": [
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1450000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "1450000000"
+            },
+            {
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1330000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "1330000000"
+            }
+          ],
+          "concept": "us-gaap:NetIncomeLoss",
+          "left_out": false,
+          "line_item": "Net income",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "200000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "200000000"
+            },
+            {
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "180000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "180000000"
+            }
+          ],
+          "concept": "us-gaap:DepreciationDepletionAndAmortization",
+          "left_out": false,
+          "line_item": "Depreciation and amortization",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:IncreaseDecreaseInAccountsReceivable",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-30000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "30000000"
+            },
+            {
+              "concept": "us-gaap:IncreaseDecreaseInAccountsReceivable",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-20000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "20000000"
+            }
+          ],
+          "concept": "us-gaap:IncreaseDecreaseInAccountsReceivable",
+          "left_out": false,
+          "line_item": "Increase in accounts receivable",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1620000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "1620000000"
+            },
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1490000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "1490000000"
+            }
+          ],
+          "concept": "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+          "left_out": false,
+          "line_item": "Net cash provided by operating activities",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-600000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "600000000"
+            },
+            {
+              "concept": "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-500000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "500000000"
+            }
+          ],
+          "concept": "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment",
+          "left_out": false,
+          "line_item": "Purchases of property and equipment",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInInvestingActivities",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-600000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "-600000000"
+            },
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInInvestingActivities",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-500000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "-500000000"
+            }
+          ],
+          "concept": "us-gaap:NetCashProvidedByUsedInInvestingActivities",
+          "left_out": false,
+          "line_item": "Net cash used in investing activities",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:PaymentsOfDividends",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-400000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "400000000"
+            },
+            {
+              "concept": "us-gaap:PaymentsOfDividends",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-350000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "350000000"
+            }
+          ],
+          "concept": "us-gaap:PaymentsOfDividends",
+          "left_out": false,
+          "line_item": "Dividends paid",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInFinancingActivities",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-400000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "-400000000"
+            },
+            {
+              "concept": "us-gaap:NetCashProvidedByUsedInFinancingActivities",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-350000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "-350000000"
+            }
+          ],
+          "concept": "us-gaap:NetCashProvidedByUsedInFinancingActivities",
+          "left_out": false,
+          "line_item": "Net cash used in financing activities",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-20000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "-20000000"
+            },
+            {
+              "concept": "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "10000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "10000000"
+            }
+          ],
+          "concept": "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+          "left_out": false,
+          "line_item": "Effect of exchange rate changes on cash",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "600000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "600000000"
+            },
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "650000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "650000000"
+            }
+          ],
+          "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+          "left_out": false,
+          "line_item": "Net increase in cash, cash equivalents and restricted cash",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2000000000",
+              "label": "FY2025",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2000000000"
+            },
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "I23",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1350000000",
+              "label": "FY2024",
+              "period": [
+                "instant",
+                "2023-09-30"
+              ],
+              "stored": "1350000000"
+            }
+          ],
+          "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+          "left_out": false,
+          "line_item": "Cash, cash equivalents and restricted cash, beginning of year",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2600000000",
+              "label": "FY2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "2600000000"
+            },
+            {
+              "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2000000000",
+              "label": "FY2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2000000000"
+            }
+          ],
+          "concept": "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+          "left_out": false,
+          "line_item": "Cash, cash equivalents and restricted cash, end of year",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:InterestPaidNet",
+              "context": "FY25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "45000000",
+              "label": "FY2025",
+              "period": [
+                "duration",
+                "2024-09-29",
+                "2025-09-27"
+              ],
+              "stored": "45000000"
+            },
+            {
+              "concept": "us-gaap:InterestPaidNet",
+              "context": "FY24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "38000000",
+              "label": "FY2024",
+              "period": [
+                "duration",
+                "2023-10-01",
+                "2024-09-28"
+              ],
+              "stored": "38000000"
+            }
+          ],
+          "concept": "us-gaap:InterestPaidNet",
+          "left_out": true,
+          "line_item": "Cash paid for interest",
+          "measure": "Currency",
+          "subtotal": false
+        }
+      ],
+      "reader_notes": [
+        "Read the column for 2025-09-27 as FY2025",
+        "Read the column for 2024-09-28 as FY2024",
+        "Left out 1 line after 'Cash, cash equivalents and restricted cash, end of year' (supplemental disclosures): 'Cash paid for interest'",
+        "Checked every subtotal and the cash roll-forward: Ending cash equals beginning cash plus the flows printed between them in FY2025 and FY2024, within the rounding each figure's decimals state",
+        "Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease"
+      ],
+      "statement": "Consolidated Statements of Cash Flows",
+      "statement_kind": "cash_flow"
+    },
+    "name": "hal-20250927.htm",
+    "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808",
+    "worksheet": "Consolidated Statements of Cash Flows"
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "FY2025",
+      "budget": "FY2024",
+      "line_item": "Line Item"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

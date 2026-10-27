@@ -1,0 +1,257 @@
+{
+  "analysis_fingerprint": "3f98096802c3f6df43841c1709650993bfb2608038c9c55a6fb45f56789a51eb",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": "1",
+    "comparison_title": "Benchmark",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": "points",
+    "preset": "fpa",
+    "type_map": []
+  },
+  "basis_details": [
+    {
+      "basis": "benchmark",
+      "buffer": null,
+      "difference": "0.45",
+      "difference_bps": "45.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "Fund return",
+      "outcome": "Above",
+      "severity": null,
+      "tolerance": "0.10",
+      "utilization": null
+    },
+    {
+      "basis": "benchmark",
+      "buffer": null,
+      "difference": "-0.05",
+      "difference_bps": "-5.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "Tracking fund return",
+      "outcome": "In line",
+      "severity": null,
+      "tolerance": "0.05",
+      "utilization": null
+    },
+    {
+      "basis": "benchmark",
+      "buffer": null,
+      "difference": "0.02",
+      "difference_bps": "2.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "Management fee rate",
+      "outcome": "Above",
+      "severity": null,
+      "tolerance": null,
+      "utilization": null
+    }
+  ],
+  "comparison": {
+    "basis": "benchmark",
+    "label": null
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Fund return"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Tracking fund return"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Management fee rate"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 3,
+    "material_variance_count": 3,
+    "net_operating_impact_available": false,
+    "row_count": 0,
+    "summary_verifications": [],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 0,
+    "warnings": [
+      "Fund return: read Measure as Percent.",
+      "Fund return: read % values as percentage points.",
+      "Fund return: read Better to Higher.",
+      "Tracking fund return: read Measure as Percent.",
+      "Tracking fund return: read % values as percentage points.",
+      "Tracking fund return: read Better to Higher.",
+      "Management fee rate: read Measure as Percent.",
+      "Management fee rate: read % values as percentage points.",
+      "Management fee rate: read Better to Lower.",
+      "Read bare Percent values as points."
+    ]
+  },
+  "inferences": [
+    "Fund return: read Measure as Percent.",
+    "Fund return: read % values as percentage points.",
+    "Fund return: read Better to Higher.",
+    "Tracking fund return: read Measure as Percent.",
+    "Tracking fund return: read % values as percentage points.",
+    "Tracking fund return: read Better to Higher.",
+    "Management fee rate: read Measure as Percent.",
+    "Management fee rate: read % values as percentage points.",
+    "Management fee rate: read Better to Lower.",
+    "Read bare Percent values as points."
+  ],
+  "material_variances": [],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "7.25",
+      "better": "Higher",
+      "comparison": "6.80",
+      "direction_source": "explicit_better",
+      "display_label": "Above",
+      "excluded_from_aggregation": true,
+      "line_item": "Fund return",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "F",
+      "type": "Unclassified",
+      "variance": "0.45",
+      "variance_bps": "45.00",
+      "variance_percent": null
+    },
+    {
+      "actual": "5.00",
+      "better": "Higher",
+      "comparison": "5.05",
+      "direction_source": "explicit_better",
+      "display_label": "In line",
+      "excluded_from_aggregation": true,
+      "line_item": "Tracking fund return",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-0.05",
+      "variance_bps": "-5.00",
+      "variance_percent": null
+    },
+    {
+      "actual": "0.82",
+      "better": "Lower",
+      "comparison": "0.80",
+      "direction_source": "explicit_better",
+      "display_label": "Above",
+      "excluded_from_aggregation": true,
+      "line_item": "Management fee rate",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "U",
+      "type": "Unclassified",
+      "variance": "0.02",
+      "variance_bps": "2.00",
+      "variance_percent": null
+    }
+  ],
+  "payload_sha256": "618d796772ebd3c61d4eac688372029eadf49d22dad8c8d88a0dfed295cb2856",
+  "period": "Oct 2026",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "f9b4fd593ae6d825eb4d93342e09b5a7e6876a58800f1260642a2430b91cb1c7",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": null,
+    "name": "theo_benchmark.csv",
+    "sha256": "898b5440c51bfccae056371bd379ede05a2a2b93f206816704825fcdc3f3a2c1",
+    "worksheet": null
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "Actual",
+      "budget": "Benchmark",
+      "line_item": "Line Item"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

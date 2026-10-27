@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
-from .audience import AudienceConfig, NEW_BASES, is_audience_result
+from .audience import AudienceConfig, NEW_BASES, OPT_IN_BASES, is_audience_result
 from .measures import metric_inferences
 from .analysis import analyze_rows
 from .classification import explicit_line_type
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 
 COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
+HIDDEN_ROWS_HINT = "Rerun with --hidden-rows include to count them or --hidden-rows exclude to leave them out."
 
 
 def _year_columns_hint(rows: list[dict[str, object]]) -> str | None:
@@ -56,7 +57,17 @@ def _intake_error(intake_res: IntakeResult) -> str:
     if intake_res.comparison_choices:
         # Chat offers chips for this choice; the CLI names the flag that makes it.
         message = f"{message} {COMPARE_TO_HINT}"
+    if intake_res.needs_hidden_rows_choice:
+        message = f"{message} {HIDDEN_ROWS_HINT}"
     return message
+
+
+def _print_examination(intake_res: IntakeResult) -> None:
+    """The workbook examination on stderr, only when it found something (stdout stays the report)."""
+    exam = intake_res.workbook_examination
+    if exam is not None and exam.findings:
+        for line in exam.lines():
+            print(f"[workbook] {line}", file=sys.stderr)
 
 
 def _count(number: int, noun: str) -> str:
@@ -90,6 +101,13 @@ class Arguments(Protocol):
     commentary: bool
     assisted: bool
     mapping: str | None
+    hidden_rows: str | None
+    ltm_from: str | None
+    compare_file: str | None
+    metrics: str | None
+    panel: str | None
+    join_key: str | None
+    deciding_metric: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -97,6 +115,7 @@ class Arguments(Protocol):
     headline: list[str] | None
     per_share_threshold: Decimal | None
     count_threshold: Decimal | None
+    multiple_threshold: Decimal | None
     bps_threshold: Decimal | None
     percent_values: str | None
     group_by: str | None
@@ -155,7 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # Groups only change how --help reads; every flag, default and type is as before.
     source = parser.add_argument_group("Input", "The file to analyze and how to read it.")
-    source.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    source.add_argument("input", nargs="?", default=None,
+                        help="Input CSV, JSON, XLSX, or XLSM file, or a PDF or Inline XBRL (.htm) filing with --assisted.")
     source.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
     source.add_argument(
         "--assisted",
@@ -166,6 +186,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--mapping",
         help="Path to saved layout mapping JSON file.",
     )
+    source.add_argument("--ltm-from", metavar="PATH",
+                        help="The 10-K whose fiscal year the input 10-Q continues: read the 10-Q's income statement "
+                             "as LTM (fiscal year + year to date - prior year to date), compared with that fiscal year. "
+                             "Needs --assisted.")
+    source.add_argument("--compare-file", metavar="PATH",
+                        help="A second file holding the comparison column (budget, forecast or prior period) for the "
+                             "input's actuals, joined on an account column both carry, or else the exact line item. "
+                             "Needs --assisted.")
+    source.add_argument("--metrics", metavar="PATH",
+                        help="A JSON file of derived metrics (name, signed numerator and denominator terms by XBRL "
+                             "concept or exact label, statement and period) read from the input filing; needs "
+                             "--compare-file with the case or covenant schedule. See docs/financial-rules.md.")
+    source.add_argument("--panel", metavar="PATH",
+                        help="A consensus panel for the input holdings sheet: label each holding by its "
+                             "--deciding-metric against consensus and share the weights out. Needs --join-key.")
+    source.add_argument("--join-key", metavar="COLUMN", help="The column the holdings sheet and the panel share (e.g. Ticker).")
+    source.add_argument("--deciding-metric", metavar="NAME", help="The panel metric that decides a holding (e.g. Diluted EPS).")
+    source.add_argument("--hidden-rows", choices=("include", "exclude"),
+                        help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
     source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     source.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
@@ -186,9 +225,10 @@ def build_parser() -> argparse.ArgumentParser:
     analysis.add_argument(
         "--compare-to",
         type=_comparison_argument,
-        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
+        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance; "
+             "or, with --assisted and one per run, limit, benchmark or target (rows declare Limit Kind, Better, Tolerance).",
     )
-    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
+    for flag in ("per-share-threshold", "count-threshold", "bps-threshold", "multiple-threshold"):
         analysis.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
     analysis.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
                           help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
@@ -208,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write a machine-readable audit/agent-context record with source provenance.",
     )
     outputs.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
-                         default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
+                         default=None,
+                         help="Audit JSON format version (legacy 1.7; explicit measures 1.8; workbook examination and filings 1.9).")
     outputs.add_argument(
         "--commentary",
         action="store_true",
@@ -316,10 +357,31 @@ def _run(args: Arguments) -> int:
         raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
     _validate_output_paths(args)
     input_path = Path(args.input)
-    is_pdf = input_path.suffix.lower() == ".pdf"
-    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"} and not is_pdf:
+    is_pdf = input_path.suffix.lower() in {".pdf", ".htm", ".html"}  # filings: --sheet names a statement
+    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm", ".xls"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
-    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)))
+    if getattr(args, "hidden_rows", None) is not None:
+        if input_path.suffix.lower() not in {".xlsx", ".xlsm", ".xls"}:
+            raise ValueError("--hidden-rows requires XLSX or XLSM input.")
+        if not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+            raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
+    if args.ltm_from and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError("--ltm-from needs --assisted (and no --mapping): LTM is built from the filings' own statements.")
+    if any((args.panel, args.join_key, args.deciding_metric)) and not all((args.panel, args.join_key, args.deciding_metric)):
+        raise ValueError("A holdings scorecard needs --panel, --join-key and --deciding-metric together.")
+    if args.panel and (not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.compare_file
+                       or args.metrics or args.ltm_from):
+        raise ValueError("--panel needs --assisted, and no --mapping, --compare-file, --metrics or --ltm-from.")
+    if args.metrics and not args.compare_file:
+        raise ValueError("--metrics needs --compare-file: the metrics are compared with the case or covenant schedule "
+                         "that file holds.")
+    if args.metrics and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError("--metrics needs --assisted (and no --mapping): the metrics are read from the filing's statements.")
+    if args.compare_file and not args.metrics and (
+            not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.ltm_from):
+        raise ValueError("--compare-file needs --assisted (and no --mapping or --ltm-from): each file is read on its own, "
+                         "then the two are joined.")
+    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
@@ -344,6 +406,9 @@ def _run(args: Arguments) -> int:
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
+    if compare_to_basis in OPT_IN_BASES and not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError(f"--compare-to {compare_to_basis.value} needs --assisted, which reads each row's declarations "
+                         "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
@@ -353,7 +418,7 @@ def _run(args: Arguments) -> int:
             detect_signed_ledger,
             flip_ledger_signs,
             read_input_assisted,
-            scale_rows_by_unit,
+            reconcile_declared_unit,
         )
         assert mapping_obj is not None
 
@@ -366,6 +431,7 @@ def _run(args: Arguments) -> int:
             selected_period=mapping_obj.period_column_selection,
             # An explicit --compare-to wins over the basis saved in the mapping.
             compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
+            hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
         )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
@@ -384,8 +450,8 @@ def _run(args: Arguments) -> int:
             target_scale = Decimal(mapping_obj.unit_scale)
             detected_scale = intake_res.detected_unit_multiplier
             if detected_scale == Decimal("1"):
-                rows = scale_rows_by_unit(rows, target_scale)
-                intake_res.detected_unit_multiplier = target_scale
+                # Reconciled with the amounts' number formats, as a caption would be (E1).
+                rows = reconcile_declared_unit(intake_res, rows, target_scale, input_path.name)
             elif detected_scale != target_scale:
                 raise ValueError(
                     f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
@@ -421,20 +487,52 @@ def _run(args: Arguments) -> int:
             items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
             type_map = apply_classification_rules(items, gl_rules, keywords=keywords, bulk_default=bulk_def)
 
+        _print_examination(intake_res)
         parsed_rows = rows
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
         comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
-        intake_res = read_input_assisted(
-            source_bytes,
-            input_path.suffix,
-            filename=input_path.name,
-            sheet=args.sheet,
-            treat_blank_budgets_as_zero=True,
-            compare_to=compare_to_basis,
-        )
+        if args.panel:
+            from .scorecard import build_scorecard
+            assert args.join_key is not None and args.deciding_metric is not None
+            panel = Path(args.panel)
+            intake_res = build_scorecard(source_bytes, input_path.name, read_input_bytes(panel), panel.name,
+                                         args.join_key, args.deciding_metric)
+        elif args.metrics:
+            from .metrics import compare_metrics
+            assert args.compare_file is not None  # checked with the other flags above
+            other, annual_path = Path(args.compare_file), Path(args.ltm_from) if args.ltm_from else None
+            intake_res = compare_metrics(read_input_bytes(Path(args.metrics)), source_bytes, input_path.name,
+                                         read_input_bytes(other), other.name,
+                                         annual=read_input_bytes(annual_path) if annual_path else None,
+                                         annual_name=annual_path.name if annual_path else None, compare_to=compare_to_basis)
+        elif args.compare_file:
+            from .join import join_files
+            other = Path(args.compare_file)
+            intake_res = join_files(source_bytes, input_path.name, read_input_bytes(other), other.name, sheet=args.sheet,
+                                    compare_to=compare_to_basis, hidden_rows=getattr(args, "hidden_rows", None))
+        elif args.ltm_from:
+            from .ltm import build_ltm
+            annual_path = Path(args.ltm_from)
+            if compare_to_basis is not None:
+                raise ValueError("--ltm-from compares LTM with the 10-K's fiscal year; leave out --compare-to.")
+            if input_path.suffix.lower() not in {".htm", ".html"} or annual_path.suffix.lower() not in {".htm", ".html"}:
+                raise ValueError("--ltm-from builds LTM from two Inline XBRL filings: give the 10-Q's and the 10-K's "
+                                 ".htm documents from EDGAR.")
+            intake_res = build_ltm(source_bytes, input_path.name, read_input_bytes(annual_path), annual_path.name,
+                                   sheet=args.sheet)
+        else:
+            intake_res = read_input_assisted(
+                source_bytes,
+                input_path.suffix,
+                filename=input_path.name,
+                sheet=args.sheet,
+                treat_blank_budgets_as_zero=True,
+                compare_to=compare_to_basis,
+                hidden_rows=getattr(args, "hidden_rows", None),
+            )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
         parsed_rows = intake_res.rows
@@ -443,6 +541,7 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
+        _print_examination(intake_res)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
         parsed_rows = parsed.rows
@@ -465,6 +564,7 @@ def _run(args: Arguments) -> int:
         "per_share_threshold": getattr(args, "per_share_threshold", None),
         "count_threshold": getattr(args, "count_threshold", None),
         "bps_threshold": getattr(args, "bps_threshold", None),
+        "multiple_threshold": getattr(args, "multiple_threshold", None),
         "percent_values": getattr(args, "percent_values", None),
     }
     if mapping_obj is not None:
@@ -499,6 +599,7 @@ def _run(args: Arguments) -> int:
             per_share_threshold=cast(Decimal | None, audience_args["per_share_threshold"]),
             count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
             bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
+            multiple_threshold=cast(Decimal | None, audience_args["multiple_threshold"]),
             percent_values=cast(str | None, audience_args["percent_values"]),
         )
     try:
@@ -521,7 +622,25 @@ def _run(args: Arguments) -> int:
               f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
               f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
-    report = render_markdown(result)
+    if intake_res is not None and intake_res.scorecard is not None:
+        from .scorecard import finish_scorecard
+        finish_scorecard(intake_res, result)
+    statement_checks = intake_res.statement_checks if intake_res is not None else []
+    if result.config.comparison_basis in OPT_IN_BASES and args.xlsx:
+        raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "
+                         "the report and the audit file hold every outcome.")
+    if statement_checks and args.xlsx:
+        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; "
+                         "the report and the audit file hold every figure.")
+    if intake_res is not None and intake_res.filing_headline is not None and args.xlsx:
+        # The workbook adds up revenue and expense totals of its own; a filing is headed by its printed ones (Decision 39).
+        raise ValueError("--xlsx isn't available for a filing's income statement yet: the workbook adds up revenue and "
+                         "expense totals of its own. Leave out --xlsx; the report and the audit file hold every figure.")
+    appendix = intake_res.report_appendix if intake_res is not None else []
+    headline = intake_res.filing_headline if intake_res is not None else None
+    report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None,
+                              filing_headline=headline)
+              if statement_checks or appendix or headline is not None else render_markdown(result))
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)
@@ -615,6 +734,7 @@ def _run_comparisons(
         column_mapping=columns or None,
         per_share_lines=args.per_share_lines if args.per_share_lines is not None else args.preset == "earnings",
         metadata=metadata,
+        hidden_rows=getattr(args, "hidden_rows", None) or (layout.hidden_rows if layout is not None else None),
     )
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None

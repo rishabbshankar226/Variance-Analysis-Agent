@@ -1,0 +1,251 @@
+{
+  "analysis_fingerprint": "fe6c9211673c085c0495a51871525d6cebbab9c8f5fbc53532d43218747b58a6",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": "1",
+    "comparison_title": "Target",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": "points",
+    "preset": "fpa",
+    "type_map": []
+  },
+  "basis_details": [
+    {
+      "basis": "target",
+      "buffer": null,
+      "difference": "0.40",
+      "difference_bps": "40.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "NORDVIK.FAKE",
+      "outcome": "Over",
+      "severity": null,
+      "tolerance": "0.25",
+      "utilization": null
+    },
+    {
+      "basis": "target",
+      "buffer": null,
+      "difference": "-0.10",
+      "difference_bps": "-10.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "HALVORSEN.FAKE",
+      "outcome": "On target",
+      "severity": null,
+      "tolerance": "0.25",
+      "utilization": null
+    },
+    {
+      "basis": "target",
+      "buffer": null,
+      "difference": "-1.00",
+      "difference_bps": "-100.00",
+      "headroom": null,
+      "limit_kind": null,
+      "line_item": "OSTRAVA.FAKE",
+      "outcome": "Under",
+      "severity": null,
+      "tolerance": "0.25",
+      "utilization": null
+    }
+  ],
+  "comparison": {
+    "basis": "target",
+    "label": null
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "NORDVIK.FAKE"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "HALVORSEN.FAKE"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "OSTRAVA.FAKE"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 3,
+    "material_variance_count": 3,
+    "net_operating_impact_available": false,
+    "row_count": 0,
+    "summary_verifications": [],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 0,
+    "warnings": [
+      "NORDVIK.FAKE: read Measure as Percent.",
+      "NORDVIK.FAKE: read % values as percentage points.",
+      "HALVORSEN.FAKE: read Measure as Percent.",
+      "HALVORSEN.FAKE: read % values as percentage points.",
+      "OSTRAVA.FAKE: read Measure as Percent.",
+      "OSTRAVA.FAKE: read % values as percentage points.",
+      "Read bare Percent values as points."
+    ]
+  },
+  "inferences": [
+    "NORDVIK.FAKE: read Measure as Percent.",
+    "NORDVIK.FAKE: read % values as percentage points.",
+    "HALVORSEN.FAKE: read Measure as Percent.",
+    "HALVORSEN.FAKE: read % values as percentage points.",
+    "OSTRAVA.FAKE: read Measure as Percent.",
+    "OSTRAVA.FAKE: read % values as percentage points.",
+    "Read bare Percent values as points."
+  ],
+  "material_variances": [],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "12.40",
+      "better": null,
+      "comparison": "12.00",
+      "direction_source": "type",
+      "display_label": "Over",
+      "excluded_from_aggregation": true,
+      "line_item": "NORDVIK.FAKE",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "0.40",
+      "variance_bps": "40.00",
+      "variance_percent": null
+    },
+    {
+      "actual": "7.90",
+      "better": null,
+      "comparison": "8.00",
+      "direction_source": "type",
+      "display_label": "On target",
+      "excluded_from_aggregation": true,
+      "line_item": "HALVORSEN.FAKE",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-0.10",
+      "variance_bps": "-10.00",
+      "variance_percent": null
+    },
+    {
+      "actual": "5.00",
+      "better": null,
+      "comparison": "6.00",
+      "direction_source": "type",
+      "display_label": "Under",
+      "excluded_from_aggregation": true,
+      "line_item": "OSTRAVA.FAKE",
+      "material": true,
+      "materiality_reason": "basis_points",
+      "measure": "Percent",
+      "percent_label": "N/A (rate)",
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-1.00",
+      "variance_bps": "-100.00",
+      "variance_percent": null
+    }
+  ],
+  "payload_sha256": "e4a9c6473dda6c24aa716d861f741257397588d579d5b51ee925ff9a31ceeda4",
+  "period": "Oct 2026",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "b13f566ff66ddef620c6a474480634a3c60db07c588eabc023fa8075709cae86",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": null,
+    "name": "marcus_targets.csv",
+    "sha256": "1e951795221504ab6ae2e1387d2d485fd2cc7c7ec5edbd619a168718f44b474b",
+    "worksheet": null
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "Actual",
+      "budget": "Target",
+      "line_item": "Line Item"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

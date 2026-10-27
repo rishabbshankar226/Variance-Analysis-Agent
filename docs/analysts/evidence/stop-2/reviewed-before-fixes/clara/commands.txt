@@ -1,0 +1,6 @@
+variance-agent hal-20250927.htm --assisted --sheet Consolidated Balance Sheets --compare-to prior-period --period Sep 2025 --dollar-threshold 1 --percent-threshold 1 -o docs/analysts/evidence/stop-2/readers/clara/balance_sheet_report.md --audit-json docs/analysts/evidence/stop-2/readers/clara/balance_sheet_audit.json
+exit 0
+variance-agent hal-20250927.htm --assisted --sheet Consolidated Statements of Cash Flows --compare-to prior-period --period FY2025 --dollar-threshold 1 --percent-threshold 1 -o docs/analysts/evidence/stop-2/readers/clara/cash_flow_report.md --audit-json docs/analysts/evidence/stop-2/readers/clara/cash_flow_audit.json
+exit 0
+variance-agent hal-20250927.htm --assisted --metrics tests/fixtures/analysts/clara_metrics.json --compare-file tests/fixtures/analysts/clara_covenants.csv --compare-to limit --period FY2025 --dollar-threshold 1 --percent-threshold 1 --multiple-threshold 0.1 -o docs/analysts/evidence/stop-2/readers/clara/covenant_report.md --audit-json docs/analysts/evidence/stop-2/readers/clara/covenant_audit.json
+exit 0

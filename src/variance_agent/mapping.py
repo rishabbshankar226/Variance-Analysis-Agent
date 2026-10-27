@@ -36,6 +36,9 @@ class LayoutMapping:
     comparison_bases: tuple[ComparisonBasis, ...] = ()
     measure_options: dict[str, str] | None = None
     better_directions: dict[str, str] = field(default_factory=dict)
+    # Optional: whether rows hidden in Excel are counted ("include") or left out ("exclude").
+    # Omitted from the file when unset, like comparison_basis.
+    hidden_rows: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -59,6 +62,8 @@ class LayoutMapping:
             data["measure_options"] = dict(self.measure_options)
         if self.better_directions:
             data["better_directions"] = dict(self.better_directions)
+        if self.hidden_rows is not None:
+            data["hidden_rows"] = self.hidden_rows
         return data
 
 
@@ -217,6 +222,8 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
     if basis_raw is not None:
         try:
             comparison_basis = ComparisonBasis(str(basis_raw))
+            if comparison_basis in {ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET}:
+                raise ValueError  # opt-in bases (PLAN.md R13-R15) take --compare-to, not a saved mapping
         except ValueError:
             raise ValueError(
                 "Mapping comparison_basis must be budget, forecast or prior_period."
@@ -247,6 +254,9 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
         validate_text(label, field="Mapping file direction label", nonblank=True)
     for option in (measure_options or {}).values():
         validate_text(option, field="Mapping file measure option", nonblank=True)
+    hidden_rows = parsed.get("hidden_rows")
+    if hidden_rows is not None and hidden_rows not in ("include", "exclude"):
+        raise ValueError("Mapping hidden_rows must be include or exclude.")
     return LayoutMapping(
         mapping_version=version,
         layout_fingerprint=fingerprint,
@@ -265,4 +275,5 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
         classification_rules=_classification_rules(parsed.get("classification_rules")),
         comparison_basis=comparison_basis, comparison_bases=comparison_bases,
         measure_options=measure_options, better_directions=directions,
+        hidden_rows=hidden_rows,
     )

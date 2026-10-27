@@ -1,0 +1,20 @@
+[assisted intake] Comparing Actual against the benchmark.
+[assisted intake] Fund return: read % values as percentage points.
+[assisted intake] Fund return: read Measure as Percent.
+[assisted intake] Fund return: read Better as Higher.
+[assisted intake] Tracking fund return: read % values as percentage points.
+[assisted intake] Tracking fund return: read Measure as Percent.
+[assisted intake] Tracking fund return: read Better as Higher.
+[assisted intake] Management fee rate: read % values as percentage points.
+[assisted intake] Management fee rate: read Measure as Percent.
+[assisted intake] Management fee rate: read Better as Lower.
+[measure intake] Fund return: read Measure as Percent.
+[measure intake] Fund return: read % values as percentage points.
+[measure intake] Fund return: read Better to Higher.
+[measure intake] Tracking fund return: read Measure as Percent.
+[measure intake] Tracking fund return: read % values as percentage points.
+[measure intake] Tracking fund return: read Better to Higher.
+[measure intake] Management fee rate: read Measure as Percent.
+[measure intake] Management fee rate: read % values as percentage points.
+[measure intake] Management fee rate: read Better to Lower.
+[measure intake] Read bare Percent values as points.

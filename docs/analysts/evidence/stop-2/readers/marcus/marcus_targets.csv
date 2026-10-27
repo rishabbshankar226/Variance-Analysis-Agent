@@ -1,0 +1,4 @@
+Line Item,Actual,Target,Tolerance,Measure
+NORDVIK.FAKE,12.40%,12.00%,0.25,Percent
+HALVORSEN.FAKE,7.90%,8.00%,0.25,Percent
+OSTRAVA.FAKE,5.00%,6.00%,0.25,Percent

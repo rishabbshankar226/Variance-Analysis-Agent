@@ -203,6 +203,8 @@ Every company and value in these fixtures is fictional; all tickers end in
 `.FAKE`. Currency amounts in the small scenarios are supplied in millions;
 EPS, rates and counts keep their own units. Thresholds use those supplied units.
 
+Five more readers have their own guides, each with the commands run and their output: [Owen](docs/analysts/owen.md) (LTM against a management case), [Clara](docs/analysts/clara.md) (statement changes and covenant headroom), [Marcus](docs/analysts/marcus.md) (drift from target and a holdings scorecard), [Ines](docs/analysts/ines.md) (limits) and [Theo](docs/analysts/theo.md) (active return).
+
 ### Maya: budget versus actual
 
 The existing FP&A path and outputs remain the default. In chat, upload the file

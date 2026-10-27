@@ -35,7 +35,7 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 const MESSAGE_TIMEOUT_MS = 60_000; // the server is single-threaded; a PDF read can take ~20 s
 const UPLOAD_TIMEOUT_MS = 120_000;
 const STATUS_TIMEOUT_MS = 10_000;
-const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
+const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.xls', '.pdf', '.htm', '.html'];
 
 // ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
 /** @type {Record<string, string>} */
@@ -189,6 +189,42 @@ export function plainText(text) {
 }
 
 /**
+ * Markdown tables (a header row, a |---|---:| separator, then rows) as HTML tables on one line each, so the
+ * line-break pass leaves them whole. Escaped pipes were set aside before this, so cells split on '|' safely;
+ * a column whose separator ends in ':' is right-aligned.
+ * @param {string} html escaped text
+ * @returns {string}
+ */
+function markdownTables(html) {
+  const row = /^\|.*\|[ \t]*$/;
+  const separator = /^\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*$/;
+  /** @param {string} line */
+  const cells = (line) => line.trim().slice(1, -1).split('|').map((cell) => cell.trim());
+  const lines = html.split('\n');
+  /** @type {string[]} */
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!(row.test(lines[i]) && i + 1 < lines.length && separator.test(lines[i + 1]))) {
+      out.push(lines[i]);
+      continue;
+    }
+    const right = cells(lines[i + 1]).map((cell) => cell.endsWith(':'));
+    /** @param {string} tag @param {string} cell @param {number} at */
+    const cell = (tag, text, at) => `<${tag}${right[at] ? ' class="md-num"' : ''}>${text}</${tag}>`;
+    let table = '<div class="md-tablewrap"><table class="md-table"><thead><tr>'
+      + cells(lines[i]).map((text, at) => cell('th', text, at)).join('') + '</tr></thead><tbody>';
+    i += 2;
+    while (i < lines.length && row.test(lines[i])) {
+      table += '<tr>' + cells(lines[i]).map((text, at) => cell('td', text, at)).join('') + '</tr>';
+      i += 1;
+    }
+    i -= 1;
+    out.push(table + '</tbody></table></div>');
+  }
+  return out.join('\n');
+}
+
+/**
  * Minimal Markdown to HTML (no library). The result is built from escaped text and fixed tags
  * only, and uses classes rather than inline styles so the page's CSP can forbid both.
  * @param {string} text
@@ -205,6 +241,7 @@ export function renderMarkdown(text) {
     return '\u0000' + (literals.length - 1) + '\u0000';
   });
 
+  html = markdownTables(html);
   html = html.replace(/^---+$/gm, '<hr class="md-hr">');
   html = html.replace(/^###\s+(.+)$/gm, '<h4 class="md-h4">$1</h4>');
   html = html.replace(/^##\s+(.+)$/gm, '<h3 class="md-h3">$1</h3>');
@@ -1147,7 +1184,7 @@ function boot() {
     zoneTitle.textContent = 'Drop a file here, or choose one';
     const zoneSubtitle = document.createElement('div');
     zoneSubtitle.className = 'drop-zone-subtitle';
-    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to ' +
+    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm), or a 10-K or 10-Q as .htm or PDF, up to ' +
       `${MAX_UPLOAD_BYTES / 1048576} MB`;
     zone.append(zoneIcon, zoneTitle, zoneSubtitle);
 
@@ -1258,7 +1295,8 @@ function boot() {
     if (leftUploadStep && (fromUpload || currentPhase === 'awaiting_file')) markIntroSeen();
     if (data.phase) updatePhase(data.phase);
 
-    const showDrop = !fromUpload && data.phase === 'awaiting_file';
+    // A reply asking for a second file (LTM's 10-K, the other half of a pair) shows the drop zone too.
+    const showDrop = data.ask_upload === true || (!fromUpload && data.phase === 'awaiting_file');
     const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level, data.view);
     if (data.download_url) {
       addDownloadLink(msg, data.download_url, data.download_filename);
@@ -1290,7 +1328,7 @@ function boot() {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) {
       addAgentMessage(
-        'Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
+        'Unsupported file format. Please upload a CSV, JSON, Excel (.xlsx, .xlsm, .xls), PDF or HTML file.',
         null, null, true, 'error'
       );
       return;

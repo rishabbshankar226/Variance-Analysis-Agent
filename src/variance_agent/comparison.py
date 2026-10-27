@@ -29,6 +29,13 @@ _EXTENDED_SYNONYMS: dict[ComparisonBasis, frozenset[str]] = {
     ComparisonBasis.GUIDANCE: frozenset({"guidance", "guide"}),
 }
 
+# Opt-in bases (PLAN.md R13-R15): their headers count only when --compare-to names the basis.
+OPT_IN_SYNONYMS: dict[ComparisonBasis, frozenset[str]] = {
+    ComparisonBasis.LIMIT: frozenset({"limit", "covenant", "covenant_level", "covenant_limit"}),
+    ComparisonBasis.BENCHMARK: frozenset({"benchmark", "index", "benchmark_return"}),
+    ComparisonBasis.TARGET: frozenset({"target", "target_weight"}),
+}
+
 _NOUNS: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "budget",
     ComparisonBasis.FORECAST: "forecast",
@@ -36,6 +43,9 @@ _NOUNS: dict[ComparisonBasis, str] = {
     ComparisonBasis.CONSENSUS: "consensus",
     ComparisonBasis.ESTIMATE: "estimate",
     ComparisonBasis.GUIDANCE: "guidance",
+    ComparisonBasis.LIMIT: "limit",
+    ComparisonBasis.BENCHMARK: "benchmark",
+    ComparisonBasis.TARGET: "target",
 }
 _ZERO_LABELS: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "N/A (Unbudgeted)",
@@ -44,6 +54,9 @@ _ZERO_LABELS: dict[ComparisonBasis, str] = {
     ComparisonBasis.CONSENSUS: "N/A (No consensus)",
     ComparisonBasis.ESTIMATE: "N/A (No estimate)",
     ComparisonBasis.GUIDANCE: "N/A (No guidance)",
+    ComparisonBasis.LIMIT: "N/A (Zero limit)",
+    ComparisonBasis.BENCHMARK: "N/A (Zero benchmark)",
+    ComparisonBasis.TARGET: "N/A (Zero target)",
 }
 _ZERO_PHRASES: dict[ComparisonBasis, str] = {
     ComparisonBasis.BUDGET: "unbudgeted",
@@ -52,6 +65,9 @@ _ZERO_PHRASES: dict[ComparisonBasis, str] = {
     ComparisonBasis.CONSENSUS: "no consensus",
     ComparisonBasis.ESTIMATE: "no estimate",
     ComparisonBasis.GUIDANCE: "no guidance",
+    ComparisonBasis.LIMIT: "a zero limit",
+    ComparisonBasis.BENCHMARK: "a zero benchmark",
+    ComparisonBasis.TARGET: "a zero target",
 }
 _CLI_VALUES: dict[str, ComparisonBasis] = {
     "budget": ComparisonBasis.BUDGET,
@@ -60,11 +76,17 @@ _CLI_VALUES: dict[str, ComparisonBasis] = {
     "consensus": ComparisonBasis.CONSENSUS,
     "estimate": ComparisonBasis.ESTIMATE,
     "guidance": ComparisonBasis.GUIDANCE,
+    "limit": ComparisonBasis.LIMIT,
+    "benchmark": ComparisonBasis.BENCHMARK,
+    "target": ComparisonBasis.TARGET,
 }
 
 
-def basis_for_header(normalized: str, *, extended: bool = False) -> ComparisonBasis | None:
-    tables = _SYNONYMS | _EXTENDED_SYNONYMS if extended else _SYNONYMS
+def basis_for_header(normalized: str, *, extended: bool = False,
+                     opt_in: ComparisonBasis | None = None) -> ComparisonBasis | None:
+    tables = _SYNONYMS | _EXTENDED_SYNONYMS if extended else dict(_SYNONYMS)
+    if opt_in in OPT_IN_SYNONYMS:
+        tables = {**tables, opt_in: OPT_IN_SYNONYMS[opt_in]}
     for basis, synonyms in tables.items():
         if normalized in synonyms:
             return basis
@@ -95,7 +117,8 @@ def parse_compare_to(value: str) -> ComparisonBasis:
         return _CLI_VALUES[value.strip().lower()]
     except KeyError:
         raise ValueError(
-            f"Unknown comparison basis {value!r}; use budget, forecast or prior-period."
+            f"Unknown comparison basis {value!r}; use budget, forecast, prior-period, consensus, estimate, guidance, "
+            "limit, benchmark or target."
         ) from None
 
 
@@ -106,7 +129,7 @@ def basis_noun(basis: ComparisonBasis) -> str:
 def comparison_heading(basis: ComparisonBasis, label: str | None) -> str:
     if basis is ComparisonBasis.PRIOR_PERIOD:
         return f"Prior Period ({label})" if label else "Prior Period"
-    if basis in _EXTENDED_SYNONYMS:
+    if basis in _EXTENDED_SYNONYMS or basis in OPT_IN_SYNONYMS:
         return _NOUNS[basis].title()
     return "Forecast" if basis is ComparisonBasis.FORECAST else "Budget"
 
@@ -252,6 +275,14 @@ def extended_heading(config: AnalysisConfig) -> str:
 
 
 def display_outcome(row: AnalyzedRow, basis: ComparisonBasis) -> str:
+    if row.basis_details is not None:  # a limit, benchmark or target: its own words (PLAN.md R13-R15)
+        return row.basis_details.outcome
+    if row.statement_kind:  # a balance sheet or cash flow line: the change of its printed figure (PLAN.md R7)
+        word = "Increase" if row.variance_dollars > 0 else "Decrease" if row.variance_dollars < 0 else "No change"
+        if row.variance_dollars != 0 and row.budget < 0 and row.actual < 0:
+            # Both figures printed negative (an outflow, a deduction): say whether it grew or shrank (Decisions 38, 39).
+            word += ", larger negative" if abs(row.actual) > abs(row.budget) else ", smaller negative"
+        return f"{word} ({row.status})" if row.better is not None and row.variance_dollars != 0 else word
     if (basis is not ComparisonBasis.CONSENSUS or row.status is Status.UNCLASSIFIED
             or (row.line_type is LineType.UNCLASSIFIED and row.better is None)):
         return str(row.status)

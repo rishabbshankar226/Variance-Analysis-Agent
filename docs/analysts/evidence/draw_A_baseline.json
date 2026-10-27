@@ -1,0 +1,71 @@
+{
+  "draw": "A",
+  "seed": 20261026,
+  "filings": 40,
+  "tool_commit": "a4791bb",
+  "measured": "2026-10-26, Python 3.11.16, before any Phase 3 change (Phase 1 readers only)",
+  "manifest_sha256": "4fea21df7ac0b6f422ab9ae2cb7a4caf89398d4c2077cc2bbbc2071403f004c4",
+  "oracle_index_sha256": "5213aa8fdd2f52dacbf9ffbfdd55f5f822dd99861b60cf09d1e8bc26e019e241",
+  "sweep_results_sha256": "370e2b907531fc8e6ab6f4b677a6696143a6b06d0962d77bd499e8d154052e55",
+  "corpus": {
+    "inline_xbrl": 33,
+    "with_xbrl_instance": 39,
+    "with_all_three_statements": 38,
+    "with_financial_report_xlsx": 6,
+    "with_pdf": 0,
+    "largest_primary_bytes": 14710898,
+    "capture_cap_bytes": 33554432
+  },
+  "readers": {
+    "financial_report": {
+      "filings": 6,
+      "statement_runs": 17,
+      "statements_read": 1,
+      "filings_with_all_three_read": 0,
+      "all_three_rate_95ci": [
+        0.0,
+        0.3903
+      ],
+      "refused": 12,
+      "refused_plainly": 12,
+      "other_failures": 0,
+      "lines_verified": 210,
+      "lines_unverified": 15,
+      "lines_wrong": 39
+    },
+    "primary": {
+      "filings": 39,
+      "statement_runs": 116,
+      "statements_read": 0,
+      "filings_with_all_three_read": 0,
+      "all_three_rate_95ci": [
+        0.0,
+        0.0897
+      ],
+      "refused": 116,
+      "refused_plainly": 116,
+      "other_failures": 0,
+      "lines_verified": 0,
+      "lines_unverified": 0,
+      "lines_wrong": 0
+    }
+  },
+  "reading": "primary: every .htm/.html primary document is refused with the E8 message, which names the fix. financial_report: the Phase 1 EDGAR-sheet reader on the six 2018 workbooks reads 5 income statements and refuses balance sheets and cash flows plainly, but 39 line values disagree with the oracle. Phase 3 diagnoses each, reproduces it synthetically and fixes it before STOP 1.",
+  "rescored": {
+    "why": "The first Phase 3 re-sweep overwrote the baseline's per-filing file (sha256 above), so the baseline was re-run from tool commit a4791bb into its own file, scored with the sweep's positional keys for repeated labels (a repeated label is keyed by its place among the repeats, otherwise unverified).",
+    "results_sha256": "e41441874f5066c0cfda4a0e23ca7d0c63bba819646857aeff5a6605288def97",
+    "financial_report": {
+      "statement_runs": 17,
+      "statements_read": 1,
+      "refused_plainly": 12,
+      "lines_verified": 186,
+      "lines_unverified": 63,
+      "lines_wrong": 15
+    },
+    "primary": {
+      "statement_runs": 116,
+      "refused_plainly": 116,
+      "lines_wrong": 0
+    }
+  }
+}

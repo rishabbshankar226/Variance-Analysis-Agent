@@ -1,0 +1,21 @@
+[assisted intake] Read 'Consolidated Balance Sheets' from the Inline XBRL filing
+[assisted intake] Checked every subtotal and the balance sheet identity: Total assets equals Total liabilities and stockholders' equity in Sep 2025 and Sep 2024, within the rounding each figure's decimals state
+[assisted intake] Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease
+[assisted intake] Comparing Sep 2025 against Sep 2024 (prior period).
+[assisted intake] Read 'Consolidated Statements of Cash Flows' from the Inline XBRL filing
+[assisted intake] Left out 1 line after 'Cash, cash equivalents and restricted cash, end of year' (supplemental disclosures): 'Cash paid for interest'
+[assisted intake] Checked every subtotal and the cash roll-forward: Ending cash equals beginning cash plus the flows printed between them in FY2025 and FY2024, within the rounding each figure's decimals state
+[assisted intake] Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease
+[assisted intake] Comparing FY2025 against FY2024 (prior period).
+[assisted intake] Joined 'clara_covenants.csv' to 'the metrics' by 'line item': 2 lines, each in both files
+[assisted intake] Took Actual from 'the metrics' and the comparison from 'clara_covenants.csv'
+[assisted intake] Left out 'Fixed charge cover' of 'clara_covenants.csv': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed
+[assisted intake] the metrics: Gross leverage = 0.88x = (Long-term debt [balance sheet, instant]) / (Net income [income, fy] + Interest expense [income, fy] + Depreciation and amortization [cash flow, fy])
+[assisted intake] the metrics: Interest cover = 34x = (Net income [income, fy] + Interest expense [income, fy] + Depreciation and amortization [cash flow, fy]) / (Interest expense [income, fy])
+[assisted intake] the metrics: Left out 'Fixed charge cover': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed
+[assisted intake] clara_covenants.csv: Gross leverage: read Measure as Multiple.
+[assisted intake] clara_covenants.csv: Interest cover: read Measure as Multiple.
+[assisted intake] clara_covenants.csv: Fixed charge cover: read Measure as Multiple.
+[assisted intake] Comparing Actual against the limit.
+[measure intake] Gross leverage: read Measure as Multiple.
+[measure intake] Interest cover: read Measure as Multiple.

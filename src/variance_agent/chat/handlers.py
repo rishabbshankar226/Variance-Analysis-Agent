@@ -42,6 +42,7 @@ from variance_agent.parsing import (
     parse_decimal,
 )
 from variance_agent.intake import (
+    CanonicalRole,
     IntakeResult,
     apply_classification_rules,
     audit_transformations,
@@ -167,6 +168,9 @@ _UNBUDGETED_WORDING: dict[ComparisonBasis, _UnbudgetedWording] = {
 }
 
 
+HIDDEN_ROWS_CHIPS = ("Count the hidden rows", "Leave the hidden rows out")
+
+
 def _comparison_chips(choices: list[ComparisonBasis]) -> list[str]:
     """Offer one 'Compare to ...' chip per basis that resolves the stop, in header order."""
     return [f"Compare to {basis_noun(b)}" for b in choices]
@@ -225,6 +229,8 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
         return _handle_list_sheets(session)
     if intent.intent_id == "switch_sheet":
         return _handle_switch_sheet(session, intent)
+    if intent.intent_id == "set_hidden_rows":
+        return _handle_hidden_rows(session, intent)
     if intent.intent_id == "set_comparison":
         if intent.captures.get("basis") in {"consensus", "estimate", "guidance"}:
             from .earnings import explicit_comparison
@@ -242,6 +248,11 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=session.phase,
         )
 
+    if routing_key in {"build ltm", "build an ltm", "ltm"}:
+        return _handle_build_ltm(session)
+    reader = _reader_question(session, routing_key)
+    if reader is not None:
+        return reader
     if routing_key in _UPLOAD_ANOTHER_FILE:
         # The page shows its drop zone for a reply in the awaiting_file phase. The session itself
         # is left alone: the new file replaces it only once it has been read successfully.
@@ -414,6 +425,7 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
             sheet=session.worksheet,
             treat_blank_budgets_as_zero=True,
             compare_to=session.compare_to,
+            hidden_rows=session.hidden_rows,
         )
         session.parsed_rows = intake_res.rows
         session.worksheet = intake_res.sheet_name
@@ -480,6 +492,7 @@ def _handle_period_choice(session: Session, text: str) -> Response:
         treat_blank_budgets_as_zero=False,
         selected_period=chosen_period,
         compare_to=session.compare_to,
+        hidden_rows=session.hidden_rows,
     )
     session.parsed_rows = intake_res.rows
     session.worksheet = intake_res.sheet_name
@@ -500,11 +513,12 @@ def _file_is_gone(session: Session) -> Response:
     )
 
 
-_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf"}
+_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf", ".htm", ".html"}
 
 
 def _is_pdf(session: Session) -> bool:
-    return (session.source_suffix or "").lower() == ".pdf"
+    """Whether the session's file is a filing, whose tables are statements rather than sheets."""
+    return (session.source_suffix or "").lower() in {".pdf", ".htm", ".html"}
 
 
 def _sheet_word(session: Session) -> str:
@@ -529,7 +543,152 @@ def handle_upload(
     *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
+    if session.awaiting_ltm_annual and session.source_bytes is not None and session.source_name is not None:
+        return _load_ltm_annual(session, file_bytes, filename)
+    if session.pending_half is not None:
+        return _load_other_half(session, file_bytes, filename, first_visit)
+    if session.covenant_step is not None and session.source_bytes is not None:
+        return _load_covenant_file(session, file_bytes, filename)
     return _load_file(session, file_bytes, filename, sheet, first_visit)
+
+
+_COVENANT_ASK = ("Upload your metrics file: a JSON file declaring each ratio's terms (see docs/financial-rules.md, "
+                 "Derived metrics). Then I'll ask for the covenant schedule.")
+
+
+def _handle_covenant_headroom(session: Session) -> Response:
+    if session.source_bytes is None or not str(session.source_name or "").lower().endswith((".htm", ".html")):
+        return Response(text="Covenant headroom is computed from a filing. Upload the 10-K's or 10-Q's .htm document "
+                             "from EDGAR first.", phase=session.phase)
+    session.covenant_step, session.covenant_metrics = "metrics", None
+    return Response(text=_COVENANT_ASK, phase=session.phase, ask_upload=True)
+
+
+def _load_covenant_file(session: Session, file_bytes: bytes, filename: str) -> Response:
+    """The metrics file, then the covenant schedule: ratios from the filing against each limit (PLAN.md R17, R13)."""
+    assert session.source_bytes is not None and session.source_name is not None
+    if session.covenant_step == "metrics":
+        from ..metrics import load_metrics
+        try:
+            load_metrics(file_bytes)
+        except ValueError as exc:
+            return Response(text=str(exc), phase=session.phase, level="error", ask_upload=True)
+        session.covenant_metrics, session.covenant_step = file_bytes, "schedule"
+        return Response(text="Now upload the covenant schedule: each metric's name, its Limit, and its Limit Kind (Max "
+                             "or Min), with a Buffer where you have one.", phase=session.phase, ask_upload=True)
+    from ..metrics import compare_metrics
+    assert session.covenant_metrics is not None
+    session.covenant_step = None
+    try:
+        intake_res = compare_metrics(session.covenant_metrics, session.source_bytes, session.source_name, file_bytes,
+                                     filename, compare_to=ComparisonBasis.LIMIT)
+    except ValueError as exc:
+        return Response(text=str(exc), phase=session.phase, level="error")
+    if intake_res.has_fatal_errors:
+        return Response(text=intake_res.fatal_error_message or "I couldn't compare these metrics.", phase=session.phase,
+                        level="error")
+    return _intake_response(session, intake_res, session.source_name)
+
+
+def _reader_question(session: Session, routing_key: str) -> Response | None:
+    """The new readers' questions (PLAN.md Phase 6): a filing's statements, limits, targets, benchmarks."""
+    for words, kind in (("balance sheet", "Balance Sheet"), ("cash flow", "Cash Flow")):
+        if routing_key in {f"compare {words}s", f"compare the {words}", f"compare {words}"}:
+            name = next((s for s in session.available_sheets if kind.lower() in s.lower()), None)
+            if name is None:
+                return Response(text=f"This file has no {words} to compare. Upload a 10-K or 10-Q from EDGAR, "
+                                     "and I'll read its statements.", phase=session.phase)
+            return handle_message(session, f"statement {name}")
+    asks = {"which limits are breached": ("limit", "Limit", "a Limit column and each row's Limit Kind (Max or Min)"),
+            "drift from target": ("target", "Target", "a Target column"),
+            "active return": ("benchmark", "Benchmark", "a Benchmark column and each row's Better direction")}
+    if routing_key in asks:
+        basis, header, needs = asks[routing_key]
+        if session.result is not None and session.result.config.comparison_basis.value == basis:
+            return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+        return Response(text=f"Upload a file with Actual, {needs}, and I'll compare each row against its {header.lower()}.",
+                        phase=session.phase)
+    if routing_key in {"covenant headroom", "covenant compliance"}:
+        return _handle_covenant_headroom(session)
+    return None
+
+
+def _half_request(session: Session, file_bytes: bytes, filename: str) -> Response | None:
+    """A file holding only a comparison column, or only actuals: ask for the other file (PLAN.md R12, F4)."""
+    from ..join import half_role
+    found = half_role(file_bytes, filename)
+    if found is None:
+        return None
+    missing, key = found
+    session.pending_half = (file_bytes, filename, missing.value)
+    if missing is CanonicalRole.ACTUAL:
+        text = (f"'{safe_inline(filename)}' has Budget figures but no Actual column. Upload the file with the actuals, "
+                f"and I'll join the two by {key}.")
+    else:
+        text = (f"'{safe_inline(filename)}' has Actual figures but no Budget column. Upload the file with the budget, "
+                f"forecast or prior period, and I'll join the two by {key}.")
+    return Response(text=text, phase=session.phase, ask_upload=True)
+
+
+def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_visit: bool | None) -> Response:
+    """The second file of a pair: join the two, with the actuals file's rows (PLAN.md R12)."""
+    from ..join import join_files
+    assert session.pending_half is not None
+    held, held_name, missing = session.pending_half
+    session.pending_half = None
+    if missing == CanonicalRole.ACTUAL.value:
+        actual, actual_name, comparison, comparison_name = file_bytes, filename, held, held_name
+    else:
+        actual, actual_name, comparison, comparison_name = held, held_name, file_bytes, filename
+    intake_res = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False)
+    if intake_res.has_fatal_errors:
+        session.pending_half = (held, held_name, missing)
+        return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
+                        phase=session.phase, level="error", ask_upload=True)
+    session.reset()
+    session.source_bytes, session.source_name = actual, actual_name
+    session.source_suffix = Path(actual_name).suffix.lower()
+    return _with_first_upload_intro(session, _intake_response(session, intake_res, actual_name),
+                                    intake_res.comparison_basis, first_visit)
+
+
+_LTM_ASK = ("Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year "
+            "to date less last year to date, line by line by XBRL concept, and compare it with the fiscal year.")
+
+
+def _offers_ltm(session: Session, intake_res: IntakeResult) -> bool:
+    """A 10-Q's income statement read from Inline XBRL (a duration shorter than a year), not yet built into LTM."""
+    if intake_res.source_kind != "ixbrl" or intake_res.statement_kind or intake_res.ltm is not None or session.ltm_annual:
+        return False
+    for line in intake_res.xbrl_lines:
+        for column in line.get("columns", []):  # type: ignore[attr-defined]
+            period = column.get("period") if isinstance(column, dict) else None
+            if isinstance(period, list) and len(period) == 3 and period[0] == "duration":
+                from datetime import date
+                days = (date.fromisoformat(str(period[2])) - date.fromisoformat(str(period[1]))).days
+                return days < 330  # under a fiscal year, 52/53-week years included
+    return False
+
+
+def _handle_build_ltm(session: Session) -> Response:
+    if session.source_bytes is None or not str(session.source_name or "").lower().endswith((".htm", ".html")):
+        return Response(text="LTM is built from a 10-Q and a 10-K filed on EDGAR. Upload the 10-Q's .htm document first.",
+                        phase=session.phase)
+    session.awaiting_ltm_annual = True
+    return Response(text=_LTM_ASK, phase=session.phase, ask_upload=True)
+
+
+def _load_ltm_annual(session: Session, file_bytes: bytes, filename: str) -> Response:
+    """The second upload of an LTM build: the 10-K. The 10-Q stays the session's file (PLAN.md R10)."""
+    from ..ltm import build_ltm
+    assert session.source_bytes is not None and session.source_name is not None
+    session.awaiting_ltm_annual = False
+    intake_res = build_ltm(session.source_bytes, session.source_name, file_bytes, filename)
+    if intake_res.has_fatal_errors:
+        return Response(text=intake_res.fatal_error_message or "I couldn't build LTM from these two filings.",
+                        chips=["Build LTM"], phase=session.phase, level="error", ask_upload=False)
+    session.ltm_annual = (file_bytes, filename)
+    return _intake_response(session, intake_res, session.source_name)
 
 
 def _load_file(
@@ -563,13 +722,26 @@ def _load_file(
         treat_blank_budgets_as_zero=False,
         compare_to=compare_to,
     )
+    if (intake_res.has_fatal_errors or not intake_res.rows) and compare_to is None and intake_res.opt_in_hint is not None:
+        # A Limit, Benchmark or Target column: read the file against it, as the reader meant (PLAN.md R13-R15).
+        header, basis = intake_res.opt_in_hint
+        again = read_input_assisted(file_bytes, suffix, filename=filename, sheet=sheet,
+                                    treat_blank_budgets_as_zero=False, compare_to=basis)
+        if not again.has_fatal_errors and again.rows:
+            again.visible_transformations.insert(0, f"Read the '{header}' column as each row's {basis.value}, with each "
+                                                    "row's own declarations beside it")
+            intake_res, compare_to = again, basis
     failed = intake_res.has_fatal_errors or not intake_res.rows
-    awaiting_answer = bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+    awaiting_answer = (bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+                       or intake_res.needs_hidden_rows_choice)
     if failed and not awaiting_answer:
         from .earnings import offer_review
         proposal = offer_review(session, file_bytes, filename)
         if proposal is not None:
             return proposal
+        half = _half_request(session, file_bytes, filename)
+        if half is not None:
+            return half
         return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
 
     session.reset()
@@ -593,7 +765,8 @@ def _fatal_upload_response(
         f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
     )
     session.last_technical_detail = technical
-    chips = _comparison_chips(intake_res.comparison_choices)
+    chips = list(HIDDEN_ROWS_CHIPS) if intake_res.needs_hidden_rows_choice else []
+    chips.extend(_comparison_chips(intake_res.comparison_choices))
     if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
         for s in intake_res.available_sheets[:3]:
             chips.append(_sheet_chip(session, s))
@@ -629,6 +802,12 @@ def _first_upload_intro(basis: ComparisonBasis) -> str:
     lives in the Help reply, so the file summary and the next question come straight after.
     """
     noun = basis_noun(basis)
+    if basis in {ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET}:
+        outcome = {"limit": "whether each is a Breach, At limit, Near or Within",
+                   "benchmark": "whether each is higher or lower than its benchmark",
+                   "target": "whether each is over, under or on target"}[basis.value]
+        return (f"Welcome to the Variance Analysis Agent. I compare each line's Actual against its {noun} and say "
+                f"{outcome}. Type `help` for everything you can ask.\n\n")
     return (
         "Welcome to the Variance Analysis Agent. I compare each line's Actual against your "
         f"{noun}, flag the gaps big enough to matter, and say whether each one helped or hurt "
@@ -725,6 +904,8 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
                         if s != intake_res.sheet_name]
         if other_sheets:
             chips.insert(1, _sheet_chip(session, other_sheets[0]))
+    if _offers_ltm(session, intake_res):
+        chips.insert(1, "Build LTM")
 
     return _intake_confirmation(intake_res, chips)
 
@@ -1145,6 +1326,7 @@ def _run_analysis(session: Session) -> Response:
             currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
             per_share_threshold=session.per_share_threshold, count_threshold=session.count_threshold,
             bps_threshold=session.bps_threshold, percent_values=session.percent_values,
+            multiple_threshold=session.multiple_threshold,
         )
     try:
         with financial_context():
@@ -1184,6 +1366,8 @@ def _run_analysis(session: Session) -> Response:
     unclassified = list(dict.fromkeys(
         row.line_item for row in result.rows
         if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and row.better is None
+        and not row.statement_kind  # balance sheet and cash flow lines are never revenue or expense (R7)
+        and row.basis_details is None and row.classification_source != "metric"  # nor limit, target or metric rows
         and row.line_item not in session.skipped_items
     ))
 
@@ -1342,8 +1526,30 @@ def _rerun_after_classification(session: Session) -> Response:
                      "those items stay Unclassified.\n\n")
 
 
+def _basis_summary(result: AnalysisResult) -> Response:
+    """A limit, benchmark or target comparison: the report's own table, with no budget totals (Decision 39)."""
+    from ..report import basis_table
+    cfg = result.config
+    columns, rows, counts = basis_table(result)
+    table = [dict(zip(columns, cells, strict=True)) for cells in rows]
+    figures = ([figure(word, count) for word, count in
+                (part.rstrip(".").split(" ", 1)[::-1] for part in counts.split(", "))] if counts is not None else [])
+    view = figures_view(
+        f"{cfg.period} against {comparison_heading(cfg.comparison_basis, cfg.comparison_label)}",
+        context=[pair("Currency", cfg.currency)] if any(currency_row(row) for row in result.rows) else [],
+        figures=figures,
+        sections=[("How the file was read", [pair(*note.split(": ", 1)) if ": " in note else pair("Note", note)
+                                             for note in result.warnings])] if result.warnings else (),
+        table_title="Lines, by severity" if cfg.comparison_basis.value == "limit" else "Lines",
+    )
+    return Response(text=render_markdown(result), table=table, chips=["Export report", "Export audit"],
+                    phase=Phase.EXPLORING, view=view)
+
+
 def _audience_summary(result: AnalysisResult) -> Response:
     """A comparison set: the report as text, and the same rows as a results view and one table."""
+    if any(row.basis_details is not None for row in result.rows):
+        return _basis_summary(result)
     cfg = result.config
     heading = extended_heading(cfg)
     money = [row for row in result.rows if currency_row(row)]
@@ -1395,6 +1601,29 @@ def _audience_summary(result: AnalysisResult) -> Response:
                     phase=Phase.EXPLORING, view=view)
 
 
+_STATEMENT_CHIPS = ["Export report", "Export audit"]
+_STATEMENT_WORKBOOK = ("A workbook isn't available for this comparison yet. The report and the audit file are; type "
+                       "`export report` or `export audit`.")
+
+
+def _statement_checks(session: Session) -> list[str]:
+    """The identity and change notes of a balance sheet or cash flow read (PLAN.md R7), or none."""
+    if session.result is None or not any(row.statement_kind for row in session.result.rows):
+        return []
+    return list(session.intake_result.statement_checks) if session.intake_result is not None else []
+
+
+def _report_text(session: Session) -> str:
+    assert session.result is not None
+    checks = _statement_checks(session)
+    appendix = list(session.intake_result.report_appendix) if session.intake_result is not None else []
+    headline = session.intake_result.filing_headline if session.intake_result is not None else None
+    if checks or appendix or headline is not None:
+        return render_markdown(session.result, statement_checks=checks or None, appendix=appendix or None,
+                               filing_headline=headline)
+    return render_markdown(session.result)
+
+
 def _build_analysis_summary(session: Session) -> Response:
     """Build the initial analysis summary after successful analysis."""
     if session.earnings_mode and session.table_analysis is not None:
@@ -1404,6 +1633,12 @@ def _build_analysis_summary(session: Session) -> Response:
     assert result is not None
     if is_audience_result(result):
         return _audience_summary(result)
+    if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
+           for row in result.rows):
+        # A balance sheet, cash flow, limit, benchmark, target or metric comparison has no revenue or expense totals.
+        return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+    if session.intake_result is not None and session.intake_result.filing_headline is not None:
+        return _filing_summary(session, session.intake_result.filing_headline)
     cfg = result.config
     places = report_places(result)
 
@@ -1527,6 +1762,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
     header_row = 1
     unit_scale = None
     flip_signs = False
+    hidden_rows: str | None = None
     excluded_totals: list[str] = []
     fingerprint = ""
 
@@ -1537,6 +1773,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
             unit_scale = str(intake_res.detected_unit_multiplier)
         flip_signs = intake_res.detected_signed_ledger
         excluded_totals = list(intake_res.detected_totals)
+        hidden_rows = intake_res.hidden_rows_choice
         if intake_res.raw_headers:
             fingerprint = compute_layout_fingerprint(intake_res.raw_headers)
 
@@ -1564,6 +1801,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
                          if (value := getattr(session, key)) is not None} or None,
         better_directions={str(row.get("line_item", "")): str(row["better"])
                            for raw in session.parsed_rows or [] if (row := normalize_row(raw)).get("better")},
+        hidden_rows=hidden_rows,
     )
 
 
@@ -1629,11 +1867,25 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
+    filing = session.intake_result is not None and session.intake_result.filing_headline is not None
+    if filing and intent.intent_id == "export_xlsx":  # the workbook adds up totals of its own (Decision 39)
+        return Response(text=_STATEMENT_WORKBOOK, chips=["Export report", "Export audit"], phase=Phase.EXPLORING)
+    if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
+           for row in session.result.rows):
+        if intent.intent_id == "export_xlsx":
+            return Response(text=_STATEMENT_WORKBOOK, chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+        if intent.intent_id not in {"export_report", "export_audit", "help", "reset"}:
+            return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
     if is_audience_result(session.result) and intent.intent_id not in {
         "summary", "material", "filter_favorable", "filter_unfavorable", "export_report", "export_audit", "export_xlsx",
     }:
         return Response(text=render_markdown(session.result),
                         chips=["Summary", "Material", "Export report", "Export Excel"], phase=Phase.EXPLORING)
+    headline = session.intake_result.filing_headline if session.intake_result is not None else None
+    if headline is not None and (intent.intent_id in _COMPUTED_TOTALS or (intent.intent_id == "compare_items" and {
+            str(intent.captures.get(key, "")).strip().strip("'\"?").lower() for key in ("item1", "item2")}
+            & {"actual", "actuals", "act", "budget", "budgeted", "plan", "target", "targets", "bgt"})):
+        return _filing_summary(session, headline)
     handler = _EXPLORING_HANDLERS.get(intent.intent_id)
     if handler is not None:
         return handler(session, intent)
@@ -1718,6 +1970,65 @@ def _handle_reset(session: Session) -> Response:
         text="Session cleared. Upload a new file to begin.",
         phase=Phase.AWAITING_FILE,
     )
+
+
+_FILING_TOTALS_NOTE = ("For a filing I show its own printed totals, each from its XBRL fact, rather than totals added up "
+                       "from its lines.")
+# Questions whose answers rest on revenue, expense or profit totals added up from the lines (Decision 39).
+_COMPUTED_TOTALS = {"summary", "totals", "waterfall", "what_if", "sensitivity", "run_rate", "revenue_status",
+                    "expense_status", "budget_utilization", "profitability", "tldr", "executive_memo"}
+
+
+def _filing_summary(session: Session, headline: dict[str, object]) -> Response:
+    """A filing's income statement: its own printed totals, never computed ones (Decision 39)."""
+    from ..report import _filing_headline_lines
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+    heading = _plain_heading(cfg)
+    items, notes = headline.get("items"), headline.get("notes")
+    assert isinstance(items, list) and isinstance(notes, list)
+    unit = str(headline.get("unit") or "")
+    lines = ["**Analysis Complete**\n", f"**Period:** {safe_inline(cfg.period)}", f"**Currency:** {cfg.currency}",
+             *([f"Units: {safe_inline(unit)}"] if unit else []),
+             f"**Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+             f"{format_threshold_pct(cfg.percent_threshold)}\n"]
+    figures: list[dict[str, object]] = []
+    bullets = _filing_headline_lines({"items": items, "notes": []}, cfg.currency, places)[:len(items)]  # not its closing sentence
+    for bullet, item in zip(bullets, items, strict=True):
+        assert isinstance(item, dict)
+        name, _, rest = bullet.removeprefix("- ").partition(": ")
+        lines.append(f"**{name}:** {rest}")
+        actual, _, after = rest.partition(" vs. ")
+        compared, _, change = after.partition(" (")
+        figures.append(figure(str(item["line_item"]), actual, f"{heading} {compared}", f"Change {change.rstrip(')')}"))
+    lines.extend(safe_inline(str(note)) for note in notes)
+    ltm = any(isinstance(item, dict) and "ltm" in item for item in items)
+    totals_note = (_FILING_TOTALS_NOTE.replace("its own printed totals, each from its XBRL fact",
+                                               "LTM of the filing's own printed totals, each built from its XBRL facts")
+                   if ltm else _FILING_TOTALS_NOTE)
+    lines.append(totals_note)
+    material_count = len(result.material_rows)
+    material_text = f"{material_count} material variance{'s' if material_count != 1 else ''}"
+    lines.append(f"\n**{material_count}** material variance{'s' if material_count != 1 else ''} found.")
+    table = None
+    if result.material_rows:
+        session.last_table_items = [r.line_item for r in result.material_rows]
+        session.last_focused_item = session.last_table_items[0]
+        table = [row_to_table_dict(row, cfg.currency, places, _heading(cfg)) for row in result.material_rows]
+    view = figures_view(
+        f"{cfg.period} against {_noun(cfg)}",
+        context=[pair("Currency", cfg.currency),
+                 pair("Material at", f"{format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+                                     f"{format_threshold_pct(cfg.percent_threshold)}"),
+                 pair("Lines read", str(len(result.rows)))],
+        figures=figures, notes=[*([f"Units: {unit}"] if unit else []), *(str(note) for note in notes), totals_note],
+        table_title=material_text.capitalize() if table else f"No {material_text[2:]}",
+    )
+    chips = [f"Why {result.material_rows[0].line_item}?"] if result.material_rows else []
+    chips.extend(["Show unfavorable", "Export report", "Export audit"])
+    return Response(text="\n".join(lines), table=table, chips=chips, phase=Phase.EXPLORING, view=view)
 
 
 def _handle_summary(session: Session) -> Response:
@@ -2275,7 +2586,7 @@ def _handle_full_report(session: Session) -> Response:
     result = session.result
     assert result is not None
 
-    report = render_markdown(result)
+    report = _report_text(session)
     return Response(
         text=report,
         chips=["Export report", "Export excel", "Export audit"],
@@ -2355,7 +2666,7 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     result = session.result
     assert result is not None
 
-    report = render_markdown(result)
+    report = _report_text(session)
     period_slug = _period_slug(result.config.period)
     filename = f"variance_report_{period_slug}.md"
 
@@ -3509,6 +3820,7 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         sheet=matched_sheet,
         treat_blank_budgets_as_zero=False,
         compare_to=session.compare_to,
+        hidden_rows=session.hidden_rows,
     )
     if intake_res.has_fatal_errors or not intake_res.rows:
         technical = intake_res.fatal_error_message or "No data rows found"
@@ -3570,6 +3882,29 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     )
 
 
+def _handle_hidden_rows(session: Session, intent: ParsedIntent) -> Response:
+    """Count or leave out the rows hidden in Excel, re-read the file and confirm it again (R3)."""
+    choice = "include" if intent.captures.get("count") else "exclude"
+    if session.source_bytes is None or session.source_suffix is None:
+        return Response(text="Upload a workbook first; I'll ask about hidden rows if it has any.",
+                        phase=session.phase)
+    filename = session.source_name or "input"
+    if session.earnings_requested:
+        from .earnings import review_upload
+        return review_upload(session, session.source_bytes, filename, session.compare_to, session.sheet, hidden_rows=choice)
+    session.hidden_rows = choice
+    intake_res = read_input_assisted(
+        session.source_bytes,
+        session.source_suffix,
+        filename=filename,
+        sheet=session.worksheet,
+        treat_blank_budgets_as_zero=False,
+        compare_to=session.compare_to,
+        hidden_rows=choice,
+    )
+    return _intake_response(session, intake_res, filename)
+
+
 def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
     """Choose what Actual is compared against, re-read the file and re-run the analysis."""
     basis = _CHAT_BASES[" ".join(intent.captures.get("basis", "").lower().split())]
@@ -3590,6 +3925,7 @@ def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
         treat_blank_budgets_as_zero=False,
         selected_period=session.period if session.detected_period_pairs else None,
         compare_to=basis,
+        hidden_rows=session.hidden_rows,
     )
     if intake_res.has_fatal_errors or not intake_res.rows:
         technical = intake_res.fatal_error_message or "No data rows found"
@@ -4288,6 +4624,11 @@ def _handle_driver_summary(session: Session) -> Response:
 
 def _handle_greeting(session: Session) -> Response:
     """Respond politely to conversational greetings with context-aware guidance."""
+    filing = session.intake_result is not None and session.intake_result.filing_headline is not None
+    if session.phase == Phase.EXPLORING and session.result is not None and filing:
+        return Response(text=f"I am ready to explore **{safe_inline(session.result.config.period)}** from this filing. "
+                             "Type `summary` for its own printed totals, or drill into any line (e.g. "
+                             f"`why {safe_inline(session.result.rows[0].line_item)}`).", phase=session.phase)
     if session.phase == Phase.EXPLORING and session.result is not None:
         cfg = session.result.config
         places = report_places(session.result)
@@ -4676,7 +5017,10 @@ def _next_measure_question(session: Session) -> Response | None:
         question: str | None = None
         chips: list[str] | None = None
         pending = ("", index)
-        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT} and not str(row.get("better") or "").strip():
+        # A target is neutral and a limit's direction is its Max or Min (PLAN.md R13, R15): neither asks for Better.
+        neutral = session.intake_result is not None and session.intake_result.comparison_basis in {
+            ComparisonBasis.LIMIT, ComparisonBasis.TARGET}
+        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT} and not neutral and not str(row.get("better") or "").strip():
             question = f"For **{safe_inline(name)}**, is Higher or Lower better?"
             chips, pending = ["Higher", "Lower"], ("better", index)
         elif kind is MeasureKind.PERCENT and session.percent_values is None:
@@ -4697,10 +5041,10 @@ def _next_measure_question(session: Session) -> Response | None:
                 pending = ("percent_values", index)
         if question is None:
             flag = {MeasureKind.PER_SHARE: "per_share_threshold", MeasureKind.COUNT: "count_threshold",
-                    MeasureKind.PERCENT: "bps_threshold"}.get(kind)
+                    MeasureKind.PERCENT: "bps_threshold", MeasureKind.MULTIPLE: "multiple_threshold"}.get(kind)
             if flag is not None and getattr(session, flag) is None:
                 unit = {MeasureKind.PER_SHARE: "currency per share", MeasureKind.COUNT: "units",
-                        MeasureKind.PERCENT: "basis points"}[kind]
+                        MeasureKind.PERCENT: "basis points", MeasureKind.MULTIPLE: "turns (0.25 for 0.25x)"}[kind]
                 question = f"What absolute threshold in {unit} should flag {kind} variances? Enter a non-negative number."
                 pending = (flag, index)
         if question is not None:

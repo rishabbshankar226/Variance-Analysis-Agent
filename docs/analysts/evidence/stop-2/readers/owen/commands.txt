@@ -1,0 +1,4 @@
+variance-agent hal-20260328.htm --assisted --ltm-from hal-20250927.htm --period LTM Mar 2026 --dollar-threshold 1 --percent-threshold 1 -o docs/analysts/evidence/stop-2/readers/owen/ltm_report.md --audit-json docs/analysts/evidence/stop-2/readers/owen/ltm_audit.json
+exit 0
+variance-agent hal-20260328.htm --assisted --ltm-from hal-20250927.htm --metrics owen_metrics.json --compare-file tests/fixtures/analysts/owen_case.csv --period LTM Mar 2026 --dollar-threshold 1 --percent-threshold 1 -o docs/analysts/evidence/stop-2/readers/owen/case_report.md --audit-json docs/analysts/evidence/stop-2/readers/owen/case_audit.json
+exit 0

@@ -388,24 +388,38 @@ def _render_comparisons(table: TableAnalysis) -> str:
     return "\n".join(lines)
 
 
+_LINE_ITEM_HEADERS = frozenset({"line_item", "account", "account_name", "account_description", "item", "category"})
+
+
 def read_comparison_input(
     data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
     column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
-    metadata: dict[str, object] | None = None,
+    metadata: dict[str, object] | None = None, hidden_rows: str | None = None,
 ) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
     """Bounded captured-file intake for opt-in headers, retaining raw header identity."""
     import io
     from .parsing import load_input, load_json_value, _normalized_headers, _excel_loader
-    from .excel import inspect_archive, cell_value
+    from .excel import (HIDDEN_ROW_CHOICES, WorkbookFacts, cell_value, hidden_data_rows, hidden_rows_note,
+                        hidden_rows_question, inspect_workbook, table_formulas_message)
     from .intake import _decode_text, _sniff_delimiter, _delimited_rows
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
+    if suffix.lower() == ".xls":
+        from .excel import legacy_workbook_message, workbook_kind
+        if workbook_kind(data) != "ooxml":
+            raise ValueError(legacy_workbook_message(filename, workbook_kind(data)))
+        suffix = ".xlsx"
+    if hidden_rows is not None:
+        if hidden_rows not in HIDDEN_ROW_CHOICES:
+            raise ValueError("hidden_rows must be include or exclude.")
+        if suffix.lower() not in {".xlsx", ".xlsm"} or not (assisted or column_mapping):
+            raise ValueError("hidden_rows requires assisted or mapped Excel input; strict intake reads every row as given.")
     if metadata is not None and column_mapping:
         metadata["transformations"] = {"column_mapping": dict(column_mapping)}
-    if suffix.lower() == ".pdf":
+    if suffix.lower() in {".pdf", ".htm", ".html"}:
         if not assisted:
-            raise ValueError("PDF input requires --assisted.")
+            raise ValueError("PDF and HTML filings require --assisted.")
         if column_mapping:
             raise ValueError("PDF columns are selected by statement and period, not CSV column mappings.")
         from .intake import read_input_assisted, audit_transformations, CanonicalRole
@@ -426,6 +440,8 @@ def read_comparison_input(
     notes: list[str] = []
     worksheet = None
     raw: list[list[object]] | None = None
+    workbook_facts: WorkbookFacts | None = None
+    worksheet_path = ""
     if suffix.lower() == ".csv" and not assisted and not column_mapping:
         parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
         return parsed.rows, parsed.raw_headers, parsed.worksheet, ()
@@ -437,7 +453,8 @@ def read_comparison_input(
             notes.append(encoding_note)
         raw = _delimited_rows(text, _sniff_delimiter(text) if assisted else ",", filename)
     elif suffix.lower() in {".xlsx", ".xlsm"} and (assisted or column_mapping):
-        stored = inspect_archive(data)
+        workbook_facts = inspect_workbook(data)
+        stored = workbook_facts.numbers
         with io.BytesIO(data) as source:
             workbook = _excel_loader()(source, read_only=True, data_only=True)
             try:
@@ -451,6 +468,7 @@ def read_comparison_input(
                 raw = [[cell_value(cell, numbers=numbers, row=i, column=j) for j, cell in enumerate(cells, 1)]
                        for i, cells in enumerate(ws.iter_rows(), 1)]
                 worksheet = ws.title
+                worksheet_path = ws._worksheet_path
             finally:
                 workbook.close()
     if raw is None and suffix.lower() == ".json" and column_mapping:
@@ -480,7 +498,7 @@ def read_comparison_input(
             labels = [str(v).strip() for v in record if v is not None]
             normalized = {normalize_key(v) for v in labels}
             normalized.update(role for role, source in (column_mapping or {}).items() if source in labels)
-            if normalized & {"line_item", "account", "account_name", "account_description", "item", "category"}:
+            if normalized & _LINE_ITEM_HEADERS:
                 if normalized & {"actual", "actuals", "actual_amount", "act", "actual_ytd"} or sum(
                         parse_period_label(label, extended=True) is not None for label in labels) >= 2:
                     candidates.append(index)
@@ -490,6 +508,28 @@ def read_comparison_input(
     if not raw:
         raise ValueError("Input contains no data.")
     headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
+    line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _LINE_ITEM_HEADERS]
+    excluded: set[int] = set()
+    hidden: list[tuple[int, str, bool]] = []
+    if workbook_facts is not None and worksheet_path in workbook_facts.layouts:
+        hidden = hidden_data_rows(workbook_facts.layouts[worksheet_path], raw, header_row=header_at + 1,
+                                  line_item_column=line_items[0] if line_items else None)
+        if hidden and hidden_rows == "exclude":
+            excluded = {number for number, _, _ in hidden}
+    if workbook_facts is not None and workbook_facts.may_have_unsaved_formulas(worksheet_path):
+        # A formula Excel never calculated reads as blank; name it instead (R4).
+        stop = table_formulas_message(
+            workbook_facts, worksheet_path, filename, header_row=header_at + 1, headers=list(headers),
+            rows={i + 1: raw[i] for i in range(header_at + 1, len(raw)) if i + 1 not in excluded},
+            line_item_column=line_items[0] if line_items else None)
+        if stop is not None:
+            raise ValueError(stop)
+    if hidden:
+        # A file API run never prompts, so rows hidden in Excel need a declared choice (R3).
+        if hidden_rows is None:
+            raise ValueError(f"{hidden_rows_question(hidden)}\nChoose whether to count them "
+                             "(hidden_rows='include' or 'exclude'; --hidden-rows on the command line).")
+        notes.append(hidden_rows_note(hidden_rows, hidden))
     if metadata is not None:
         metadata["transformations"] = {"header_row_number": header_at + 1, "column_mapping": dict(column_mapping or {})}
     mapped_headers, ignored = _mapped_headers(headers, column_mapping or {})
@@ -497,7 +537,7 @@ def read_comparison_input(
     _normalized_headers(mapped_headers)  # collision, column, and header-text limits
     output = []
     for index, record in enumerate(raw[header_at + 1:], header_at + 2):
-        if not record or all(v is None or v == "" for v in record):
+        if not record or all(v is None or v == "" for v in record) or index in excluded:
             continue
         if len(record) > len(headers) and any(v is not None and v != "" for v in record[len(headers):]):
             raise ValueError(f"Row {index}: populated cells appear beyond the header.")

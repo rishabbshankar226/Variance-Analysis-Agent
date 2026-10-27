@@ -61,13 +61,23 @@ class Session:
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
     compare_to: ComparisonBasis | None = None
+    hidden_rows: str | None = None  # the answer for rows hidden in Excel: include or exclude
     per_share_threshold: Decimal | None = None
     count_threshold: Decimal | None = None
     bps_threshold: Decimal | None = None
+    multiple_threshold: Decimal | None = None  # turns, for Multiple rows (PLAN.md R16)
     percent_values: str | None = None
     measure_pending: tuple[str, int] | None = None
     earnings_mode: bool = False
     earnings_requested: bool = False
+    # LTM (PLAN.md R10, R11): waiting for the 10-K a 10-Q's year continues, and that 10-K once read.
+    awaiting_ltm_annual: bool = False
+    ltm_annual: tuple[bytes, str] | None = None
+    # F4 (PLAN.md R12): one half of a budget/actuals pair, waiting for the other: bytes, name, the column it lacks.
+    pending_half: tuple[bytes, str, str] | None = None
+    # Covenant headroom from the chat (PLAN.md R17): waiting for the metrics file, then the covenant schedule.
+    covenant_step: str | None = None
+    covenant_metrics: bytes | None = None
     earnings_headers: tuple[str, ...] = ()
     earnings_choices: tuple[ComparisonBasis, ...] = ()
     earnings_notes: tuple[str, ...] = ()
@@ -113,13 +123,20 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.compare_to = None
+        self.hidden_rows = None
         self.per_share_threshold = None
         self.count_threshold = None
         self.bps_threshold = None
+        self.multiple_threshold = None
         self.percent_values = None
         self.measure_pending = None
         self.earnings_mode = False
         self.earnings_requested = False
+        self.awaiting_ltm_annual = False
+        self.ltm_annual = None
+        self.pending_half = None
+        self.covenant_step = None
+        self.covenant_metrics = None
         self.earnings_headers = ()
         self.earnings_choices = ()
         self.earnings_notes = ()

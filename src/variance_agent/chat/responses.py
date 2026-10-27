@@ -30,6 +30,9 @@ class Response:
     # A designed view of the same reply (see chat/views.py); the page renders it when present and
     # `text` otherwise. `text` always carries every figure and sentence on its own.
     view: dict[str, object] | None = None
+    # The reply asks for a second file (an LTM 10-K, the other half of a pair): the page shows the
+    # drop zone under it even mid-conversation. Sent only when true, so other replies keep their shape.
+    ask_upload: bool = False
 
 
 def format_money(value: Decimal, currency: str = "USD", places: int = 2) -> str:

@@ -1,0 +1,6 @@
+Line Item,Actual,Limit,Limit Kind,Buffer
+Desk A gross exposure,480,500,Max,25
+Desk B gross exposure,510,500,Max,25
+Desk C liquidity reserve,95,100,Min,
+Desk D liquidity reserve,100,100,Min,10
+Desk E net exposure,300,500,Max,

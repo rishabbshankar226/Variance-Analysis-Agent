@@ -1,0 +1,15 @@
+[assisted intake] Built LTM as FY2025 from 'hal-20250927.htm' plus 6 months to Mar 2026 less 6 months to Mar 2025 from 'hal-20260328.htm', line by line by XBRL concept
+[assisted intake] Checked continuity: the prior year to date starts where FY2025 starts (2024-09-29), and the year to date starts the day after it ends (2025-09-28)
+[assisted intake] Left out 'Basic (in dollars per share)': per-share amounts and share counts are not computable as LTM
+[assisted intake] Read 'Condensed Consolidated Statements of Operations, 6 Months Ended' from the Inline XBRL filing
+[assisted intake] Left out 'Basic (in dollars per share)' (per-share and share counts are not money totals)
+[assisted intake] Labeled 1 line revenue and 3 lines expense from how the statement adds up
+[assisted intake] Read 'Interest expense' as an expense: the statement prints it as -25000000 and adds it
+[assisted intake] Comparing LTM against FY2025, the fiscal year of 'hal-20250927.htm'.
+[assisted intake] Joined 'owen_case.csv' to 'the metrics' by 'line item': 2 lines, each in both files
+[assisted intake] Took Actual from 'the metrics' and the comparison from 'owen_case.csv'
+[assisted intake] the metrics: LTM revenue = $4,300,000,000.00 = Net sales [income, ltm]
+[assisted intake] the metrics: LTM EBITDA = $1,800,000,000.00 = Net income [income, ltm] + Interest expense [income, ltm] + Depreciation and amortization [cash flow, ltm]
+[assisted intake] owen_case.csv: Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands).
+[measure intake] LTM revenue: read Better to Higher.
+[measure intake] LTM EBITDA: read Better to Higher.

@@ -40,7 +40,9 @@ def run_panel(args: Arguments) -> int:
     if "budget" in columns and len(bases) == 1:
         columns[str(bases[0])] = columns.pop("budget")
     rows, headers, _, notes = read_comparison_input(data, source.suffix, filename=source.name, sheet=args.sheet,
-                                                   assisted=args.assisted, column_mapping=columns or None)
+                                                   assisted=args.assisted, column_mapping=columns or None,
+                                                   hidden_rows=getattr(args, "hidden_rows", None)
+                                                   or (mapping.hidden_rows if mapping is not None else None))
     # Restore raw header identities (# Est. versus Est.) before the public table API.
     originals = {normalize_key(header): header for header in headers}
     rows = [{originals.get(key, key): value for key, value in row.items()} for row in rows]

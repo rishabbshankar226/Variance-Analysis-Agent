@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
+
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status, MeasureKind
@@ -74,6 +77,37 @@ def _pct(budget: Decimal, variance: Decimal, label: str | None = None) -> str:
         tenths += 1
     sign = "-" if tenths and (scaled < 0) else ""
     return f"{sign}{tenths // 10}.{tenths % 10}%"
+
+
+def _filing_headline_lines(headline: Mapping[str, object], currency: str, places: int) -> list[str]:
+    """The filing's own printed totals (Decision 39): each item's two figures, its change and percent."""
+    items, notes = headline.get("items"), headline.get("notes")
+    assert isinstance(items, list) and isinstance(notes, list)
+    lines: list[str] = []
+    for item in items:
+        assert isinstance(item, Mapping)
+        if "ltm" in item:  # an LTM item: each figure built from the filings' facts (PLAN.md R11)
+            actual, comparison = Decimal(str(item["ltm"])), Decimal(str(item["comparison"]))
+        else:
+            actual_key, comparison_key = item["actual"], item["comparison"]
+            assert isinstance(actual_key, Mapping) and isinstance(comparison_key, Mapping)
+            actual, comparison = Decimal(str(actual_key["displayed"])), Decimal(str(comparison_key["displayed"]))
+        change = Decimal(str(item["change"]))
+        # Printed negative in both columns (a loss, a total printed in parentheses): say whether it grew (Decision 41).
+        cue = (", larger negative" if abs(actual) > abs(comparison) else ", smaller negative") \
+            if actual < 0 and comparison < 0 and change != 0 else ""
+        lines.append(f"- {_safe_inline(str(item['line_item']))}: {_money(actual, currency, places)} vs. "
+                     f"{_money(comparison, currency, places)} ({_money(change, currency, places)}, "
+                     f"{_pct(comparison, change)}{cue})")
+    lines.extend(f"- {_safe_inline(str(note))}" for note in notes)
+    if not items and not notes:
+        lines.append("- The statement prints no revenue, total expenses, operating income or net income to head this report.")
+    elif any(isinstance(item, Mapping) and "ltm" in item for item in items):
+        lines.append("- Headline figures are LTM of the filing's own printed totals, each built from its XBRL facts as "
+                     "the LTM build shows.")
+    elif items:
+        lines.append("- Headline figures are the filing's own printed totals, each from its XBRL fact.")
+    return lines
 
 
 def _report_places(result: AnalysisResult) -> int:
@@ -263,11 +297,139 @@ def _data_request(top_rows: tuple[AnalyzedRow, ...], *, plain: bool = False) -> 
     return "No additional driver data is required for the analyzed top material variances."
 
 
+# Notes that only restate what the file declared outright (a Measure, a Better direction) add nothing to read.
+_RESTATED = re.compile(r": (?:read Measure as|read Better to|read Better as|read % values as percentage points)")
+
+
+def _read_notes(lines: list[str], result: AnalysisResult) -> None:
+    notes = [note for note in result.warnings if not _RESTATED.search(note)]
+    if notes:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in notes]])
+
+
 @financial_context()
-def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
+def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
+    """A balance sheet or cash flow comparison: the checks the read passed, then each line's change (PLAN.md R7)."""
+    cfg = result.config
+    places = _report_places(result)
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    lines = [f"# Statement Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
+             *("- " + _safe_inline(check) for check in checks),
+             "- Lines marked (Total) are the statement's own subtotals.",
+             "", "## Lines", "",
+             f"| Line Item | {heading} | Actual | Change | Change (%) | Direction | Material |",
+             "|---|---:|---:|---:|---:|---|---|"]
+    for row in result.rows:
+        name = _safe_inline(row.line_item) + (" (Total)" if str(row.raw.get("row_kind", "")).casefold() == "total" else "")
+        lines.append("| " + " | ".join([
+            name, _money(row.budget, cfg.currency, places), _money(row.actual, cfg.currency, places),
+            _money(row.variance_dollars, cfg.currency, places), _pct(row.budget, row.variance_dollars, row.percent_label),
+            display_outcome(row, cfg.comparison_basis), "Yes" if row.material else "No"]) + " |")
+    _read_notes(lines, result)
+    return "\n".join([*lines, ""])
+
+
+def _rate(value: Decimal) -> str:
+    """A ratio shown once as a percentage to one place (display only; the audit keeps the exact ratio)."""
+    with financial_context() as context:
+        context.traps[Inexact] = False
+        return f"{(value * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)}%"
+
+
+_BASIS_NOTES = {
+    "limit": "Breach is strictly beyond a limit; a row exactly at its limit is At limit. Near appears only where a "
+             "row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a "
+             "negative headroom is a Breach for either kind. Utilization is actual over limit: above 100% is beyond a "
+             "Max, and below 100% is short of a Min.",
+    "benchmark": "Active difference is actual minus benchmark (basis points for rates). A row is In line when the "
+                 "difference is within its declared tolerance, edge included, or exactly zero without one; In line is "
+                 "Neutral. Otherwise F or U follows the row's declared Better direction. Higher and Lower than "
+                 "benchmark describe the figures, never whether that is good.",
+    "target": "Difference is actual minus target (basis points for rates). A row is On target when the difference is "
+              "within its declared tolerance, edge included, or exactly zero without one. A target is neutral: no F or U.",
+}
+
+
+@financial_context()
+def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str | None]:
+    """A limit, benchmark or target comparison's table (PLAN.md R13-R15): its columns, its rows as plain text (limits
+    by severity), and a limit run's count sentence. The report and the chat's results panel both show it."""
+    cfg = result.config
+    basis = cfg.comparison_basis.value
+    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_label)
+    rows = [row for row in result.rows if row.basis_details is not None]
+
+    def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
+        return format_measure(value, row.measure, cfg.currency, variance=variance)
+
+    table: list[list[str]] = []
+    if basis == "limit":
+        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
+        counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
+                  for word in ("Breach", "At limit", "Near", "Within")]
+        for row in rows:
+            d = row.basis_details
+            assert d is not None and d.headroom is not None
+            table.append([row.line_item, str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
+                          amount(d.headroom, row, variance=True),
+                          "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
+                          "NM" if d.utilization is None else _rate(d.utilization),
+                          "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome])
+        columns = ["Line Item", "Kind", "Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer",
+                   "Status"]
+        return columns, table, f"{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within."
+    status = basis != "target"  # a target is neutral: no Status column
+    for row in rows:
+        d = row.basis_details
+        assert d is not None
+        difference = (format_measure(d.difference_bps, MeasureKind.PERCENT, variance=True)
+                      if d.difference_bps is not None else amount(d.difference, row, variance=True))
+        # A rate's tolerance is in percentage points; it is shown in basis points, the difference's unit.
+        tolerance = ("none (exact)" if d.tolerance is None
+                     else format_measure(d.tolerance * 100, MeasureKind.PERCENT, variance=True)
+                     if row.measure is MeasureKind.PERCENT else amount(d.tolerance, row, variance=True))
+        table.append([row.line_item, amount(row.budget, row), amount(row.actual, row), difference, tolerance, d.outcome,
+                      *([_status_text(row.status, True)] if status else [])])
+    return (["Line Item", heading, "Actual", "Difference", "Tolerance", "Outcome", *(["Status"] if status else [])],
+            table, None)
+
+
+@financial_context()
+def render_basis_report(result: AnalysisResult) -> str:
+    """A limit, benchmark or target comparison (PLAN.md R13-R15): outcomes in their own words, limits by severity."""
+    cfg = result.config
+    basis = cfg.comparison_basis.value
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    rows = [row for row in result.rows if row.basis_details is not None]
+    currency = [f"Reporting currency: {cfg.currency}", ""] if any(currency_row(r) for r in rows) else []
+    lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", *currency, "- " + _BASIS_NOTES[basis], ""]
+    columns, table, counts = basis_table(result)
+    if counts is not None:
+        lines[lines.index("- " + _BASIS_NOTES[basis]) + 1:0] = ["", f"**{counts}**"]
+    columns[1] = _safe_inline(columns[1])
+    right = {"Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer", columns[1], "Difference",
+             "Tolerance"} - {"Kind"}
+    lines += ["## Lines, by severity" if basis == "limit" else "## Lines", "", "| " + " | ".join(columns) + " |",
+              "|" + "|".join("---:" if column in right and column != "Line Item" else "---" for column in columns) + "|"]
+    lines += ["| " + " | ".join([_safe_inline(cells[0]), *cells[1:]]) + " |" for cells in table]
+    _read_notes(lines, result)
+    return "\n".join([*lines, ""])
+
+
+@financial_context()
+def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None,
+                    appendix: list[str] | None = None, filing_headline: Mapping[str, object] | None = None) -> str:
+    if appendix:  # sections intake wrote that the analysis can't know of, such as an LTM build (PLAN.md R11)
+        body = render_markdown(result, top_root_causes=top_root_causes, statement_checks=statement_checks,
+                               filing_headline=filing_headline)
+        return body.rstrip("\n") + "\n\n" + "\n".join(appendix) + "\n"
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")
+    if any(row.statement_kind for row in result.rows):
+        return render_statement_report(result, statement_checks or [])
+    if any(row.basis_details is not None for row in result.rows):
+        return render_basis_report(result)
     if effective_layout(result.config) == "earnings":
         from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
         from .earnings import render_earnings
@@ -320,9 +482,12 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5) -> str:
         f"- Reporting Currency: {cfg.currency}",
         *([] if cfg.comparison_basis is ComparisonBasis.BUDGET
           else [f"- Compared Against: {heading}"]),
-        revenue_line,
-        expense_line,
-        f"- Bottom Line Impact: {bottom_line}",
+        # The unit the filing prints in, which its label text keeps (Decision 40).
+        *([f"- Units: {_safe_inline(str(filing_headline['unit']))}"]
+          if filing_headline is not None and filing_headline.get("unit") else []),
+        # A filing's income statement is headed by its own printed totals, never by computed ones (Decision 39).
+        *(_filing_headline_lines(filing_headline, cfg.currency, places) if filing_headline is not None
+          else [revenue_line, expense_line, f"- Bottom Line Impact: {bottom_line}"]),
     ]
     if result.warnings:
         lines.append(

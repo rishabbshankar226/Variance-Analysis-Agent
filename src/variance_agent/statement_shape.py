@@ -29,6 +29,11 @@ _SUBTOTAL_RE = re.compile(
     r"|^(?:other\s+)?comprehensive\s+(?:income|loss)\b",
     re.IGNORECASE,
 )
+def names_subtotal(label: str) -> bool:
+    """Whether a printed label alone marks a subtotal for this shaper."""
+    return bool(_SUBTOTAL_RE.search(label.strip()))
+
+
 _REVENUE_WORDS = re.compile(r"\b(?:revenues?|sales|income|gains?)\b", re.IGNORECASE)
 _EXPENSE_WORDS = re.compile(
     r"\b(?:expenses?|costs?|charges?|tax(?:es)?|provision|depreciation|amortization"
@@ -52,6 +57,13 @@ class ShapedStatement:
     # False when the statement could not be checked (no header row, or an unreadable figure):
     # the rows are the input unchanged, so their signs and subtotals are still unresolved.
     shaped: bool = True
+    # For callers that check footing themselves (filing reads, PLAN.md R5): the data rows kept, in
+    # order; each matched subtotal's data row with the (data row, weight) terms it sums; and the
+    # subtotal-named lines no run of lines above added up to.
+    kept: list[int] = field(default_factory=list)
+    matches: list[tuple[int, list[tuple[int, int]]]] = field(default_factory=list)
+    unmatched: list[str] = field(default_factory=list)
+    openings: list[int] = field(default_factory=list)  # a statement's first figure, carried in (OCI's net income)
 
 
 @dataclass
@@ -61,6 +73,7 @@ class _Item:
     rows: list[int]
     values: list[Decimal]
     is_group: bool = False
+    total_row: int | None = None  # a group's own subtotal row
 
 
 def _amount(text: object) -> Decimal | None:
@@ -112,8 +125,27 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
-    """Label each line of an income statement by how the statement's subtotals add up."""
+def _term(item: _Item) -> int:
+    return item.total_row if item.total_row is not None else item.rows[0]
+
+
+def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = None,
+                           extra_subtotals: re.Pattern[str] | None = None,
+                           subtotal_rows_hint: frozenset[int] = frozenset(),
+                           section_total_rows_hint: frozenset[int] = frozenset(),
+                           zero_lines_signless: bool = False, openings_as_lines: bool = False,
+                           keep_printed_signs: bool = False) -> ShapedStatement:
+    """Label each line of an income statement by how the statement's subtotals add up.
+
+    ``unit`` sets the rounding unit of the printed figures; by default it is the finest place any
+    figure shows, as for a PDF statement printed in its caption's unit. ``extra_subtotals`` names
+    more subtotal labels for one reader, ``subtotal_rows_hint`` data rows its source marks as
+    totals, and ``section_total_rows_hint`` those among them that may sum just the lines above them,
+    as a "Total" row does; with ``zero_lines_signless``, sign readings that differ only on lines that
+    are zero in every period count as one; with ``openings_as_lines``, a subtotal-named first figure (OCI's
+    net income, a lone "Total revenues") is read as a line. The PDF reader passes none, so its reading
+    is unchanged.
+    """
     header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
     if header_at is None:
         return ShapedStatement(rows=raw_rows, shaped=False)
@@ -128,8 +160,13 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     if any(value is None for values in parsed for value in values):
         return ShapedStatement(rows=raw_rows, shaped=False)
     amounts = [[value for value in values if value is not None] for values in parsed]
-    unit = min((Decimal(1).scaleb(min(v.as_tuple().exponent, 0))  # type: ignore[arg-type]
-                for values in amounts for v in values), default=Decimal(1))
+    if unit is None:
+        unit = min((Decimal(1).scaleb(min(v.as_tuple().exponent, 0))  # type: ignore[arg-type]
+                    for values in amounts for v in values), default=Decimal(1))
+    matches: list[tuple[int, list[tuple[int, int]]]] = []
+    unmatched: list[str] = []
+    openings: list[int] = []
+    previous_total: int | None = None
 
     signs: dict[int, int] = {}
     subtotal_rows: list[int] = []
@@ -138,15 +175,19 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
     with financial_context():
         for i, row in enumerate(data):
             values = amounts[i]
-            if not _SUBTOTAL_RE.search(str(row[0]).strip()):
+            label_text = str(row[0]).strip()
+            opening = openings_as_lines and not pending and running is None
+            if opening or not (_SUBTOTAL_RE.search(label_text) or (extra_subtotals and extra_subtotals.search(label_text))
+                               or i in subtotal_rows_hint):
                 pending.append(_Item([i], values))
                 continue
             subtotal_rows.append(i)
-            is_total = str(row[0]).strip().lower().startswith("total")
+            is_total = str(row[0]).strip().lower().startswith("total") or i in section_total_rows_hint
             start = _block_start(pending, values, unit, any_suffix=is_total)
             if start is not None:
                 lines = [r for item in pending[start:] for r in item.rows]
-                pending = [*pending[:start], _Item(lines, values, is_group=True)]
+                matches.append((i, [(_term(item), 1) for item in pending[start:]]))
+                pending = [*pending[:start], _Item(lines, values, is_group=True, total_row=i)]
                 continue
             # A running subtotal: the last one, plus or minus each line or block since.
             base = running or [Decimal(0)] * periods
@@ -157,13 +198,31 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
                                              Decimal(0)) for p in range(periods)],
                               values, len(pending) + 2, unit)
                 ]
+                if zero_lines_signless and len(fits) > 1:
+                    live = [k for k, item in enumerate(pending) if any(v != 0 for v in item.values)]
+                    if len({tuple(combo[k] for k in live) for combo in fits}) == 1:
+                        fits = fits[:1]  # the readings agree on every line that is not zero
                 if len(fits) == 1:
                     for s, item in zip(fits[0], pending, strict=True):
                         for r in item.rows:
                             signs[r] = s
-            running, pending = values, []
+                    base_terms = [(previous_total, 1)] if previous_total is not None and running is not None else []
+                    matches.append((i, [*base_terms, *((_term(item), s) for s, item in zip(fits[0], pending, strict=True))]))
+                elif not fits:
+                    unmatched.append(str(row[0]).strip())
+            elif not pending and running is None:
+                openings.append(i)
+            elif not pending and running is not None and previous_total is not None:
+                # A subtotal repeating the one before it (net income, then net income attributable
+                # to the parent) foots on that one alone; any other value has nothing to add up from.
+                if _close(running, values, 2, unit):
+                    matches.append((i, [(previous_total, 1)]))
+                else:
+                    unmatched.append(str(row[0]).strip())
+            running, pending, previous_total = values, [], i
 
-    shaped = ShapedStatement(rows=[*raw_rows[:header_at], [*header, "Type"]])
+    shaped = ShapedStatement(rows=[*raw_rows[:header_at], [*header, "Type"]], matches=matches, unmatched=unmatched,
+                             openings=openings)
     labels: list[tuple[str, str]] = []
     flips: list[str] = []
     for i, row in enumerate(data):
@@ -180,6 +239,10 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
                 kind = "Revenue"
             elif all(e <= 0 for e in effects) and any(e < 0 for e in effects):
                 kind = "Expense"
+            elif keep_printed_signs and any(effects):
+                # Its effect changes sign between columns (a tax expense one year, a benefit the next): the type the
+                # statement's own arithmetic gives it, added or subtracted, keeps every figure as printed (Decision 42).
+                kind = "Revenue" if sign > 0 else "Expense"
             elif _REVENUE_WORDS.search(label):
                 kind = "Revenue"
             elif _EXPENSE_WORDS.search(label):
@@ -199,6 +262,7 @@ def shape_income_statement(raw_rows: list[list[object]]) -> ShapedStatement:
         if not kind:
             shaped.unlabeled.append(label)
         shaped.rows.append([label, *cells, kind])
+        shaped.kept.append(i)
 
     # Intake already lists excluded subtotals in its summary; the audit gets them here too.
     subtotal_note = (
