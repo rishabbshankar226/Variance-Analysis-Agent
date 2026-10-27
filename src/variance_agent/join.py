@@ -126,7 +126,7 @@ def join_results(a: IntakeResult, actual_name: str, actual_documents: list[dict[
     }
     result = replace(a, rows=joined_rows, comparison_basis=basis, comparison_label=label,
                      column_mapping={**a.column_mapping, CanonicalRole.BUDGET:
-                                     f"{b.column_mapping.get(CanonicalRole.BUDGET, 'Budget')}' in '{comparison_name}"},
+                                     f"{b.column_mapping.get(CanonicalRole.BUDGET, 'Budget')} in {comparison_name}"},
                      visible_transformations=[*notes, *halves, *comparing],
                      blank_budget_items=list(b.blank_budget_items), detected_totals=[*a.detected_totals])
     result.join = record

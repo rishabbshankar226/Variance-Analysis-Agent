@@ -1,8 +1,40 @@
-{"metrics": [
-  {"name": "LTM revenue", "measure": "Currency",
-   "numerator": [{"concept": "us-gaap:Revenues", "statement": "income", "period": "ltm", "sign": 1}]},
-  {"name": "LTM EBITDA", "measure": "Currency",
-   "numerator": [{"concept": "us-gaap:NetIncomeLoss", "statement": "income", "period": "ltm", "sign": 1},
-                 {"concept": "us-gaap:InterestExpense", "statement": "income", "period": "ltm", "sign": -1},
-                 {"label": "Depreciation and amortization", "statement": "cash_flow", "period": "ltm", "sign": 1}]}
-]}
+{
+ "metrics": [
+  {
+   "name": "LTM revenue",
+   "measure": "Currency",
+   "numerator": [
+    {
+     "concept": "us-gaap:Revenues",
+     "statement": "income",
+     "period": "ltm",
+     "sign": 1
+    }
+   ]
+  },
+  {
+   "name": "LTM EBITDA",
+   "measure": "Currency",
+   "numerator": [
+    {
+     "concept": "us-gaap:NetIncomeLoss",
+     "statement": "income",
+     "period": "ltm",
+     "sign": 1
+    },
+    {
+     "concept": "us-gaap:InterestExpense",
+     "statement": "income",
+     "period": "ltm",
+     "sign": 1
+    },
+    {
+     "label": "Depreciation and amortization",
+     "statement": "cash_flow",
+     "period": "ltm",
+     "sign": 1
+    }
+   ]
+  }
+ ]
+}

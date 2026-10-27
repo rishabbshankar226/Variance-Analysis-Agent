@@ -47,7 +47,7 @@ def test_clara_s_ratios_meet_her_covenant_limits(tmp_path: Path) -> None:
     document = record["source"]["document"]  # type: ignore[index]
     assert document["kind"] == "metrics"
     leverage = next(m for m in document["metrics"] if m["name"] == "Gross leverage")
-    assert leverage["formula"] == ("(Long-term debt [balance sheet, instant]) / (Net income [income, fy] - Interest expense "
+    assert leverage["formula"] == ("(Long-term debt [balance sheet, instant]) / (Net income [income, fy] + Interest expense "
                                    "[income, fy] + Depreciation and amortization [cash flow, fy])")
     assert [(t["document"], t["column"], t["context"], t["value"]) for t in leverage["terms"]][0] == (
         "hal-20250927.htm", "Sep 2025", "I25", "1500000000")
@@ -70,7 +70,8 @@ def test_a_non_positive_denominator_is_nm_with_its_reason(tmp_path: Path) -> Non
     metrics.write_text(json.dumps({"metrics": [
         {"name": "Interest cover", "measure": "Multiple",
          "numerator": [{"concept": "us-gaap:NetIncomeLoss", "statement": "income", "period": "fy", "sign": 1}],
-         "denominator": [{"concept": "us-gaap:InterestExpense", "statement": "income", "period": "fy", "sign": 1}]},
+         # Declared negative on purpose: interest expense is stored positive, so this denominator is -50m.
+         "denominator": [{"concept": "us-gaap:InterestExpense", "statement": "income", "period": "fy", "sign": -1}]},
         {"name": "Gross leverage", "measure": "Multiple",
          "numerator": [{"concept": "us-gaap:LongTermDebtNoncurrent", "statement": "balance_sheet", "period": "instant",
                         "sign": 1}],
@@ -143,3 +144,32 @@ def test_a_cash_balance_is_not_an_ltm_term(tmp_path: Path, capsys: pytest.Captur
     assert ("Left out 'LTM cash': 'Cash at end of period' is a cash balance, which doesn't add across periods, so it "
             "can't be an LTM term") in capsys.readouterr().err.replace("\n", " ")
 
+
+
+def test_a_metric_means_the_same_however_the_filing_prints_a_line(tmp_path: Path) -> None:
+    # The same interest fact printed in parentheses or plain: the stored XBRL value is used, so EBITDA is unchanged.
+    plain = all_statements_filing().replace(
+        b'(<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"', b'<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"')
+    plain = plain.replace(b'>50</ix:nonFraction>)', b'>50</ix:nonFraction>', 1)
+    assert plain != all_statements_filing()
+    values = []
+    for data in (all_statements_filing(), plain):
+        annual = tmp_path / "hal-20250927.htm"
+        annual.write_bytes(data)
+        record, _ = _audit(_clara(tmp_path), tmp_path)
+        values.append({r["line_item"]: r["actual"] for r in record["measure_rows"]})  # type: ignore[union-attr, index]
+    assert values[0] == values[1]
+    assert Fraction(str(values[0]["Interest cover"])) == 34  # (1,450 + 50 + 200) / 50
+
+
+def test_the_report_cites_every_term_with_its_document_and_column(tmp_path: Path) -> None:
+    quarter, annual, case = tmp_path / "hal-20260328.htm", tmp_path / "hal-20250927.htm", tmp_path / "case.csv"
+    quarter.write_bytes(quarter_all_filing())
+    annual.write_bytes(all_statements_filing())
+    case.write_text(CASE, encoding="utf-8")
+    _, report = _audit([str(quarter), "--assisted", "--ltm-from", str(annual), "--metrics",
+                        str(FIXTURES / "owen_metrics.json"), "--compare-file", str(case), "--period", "LTM Mar 2026",
+                        "--dollar-threshold", "1", "--percent-threshold", "1"], tmp_path)
+    assert ("Depreciation and amortization \\[cash flow, ltm\\]: $200,000,000.00 (FY2025, hal-20250927.htm) + "
+            "$110,000,000.00 (6 months to Mar 2026, hal-20260328.htm) - $100,000,000.00 (6 months to Mar 2025, "
+            "hal-20260328.htm) = $210,000,000.00") in report

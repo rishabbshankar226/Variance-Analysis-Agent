@@ -230,7 +230,7 @@ cash_flow), its `period` (instant, fy, ytd, ltm) and a `sign` of 1 or -1. Unknow
 keys refuse.
 
 Each statement a term reads is first read and checked as on its own (footing and
-identities). The value used is the printed figure. `instant` is the balance
+identities). The value used is the term's stored XBRL value, whose sign the taxonomy fixes, so one metrics file means the same on every filing however a line is printed; the printed figure is cited beside it. `instant` is the balance
 sheet's latest column; `fy` the 10-K's fiscal year; `ytd` the 10-Q's year to
 date; `ltm` is FY + YTD - prior YTD by key, with `--ltm-from` and the same
 continuity check as an LTM statement. A single cash flow line (D&A) is a flow; a

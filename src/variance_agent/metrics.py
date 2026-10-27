@@ -167,9 +167,12 @@ class _Sources:
             key = columns[column] if isinstance(columns, list) and column < len(columns) else None
             if not isinstance(key, dict):
                 raise _Unavailable(f"'{line['line_item']}' prints no figure in that column of '{document}'")
-            return Decimal(str(key["displayed"])), {
-                "document": document, "statement": statement.name, "column": str(key["label"]),
-                "context": str(key["context"]), "concept": str(key["concept"]), "value": str(key["displayed"])}
+            months = _months(statement.periods[column]) if statement.periods[column][0] == "duration" else 12
+            label = str(key["label"]) if months == 12 else f"{months} months to {key['label']}"
+            # The stored XBRL value: its sign is the taxonomy's, the same on every filing however it is printed.
+            return Decimal(str(key["stored"])), {
+                "document": document, "statement": statement.name, "column": label, "context": str(key["context"]),
+                "concept": str(key["concept"]), "value": str(key["stored"]), "displayed": str(key["displayed"])}
 
         if term.period == "instant":
             sheet = self._statement(primary, "balance_sheet", year=None)
@@ -221,6 +224,16 @@ def _formula(parts: list[tuple[Term, str]]) -> str:
     return text
 
 
+def _safe(text: str) -> str:
+    from .report import _safe_inline
+    return _safe_inline(text)
+
+
+def _money(value: Decimal) -> str:
+    from .report import _money as money
+    return money(value)
+
+
 def _dollars(value: Decimal) -> str:
     whole = value == value.to_integral_value()
     return ("-" if value < 0 else "") + "$" + format(abs(value).quantize(Decimal(1)) if whole else abs(value), ",f")
@@ -233,6 +246,7 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
     rows: list[dict[str, object]] = []
     records: list[dict[str, object]] = []
     notes: list[str] = []
+    report: list[str] = []  # the report's Metrics section: each value beside its formula, every term cited
     left_out: dict[str, str] = {}
     for metric in metrics:
         resolved: dict[str, list[tuple[Term, Decimal, list[dict[str, object]], str]]] = {"numerator": [], "denominator": []}
@@ -244,6 +258,7 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
         except _Unavailable as unavailable:
             left_out[metric.name] = str(unavailable)
             notes.append(f"Left out '{metric.name}': {unavailable}")
+            report.append(f"- {_safe(notes[-1])}")
             records.append({"name": metric.name, "formula": None, "value": None, "reason": str(unavailable), "terms": []})
             continue
         with financial_context():
@@ -258,6 +273,7 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
             reason = f"NM, because its denominator is {_dollars(bottom)} (zero or negative)"
             left_out[metric.name] = reason
             notes.append(f"{metric.name}: {reason}")
+            report.append(f"- {_safe(notes[-1])}")
             records.append({"name": metric.name, "formula": formula, "value": None, "reason": reason, "terms": cited})
             continue
         value = ratio(top, bottom) if metric.denominator else top
@@ -272,10 +288,19 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
         from .models import MeasureKind
         shown = format_measure(value, MeasureKind.MULTIPLE if metric.measure == "Multiple" else MeasureKind.CURRENCY)
         notes.append(f"{metric.name} = {shown} = {formula}")
+        report.append(f"- {_safe(metric.name)} = {shown} = {_safe(formula)}")
+        for side in ("numerator", "denominator"):
+            for term, term_value, citations, name in resolved[side]:
+                parts = [f"{_money(Decimal(str(c['value'])))} ({c['column']}, {c['document']})" for c in citations]
+                joined = parts[0] + "".join((" - " if c.get("weight") == -1 else " + ") + p
+                                            for c, p in zip(citations[1:], parts[1:], strict=True))
+                total = f" = {_money(term_value)}" if len(citations) > 1 else ""
+                described = f"{name} [{_STATEMENTS[term.statement]}, {term.period}]"
+                report.append(f"  - {_safe(described)}: {_safe(joined)}{total}")
     if not rows:
         raise ValueError("No metric could be computed. " + " ".join(f"{n}." for n in notes))
     result = IntakeResult(rows=rows, rows_read=len(rows), half_filled=True, source_kind="ixbrl",
-                          visible_transformations=list(notes))
+                          visible_transformations=list(notes), report_appendix=["## Metrics", "", *report])
     result.join = {"kind": "metrics", "documents": [
         {"name": name, "sha256": hashlib.sha256(data).hexdigest()} for name, data in sources.documents],
         "metrics": records, "reader_notes": list(notes)}
@@ -303,8 +328,8 @@ def compare_metrics(metrics_file: bytes, primary: bytes, primary_name: str, comp
         return result
     joined = result.join
     notes = list(record.get("reader_notes", []))  # type: ignore[call-overload]
+    result.report_appendix = list(half.report_appendix)
     join_notes = [n for n in joined["reader_notes"] if not str(n).startswith("the metrics: ")]  # type: ignore[attr-defined]
     result.join = {"kind": "metrics", "key": joined["key"], "documents": joined["documents"],
                    "metrics": record.get("metrics", []), "reader_notes": [*notes, *join_notes], "lines": joined["lines"]}
-    result.report_appendix = ["## Metrics", "", *("- " + _safe_inline(str(note)) for note in notes)]
     return result

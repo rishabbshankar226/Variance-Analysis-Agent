@@ -938,7 +938,8 @@
                                 "line_item",
                                 "sign",
                                 "period",
-                                "side"
+                                "side",
+                                "displayed"
                               ],
                               "properties": {
                                 "document": {
@@ -986,6 +987,9 @@
                                   "enum": [
                                     -1
                                   ]
+                                },
+                                "displayed": {
+                                  "$ref": "#/$defs/decimal"
                                 }
                               }
                             }
