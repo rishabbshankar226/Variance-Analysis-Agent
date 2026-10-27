@@ -166,8 +166,10 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
                 score.wrong += 1
                 problems.append(f"{name} variance does not recompute")
     # Subtotals and lines listed as left out were read too: their keys must hold the filing's values.
+    # A balance sheet's or cash flow's subtotals are rows, already scored above, so they count once.
+    scored = {str(row.get("line_item")) for row in _items(audit, "measure_rows") if isinstance(row, dict)}
     for line in lines.values():
-        if not (line.get("subtotal") or line.get("left_out")):
+        if not (line.get("subtotal") or line.get("left_out")) or str(line.get("line_item")) in scored:
             continue
         for column in _items(line, "columns"):
             if not isinstance(column, dict):
