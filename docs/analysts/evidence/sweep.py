@@ -126,6 +126,8 @@ def _items(record: object, key: str) -> list[object]:
 # Label checks (Decision 41): a figure printed twice in a label, and a section name the line isn't under.
 _DOUBLED = re.compile(r"(?<![\d,.])(\d[\d,]*(?:\.\d+)?)\1(?!\d)")
 _MINOR = {"and", "the", "from", "for", "of", "in", "abstract", "to", "by", "used", "provided"}
+_STRUCTURAL = re.compile(r"\[(?:table|line items|axis|domain|member)\]\s*$|^statement\b|\bstatements?\b.*\[abstract\]\s*$",
+                         re.IGNORECASE)
 
 
 def _words(text: str) -> set[str]:
@@ -162,7 +164,9 @@ def _label_problems(lines: dict[str, dict[str, object]], statement: oracle.State
         own = [oracle_line.label for oracle_line in statement.lines if oracle_line.concept == concept]
         if any(_normal(prefix) in _normal(label) for label in own):
             continue  # the filing's own label carries it
-        ancestors = _ancestors(statement, concept)
+        # A statement whose tree holds no section heading above the line (only its root, table and line-items
+        # nodes) can't confirm or deny a printed heading: that prefix is not checked.
+        ancestors = [a for a in _ancestors(statement, concept) if not _STRUCTURAL.search(a)]
         if ancestors and not any(_words(prefix) <= _words(a) or _words(a) <= _words(prefix) for a in ancestors if _words(a)):
             problems.append(f"label '{name[:80]}' names a section ('{prefix}') not printed above it")
     return problems

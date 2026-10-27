@@ -2480,6 +2480,10 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
         return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl",
                             fatal_error_message=checked.problem or f"I couldn't check the {chosen.name}.")
     closing, totals = checked.closing, {row for row, _ in checked.matches}
+    # Every subtotal the check footed closes its section too ("Property and equipment, net"), so a repeated label
+    # after it is never named by that section (Decision 41).
+    names = _unique_names([(line.label, line.section) for line in money],
+                          closers={i for i, line in enumerate(money) if line.section_total} | totals)
     raw_rows: list[list[object]] = [["Line Item", *chosen.labels, "Statement Kind", "Row Kind"]]
     for i, line in enumerate(money[:closing + 1]):
         # A dash reads as 0 through intake's own dash rule; a blank the footing confirmed is 0 (R9).

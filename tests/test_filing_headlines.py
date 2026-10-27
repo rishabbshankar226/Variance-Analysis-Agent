@@ -449,3 +449,27 @@ def test_a_line_printed_as_dashes_is_never_called_a_credit_among_costs() -> None
     result = _read(quarter_filing(rows, title="CONSOLIDATED STATEMENTS OF INCOME", periods=years))
     assert not result.has_fatal_errors, result.fatal_error_message
     assert not any("'Restructuring' as a credit among costs" in note for note in result.reader_notes), result.reader_notes
+
+
+def test_a_footed_subtotal_closes_its_section_for_naming() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import balance_rows, fact, position_filing, row
+
+    def money(label: str, concept: str, now: str, before: str) -> str:
+        return row(label, fact(concept, "I25", now), fact(concept, "I24", before))
+    rows = []
+    for r in balance_rows():
+        if r.startswith("<tr><td>Property and equipment, net</td>"):
+            rows += [row("Property and equipment, at cost:"), money("Land", "us-gaap:Land", "1,000", "900"),
+                     money("Buildings", "us-gaap:BuildingsAndImprovementsGross", "2,500", "2,200"),
+                     money("Less accumulated depreciation",
+                           "us-gaap:AccumulatedDepreciationDepletionAndAmortizationPropertyPlantAndEquipment", "400", "400"),
+                     r, money("Deferred income taxes", "us-gaap:DeferredIncomeTaxAssetsNet", "50", "40")]
+        elif r.startswith("<tr><td>Long-term debt</td>"):
+            rows += [r, money("Deferred income taxes", "us-gaap:DeferredIncomeTaxLiabilitiesNet", "50", "40")]
+        else:
+            rows.append(r.replace(">6,500<", ">6,550<").replace(">5,470<", ">5,510<")
+                        .replace(">2,400<", ">2,450<").replace(">2,320<", ">2,360<"))
+    result = _read(position_filing("CONSOLIDATED BALANCE SHEETS", rows), sheet="Consolidated Balance Sheets")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    names = [str(r["line_item"]) for r in result.rows]
+    assert not any(name.startswith("Property and equipment, at cost:") for name in names), names
