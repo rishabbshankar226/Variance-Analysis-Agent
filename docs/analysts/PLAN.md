@@ -34,7 +34,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
 | 4 | Blank income figures confirmed by footing; all-dash rows listed (Decision 30) | done | `9d3b176` |
 | 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified (every one a dash or confirmed blank, with no fact behind it). All three statements read by section 5's definition on 15 of 33 Inline XBRL filings (45%, 30-62%); read without a refusal on 26/33 (79%, 62-89%). By statement, without a refusal: income 28/33, balance sheet 32/33, cash flow 32/33 | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` (aggregate recomputed from the CSV with the Inline XBRL denominator) |
-| 4 | F4 two-file join (R12) | todo (STOP-ASK approved 2026-10-27) | `docs/analysts/evidence/stop-ask-f4/` |
+| 4 | F4 two-file join (R12): `--compare-file`, chat pairs, audit `join` documents; `test_realworld_intake_baseline.py:154` edited as approved | done | this commit |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
@@ -60,7 +60,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | F1 | `read_input_assisted` routes `.pdf` only for filings; `.htm` is refused (E8) | confirmed in code |
 | F2 | EDGAR folder contents. **Corrected on Draw A (2026-10-26):** every filing with XBRL lists its instance (`*_htm.xml` for the 33 Inline XBRL filings), `FilingSummary.xml` and R pages. **`Financial_Report.xlsx` is no longer published for recent filings:** it is listed in none of the 34 filings from 2025-2026, and a direct request for one returned HTTP 404 while its `R2.htm` returned 200. All six 2018 filings list it. Seven recent filings have no separate `*_pre.xml` (the linkbase is embedded in the schema or only in the `-xbrl.zip`), so the oracle takes their structure from the R pages. One asset-backed 10-K has no XBRL at all. | corrected |
 | F3 | `fixture_o_10k_statements.pdf --sheet "Consolidated Balance Sheets (pp. 5-6)"`: "…lists assets, liabilities and equity, which can't be compared as revenue and expense yet. Choose an income statement instead: Consolidated Statements of Operations (p. 4)." The cash flow text comes from `_NOT_REVENUE_AND_EXPENSE` ("cash coming in and going out") and was not run. | confirmed |
-| F4 | `test_realworld_intake_baseline.py:154` pins the header-row message for a budget-only upload | confirmed |
+| F4 | `test_realworld_intake_baseline.py:154` pins the header-row message for a budget-only upload | closed by R12 (join) and R11 (10-K with 10-Q) |
 
 ## Decisions
 
@@ -264,7 +264,7 @@ Phase 1 (grep of `tests/` on 2026-10-26):
 - **E8:** the messages for `.xls` and `.htm` change; no existing test pins them. These stay unchanged: `test_pdf_intake.py:168` (the full `.docx` message) and `test_chat.py:320` ("Unsupported input format" for `.docx`).
 - **E3 to E6** must not change: `test_intake_ambiguous_columns.py:27` (unbanded `Actual` + `Actual YTD` stays ambiguous), `test_intake_comparison.py:269` (`Name,Amount` keeps the header-row refusal), `test_intake_comparison.py:263`, `test_chat_blank_budgets.py:76` and `test_realworld_intake_baseline.py:119` (true blank budgets still read as 0 with the note).
 
-Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fails with "Could not find a header row with Line Item, Budget, and Actual columns". New (proposed at the F4 STOP-ASK, `docs/analysts/evidence/stop-ask-f4/README.md`): "'fixture_f_budget_separate.csv' has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by 'GL Account'." The phase on line 153 stays `AWAITING_FILE`.
+Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fails with "Could not find a header row with Line Item, Budget, and Actual columns". New (proposed at the F4 STOP-ASK, `docs/analysts/evidence/stop-ask-f4/README.md`): "'fixture_f_budget_separate.csv' has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by 'GL Account'." The phase on line 153 stays `AWAITING_FILE`. As landed, the filename is Markdown-escaped (`fixture\_f\_budget\_separate.csv`), as every chat reply escapes a filename (constraint 8).
 
 ## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
 

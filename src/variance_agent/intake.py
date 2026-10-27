@@ -19,6 +19,7 @@ import datetime as dt
 import io
 import re
 import unicodedata
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_FLOOR, Decimal, Inexact, InvalidOperation
 from enum import StrEnum
@@ -466,6 +467,8 @@ class IntakeResult:
     xbrl_lines: list[dict[str, object]] = field(default_factory=list)
     # A balance sheet or cash flow statement (PLAN.md R7, R9): its kind, the identity it was checked
     # against for audit 1.9, and the sentences the report shows in place of totals.
+    half_filled: bool = False  # one half of a two-file pair, read with a placeholder column (PLAN.md R12)
+    join: dict[str, object] | None = None  # the pair's join, for audit 1.9
     statement_kind: str = ""
     identities: list[dict[str, object]] = field(default_factory=list)
     statement_checks: list[str] = field(default_factory=list)
@@ -477,6 +480,8 @@ class IntakeResult:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
         if self.ltm is not None:
             return dict(self.ltm)
+        if self.join is not None:
+            return dict(self.join)
         if self.source_kind == "ixbrl" and self.source_statement is not None:
             document: dict[str, object] = {"kind": "ixbrl", "statement": self.source_statement,
                                            "reader_notes": list(self.reader_notes), "lines": list(self.xbrl_lines)}
@@ -1506,7 +1511,11 @@ def _decode_text(data: bytes, filename: str) -> tuple[str, str | None]:
         ) from None
 
 
-@financial_context()
+# One half of a two-file pair (PLAN.md R12): the value column the file lacks, and whether a
+# placeholder for it was added. Set only for the length of one read_input_assisted call.
+_HALF: ContextVar[dict[str, object] | None] = ContextVar("variance_agent_half", default=None)
+
+
 def read_input_assisted(
     data: bytes,
     suffix: str,
@@ -1518,12 +1527,66 @@ def read_input_assisted(
     compare_to: ComparisonBasis | None = None,
     per_share_lines: bool = False,
     hidden_rows: str | None = None,
+    missing_column: CanonicalRole | None = None,
 ) -> IntakeResult:
     """Read any supported file format with assisted header, sheet, dash, and problem handling.
 
     ``hidden_rows`` ("include" or "exclude") answers the question a workbook with rows hidden in
-    Excel otherwise stops on; it does nothing for other files.
+    Excel otherwise stops on; it does nothing for other files. ``missing_column`` (Budget or
+    Actual) reads one half of a two-file pair: when the file has no such column, a placeholder
+    of zeros is appended at its right edge so every other check runs as for a whole file, and
+    ``half_filled`` says so.
     """
+    if missing_column is None:
+        return _read_input_assisted(data, suffix, filename=filename, sheet=sheet,
+                                    treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                    selected_period=selected_period, compare_to=compare_to,
+                                    per_share_lines=per_share_lines, hidden_rows=hidden_rows)
+    holder: dict[str, object] = {"missing": missing_column, "filled": False}
+    token = _HALF.set(holder)
+    try:
+        result = _read_input_assisted(data, suffix, filename=filename, sheet=sheet,
+                                      treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                      selected_period=selected_period, compare_to=compare_to,
+                                      per_share_lines=per_share_lines, hidden_rows=hidden_rows)
+    finally:
+        _HALF.reset(token)
+    result.half_filled = bool(holder["filled"])
+    return result
+
+
+def _fill_half(raw_rows: list[list[object]], missing: CanonicalRole) -> tuple[list[list[object]], bool]:
+    """Append a placeholder column for the value a half file lacks, if it lacks it (PLAN.md R12)."""
+    if detect_header_row(raw_rows)[0] is not None:
+        return raw_rows, False
+    present = CanonicalRole.ACTUAL if missing is CanonicalRole.BUDGET else CanonicalRole.BUDGET
+    for header_at, row in enumerate(raw_rows[:25]):
+        roles = {match_column_synonym(str(cell).strip())[0] for cell in row if cell is not None and str(cell).strip()}
+        if CanonicalRole.LINE_ITEM in roles and present in roles and missing not in roles:
+            width = max(len(r) for r in raw_rows)
+            name = "Actual" if missing is CanonicalRole.ACTUAL else "Budget"
+            filled = []
+            for at, r in enumerate(raw_rows):
+                blank = all(cell is None or str(cell).strip() == "" for cell in r)
+                value: object = name if at == header_at else (None if at < header_at or blank else "0")
+                filled.append([*r, *([None] * (width - len(r))), value])
+            return filled, True
+    return raw_rows, False
+
+
+@financial_context()
+def _read_input_assisted(
+    data: bytes,
+    suffix: str,
+    *,
+    filename: str = "input",
+    sheet: str | None = None,
+    treat_blank_budgets_as_zero: bool = False,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
+    hidden_rows: str | None = None,
+) -> IntakeResult:
     if len(data) > MAX_INPUT_BYTES:
         return IntakeResult(
             has_fatal_errors=True,
@@ -2627,6 +2690,10 @@ def _process_raw_table(
             fatal_error_message=f"The file '{filename}' contains no data.",
             sheet_name=sheet_name,
         )
+    half = _HALF.get()
+    if half is not None and isinstance(half["missing"], CanonicalRole):
+        raw_rows, filled = _fill_half(raw_rows, half["missing"])
+        half["filled"] = bool(half["filled"]) or filled
 
     dated_rows, has_dates = _dated_header_rows(raw_rows)
     header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)

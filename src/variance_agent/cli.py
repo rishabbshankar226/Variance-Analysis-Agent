@@ -103,6 +103,7 @@ class Arguments(Protocol):
     mapping: str | None
     hidden_rows: str | None
     ltm_from: str | None
+    compare_file: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -183,6 +184,10 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--ltm-from", metavar="PATH",
                         help="The 10-K whose fiscal year the input 10-Q continues: read the 10-Q's income statement "
                              "as LTM (fiscal year + year to date - prior year to date), compared with that fiscal year. "
+                             "Needs --assisted.")
+    source.add_argument("--compare-file", metavar="PATH",
+                        help="A second file holding the comparison column (budget, forecast or prior period) for the "
+                             "input's actuals, joined on an account column both carry, or else the exact line item. "
                              "Needs --assisted.")
     source.add_argument("--hidden-rows", choices=("include", "exclude"),
                         help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
@@ -347,6 +352,9 @@ def _run(args: Arguments) -> int:
             raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
     if args.ltm_from and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
         raise ValueError("--ltm-from needs --assisted (and no --mapping): LTM is built from the filings' own statements.")
+    if args.compare_file and (not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.ltm_from):
+        raise ValueError("--compare-file needs --assisted (and no --mapping or --ltm-from): each file is read on its own, "
+                         "then the two are joined.")
     validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
@@ -457,7 +465,12 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
-        if args.ltm_from:
+        if args.compare_file:
+            from .join import join_files
+            other = Path(args.compare_file)
+            intake_res = join_files(source_bytes, input_path.name, read_input_bytes(other), other.name, sheet=args.sheet,
+                                    compare_to=compare_to_basis, hidden_rows=getattr(args, "hidden_rows", None))
+        elif args.ltm_from:
             from .ltm import build_ltm
             annual_path = Path(args.ltm_from)
             if compare_to_basis is not None:

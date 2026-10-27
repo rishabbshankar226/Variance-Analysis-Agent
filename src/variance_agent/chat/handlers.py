@@ -42,6 +42,7 @@ from variance_agent.parsing import (
     parse_decimal,
 )
 from variance_agent.intake import (
+    CanonicalRole,
     IntakeResult,
     apply_classification_rules,
     audit_transformations,
@@ -541,7 +542,48 @@ def handle_upload(
     """Process a file upload with assisted reading and plain language."""
     if session.awaiting_ltm_annual and session.source_bytes is not None and session.source_name is not None:
         return _load_ltm_annual(session, file_bytes, filename)
+    if session.pending_half is not None:
+        return _load_other_half(session, file_bytes, filename, first_visit)
     return _load_file(session, file_bytes, filename, sheet, first_visit)
+
+
+def _half_request(session: Session, file_bytes: bytes, filename: str) -> Response | None:
+    """A file holding only a comparison column, or only actuals: ask for the other file (PLAN.md R12, F4)."""
+    from ..join import half_role
+    found = half_role(file_bytes, filename)
+    if found is None:
+        return None
+    missing, key = found
+    session.pending_half = (file_bytes, filename, missing.value)
+    if missing is CanonicalRole.ACTUAL:
+        text = (f"'{safe_inline(filename)}' has Budget figures but no Actual column. Upload the file with the actuals, "
+                f"and I'll join the two by {key}.")
+    else:
+        text = (f"'{safe_inline(filename)}' has Actual figures but no Budget column. Upload the file with the budget, "
+                f"forecast or prior period, and I'll join the two by {key}.")
+    return Response(text=text, phase=session.phase)
+
+
+def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_visit: bool | None) -> Response:
+    """The second file of a pair: join the two, with the actuals file's rows (PLAN.md R12)."""
+    from ..join import join_files
+    assert session.pending_half is not None
+    held, held_name, missing = session.pending_half
+    session.pending_half = None
+    if missing == CanonicalRole.ACTUAL.value:
+        actual, actual_name, comparison, comparison_name = file_bytes, filename, held, held_name
+    else:
+        actual, actual_name, comparison, comparison_name = held, held_name, file_bytes, filename
+    intake_res = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False)
+    if intake_res.has_fatal_errors:
+        session.pending_half = (held, held_name, missing)
+        return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
+                        phase=session.phase, level="error")
+    session.reset()
+    session.source_bytes, session.source_name = actual, actual_name
+    session.source_suffix = Path(actual_name).suffix.lower()
+    return _with_first_upload_intro(session, _intake_response(session, intake_res, actual_name),
+                                    intake_res.comparison_basis, first_visit)
 
 
 _LTM_ASK = ("Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year "
@@ -622,6 +664,9 @@ def _load_file(
         proposal = offer_review(session, file_bytes, filename)
         if proposal is not None:
             return proposal
+        half = _half_request(session, file_bytes, filename)
+        if half is not None:
+            return half
         return _fatal_upload_response(session, intake_res, filename, pasted=pasted)
 
     session.reset()

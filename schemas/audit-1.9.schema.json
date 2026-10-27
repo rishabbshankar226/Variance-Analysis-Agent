@@ -759,6 +759,83 @@
                       }
                     }
                   }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Budget and actuals from two files, joined on a key both carry (F4).",
+                  "required": [
+                    "kind",
+                    "key",
+                    "documents",
+                    "reader_notes",
+                    "lines"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "join"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "documents": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "sha256",
+                          "role"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "$ref": "#/$defs/sha256"
+                          },
+                          "role": {
+                            "enum": [
+                              "actual",
+                              "comparison"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "line_item",
+                          "key",
+                          "comparison_line_item"
+                        ],
+                        "properties": {
+                          "line_item": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "comparison_line_item": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               ]
             }

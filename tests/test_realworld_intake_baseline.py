@@ -151,7 +151,8 @@ def test_fixture_f_budget_actuals_separate_baseline() -> None:
     path_bgt = FIXTURES_DIR / "fixture_f_budget_separate.csv"
     resp_upload = handle_upload(session, path_bgt.read_bytes(), path_bgt.name)
     assert session.phase == Phase.AWAITING_FILE
-    assert "Could not find a header row with Line Item, Budget, and Actual columns" in resp_upload.text
+    assert ("'fixture\\_f\\_budget\\_separate.csv' has Budget figures but no Actual column. Upload the file with the "
+            "actuals, and I'll join the two by 'GL Account'.") in resp_upload.text
 
 
 def test_fixture_g_cover_page_active_intake() -> None:

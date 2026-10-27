@@ -272,6 +272,11 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   date (1) and prior year to date (-1). Each component gives its `document`, `column`,
   `context`, printed `displayed` value and the value `used` after the statement's own sign
   conventions.
+- `source.document` may also be `{kind: "join", key, documents, reader_notes, lines}`, budget and
+  actuals from two files (`--compare-file`, or two uploads in the chat). `key` names the join
+  column (an account ID both files carry) or `line item`. `documents` gives both files' `name`,
+  `sha256` and `role` (`actual` or `comparison`). Each line gives its `line_item` (from the
+  actuals file), its `key`, and its `comparison_line_item` (the label in the other file).
 
 These facts are source-derived data and enter the payload digest and analysis fingerprint.
 Comparison-set records stay 1.8; their intake notes, these included, are in each child's

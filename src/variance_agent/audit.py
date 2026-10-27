@@ -192,6 +192,15 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
             record.update(statement_kind=str(document["statement_kind"]),
                           identities=[_json_value(identity) for identity in identities])
         return record
+    if kind == "join":  # budget and actuals from two files (PLAN.md R12)
+        documents, lines, key = document.get("documents"), document.get("lines"), document.get("key")
+        if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines)):
+            raise ValueError("source_document reader_notes, documents and lines must be lists.")
+        assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple)) and isinstance(lines, (list, tuple))
+        return {"kind": "join", "key": validate_text(key, field="source_document key", nonblank=True),
+                "documents": [_json_value(item) for item in documents],
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                "lines": [_json_value(line) for line in lines]}
     if kind == "ltm":  # an LTM build: both filings and each line's cited components (PLAN.md R11)
         validate_text(statement, field="source_document statement", nonblank=True)
         documents, lines = document.get("documents"), document.get("lines")
@@ -247,7 +256,8 @@ def build_audit_record(
     extended = is_audience_result(result)
     # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
     workbook = transformations.get("workbook") if transformations is not None else None
-    needs_19 = workbook is not None or (source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm"})
+    needs_19 = workbook is not None or (
+        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:

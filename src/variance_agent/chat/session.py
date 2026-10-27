@@ -72,6 +72,8 @@ class Session:
     # LTM (PLAN.md R10, R11): waiting for the 10-K a 10-Q's year continues, and that 10-K once read.
     awaiting_ltm_annual: bool = False
     ltm_annual: tuple[bytes, str] | None = None
+    # F4 (PLAN.md R12): one half of a budget/actuals pair, waiting for the other: bytes, name, the column it lacks.
+    pending_half: tuple[bytes, str, str] | None = None
     earnings_headers: tuple[str, ...] = ()
     earnings_choices: tuple[ComparisonBasis, ...] = ()
     earnings_notes: tuple[str, ...] = ()
@@ -127,6 +129,7 @@ class Session:
         self.earnings_requested = False
         self.awaiting_ltm_annual = False
         self.ltm_annual = None
+        self.pending_half = None
         self.earnings_headers = ()
         self.earnings_choices = ()
         self.earnings_notes = ()
