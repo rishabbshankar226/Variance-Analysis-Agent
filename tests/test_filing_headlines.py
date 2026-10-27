@@ -357,8 +357,7 @@ def test_an_income_report_states_the_filings_unit() -> None:
 
 
 def test_a_balance_sheet_report_states_the_unit_its_labels_are_quoted_in() -> None:
-    from tests.fixtures.ixbrl.build_ixbrl import POSITION_RESOURCES, document, fact, position_filing, row, statement
-    from tests.fixtures.ixbrl.build_ixbrl import balance_rows
+    from tests.fixtures.ixbrl.build_ixbrl import balance_rows, position_filing
     rows = balance_rows()
     # A label quoting an allowance as the filing prints it, in thousands (Draw C's fresh-eyes finding).
     rows = [r.replace("<td>Accounts receivable, net</td>",
