@@ -36,7 +36,12 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified (every one a dash or confirmed blank, with no fact behind it). All three statements read by section 5's definition on 15 of 33 Inline XBRL filings (45%, 30-62%); read without a refusal on 26/33 (79%, 62-89%). By statement, without a refusal: income 28/33, balance sheet 32/33, cash flow 32/33 | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` (aggregate recomputed from the CSV with the Inline XBRL denominator) |
 | 4 | F4 two-file join (R12): `--compare-file`, chat pairs, audit `join` documents; `test_realworld_intake_baseline.py:154` edited as approved | done | this commit |
 | 4 | Phase 4 exit: gates green (2,396), Fraction oracles for LTM and both identities, Owen's (LTM) and Clara's (balance sheet, cash flow) reports read; sweep counts no-fact unverified values (Decision 35) | done | this commit |
-| 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
+| 5 | `limit`, `benchmark`, `target` bases (R13-R15) | done | `3a2c540` |
+| 5 | `Multiple` measure (R16) | done | `b2d9d92` |
+| 5 | Derived metrics (R17), amended to stored XBRL values after Owen's review | done | `078b38a`, `77acf37` |
+| 5 | Rules in `docs/financial-rules.md`; contracts; reader fixtures in `tests/fixtures/analysts/` | done | `977fec1` |
+| 5 | Seat-review fixes; second-file drop zone in the chat | done | `52ae8ab`, `f6dffd6`, `625fac7` |
+| 5 | STOP 2 | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-2/` |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
 
@@ -336,6 +341,15 @@ Phase 5 (scope only; no assertion changes, to confirm at STOP 2):
 
 - Read: README, the rules file, `input-contract.md` (amounts, assisted, comparison, PDF and filing EPS sections), `financial-rules.md`, `audit-contract.md` (intro and 1.8), `excel.py`, `models.py`, `measures.py`, `audience.py`, `statement_shape.py`, `numeric.py`, and `intake.py` around `_read_excel_bytes`, `_read_pdf_bytes`, `detect_header_row`, `detect_unit_scale`, `read_input_assisted` and `_process_raw_table`. Also `MULTI_AUDIENCE_2026-10.md`'s interpretation and boundary sections, and the strict and API Excel reads (`parsing.py`, `comparisons.py`).
 - Looked at: the E1 probe report states the overstated totals with a confident thousands note. Nothing in the read says the cells were already full-scale. Phase 0 changed no report, workbook or chat reply.
+
+### Phase 5 (2026-10-27)
+
+- **Looked at.**
+  - Reports: Ines's limit report ranks Breach, Near and Within with headroom and utilization. Clara's covenant report shows each ratio beside its formula, with every term cited. Owen's case report shows LTM revenue and EBITDA against the case. Theo's and Marcus's reports give differences in bps with their tolerances.
+  - Workbook: refused plainly for these comparisons (Decision 32 extended).
+  - Chat: the second-file requests for LTM and F4 now show a drop zone (the screenshot run found the gap).
+- **Seat reviews** found no wrong number. Their rule and presentation points are in the STOP 2 README for the owner.
+- **Draw A** at `8e7131e`: unchanged, with zero wrong values.
 
 ### Phase 4 (2026-10-27, up to the F4 STOP-ASK)
 
