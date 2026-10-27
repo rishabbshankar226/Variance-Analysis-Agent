@@ -106,3 +106,51 @@ def test_ltm_needs_assisted_intake(tmp_path: Path, capsys: pytest.CaptureFixture
     with pytest.raises(SystemExit):
         cli.main([str(q), "--ltm-from", str(k), "--period", "LTM", "--dollar-threshold", "1", "--percent-threshold", "1"])
     assert "--ltm-from needs --assisted" in capsys.readouterr().err
+
+
+def test_a_line_only_in_the_10k_refuses(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_rows
+    rows = income_rows()
+    rows.insert(4, row("Restructuring", fact("us-gaap:RestructuringCharges", "FY25", "0"),
+                       fact("us-gaap:RestructuringCharges", "FY24", "0")))
+    with pytest.raises(SystemExit):
+        cli.main(_run(tmp_path, None, income_filing(rows)))
+    assert "'Restructuring' (us-gaap:RestructuringCharges) is in 'hal-20250927.htm' but not in 'hal-20260328.htm'" in (
+        capsys.readouterr().err.replace("\n", " "))
+
+
+def test_a_first_quarter_10q_uses_its_three_month_columns_as_the_year_to_date(tmp_path: Path) -> None:
+    periods = {"YTD26": ("2025-09-28", "2025-12-27"), "YTD25": ("2024-09-29", "2024-12-28")}
+    two = [row(label, fact(concept, "YTD26", now), fact(concept, "YTD25", before)) for label, concept, now, before in [
+        ("Net sales", "us-gaap:Revenues", "1,050", "980"), ("Cost of sales", "us-gaap:CostOfRevenue", "580", "540"),
+        ("Gross margin", "us-gaap:GrossProfit", "470", "440"),
+        ("Research and development", "us-gaap:ResearchAndDevelopmentExpense", "80", "75")]]
+    two.append(row("Interest expense", "(" + fact("us-gaap:InterestExpense", "YTD26", "12") + ")",
+                   "(" + fact("us-gaap:InterestExpense", "YTD25", "10") + ")"))
+    two.append(row("Net income", fact("us-gaap:NetIncomeLoss", "YTD26", "378"), fact("us-gaap:NetIncomeLoss", "YTD25", "355")))
+    audit = tmp_path / "audit.json"
+    assert cli.main(_run(tmp_path, quarter_filing(two, periods=periods), None, "--audit-json", str(audit))) == 0
+    rows = {r["line_item"]: r for r in json.loads(audit.read_text(encoding="utf-8"))["measure_rows"]}
+    assert Fraction(rows["Net sales"]["actual"]) == (4100 + 1050 - 980) * 1_000_000
+
+
+def test_a_recast_heading_is_flagged(tmp_path: Path) -> None:
+    data = quarter_filing(title="CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (As Recast)")
+    audit = tmp_path / "audit.json"
+    assert cli.main(_run(tmp_path, data, None, "--audit-json", str(audit))) == 0
+    notes = json.loads(audit.read_text(encoding="utf-8"))["source"]["document"]["reader_notes"]
+    assert ("'hal-20260328.htm' marks its statement as recast or restated; the prior year to date is used as the 10-Q "
+            "prints it") in notes
+
+
+def test_a_10k_figure_for_the_prior_year_to_date_that_differs_is_flagged(tmp_path: Path) -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import _contexts
+    # The 10-K's quarterly note tags six months to March 2025 net sales as 1,990; the 10-Q prints 2,000.
+    note = ("<p>Quarterly data</p><table>" + row("Net sales (six months)", fact("us-gaap:Revenues", "YTD25", "1,990")) + "</table>")
+    annual = income_filing(extra=note).replace(b"</ix:resources>",
+                                               _contexts({"YTD25": ("2024-09-29", "2025-03-29")}).encode() + b"</ix:resources>")
+    audit = tmp_path / "audit.json"
+    assert cli.main(_run(tmp_path, None, annual, "--audit-json", str(audit))) == 0
+    notes = json.loads(audit.read_text(encoding="utf-8"))["source"]["document"]["reader_notes"]
+    assert ("'Net sales': 'hal-20250927.htm' reports $1,990,000,000.00 for 6 months to Mar 2025, but 'hal-20260328.htm' "
+            "prints $2,000,000,000.00; the 10-Q's figure is used") in notes

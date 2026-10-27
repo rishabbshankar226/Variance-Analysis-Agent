@@ -164,6 +164,7 @@ class Statement:
     notes: list[str] = field(default_factory=list)
     left_out: list[str] = field(default_factory=list)
     problem: str = ""  # why this statement cannot be read; other statements of the filing still can
+    heading: str = ""  # the text printed before and atop the statement's table (titles, "As Restated")
 
 
 def _transform(fmt: str, text: str) -> Decimal:
@@ -577,7 +578,25 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
         group.sort(key=lambda p: p[-1], reverse=True)
         name = title if len(groups) == 1 or months == 0 else f"{title}, {months} Months Ended"
         statements.append(_statement(kind, name, group, rows, reader, per_share_lines, durations))
+    for statement in statements:
+        statement.heading = tables[0].title[-400:]
     return statements
+
+
+def fact_values(data: bytes, filename: str) -> dict[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]], Decimal]:
+    """Every readable money fact's stored value, by concept, period and dimensions (for LTM's recast check)."""
+    if _DECLARATION.search(data):
+        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses.")
+    reader = _Reader()
+    reader.feed(data.decode("utf-8", "replace"))
+    reader.close()
+    _read_facts(reader)
+    values = {}
+    for fact in reader.facts:
+        context = reader.contexts.get(fact.context)
+        if context is not None and fact.stored is not None and not fact.nil and _monetary(reader.units.get(fact.unit, "")):
+            values[(fact.name, context.period, context.dims)] = fact.stored
+    return values
 
 
 def _printed_text(cell: _Cell, reader: _Reader, by_id: dict[str, int]) -> str:

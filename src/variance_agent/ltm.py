@@ -16,7 +16,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from .intake import IntakeResult, _read_ixbrl_bytes, read_input_assisted
-from .ixbrl import IxbrlError, Statement, read_statements
+from .ixbrl import IxbrlError, Statement, fact_values, read_statements
 from .models import ComparisonBasis
 from .numeric import financial_context
 
@@ -152,7 +152,19 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
     continuity = (f"Checked continuity: the prior year to date starts where {fy_label} starts ({fiscal[1]}), and the year "
                   f"to date starts the day after it ends ({day_after})")
     recast = ([f"'{quarter_name}' marks its statement as recast or restated; the prior year to date is used as the 10-Q "
-               "prints it"] if _RECAST.search(ytd.name) or any(_RECAST.search(label) for label in ytd.labels) else [])
+               "prints it"] if _RECAST.search(ytd.heading) else [])
+    # Where the 10-K itself tags the 10-Q's prior year to date (a quarterly note), a different figure is flagged.
+    annual_facts = fact_values(annual, annual_name)
+    for line in lines:
+        components = line["components"]
+        assert isinstance(components, list)
+        q_name = str(line["line_item"])
+        concept, dims, q_columns = q_keys[q_name]
+        prior_key = q_columns[1] if len(q_columns) > 1 else None
+        reported = annual_facts.get((concept, prior, dims))
+        if prior_key is not None and reported is not None and reported != Decimal(str(prior_key["stored"])):
+            recast.append(f"'{q_name}': '{annual_name}' reports {_money(reported)} for {columns[1]}, but '{quarter_name}' "
+                          f"prints {_money(Decimal(str(prior_key['stored'])))}; the 10-Q's figure is used")
     notes = [built, continuity, *recast, *left_out]
     record: dict[str, object] = {"kind": "ltm", "statement": ytd.name,
               "documents": [{"name": name, "sha256": hashes[name], "statement": statement}
