@@ -77,7 +77,7 @@ def test_a_balance_sheet_in_this_shape_is_listed_but_not_compared_yet() -> None:
     assert result.has_fatal_errors
     assert result.fatal_error_message == (
         "'Consolidated Balance Sheets' lists assets, liabilities and equity, which can't be compared as "
-        "revenue and expense yet.")
+        "revenue and expense yet. Choose the income statement's sheet instead.")
 
 
 def test_a_quarterly_sheet_reads_its_first_duration_and_names_the_other() -> None:

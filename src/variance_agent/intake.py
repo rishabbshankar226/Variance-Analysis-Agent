@@ -2030,7 +2030,7 @@ def _read_edgar_statement(
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
         return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
             f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
-            "and expense yet."))
+            "and expense yet. Choose the income statement's sheet instead."))
     shaped = shape_income_statement(chosen.raw_rows)
     result = _process_raw_table(
         shaped.rows, filename, sheet_name=sheet_name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
