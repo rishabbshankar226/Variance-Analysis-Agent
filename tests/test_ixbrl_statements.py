@@ -337,8 +337,8 @@ def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
     assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export audit"]
     assert handle_message(session, "waterfall").text.startswith("# Statement Comparison")
     assert handle_message(session, "export excel").text == (
-        "A workbook isn't available for a balance sheet or cash flow comparison yet. The report and the audit file "
-        "are; type `export report` or `export audit`.")
+        "A workbook isn't available for this comparison yet. The report and the audit file are; type "
+        "`export report` or `export audit`.")
 
 
 def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_total() -> None:

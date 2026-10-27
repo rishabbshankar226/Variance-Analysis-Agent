@@ -250,6 +250,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
 
     if routing_key in {"build ltm", "build an ltm", "ltm"}:
         return _handle_build_ltm(session)
+    reader = _reader_question(session, routing_key)
+    if reader is not None:
+        return reader
     if routing_key in _UPLOAD_ANOTHER_FILE:
         # The page shows its drop zone for a reply in the awaiting_file phase. The session itself
         # is left alone: the new file replaces it only once it has been read successfully.
@@ -544,7 +547,70 @@ def handle_upload(
         return _load_ltm_annual(session, file_bytes, filename)
     if session.pending_half is not None:
         return _load_other_half(session, file_bytes, filename, first_visit)
+    if session.covenant_step is not None and session.source_bytes is not None:
+        return _load_covenant_file(session, file_bytes, filename)
     return _load_file(session, file_bytes, filename, sheet, first_visit)
+
+
+_COVENANT_ASK = ("Upload your metrics file: a JSON file declaring each ratio's terms (see docs/financial-rules.md, "
+                 "Derived metrics). Then I'll ask for the covenant schedule.")
+
+
+def _handle_covenant_headroom(session: Session) -> Response:
+    if session.source_bytes is None or not str(session.source_name or "").lower().endswith((".htm", ".html")):
+        return Response(text="Covenant headroom is computed from a filing. Upload the 10-K's or 10-Q's .htm document "
+                             "from EDGAR first.", phase=session.phase)
+    session.covenant_step, session.covenant_metrics = "metrics", None
+    return Response(text=_COVENANT_ASK, phase=session.phase, ask_upload=True)
+
+
+def _load_covenant_file(session: Session, file_bytes: bytes, filename: str) -> Response:
+    """The metrics file, then the covenant schedule: ratios from the filing against each limit (PLAN.md R17, R13)."""
+    assert session.source_bytes is not None and session.source_name is not None
+    if session.covenant_step == "metrics":
+        from ..metrics import load_metrics
+        try:
+            load_metrics(file_bytes)
+        except ValueError as exc:
+            return Response(text=str(exc), phase=session.phase, level="error", ask_upload=True)
+        session.covenant_metrics, session.covenant_step = file_bytes, "schedule"
+        return Response(text="Now upload the covenant schedule: each metric's name, its Limit, and its Limit Kind (Max "
+                             "or Min), with a Buffer where you have one.", phase=session.phase, ask_upload=True)
+    from ..metrics import compare_metrics
+    assert session.covenant_metrics is not None
+    session.covenant_step = None
+    try:
+        intake_res = compare_metrics(session.covenant_metrics, session.source_bytes, session.source_name, file_bytes,
+                                     filename, compare_to=ComparisonBasis.LIMIT)
+    except ValueError as exc:
+        return Response(text=str(exc), phase=session.phase, level="error")
+    if intake_res.has_fatal_errors:
+        return Response(text=intake_res.fatal_error_message or "I couldn't compare these metrics.", phase=session.phase,
+                        level="error")
+    return _intake_response(session, intake_res, session.source_name)
+
+
+def _reader_question(session: Session, routing_key: str) -> Response | None:
+    """The new readers' questions (PLAN.md Phase 6): a filing's statements, limits, targets, benchmarks."""
+    for words, kind in (("balance sheet", "Balance Sheet"), ("cash flow", "Cash Flow")):
+        if routing_key in {f"compare {words}s", f"compare the {words}", f"compare {words}"}:
+            name = next((s for s in session.available_sheets if kind.lower() in s.lower()), None)
+            if name is None:
+                return Response(text=f"This file has no {words} to compare. Upload a 10-K or 10-Q from EDGAR, "
+                                     "and I'll read its statements.", phase=session.phase)
+            return handle_message(session, f"statement {name}")
+    asks = {"which limits are breached": ("limit", "Limit", "a Limit column and each row's Limit Kind (Max or Min)"),
+            "drift from target": ("target", "Target", "a Target column"),
+            "active return": ("benchmark", "Benchmark", "a Benchmark column and each row's Better direction")}
+    if routing_key in asks:
+        basis, header, needs = asks[routing_key]
+        if session.result is not None and session.result.config.comparison_basis.value == basis:
+            return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+        return Response(text=f"Upload a file with Actual, {needs}, and I'll compare each row against its {header.lower()}.",
+                        phase=session.phase)
+    if routing_key in {"covenant headroom", "covenant compliance"}:
+        return _handle_covenant_headroom(session)
+    return None
 
 
 def _half_request(session: Session, file_bytes: bytes, filename: str) -> Response | None:
@@ -656,6 +722,15 @@ def _load_file(
         treat_blank_budgets_as_zero=False,
         compare_to=compare_to,
     )
+    if (intake_res.has_fatal_errors or not intake_res.rows) and compare_to is None and intake_res.opt_in_hint is not None:
+        # A Limit, Benchmark or Target column: read the file against it, as the reader meant (PLAN.md R13-R15).
+        header, basis = intake_res.opt_in_hint
+        again = read_input_assisted(file_bytes, suffix, filename=filename, sheet=sheet,
+                                    treat_blank_budgets_as_zero=False, compare_to=basis)
+        if not again.has_fatal_errors and again.rows:
+            again.visible_transformations.insert(0, f"Read the '{header}' column as each row's {basis.value}, with each "
+                                                    "row's own declarations beside it")
+            intake_res, compare_to = again, basis
     failed = intake_res.has_fatal_errors or not intake_res.rows
     awaiting_answer = (bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
                        or intake_res.needs_hidden_rows_choice)
@@ -727,6 +802,12 @@ def _first_upload_intro(basis: ComparisonBasis) -> str:
     lives in the Help reply, so the file summary and the next question come straight after.
     """
     noun = basis_noun(basis)
+    if basis in {ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET}:
+        outcome = {"limit": "whether each is a Breach, At limit, Near or Within",
+                   "benchmark": "whether each is higher or lower than its benchmark",
+                   "target": "whether each is over, under or on target"}[basis.value]
+        return (f"Welcome to the Variance Analysis Agent. I compare each line's Actual against its {noun} and say "
+                f"{outcome}. Type `help` for everything you can ask.\n\n")
     return (
         "Welcome to the Variance Analysis Agent. I compare each line's Actual against your "
         f"{noun}, flag the gaps big enough to matter, and say whether each one helped or hurt "
@@ -1245,6 +1326,7 @@ def _run_analysis(session: Session) -> Response:
             currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
             per_share_threshold=session.per_share_threshold, count_threshold=session.count_threshold,
             bps_threshold=session.bps_threshold, percent_values=session.percent_values,
+            multiple_threshold=session.multiple_threshold,
         )
     try:
         with financial_context():
@@ -1285,6 +1367,7 @@ def _run_analysis(session: Session) -> Response:
         row.line_item for row in result.rows
         if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and row.better is None
         and not row.statement_kind  # balance sheet and cash flow lines are never revenue or expense (R7)
+        and row.basis_details is None and row.classification_source != "metric"  # nor limit, target or metric rows
         and row.line_item not in session.skipped_items
     ))
 
@@ -1497,8 +1580,8 @@ def _audience_summary(result: AnalysisResult) -> Response:
 
 
 _STATEMENT_CHIPS = ["Export report", "Export audit"]
-_STATEMENT_WORKBOOK = ("A workbook isn't available for a balance sheet or cash flow comparison yet. The report and "
-                       "the audit file are; type `export report` or `export audit`.")
+_STATEMENT_WORKBOOK = ("A workbook isn't available for this comparison yet. The report and the audit file are; type "
+                       "`export report` or `export audit`.")
 
 
 def _statement_checks(session: Session) -> list[str]:
@@ -1526,8 +1609,9 @@ def _build_analysis_summary(session: Session) -> Response:
     assert result is not None
     if is_audience_result(result):
         return _audience_summary(result)
-    if any(row.statement_kind for row in result.rows):
-        # A balance sheet or cash flow comparison has no revenue, expense or net totals to summarize.
+    if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
+           for row in result.rows):
+        # A balance sheet, cash flow, limit, benchmark, target or metric comparison has no revenue or expense totals.
         return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
     cfg = result.config
     places = report_places(result)
@@ -1757,7 +1841,8 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
-    if any(row.statement_kind for row in session.result.rows):
+    if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
+           for row in session.result.rows):
         if intent.intent_id == "export_xlsx":
             return Response(text=_STATEMENT_WORKBOOK, chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
         if intent.intent_id not in {"export_report", "export_audit", "help", "reset"}:
@@ -4834,7 +4919,10 @@ def _next_measure_question(session: Session) -> Response | None:
         question: str | None = None
         chips: list[str] | None = None
         pending = ("", index)
-        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT} and not str(row.get("better") or "").strip():
+        # A target is neutral and a limit's direction is its Max or Min (PLAN.md R13, R15): neither asks for Better.
+        neutral = session.intake_result is not None and session.intake_result.comparison_basis in {
+            ComparisonBasis.LIMIT, ComparisonBasis.TARGET}
+        if kind in {MeasureKind.PERCENT, MeasureKind.COUNT} and not neutral and not str(row.get("better") or "").strip():
             question = f"For **{safe_inline(name)}**, is Higher or Lower better?"
             chips, pending = ["Higher", "Lower"], ("better", index)
         elif kind is MeasureKind.PERCENT and session.percent_values is None:
@@ -4855,10 +4943,10 @@ def _next_measure_question(session: Session) -> Response | None:
                 pending = ("percent_values", index)
         if question is None:
             flag = {MeasureKind.PER_SHARE: "per_share_threshold", MeasureKind.COUNT: "count_threshold",
-                    MeasureKind.PERCENT: "bps_threshold"}.get(kind)
+                    MeasureKind.PERCENT: "bps_threshold", MeasureKind.MULTIPLE: "multiple_threshold"}.get(kind)
             if flag is not None and getattr(session, flag) is None:
                 unit = {MeasureKind.PER_SHARE: "currency per share", MeasureKind.COUNT: "units",
-                        MeasureKind.PERCENT: "basis points"}[kind]
+                        MeasureKind.PERCENT: "basis points", MeasureKind.MULTIPLE: "turns (0.25 for 0.25x)"}[kind]
                 question = f"What absolute threshold in {unit} should flag {kind} variances? Enter a non-negative number."
                 pending = (flag, index)
         if question is not None:

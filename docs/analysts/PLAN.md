@@ -46,7 +46,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 5 | STOP 2 answered (Decision 38) | done | |
 | 6 | Rule changes from STOP 2 (R7 cue, R13 At limit and headroom %, R14 labels) | done | `594bdcf` |
 | 6 | Marcus's holdings scorecard (R18) | done | this commit |
-| 6 | Chat: each new reader reaches a first answer from upload | todo | |
+| 6 | Chat: each new reader reaches a first answer from upload (limit/benchmark/target files read by their column; reader questions routed; covenant headroom by two uploads; Multiple cutoff asked) | done | this commit |
 | 6 | Report and audit cleanup for the new seats | todo | |
 | 6 | One guide per new reader, commands run and outputs pasted | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |

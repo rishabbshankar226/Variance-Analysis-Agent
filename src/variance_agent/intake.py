@@ -469,6 +469,8 @@ class IntakeResult:
     # A balance sheet or cash flow statement (PLAN.md R7, R9): its kind, the identity it was checked
     # against for audit 1.9, and the sentences the report shows in place of totals.
     half_filled: bool = False  # one half of a two-file pair, read with a placeholder column (PLAN.md R12)
+    # A refused file holding a Limit, Benchmark or Target column: the header and its basis, so the chat can read it so.
+    opt_in_hint: tuple[str, ComparisonBasis] | None = None
     join: dict[str, object] | None = None  # the pair's join, for audit 1.9
     scorecard: dict[str, object] | None = None  # a holdings scorecard awaiting its labels (PLAN.md R18)
     statement_kind: str = ""
@@ -2754,7 +2756,8 @@ def _process_raw_table(
                 f"Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, "
                 f"and Actual columns in '{filename}'."
             )
-        return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name)
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name,
+                            opt_in_hint=opt_in)
 
     def reread(rows: list[list[object]], note: str, period: str | None) -> IntakeResult:
         result = _process_raw_table(rows, filename, sheet_name, treat_blank_budgets_as_zero, period, compare_to,
