@@ -510,6 +510,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
            per_share_lines: bool) -> list[Statement]:
     kind, title, tables = found
     rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]] = []  # label, section, figures, prints a dash
+    dashed: list[str] = []
     section = ""
     wrapped = ""  # a label row with no figures, which may be the start of the next row's label
     for table in tables:
@@ -534,6 +535,9 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                     dash = dash or bool(_DASH_CELL.fullmatch(cell_text))
                     flat.extend(cell.tokens)
             label = " ".join(_INVISIBLE.sub("", " ".join(label_parts)).split())
+            if first_figure is None and dash and label:
+                dashed.append(label)  # printed as dashes with no tag: listed, and not taken for a heading
+                continue
             if first_figure is None:
                 if label and not re.fullmatch(r"[\d\s,.$()%\-—–]*", label):
                     section = label.rstrip(":")
@@ -580,6 +584,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
         statements.append(_statement(kind, name, group, rows, reader, per_share_lines, durations))
     for statement in statements:
         statement.heading = tables[0].title[-400:]
+        statement.left_out.extend(f"'{label}' (printed as dashes with no tagged figure)" for label in dashed)
     return statements
 
 

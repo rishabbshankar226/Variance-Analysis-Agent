@@ -2250,10 +2250,13 @@ def _read_ixbrl_bytes(
     measures = any(line.measure != "Currency" for line in lines)
     header: list[object] = ["Line Item", *chosen.labels, *(["Measure", "Better"] if measures else [])]
     raw_rows: list[list[object]] = [header]
-    for name, line in zip(names_by_line, lines, strict=True):
-        # A column with no fact is blank (refused as unreadable) unless the line prints a dash there.
-        cells: list[object] = [format(key.displayed, "f") if key is not None else ("—" if line.dash else "")
+    blanks: list[tuple[int, int]] = []
+    for at, (name, line) in enumerate(zip(names_by_line, lines, strict=True)):
+        # A column with no fact reads as 0 where the line prints a dash; a blank one reads as 0 only once
+        # a footed subtotal confirms it (below), and refuses otherwise.
+        cells: list[object] = [format(key.displayed, "f") if key is not None else ("—" if line.dash else "0")
                                for key in line.keys]
+        blanks += [(at, column) for column, key in enumerate(line.keys) if key is None and not line.dash]
         if measures:
             cells += [line.measure, "Higher" if line.measure == "Per Share" else ""]
         raw_rows.append([name, *cells])
@@ -2276,6 +2279,15 @@ def _read_ixbrl_bytes(
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
+    confirmed = {total for total, _ in shaped.matches} | {term for _, terms in shaped.matches for term, _ in terms}
+    unconfirmed = next(((at, column) for at, column in blanks if at not in confirmed), None)
+    if unconfirmed is not None:
+        at, column = unconfirmed
+        return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl", fatal_error_message=(
+            f"'{names_by_line[at]}' prints no figure for {chosen.labels[column]} in the {chosen.name}, and no subtotal "
+            "there confirms it is 0, so I stopped instead of guessing. Choose another statement from this filing."))
+    blank_notes = [f"Read the blank {chosen.labels[column]} figure of '{names_by_line[at]}' as 0: the subtotal it sits "
+                   "in adds up with it at 0" for at, column in blanks]
     credits = _revenue_block_credits(shaped, lines, names_by_line)
     result = _process_raw_table(
         shaped.rows, filename, sheet_name=chosen.name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
@@ -2288,7 +2300,7 @@ def _read_ixbrl_bytes(
     result.visible_transformations[:0] = credits
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
-    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits]
+    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits, *blank_notes]
     result.xbrl_lines = [
         {"line_item": all_names[i], "concept": all_lines[i].concept, "measure": all_lines[i].measure,
          "subtotal": i < len(lines) and i not in shaped.kept, "left_out": i >= len(lines),
@@ -2298,7 +2310,8 @@ def _read_ixbrl_bytes(
     result.available_sheets = names
     result.comparable_sheets = comparable
     result.detected_totals[:0] = shaped.subtotals
-    result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes]
+    result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes,
+                                          *blank_notes]
     return result
 
 

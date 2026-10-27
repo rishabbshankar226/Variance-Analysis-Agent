@@ -510,3 +510,32 @@ def test_a_credited_label_with_an_apostrophe_is_relabeled_in_the_audit() -> None
                  row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,410"))]
     result = _read(income_filing(rows))
     assert "Labeled 'Members' share of other income' as expense, a credit among costs" in result.reader_notes
+
+
+def test_a_blank_figure_inside_a_footed_subtotal_reads_as_zero() -> None:
+    rows = income_rows()
+    rows.insert(3, row("Restructuring", fact("us-gaap:RestructuringCharges", "FY25", "0"), ""))
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert ("Read the blank FY2024 figure of 'Restructuring' as 0: the subtotal it sits in adds up with it at 0"
+            in result.visible_transformations)
+
+
+def test_a_blank_figure_whose_zero_does_not_foot_refuses() -> None:
+    rows = income_rows()
+    rows.insert(3, row("Restructuring", fact("us-gaap:RestructuringCharges", "FY25", "0"), ""))
+    # FY2024 net income only foots if the blank were 10, so the blank is not confirmed to be 0.
+    rows[6] = row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,450"), fact("us-gaap:NetIncomeLoss", "FY24", "1,320"))
+    result = _read(income_filing(rows))
+    assert result.fatal_error_message == (
+        "I couldn't tell which lines 'Net income' adds up in the Consolidated Statements of Operations, so I can't check "
+        "it and stopped instead of guessing. Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+
+
+def test_a_row_printed_only_as_dashes_is_listed_and_does_not_rename_the_next_line() -> None:
+    rows = income_rows()
+    rows.insert(4, "<tr><td>Other income (expense)</td><td>—</td><td>—</td></tr>")
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Left out 'Other income (expense)' (printed as dashes with no tagged figure)" in result.visible_transformations
+    assert "Interest expense" in [r["line_item"] for r in result.rows]
