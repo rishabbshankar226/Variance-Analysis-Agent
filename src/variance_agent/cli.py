@@ -353,7 +353,7 @@ def _run(args: Arguments) -> int:
             detect_signed_ledger,
             flip_ledger_signs,
             read_input_assisted,
-            scale_rows_by_unit,
+            reconcile_declared_unit,
         )
         assert mapping_obj is not None
 
@@ -384,8 +384,8 @@ def _run(args: Arguments) -> int:
             target_scale = Decimal(mapping_obj.unit_scale)
             detected_scale = intake_res.detected_unit_multiplier
             if detected_scale == Decimal("1"):
-                rows = scale_rows_by_unit(rows, target_scale)
-                intake_res.detected_unit_multiplier = target_scale
+                # Reconciled with the amounts' number formats, as a caption would be (E1).
+                rows = reconcile_declared_unit(intake_res, rows, target_scale, input_path.name)
             elif detected_scale != target_scale:
                 raise ValueError(
                     f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "

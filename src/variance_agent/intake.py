@@ -29,6 +29,8 @@ from .currencies import SYMBOL_CURRENCIES
 from .excel import (
     SheetLayout,
     WorkbookLoader,
+    cell_key,
+    column_letters,
     cell_value,
     describe_cell,
     inspect_workbook,
@@ -46,6 +48,7 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, extract_statement_tables
+from .number_formats import display_divisor, shows_percent
 from .statement_shape import shape_income_statement
 from .measures import measure_kind
 from .models import MeasureKind
@@ -203,6 +206,36 @@ class _ExcelSheet:
 
     layout: SheetLayout
     recalculate_on_open: bool = False
+    # Numeric cells whose number format shows them scaled: cell_key -> (format, divisor, percent).
+    # A divisor of None is a format this reader cannot interpret. Plain cells are not kept.
+    display: dict[int, tuple[str, Decimal | None, bool]] = field(default_factory=dict)
+
+
+def _display_entry(code: object, value: object, cache: dict[tuple[str, int], tuple[Decimal | None, bool]],
+                   ) -> tuple[str, Decimal | None, bool] | None:
+    """How a numeric cell's format scales its display, or None for an unscaled display."""
+    if not isinstance(value, Decimal) or not isinstance(code, str) or code == "General":
+        return None
+    sign = (value > 0) - (value < 0)
+    if (code, sign) not in cache:
+        cache[code, sign] = (display_divisor(code, value), shows_percent(code, value))
+    divisor, percent = cache[code, sign]
+    return None if divisor == 1 and not percent else (code, divisor, percent)
+
+
+_UNIT_WORDS = {Decimal(1000): "thousands", Decimal(1_000_000): "millions", Decimal(1_000_000_000): "billions"}
+
+
+def _shown_as(divisor: Decimal | None, percent: bool) -> str:
+    if percent:
+        return "as a percentage"
+    if divisor is None:
+        return "in a way I can't interpret"
+    return f"in {_UNIT_WORDS[divisor]}" if divisor in _UNIT_WORDS else f"divided by {divisor:,}"
+
+
+def _quoted_format(code: str) -> str:
+    return f"'{code[:40]}{'...' if len(code) > 40 else ''}'"
 
 
 def _unsaved_formulas_stop(
@@ -223,6 +256,17 @@ def _unsaved_formulas_stop(
             recalculate_on_open=any(not excel.layout.is_uncached(*cell) for cell in unsaved)),
         sheet_name=sheet_name,
     )
+
+
+@dataclass(frozen=True)
+class DisplayScaledCell:
+    """A Currency amount whose number format shows it scaled (R2): what the reader is told."""
+
+    description: str  # "Row 3, Revenue, Budget column (cell B3)"
+    address: str  # "B3"
+    code: str  # the number format, as the file stores it
+    divisor: Decimal | None  # what the display divides the stored value by; None if unreadable
+    percent: bool
 
 
 @dataclass
@@ -263,6 +307,9 @@ class IntakeResult:
     source_pages: tuple[int, ...] = ()
     reader_notes: list[str] = field(default_factory=list)
     comparable_sheets: list[str] = field(default_factory=list)  # PDF statements that can be compared
+    # Currency amounts whose number format shows them scaled, and how many amounts were read (R2).
+    display_scaled_cells: list[DisplayScaledCell] = field(default_factory=list)
+    currency_amount_cells: int = 0
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF statement was read, for the audit record; None for other files."""
@@ -1550,16 +1597,23 @@ def _read_excel_bytes(
             numbers = stored_numbers.get(target_ws._worksheet_path, {})
 
             full_raw_rows: list[list[object]] = []
+            display: dict[int, tuple[str, Decimal | None, bool]] = {}
+            format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
             for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
                 row_vals = [
                     cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
                     for c_idx, c in enumerate(cells, start=1)
                 ]
+                for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
+                    entry = _display_entry(getattr(c, "number_format", None), value, format_cache)
+                    if entry is not None:
+                        display[cell_key(r_idx, c_idx)] = entry
                 full_raw_rows.append(row_vals)
 
             excel = _ExcelSheet(
                 layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
                 recalculate_on_open=facts.recalculate_on_open,
+                display=display,
             )
             result = _process_raw_table(
                 full_raw_rows,
@@ -1888,6 +1942,8 @@ def _process_raw_table(
     problems: list[IntakeProblem] = []
     unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
     blank_budget_items: list[str] = []
+    # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
+    currency_cells: list[tuple[int, int, str, str]] = []
     dash_count = 0
     minus_count = 0  # trailing / typographic minus signs read as negative
 
@@ -1992,6 +2048,11 @@ def _process_raw_table(
             if value is not None and str(value).strip():
                 row_dict[header] = value
 
+        if kind is MeasureKind.CURRENCY:
+            for column_idx, raw_value, field_name in ((budget_idx, raw_budget, comparison_field),
+                                                      (actual_idx, raw_actual, "Actual")):
+                if isinstance(raw_value, Decimal):
+                    currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
         if kind is MeasureKind.PERCENT:
             # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it.
             row_dict["budget"] = raw_budget
@@ -2046,6 +2107,15 @@ def _process_raw_table(
         str(c).strip() for r in raw_rows[:header_idx] for c in r if c is not None and str(c).strip()
     )
     detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(header_str_row))
+    display_cells = _display_scaled_cells(excel, currency_cells)
+    display_note, display_stop = _reconcile_display(filename, detected_mult, display_cells, len(currency_cells))
+    if display_stop is not None:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=display_stop, sheet_name=sheet_name,
+                            header_row_number=header_row_number, column_mapping=column_mapping)
+    if display_note is not None:
+        if detected_mult != Decimal("1"):
+            detected_mult = Decimal("1")  # the cells already hold full amounts
+        visible_transformations.append(display_note)
     if detected_mult != Decimal("1"):
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
         unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
@@ -2111,7 +2181,79 @@ def _process_raw_table(
         comparison_basis=detection.basis,
         comparison_label=detection.label,
         comparison_candidates=list(detection.candidates),
+        display_scaled_cells=display_cells,
+        currency_amount_cells=len(currency_cells),
     )
+
+
+def _display_scaled_cells(
+    excel: _ExcelSheet | None, cells: list[tuple[int, int, str, str]],
+) -> list[DisplayScaledCell]:
+    if excel is None or not excel.display:
+        return []
+    found = []
+    for row, column, line_item, field_name in cells:
+        entry = excel.display.get(cell_key(row, column))
+        if entry is not None:
+            code, divisor, percent = entry
+            found.append(DisplayScaledCell(describe_cell(row, column, line_item=line_item, field=field_name),
+                                           f"{column_letters(column)}{row}",
+                                           code, divisor, percent))
+    return found
+
+
+def _reconcile_display(
+    filename: str, caption: Decimal, cells: list[DisplayScaledCell], amount_count: int, *, mapping: bool = False,
+) -> tuple[str | None, str | None]:
+    """R2: (note, stop) for amounts whose number format shows them scaled under a caption `caption`.
+
+    A mapping's declared unit is reconciled the same way (``mapping``), since it stands in for
+    a caption the file does not have.
+    """
+    if not cells:
+        return None, None
+    first = cells[0]
+    says = "The mapping says" if mapping else "The title says"
+    if caption == Decimal("1"):
+        return (f"Excel shows some amounts scaled by their number format (cell {first.address}: its format "
+                f"{_quoted_format(first.code)} shows it {_shown_as(first.divisor, first.percent)}); the full "
+                "stored amounts were read."), None
+    if len(cells) == amount_count and all(c.divisor == caption and not c.percent for c in cells):
+        unit = _UNIT_WORDS.get(caption, f"units of {caption:,}")
+        return (f"{says} amounts are in {unit}, and the cells already hold full amounts that Excel "
+                f"displays in {unit} (number format {_quoted_format(first.code)}), so they were read as "
+                "stored, not scaled again."), None
+    unit = _UNIT_WORDS.get(caption, f"units of {caption:,}")
+    source = f"The mapping for '{filename}'" if mapping else f"The title of '{filename}'"
+    lines = [f"{source} says amounts are in {unit}, but the amounts' number formats don't "
+             "agree with it, so I can't tell which unit each amount is in:"]
+    lines.extend(f"- {c.description}: its format {_quoted_format(c.code)} shows it {_shown_as(c.divisor, c.percent)}"
+                 for c in cells[:_MAX_LISTED_CELLS])
+    if len(cells) > _MAX_LISTED_CELLS:
+        lines.append(f"- ...and {len(cells) - _MAX_LISTED_CELLS} more.")
+    if any(c.percent for c in cells):
+        lines.append("If a row is a rate, mark it Percent in a Measure column, or leave the row out.")
+    change = "unit_scale in the mapping" if mapping else "the title"
+    lines.append(f"Give every amount the same number format, or change {change}, and upload the file again.")
+    return None, "\n".join(lines)
+
+
+def reconcile_declared_unit(
+    intake_res: IntakeResult, rows: list[dict[str, object]], unit: Decimal, filename: str,
+) -> list[dict[str, object]]:
+    """Apply a mapping's unit to a file with no unit caption, reconciled with the amounts' formats (R2).
+
+    Raises ValueError, naming the cells, when the formats disagree with the declared unit.
+    """
+    note, stop = _reconcile_display(filename, unit, intake_res.display_scaled_cells,
+                                    intake_res.currency_amount_cells, mapping=True)
+    if stop is not None:
+        raise ValueError(stop)
+    if note is not None:
+        intake_res.visible_transformations.append(note)
+        return rows
+    intake_res.detected_unit_multiplier = unit
+    return scale_rows_by_unit(rows, unit)
 
 
 def audit_transformations(
