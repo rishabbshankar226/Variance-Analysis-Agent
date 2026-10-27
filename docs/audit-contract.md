@@ -278,6 +278,19 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   `sha256` and `role` (`actual` or `comparison`). Each line gives its `line_item` (from the
   actuals file), its `key`, and its `comparison_line_item` (the label in the other file).
 
+- A `limit`, `benchmark` or `target` run (`comparison.basis`), a `Multiple` row, a
+  `--multiple-threshold` (recorded as `audience.multiple_threshold`), or derived metrics select
+  1.9; an older version refuses. These runs record `totals` as null. `basis_details` gives each
+  row's `basis`, `outcome`, `difference` (and `difference_bps` for rates), and its declarations
+  and results: `limit_kind`, `buffer`, `headroom`, `utilization` (null is NM), `tolerance` and
+  `severity`. Rows have `classification_source` `basis` or `metric`, never a revenue or expense
+  label.
+- `source.document` may also be `{kind: "metrics", key, documents, metrics, reader_notes, lines}`.
+  Each metric gives its `name`, `formula`, `value` (null when left out or NM), the `reason`, and
+  every term with its `document`, `statement`, `column`, `context`, `concept`, printed `value`,
+  `line_item`, `sign`, `period` and `side`. An LTM term lists its three components, the prior
+  year to date with `weight: -1`.
+
 These facts are source-derived data and enter the payload digest and analysis fingerprint.
 Comparison-set records stay 1.8; their intake notes, these included, are in each child's
 `inferences`.
