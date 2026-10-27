@@ -1,0 +1,2 @@
+variance-agent theo_benchmark.csv --assisted --compare-to benchmark --period Oct 2026 --dollar-threshold 1 --percent-threshold 1 --percent-values points --bps-threshold 1 -o docs/analysts/evidence/stop-2/readers/theo/report.md --audit-json docs/analysts/evidence/stop-2/readers/theo/audit.json
+exit 0

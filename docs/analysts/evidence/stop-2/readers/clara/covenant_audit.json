@@ -1,0 +1,357 @@
+{
+  "analysis_fingerprint": "cd4af435dd13b43c06bb72c86f5f6ce38980fc1b3ee101038e75a41a2a246a1c",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": null,
+    "comparison_title": "Limit",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "multiple_threshold": "0.1",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": null,
+    "preset": "fpa",
+    "type_map": []
+  },
+  "basis_details": [
+    {
+      "basis": "limit",
+      "buffer": "0.50",
+      "difference": "-0.36764705882352941176470588235294117647058823529412",
+      "difference_bps": null,
+      "headroom": "0.36764705882352941176470588235294117647058823529412",
+      "limit_kind": "Max",
+      "line_item": "Gross leverage",
+      "outcome": "Near",
+      "severity": 1,
+      "tolerance": null,
+      "utilization": "0.70588235294117647058823529411764705882352941176470"
+    },
+    {
+      "basis": "limit",
+      "buffer": "1.00",
+      "difference": "30.00",
+      "difference_bps": null,
+      "headroom": "30.00",
+      "limit_kind": "Min",
+      "line_item": "Interest cover",
+      "outcome": "Within",
+      "severity": 2,
+      "tolerance": null,
+      "utilization": "8.5"
+    }
+  ],
+  "comparison": {
+    "basis": "limit",
+    "label": null
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Gross leverage"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Interest cover"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 2,
+    "material_variance_count": 2,
+    "net_operating_impact_available": false,
+    "row_count": 0,
+    "summary_verifications": [],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 0,
+    "warnings": [
+      "Gross leverage: read Measure as Multiple.",
+      "Interest cover: read Measure as Multiple."
+    ]
+  },
+  "inferences": [
+    "Gross leverage: read Measure as Multiple.",
+    "Interest cover: read Measure as Multiple."
+  ],
+  "material_variances": [],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "0.88235294117647058823529411764705882352941176470588",
+      "better": null,
+      "comparison": "1.25",
+      "direction_source": "type",
+      "display_label": "Near",
+      "excluded_from_aggregation": true,
+      "line_item": "Gross leverage",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Multiple",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "-0.36764705882352941176470588235294117647058823529412",
+      "variance_bps": null,
+      "variance_percent": "-0.29411764705882352941176470588235294117647058823530"
+    },
+    {
+      "actual": "34",
+      "better": null,
+      "comparison": "4.00",
+      "direction_source": "type",
+      "display_label": "Within",
+      "excluded_from_aggregation": true,
+      "line_item": "Interest cover",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Multiple",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "30.00",
+      "variance_bps": null,
+      "variance_percent": "7.5"
+    }
+  ],
+  "payload_sha256": "00fbbf557a4426f2287160ce592019b04a7beb78bcfdb6496fa3eb61e98108d9",
+  "period": "FY2025",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "48c1e9266a0532672fe234b770cd4373429dd44d2fddda88094e7679103a5c49",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": {
+      "documents": [
+        {
+          "name": "hal-20250927.htm",
+          "role": "filing",
+          "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808"
+        },
+        {
+          "name": "clara_covenants.csv",
+          "role": "comparison",
+          "sha256": "a6b51beb8c6205a9b2704c2e8e2b2f0a7bdc0c89e021d72651559429cd237f44"
+        }
+      ],
+      "key": "line item",
+      "kind": "metrics",
+      "lines": [
+        {
+          "comparison_line_item": "Gross leverage",
+          "key": "Gross leverage",
+          "line_item": "Gross leverage"
+        },
+        {
+          "comparison_line_item": "Interest cover",
+          "key": "Interest cover",
+          "line_item": "Interest cover"
+        }
+      ],
+      "metrics": [
+        {
+          "formula": "(Long-term debt [balance sheet, instant]) / (Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy])",
+          "name": "Gross leverage",
+          "reason": null,
+          "terms": [
+            {
+              "column": "Sep 2025",
+              "concept": "us-gaap:LongTermDebtNoncurrent",
+              "context": "I25",
+              "document": "hal-20250927.htm",
+              "line_item": "Long-term debt",
+              "period": "instant",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Balance Sheets",
+              "value": "1500000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Net income",
+              "period": "fy",
+              "side": "denominator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "1450000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:InterestExpense",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Interest expense",
+              "period": "fy",
+              "side": "denominator",
+              "sign": -1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "-50000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Depreciation and amortization",
+              "period": "fy",
+              "side": "denominator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Cash Flows",
+              "value": "200000000"
+            }
+          ],
+          "value": "0.88235294117647058823529411764705882352941176470588"
+        },
+        {
+          "formula": "(Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy]) / (- Interest expense [income, fy])",
+          "name": "Interest cover",
+          "reason": null,
+          "terms": [
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:NetIncomeLoss",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Net income",
+              "period": "fy",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "1450000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:InterestExpense",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Interest expense",
+              "period": "fy",
+              "side": "numerator",
+              "sign": -1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "-50000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:DepreciationDepletionAndAmortization",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Depreciation and amortization",
+              "period": "fy",
+              "side": "numerator",
+              "sign": 1,
+              "statement": "Consolidated Statements of Cash Flows",
+              "value": "200000000"
+            },
+            {
+              "column": "FY2025",
+              "concept": "us-gaap:InterestExpense",
+              "context": "FY25",
+              "document": "hal-20250927.htm",
+              "line_item": "Interest expense",
+              "period": "fy",
+              "side": "denominator",
+              "sign": -1,
+              "statement": "Consolidated Statements of Operations",
+              "value": "-50000000"
+            }
+          ],
+          "value": "34"
+        },
+        {
+          "formula": null,
+          "name": "Fixed charge cover",
+          "reason": "no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed",
+          "terms": [],
+          "value": null
+        }
+      ],
+      "reader_notes": [
+        "Gross leverage = 0.88x = (Long-term debt [balance sheet, instant]) / (Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy])",
+        "Interest cover = 34x = (Net income [income, fy] - Interest expense [income, fy] + Depreciation and amortization [cash flow, fy]) / (- Interest expense [income, fy])",
+        "Left out 'Fixed charge cover': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed",
+        "Joined 'clara_covenants.csv' to 'the metrics' by 'line item': 2 lines, each in both files",
+        "Took Actual from 'the metrics' and the comparison from 'clara_covenants.csv'",
+        "Left out 'Fixed charge cover' of 'clara_covenants.csv': no line with us-gaap:OperatingLeasePayments on the cash flow statement for fy, so it can't be computed",
+        "clara_covenants.csv: Gross leverage: read Measure as Multiple.",
+        "clara_covenants.csv: Interest cover: read Measure as Multiple.",
+        "clara_covenants.csv: Fixed charge cover: read Measure as Multiple."
+      ]
+    },
+    "name": "hal-20250927.htm",
+    "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808",
+    "worksheet": null
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "value",
+      "budget": "Limit' in 'clara_covenants.csv",
+      "line_item": "metric"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

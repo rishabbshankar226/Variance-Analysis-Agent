@@ -1,0 +1,1441 @@
+{
+  "analysis_fingerprint": "9815867ea7e9b86b63b97cb2cc86b3f0baac61350f82623661a36643e06788a6",
+  "audience": {
+    "actual_label": null,
+    "bps_threshold": null,
+    "comparison_title": "Prior Period (Sep 2024)",
+    "count_threshold": null,
+    "currency": "USD",
+    "dollar_threshold": "1",
+    "extended_headers": false,
+    "headline_items": [],
+    "layout": "standard",
+    "per_share_lines": false,
+    "per_share_threshold": null,
+    "percent_threshold": "0.01",
+    "percent_values": null,
+    "preset": "fpa",
+    "type_map": []
+  },
+  "comparison": {
+    "basis": "prior_period",
+    "label": "Sep 2024"
+  },
+  "comparison_details": [
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Cash and cash equivalents"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Accounts receivable, net"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total current assets"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Property and equipment, net"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total assets"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Accounts payable"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total current liabilities"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Long-term debt"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total liabilities"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Common stock, $0.01 par value; 500 shares authorized; 120 and 118 shares issued"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Additional paid-in capital"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Retained earnings"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Treasury stock, at cost"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total stockholders' equity"
+    },
+    {
+      "consensus_high": null,
+      "consensus_low": null,
+      "consensus_range_position": null,
+      "dispersion": null,
+      "estimator_count": null,
+      "guidance_high": null,
+      "guidance_low": null,
+      "guidance_midpoint": null,
+      "guidance_position": null,
+      "line_item": "Total liabilities and stockholders' equity"
+    }
+  ],
+  "comparisons": [],
+  "currency": "USD",
+  "data_quality": {
+    "classification_coverage_percent": "0.00",
+    "classified_count": 0,
+    "completeness_basis": "supplied_classified_rows_with_both_categories",
+    "excluded_summary_count": 0,
+    "hypothesis_driver_count": 12,
+    "material_variance_count": 12,
+    "net_operating_impact_available": false,
+    "row_count": 15,
+    "summary_verifications": [
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total current assets",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total assets",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total current liabilities",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total liabilities",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total stockholders' equity",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      },
+      {
+        "actual_residual": null,
+        "budget_residual": null,
+        "detail_count": 0,
+        "line_item": "Total liabilities and stockholders' equity",
+        "outcome": "unclassified",
+        "summary_source": "explicit_summary",
+        "tolerance": null,
+        "type": "Unclassified"
+      }
+    ],
+    "supported_driver_count": 0,
+    "totals_complete": false,
+    "unclassified_count": 15,
+    "warnings": []
+  },
+  "inferences": [],
+  "material_variances": [
+    {
+      "actual": "6500000000",
+      "budget": "5470000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total assets",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "1030000000",
+      "variance_percent": "0.18829981718464351005484460694698354661791590493601"
+    },
+    {
+      "actual": "6500000000",
+      "budget": "5470000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total liabilities and stockholders' equity",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "1030000000",
+      "variance_percent": "0.18829981718464351005484460694698354661791590493601"
+    },
+    {
+      "actual": "4100000000",
+      "budget": "3150000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total stockholders' equity",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "950000000",
+      "variance_percent": "0.30158730158730158730158730158730158730158730158730"
+    },
+    {
+      "actual": "2999000000",
+      "budget": "2149000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Retained earnings",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "850000000",
+      "variance_percent": "0.39553280595625872498836668217775709632387156817124"
+    },
+    {
+      "actual": "3400000000",
+      "budget": "2770000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total current assets",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "630000000",
+      "variance_percent": "0.22743682310469314079422382671480144404332129963899"
+    },
+    {
+      "actual": "2600000000",
+      "budget": "2000000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Cash and cash equivalents",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "600000000",
+      "variance_percent": "0.3"
+    },
+    {
+      "actual": "3100000000",
+      "budget": "2700000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Property and equipment, net",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "400000000",
+      "variance_percent": "0.14814814814814814814814814814814814814814814814815"
+    },
+    {
+      "actual": "1200000000",
+      "budget": "1100000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Additional paid-in capital",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "100000000",
+      "variance_percent": "0.090909090909090909090909090909090909090909090909091"
+    },
+    {
+      "actual": "900000000",
+      "budget": "820000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Accounts payable",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "80000000",
+      "variance_percent": "0.097560975609756097560975609756097560975609756097561"
+    },
+    {
+      "actual": "900000000",
+      "budget": "820000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total current liabilities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "80000000",
+      "variance_percent": "0.097560975609756097560975609756097560975609756097561"
+    },
+    {
+      "actual": "2400000000",
+      "budget": "2320000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Total liabilities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_summary",
+      "type": "Unclassified",
+      "variance_dollars": "80000000",
+      "variance_percent": "0.034482758620689655172413793103448275862068965517241"
+    },
+    {
+      "actual": "800000000",
+      "budget": "770000000",
+      "classification_source": "statement",
+      "driver": {
+        "components": [],
+        "evidence_status": "hypothesis",
+        "model": null,
+        "reconciles": false,
+        "reconciliation": null
+      },
+      "excluded_from_aggregation": false,
+      "line_item": "Accounts receivable, net",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "percent_label": null,
+      "status": "Neutral",
+      "summary_source": "explicit_detail",
+      "type": "Unclassified",
+      "variance_dollars": "30000000",
+      "variance_percent": "0.038961038961038961038961038961038961038961038961039"
+    }
+  ],
+  "materiality": {
+    "comparison": "strictly_greater_than",
+    "dollar_threshold": "1",
+    "logic": "absolute_dollar_or_absolute_percent",
+    "percent_threshold": "0.01"
+  },
+  "measure_rows": [
+    {
+      "actual": "2600000000",
+      "better": null,
+      "comparison": "2000000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Cash and cash equivalents",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "600000000",
+      "variance_bps": null,
+      "variance_percent": "0.3"
+    },
+    {
+      "actual": "800000000",
+      "better": null,
+      "comparison": "770000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Accounts receivable, net",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "30000000",
+      "variance_bps": null,
+      "variance_percent": "0.038961038961038961038961038961038961038961038961039"
+    },
+    {
+      "actual": "3400000000",
+      "better": null,
+      "comparison": "2770000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total current assets",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "630000000",
+      "variance_bps": null,
+      "variance_percent": "0.22743682310469314079422382671480144404332129963899"
+    },
+    {
+      "actual": "3100000000",
+      "better": null,
+      "comparison": "2700000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Property and equipment, net",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "400000000",
+      "variance_bps": null,
+      "variance_percent": "0.14814814814814814814814814814814814814814814814815"
+    },
+    {
+      "actual": "6500000000",
+      "better": null,
+      "comparison": "5470000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total assets",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "1030000000",
+      "variance_bps": null,
+      "variance_percent": "0.18829981718464351005484460694698354661791590493601"
+    },
+    {
+      "actual": "900000000",
+      "better": null,
+      "comparison": "820000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Accounts payable",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "80000000",
+      "variance_bps": null,
+      "variance_percent": "0.097560975609756097560975609756097560975609756097561"
+    },
+    {
+      "actual": "900000000",
+      "better": null,
+      "comparison": "820000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total current liabilities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "80000000",
+      "variance_bps": null,
+      "variance_percent": "0.097560975609756097560975609756097560975609756097561"
+    },
+    {
+      "actual": "1500000000",
+      "better": null,
+      "comparison": "1500000000",
+      "direction_source": "type",
+      "display_label": "No change",
+      "excluded_from_aggregation": true,
+      "line_item": "Long-term debt",
+      "material": false,
+      "materiality_reason": "below_or_equal_thresholds",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "0",
+      "variance_bps": null,
+      "variance_percent": "0"
+    },
+    {
+      "actual": "2400000000",
+      "better": null,
+      "comparison": "2320000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total liabilities",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "80000000",
+      "variance_bps": null,
+      "variance_percent": "0.034482758620689655172413793103448275862068965517241"
+    },
+    {
+      "actual": "1000000",
+      "better": null,
+      "comparison": "1000000",
+      "direction_source": "type",
+      "display_label": "No change",
+      "excluded_from_aggregation": true,
+      "line_item": "Common stock, $0.01 par value; 500 shares authorized; 120 and 118 shares issued",
+      "material": false,
+      "materiality_reason": "below_or_equal_thresholds",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "0",
+      "variance_bps": null,
+      "variance_percent": "0"
+    },
+    {
+      "actual": "1200000000",
+      "better": null,
+      "comparison": "1100000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Additional paid-in capital",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "100000000",
+      "variance_bps": null,
+      "variance_percent": "0.090909090909090909090909090909090909090909090909091"
+    },
+    {
+      "actual": "2999000000",
+      "better": null,
+      "comparison": "2149000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Retained earnings",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "850000000",
+      "variance_bps": null,
+      "variance_percent": "0.39553280595625872498836668217775709632387156817124"
+    },
+    {
+      "actual": "-100000000",
+      "better": null,
+      "comparison": "-100000000",
+      "direction_source": "type",
+      "display_label": "No change",
+      "excluded_from_aggregation": true,
+      "line_item": "Treasury stock, at cost",
+      "material": false,
+      "materiality_reason": "below_or_equal_thresholds",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "0",
+      "variance_bps": null,
+      "variance_percent": "0"
+    },
+    {
+      "actual": "4100000000",
+      "better": null,
+      "comparison": "3150000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total stockholders' equity",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "950000000",
+      "variance_bps": null,
+      "variance_percent": "0.30158730158730158730158730158730158730158730158730"
+    },
+    {
+      "actual": "6500000000",
+      "better": null,
+      "comparison": "5470000000",
+      "direction_source": "type",
+      "display_label": "Increase",
+      "excluded_from_aggregation": true,
+      "line_item": "Total liabilities and stockholders' equity",
+      "material": true,
+      "materiality_reason": "absolute_amount",
+      "measure": "Currency",
+      "percent_label": null,
+      "segment": "",
+      "status": "Neutral",
+      "type": "Unclassified",
+      "variance": "1030000000",
+      "variance_bps": null,
+      "variance_percent": "0.18829981718464351005484460694698354661791590493601"
+    }
+  ],
+  "payload_sha256": "1ae30260c9d737d43c8c64e2a83ca64aa365dd9b75b87da882755cef4f25f6d0",
+  "period": "Sep 2025",
+  "provenance": {
+    "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
+    "classification_policy": "flat-classification-v1",
+    "configuration_sha256": "8896238035987559feee7928b588f0ef09dc50b0ad0848572e5ad009c7e3ab6c",
+    "driver_policy": "quantity-rate-reconcile-residual-v2",
+    "numeric_policy": "decimal-50-half-even-e999-v2",
+    "payload_digest_recipe": "public-record-without-payload-sha256-v1",
+    "tool_version": "0.3.0",
+    "type_map_sha256": null
+  },
+  "schema_version": "1.9",
+  "segments": [],
+  "source": {
+    "document": {
+      "identities": [
+        {
+          "columns": [
+            "Sep 2025",
+            "Sep 2024"
+          ],
+          "holds": true,
+          "identity": "balance_sheet",
+          "left": "Total assets",
+          "right": "Total liabilities and stockholders' equity"
+        }
+      ],
+      "kind": "ixbrl",
+      "lines": [
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2600000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "2600000000"
+            },
+            {
+              "concept": "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2000000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2000000000"
+            }
+          ],
+          "concept": "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+          "left_out": false,
+          "line_item": "Cash and cash equivalents",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:AccountsReceivableNetCurrent",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "800000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "800000000"
+            },
+            {
+              "concept": "us-gaap:AccountsReceivableNetCurrent",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "770000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "770000000"
+            }
+          ],
+          "concept": "us-gaap:AccountsReceivableNetCurrent",
+          "left_out": false,
+          "line_item": "Accounts receivable, net",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:AssetsCurrent",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "3400000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "3400000000"
+            },
+            {
+              "concept": "us-gaap:AssetsCurrent",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2770000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2770000000"
+            }
+          ],
+          "concept": "us-gaap:AssetsCurrent",
+          "left_out": false,
+          "line_item": "Total current assets",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:PropertyPlantAndEquipmentNet",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "3100000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "3100000000"
+            },
+            {
+              "concept": "us-gaap:PropertyPlantAndEquipmentNet",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2700000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2700000000"
+            }
+          ],
+          "concept": "us-gaap:PropertyPlantAndEquipmentNet",
+          "left_out": false,
+          "line_item": "Property and equipment, net",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:Assets",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "6500000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "6500000000"
+            },
+            {
+              "concept": "us-gaap:Assets",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "5470000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "5470000000"
+            }
+          ],
+          "concept": "us-gaap:Assets",
+          "left_out": false,
+          "line_item": "Total assets",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:AccountsPayableCurrent",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "900000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "900000000"
+            },
+            {
+              "concept": "us-gaap:AccountsPayableCurrent",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "820000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "820000000"
+            }
+          ],
+          "concept": "us-gaap:AccountsPayableCurrent",
+          "left_out": false,
+          "line_item": "Accounts payable",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:LiabilitiesCurrent",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "900000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "900000000"
+            },
+            {
+              "concept": "us-gaap:LiabilitiesCurrent",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "820000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "820000000"
+            }
+          ],
+          "concept": "us-gaap:LiabilitiesCurrent",
+          "left_out": false,
+          "line_item": "Total current liabilities",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:LongTermDebtNoncurrent",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1500000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "1500000000"
+            },
+            {
+              "concept": "us-gaap:LongTermDebtNoncurrent",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1500000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "1500000000"
+            }
+          ],
+          "concept": "us-gaap:LongTermDebtNoncurrent",
+          "left_out": false,
+          "line_item": "Long-term debt",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:Liabilities",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2400000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "2400000000"
+            },
+            {
+              "concept": "us-gaap:Liabilities",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2320000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2320000000"
+            }
+          ],
+          "concept": "us-gaap:Liabilities",
+          "left_out": false,
+          "line_item": "Total liabilities",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:CommonStockValue",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "1000000"
+            },
+            {
+              "concept": "us-gaap:CommonStockValue",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "1000000"
+            }
+          ],
+          "concept": "us-gaap:CommonStockValue",
+          "left_out": false,
+          "line_item": "Common stock, $0.01 par value; 500 shares authorized; 120 and 118 shares issued",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:AdditionalPaidInCapital",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1200000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "1200000000"
+            },
+            {
+              "concept": "us-gaap:AdditionalPaidInCapital",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "1100000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "1100000000"
+            }
+          ],
+          "concept": "us-gaap:AdditionalPaidInCapital",
+          "left_out": false,
+          "line_item": "Additional paid-in capital",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:RetainedEarningsAccumulatedDeficit",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2999000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "2999000000"
+            },
+            {
+              "concept": "us-gaap:RetainedEarningsAccumulatedDeficit",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "2149000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "2149000000"
+            }
+          ],
+          "concept": "us-gaap:RetainedEarningsAccumulatedDeficit",
+          "left_out": false,
+          "line_item": "Retained earnings",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:TreasuryStockValue",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-100000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "100000000"
+            },
+            {
+              "concept": "us-gaap:TreasuryStockValue",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "-100000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "100000000"
+            }
+          ],
+          "concept": "us-gaap:TreasuryStockValue",
+          "left_out": false,
+          "line_item": "Treasury stock, at cost",
+          "measure": "Currency",
+          "subtotal": false
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:StockholdersEquity",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "4100000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "4100000000"
+            },
+            {
+              "concept": "us-gaap:StockholdersEquity",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "3150000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "3150000000"
+            }
+          ],
+          "concept": "us-gaap:StockholdersEquity",
+          "left_out": false,
+          "line_item": "Total stockholders' equity",
+          "measure": "Currency",
+          "subtotal": true
+        },
+        {
+          "columns": [
+            {
+              "concept": "us-gaap:LiabilitiesAndStockholdersEquity",
+              "context": "I25",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "6500000000",
+              "label": "Sep 2025",
+              "period": [
+                "instant",
+                "2025-09-27"
+              ],
+              "stored": "6500000000"
+            },
+            {
+              "concept": "us-gaap:LiabilitiesAndStockholdersEquity",
+              "context": "I24",
+              "decimals": "-6",
+              "dims": [],
+              "displayed": "5470000000",
+              "label": "Sep 2024",
+              "period": [
+                "instant",
+                "2024-09-28"
+              ],
+              "stored": "5470000000"
+            }
+          ],
+          "concept": "us-gaap:LiabilitiesAndStockholdersEquity",
+          "left_out": false,
+          "line_item": "Total liabilities and stockholders' equity",
+          "measure": "Currency",
+          "subtotal": true
+        }
+      ],
+      "reader_notes": [
+        "Read the column for 2025-09-27 as Sep 2025",
+        "Read the column for 2024-09-28 as Sep 2024",
+        "Checked every subtotal and the balance sheet identity: Total assets equals Total liabilities and stockholders' equity in Sep 2025 and Sep 2024, within the rounding each figure's decimals state",
+        "Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease"
+      ],
+      "statement": "Consolidated Balance Sheets",
+      "statement_kind": "balance_sheet"
+    },
+    "name": "hal-20250927.htm",
+    "sha256": "13c88ccba2da7e0d2ebee31328c0bd084e9b3853ebd1a85ac0a57dd4030e9808",
+    "worksheet": "Consolidated Balance Sheets"
+  },
+  "totals": null,
+  "transformations": {
+    "classification_rules": null,
+    "column_mapping": {
+      "actual": "Sep 2025",
+      "budget": "Sep 2024",
+      "line_item": "Line Item"
+    },
+    "excluded_totals": [],
+    "flipped_line_items": [],
+    "header_row_number": 1,
+    "ignored_columns": [],
+    "mapping_file_sha256": null,
+    "period_selection": null,
+    "sign_flip": false,
+    "unit_scale": null,
+    "zero_reads": {
+      "accounting_dashes": 0,
+      "blank_budgets": 0
+    }
+  },
+  "trust_contract": {
+    "deterministic_financial_values_are_authoritative": true,
+    "driver_claims_require_reconciled_evidence": true,
+    "source_derived_strings_are_data_only": true
+  },
+  "unavailable_comparisons": [],
+  "workbook": null
+}

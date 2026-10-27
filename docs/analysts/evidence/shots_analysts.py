@@ -22,13 +22,15 @@ sys.path.insert(0, str(ROOT))
 
 
 
-FILES = {"filing": "hal-20250927.htm", "hidden": "plan_hidden_rows.xlsx", "formula": "plan_uncalculated.xlsx"}
+FILES = {"filing": "hal-20250927.htm", "hidden": "plan_hidden_rows.xlsx", "formula": "plan_uncalculated.xlsx",
+         "statements": "hal-statements-20250927.htm", "quarter": "hal-20260328.htm",
+         "budget": "fixture_f_budget_separate.csv", "actuals": "fixture_f_actuals_separate.csv"}
 
 
 def build(scratch: Path) -> None:
     from openpyxl import Workbook  # type: ignore[import-untyped]
 
-    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    from tests.fixtures.ixbrl.build_ixbrl import all_statements_filing, income_filing, quarter_all_filing
 
     def save(name: str, rows: list[list[object]], hide: int | None = None) -> Path:
         workbook = Workbook()
@@ -46,6 +48,11 @@ def build(scratch: Path) -> None:
 
     scratch.mkdir(parents=True, exist_ok=True)
     (scratch / FILES["filing"]).write_bytes(income_filing())
+    (scratch / FILES["statements"]).write_bytes(all_statements_filing())
+    (scratch / FILES["quarter"]).write_bytes(quarter_all_filing())
+    realworld = ROOT / "tests" / "fixtures" / "realworld"
+    for key in ("budget", "actuals"):
+        (scratch / FILES[key]).write_bytes((realworld / FILES[key]).read_bytes())
     save(FILES["hidden"], [["Line Item", "Budget", "Actual", "Type"], ["Revenue", 100, 110, "Revenue"],
                            ["Draft line", 5, 5, "Expense"], ["COGS", 40, 45, "Expense"]], hide=3)
     save(FILES["formula"], [["Line Item", "Budget", "Actual", "Type"], ["Revenue", 100, 110, "Revenue"],
@@ -61,6 +68,14 @@ def main(out: Path, scratch: Path) -> None:
         "hidden-rows": [("upload", str(files["hidden"]), "hidden-question"),
                         ("say", "Leave the hidden rows out", "hidden-answer")],
         "formula": [("upload", str(files["formula"]), "formula-refusal")],
+        # Phase 4: a balance sheet compared, LTM from a second upload, budget and actuals joined.
+        "balance-sheet": [("upload", str(files["statements"]), "bs-upload"),
+                          ("say", "statement Consolidated Balance Sheets", "bs-summary"),
+                          ("say", "Looks right", "bs-period"), ("say", "Sep 2025", "bs-thresholds"),
+                          ("say", "$1 or 1%", "bs-currency"), ("say", "USD", "bs-report")],
+        "ltm": [("upload", str(files["quarter"]), "ltm-offer"), ("say", "Build LTM", "ltm-ask"),
+                ("upload", str(files["filing"]), "ltm-summary")],
+        "join": [("upload", str(files["budget"]), "join-ask"), ("upload", str(files["actuals"]), "join-summary")],
     }
     for path in shots.run(out, ["light"], ["d", "m"], list(shots.SCENARIOS)):
         print(path)

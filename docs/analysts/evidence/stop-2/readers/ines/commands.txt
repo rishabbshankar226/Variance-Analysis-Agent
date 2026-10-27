@@ -1,0 +1,2 @@
+variance-agent ines_limits.csv --assisted --compare-to limit --period Oct 2026 --dollar-threshold 1 --percent-threshold 1 -o docs/analysts/evidence/stop-2/readers/ines/report.md --audit-json docs/analysts/evidence/stop-2/readers/ines/audit.json
+exit 0

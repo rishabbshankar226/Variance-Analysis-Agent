@@ -1,0 +1,14 @@
+[assisted intake] Comparing Actual against the target.
+[assisted intake] NORDVIK.FAKE: read % values as percentage points.
+[assisted intake] NORDVIK.FAKE: read Measure as Percent.
+[assisted intake] HALVORSEN.FAKE: read % values as percentage points.
+[assisted intake] HALVORSEN.FAKE: read Measure as Percent.
+[assisted intake] OSTRAVA.FAKE: read % values as percentage points.
+[assisted intake] OSTRAVA.FAKE: read Measure as Percent.
+[measure intake] NORDVIK.FAKE: read Measure as Percent.
+[measure intake] NORDVIK.FAKE: read % values as percentage points.
+[measure intake] HALVORSEN.FAKE: read Measure as Percent.
+[measure intake] HALVORSEN.FAKE: read % values as percentage points.
+[measure intake] OSTRAVA.FAKE: read Measure as Percent.
+[measure intake] OSTRAVA.FAKE: read % values as percentage points.
+[measure intake] Read bare Percent values as points.

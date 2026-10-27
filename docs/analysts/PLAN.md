@@ -302,6 +302,11 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
 
 - Fresh-eyes seed: `20261027`. The five Draw A filings are `random.Random(20261027).sample` of Draw A's Inline XBRL accessions, sorted. The reviewer gets the sweep table, those filings and the tool's outputs, and none of this plan's reasoning.
 
+## STOP 2 settings (committed before the sample is drawn)
+
+- Fresh-eyes seed: `20261028`. The five filings are `random.Random(20261028).sample` of Draw A's Inline XBRL accessions, sorted. The reviewer gets the p5 sweep table, those filings' balance sheet, cash flow and income outputs, and none of this plan's reasoning.
+- Per-reader reviews: one subagent per new seat (Owen, Clara, Marcus, Ines, Theo), given that seat's row of section 3 and its outputs under `docs/analysts/evidence/stop-2/readers/`.
+
 ## Existing assertions expected to change
 
 Phase 1 (grep of `tests/` on 2026-10-26):
