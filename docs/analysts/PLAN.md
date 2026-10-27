@@ -34,7 +34,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
 | 4 | Blank income figures confirmed by footing; all-dash rows listed (Decision 30) | done | `9d3b176` |
 | 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified (every one a dash or confirmed blank, with no fact behind it). All three statements read by section 5's definition on 15 of 33 Inline XBRL filings (45%, 30-62%); read without a refusal on 26/33 (79%, 62-89%). By statement, without a refusal: income 28/33, balance sheet 32/33, cash flow 32/33 | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` (aggregate recomputed from the CSV with the Inline XBRL denominator) |
-| 4 | F4 two-file join | open (STOP-ASK written, awaiting the owner) | `docs/analysts/evidence/stop-ask-f4/` |
+| 4 | F4 two-file join (R12) | todo (STOP-ASK approved 2026-10-27) | `docs/analysts/evidence/stop-ask-f4/` |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
@@ -215,6 +215,15 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - **Recast.** When the 10-K's instance holds a fact for the 10-Q's prior-YTD period and key that differs from the 10-Q's figure, or the 10-Q's statement headers say "recast", "restated" or "as adjusted", the flag is shown beside the figure and recorded.
 - **Boundaries (tests).** A 52/53-week year (FY ends 2025-09-27; the YTD starts 2025-09-28). A YTD starting one day late or one day early (refuse). A Q1 10-Q. A line only in the 10-K (refuse). The three-month column present beside the YTD one (the YTD is used). A recast header. LTM equal to FY when the YTDs are equal.
 
+### R12. F4: budget and actuals in two files (owner approved the STOP-ASK, 2026-10-27)
+
+- **Each half is read alone,** through the same reader as any file (CSV, TSV or workbook, with captions, hidden rows, display scaling, formulas and blanks all checked). The column it lacks is appended as a placeholder at the right edge before the read, so no existing cell moves. Each file's unit caption therefore scales only its own figures.
+- **Key.** An account-ID column both files carry (the Account ID role); otherwise the exact line-item label. Never a similar label. Keys compare as trimmed text, with a whole number stored as a decimal ("4010.0") read as "4010".
+- **Refusals.** A key repeated within a file refuses. A key in one file only refuses, naming up to five per side, because leaving it out would change the totals without a trace. The fix offered: add the line to the other file or remove it, then upload both again.
+- **Rows.** The actuals file's rows, labels and types, with each comparison figure taken from the matching row of the other file. Labels that differ between the files are listed. Audit 1.9 records `source.document` `{kind: "join", documents, key, reader_notes, lines}`, with both files' names and sha256 and each line's label in each file.
+- **CLI:** `--compare-file PATH` with `--assisted` (no `--mapping` or `--ltm-from`). **Chat:** a file with a comparison column and no Actual, or the reverse, asks for the other file, and the next upload is joined.
+- **Boundaries (tests).** The repository's fixture pair (different labels, same accounts). A line in one file only, on each side. A repeated key. No account column (joined by label; a differing label refuses). Different unit captions in the two files. A comparison file that also has an Actual column (refused: it is not a half).
+
 ### Phase 3 decisions (2026-10-26)
 
 23. **DOCTYPE (constraint 3).** `html.parser` never reads a DTD, so the Inline XBRL reader refuses an `ENTITY` declaration or a `DOCTYPE` with an internal subset, but reads a plain `<!DOCTYPE html …>` (the four 2018 HTML 10-Ks carry one). Every XML parse in `src/` (the workbook preflight) still refuses any DOCTYPE. This is a STOP 1 question.
@@ -240,6 +249,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 33. **Oracle: a concept whose facts are all nil is not a monetary line.** "Commitments and contingencies (Note 9)" prints no figure, and its instance facts are `xsi:nil`. The reader treats nil as blank (Decision 26), so the line has nothing to verify. The structure oracle counted it as monetary, which made 18 Draw A balance sheets look partly read. A statement still counts as read only when every line with an amount is covered and verified.
 
 34. **LTM is built for income statements in this run.** A cash flow statement's beginning and ending cash are balances, which don't add across periods, and its flows would need their own roll-forward. `--ltm-from` on a cash flow statement refuses plainly, and on a balance sheet it reads the primary as of its latest period with a note (R11).
+
+35. **A printed dash stays unverified (owner, 2026-10-27: "do what you recommend").** Section 5 calls a read with no key unverified, never correct, and an untagged dash has no key. The strict "all three read" rate stays the target. The sweep reports beside it how many unverified values are dashes or confirmed blanks, so the gap is visible. Decisions 31-34 stand, for confirmation at STOP 2.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
