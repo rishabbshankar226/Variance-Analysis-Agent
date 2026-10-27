@@ -302,8 +302,12 @@ class _Reader(HTMLParser):
         elif tag in {"td", "th"}:
             self._cell = None
         elif tag == "table" and self._table_stack:
-            self._table_stack.pop()
+            table = self._table_stack.pop()
             self._cell = None
+            if not any(kind in {"fact", "ref"} for row in table.rows for cell in row for kind, _ in cell.tokens):
+                # A table without figures (a page or title header) is printed text before the next table.
+                text = " ".join("".join(str(t) for kind, t in cell.tokens if kind == "text") for row in table.rows for cell in row)
+                self._outside = f"{table.title} {text} "[-_TITLE_CHARACTERS:]
 
     def handle_data(self, data: str) -> None:
         if self._skip:

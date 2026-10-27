@@ -332,7 +332,7 @@ def _run(args: Arguments) -> int:
         raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
     _validate_output_paths(args)
     input_path = Path(args.input)
-    is_pdf = input_path.suffix.lower() == ".pdf"
+    is_pdf = input_path.suffix.lower() in {".pdf", ".htm", ".html"}  # filings: --sheet names a statement
     if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm", ".xls"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
     if getattr(args, "hidden_rows", None) is not None:

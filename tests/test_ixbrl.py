@@ -400,3 +400,18 @@ def test_a_title_split_across_spans_inside_a_word_is_found() -> None:
     title = "<span>CONSOLIDATED STATEM</span><span>ENTS OF</span> <span>OPE</span><span>RATIONS</span>"
     body = ("<p>" + "</p><p>".join(f"page header {n}" for n in range(30)) + "</p>" + statement(title, income_rows()))
     assert read_statements(document(body).encode("utf-8"), "hal.htm")[0].name == "Consolidated Statements of Operations"
+
+
+def test_a_title_in_a_header_table_before_the_statement_names_it() -> None:
+    header = "<table><tr><td>HALVORSEN.FAKE</td></tr><tr><td>CONSOLIDATED STATEMENTS OF OPERATIONS</td></tr></table>"
+    body = header + "<table>" + "".join(income_rows()) + "</table>"
+    assert read_statements(document(body).encode("utf-8"), "hal.htm")[0].name == "Consolidated Statements of Operations"
+
+
+def test_the_cli_chooses_a_statement_of_an_html_filing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = tmp_path / "hal-20250927.htm"
+    path.write_bytes(income_filing())
+    with pytest.raises(SystemExit):
+        cli.main([str(path), "--assisted", "--sheet", "Consolidated Balance Sheets", "--period", "FY2025",
+                  "--dollar-threshold", "1", "--percent-threshold", "1"])
+    assert "No statement called 'Consolidated Balance Sheets' was found" in capsys.readouterr().err
