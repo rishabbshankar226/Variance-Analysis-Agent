@@ -167,6 +167,30 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - A line's dimensionless facts win over its dimensional ones. Facts on two or more axes are always left out and listed.
 - When a fact appears on the face and again in a note, the face table's copy is read: the first table in document order that holds the statement.
 
+### R7. Balance sheets and cash flow statements are compared as Increase or Decrease (Phase 4)
+
+- **Scope.** Inline XBRL reads. The PDF and `Financial_Report.xlsx` readers keep refusing these statements plainly (Decision 31).
+- **Rows.** Every printed line, details and subtotals alike, at its displayed value (constraint 10). Each row carries its statement kind and a Row Kind (Detail or Total). Lines after the statement's closing line (a balance sheet's total liabilities and equity; a cash flow statement's ending cash) are supplemental disclosures. They are listed as left out and recorded as read, like Decision 29.
+- **Comparison.** The newest column against the column `--compare-to` and `--period` choose, as for income statements. Variance is actual minus comparison on displayed values. The percentage is taken against the comparison's absolute value, as today.
+- **Label.** Increase when the variance is above 0, Decrease below 0, No change at 0. The label describes the printed figure, so a cash outflow printed (600) against (500) is a Decrease of 100, and the report says so once. F or U appears only for a line the user gives a Better direction (the mapping's `better_directions`, the 1.8 mechanism), from the variance's sign as for any declared row.
+- **No totals or advice.** These statements have no revenue, expense or net operating totals, and the report shows the identity checks in their place. No recommendation section (constraint 9).
+- **Boundaries (tests).** Variance exactly 0 is No change. A comparison of 0 with a nonzero actual takes today's percent label. A subtotal is a row like any other, never summed into a total. Better Higher with a variance of -1 is U, and Lower with -1 is F.
+
+### R8. A cash flow statement's beginning and ending cash take its duration columns
+
+- Its columns are its duration periods. A line whose facts are instants is placed by date. An instant equal to a column's end date is that column's ending balance. An instant one day before a column's start is its beginning balance. Every instant on a line must place the same way (all ending or all beginning), or the statement refuses, naming the line. A column with no placed instant is blank, which refuses as unreadable unless a dash prints there.
+- The instant-only column group of such a statement is not offered as a statement of its own.
+- **Boundaries (tests).** A 52/53-week year, where the day before the start is exact. A 10-Q's year-to-date columns, whose beginning is the prior fiscal year end. A line with one beginning and one ending instant refuses. An instant on neither date leaves the cell blank.
+
+### R9. Footing and identities for balance sheets and cash flows (constraint 2)
+
+- **Subtotals.** A line is a subtotal when its label starts with "Total", or names the net cash from an activity or the net change in cash, or its concept is a balance sheet or cash flow total (`Assets`, `AssetsCurrent`, `AssetsNoncurrent`, `Liabilities`, `LiabilitiesCurrent`, `LiabilitiesNoncurrent`, `LiabilitiesAndStockholdersEquity`, `StockholdersEquity`, `StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest`, `NetCashProvidedByUsedIn…Activities…`, `…PeriodIncreaseDecrease…`), or it is the ending cash balance (R8).
+- **Footing.** Each subtotal must equal the plain sum of a run of lines and earlier subtotals ending just above it, under R5's intervals in every column, longest run first. Failing that, the same is tried with lines labeled "Less …" subtracted. A subtotal that no run foots refuses the statement, naming it. The income shaper's chained running subtotals are not used here: a balance sheet restarts at each section, so "Total liabilities" is not checked against "Total assets".
+- **Balance sheet identity.** The total assets line (`us-gaap:Assets`, or a "Total assets" label) and the total liabilities and equity line (`us-gaap:LiabilitiesAndStockholdersEquity`, or its label) both foot, and their intervals overlap in every column. The parts of the second may include temporary (mezzanine) equity and noncontrolling interests, and no total liabilities line is required. If either line is missing, the read refuses: it cannot check that the balance sheet balances.
+- **Cash flow identity.** The ending balance foots on a run that includes the beginning balance plus the flows printed between them: the net change, the exchange-rate effect, discontinued operations. A missing beginning or ending balance refuses.
+- **Recorded.** Audit 1.9 records each identity checked, its lines, and the `decimals` used per term and column.
+- **Boundaries (tests).** Total assets equal to total liabilities and equity exactly; off within the summed half-widths; off by exactly the half-widths (consistent); off beyond them (refuse). Mezzanine equity and noncontrolling interests between total liabilities and total equity. No total liabilities line. "Less accumulated depreciation" printed without parentheses. Exchange-rate effect before the net change. Beginning cash printed before the net change. No net change line. Missing beginning cash (refuse). A subtotal with nothing above it (refuse).
+
 ### Phase 3 decisions (2026-10-26)
 
 23. **DOCTYPE (constraint 3).** `html.parser` never reads a DTD, so the Inline XBRL reader refuses an `ENTITY` declaration or a `DOCTYPE` with an internal subset, but reads a plain `<!DOCTYPE html …>` (the four 2018 HTML 10-Ks carry one). Every XML parse in `src/` (the workbook preflight) still refuses any DOCTYPE. This is a STOP 1 question.
@@ -184,6 +208,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
     - **Draw B is drawn exactly as section 5 says.** Cross-reader agreement cannot be measured on recent filings: EDGAR carries no PDFs for them, and the SEC no longer publishes `Financial_Report.xlsx`. It goes on REPORT.md's "Not verified" list. The `Financial_Report.xlsx` reader stays for older filings, unchanged.
     - **R6 (amended), 23, 28 and 29 are confirmed.**
     - A blank amount in a filing gets a refusal that names a fix for filings, and a line printed only as dashes, with no tag, is listed in the notes. Both are done in Phase 4.
+
+31. **Statements beyond income: Inline XBRL only.** A balance sheet or cash flow statement from a PDF or a `Financial_Report.xlsx` sheet keeps refusing plainly. A PDF figure carries no `decimals` and no concept, so the identities (R9) would rest on guessed tolerances and guessed line roles. The workbook is not published for recent filings (F2). Section 5's 90% target counts Inline XBRL filings only.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
