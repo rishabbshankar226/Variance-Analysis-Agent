@@ -77,7 +77,8 @@ class Instance:
                 for fact in facts]
 
     def concepts_with_money(self) -> set[str]:
-        return {f.concept for f in self.facts if f.unit.startswith("iso4217:") and "/" not in f.unit}
+        # A nil fact states that the line has no amount (PLAN.md Decision 33), so it is not a line to read.
+        return {f.concept for f in self.facts if f.unit.startswith("iso4217:") and "/" not in f.unit and f.value is not None}
 
 
 def load_instance(path: Path) -> Instance:

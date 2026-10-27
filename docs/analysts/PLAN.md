@@ -29,7 +29,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 3 | `Financial_Report.xlsx` reader fixes from Draw A (breakdowns, binary floats) | done | `d7fd9a2` |
 | 4 | R8 cash flow columns; R9 footing and identities (pure, probed on Draw A: balance sheets 32/33, cash flows 32/33) | done | `e841b4b` … `991450f`, `e390eb4` |
 | 4 | R7 statement comparisons wired through intake, engine, report, audit 1.9, CLI and chat | done | `c75c364`, `ac34c70` |
-| 4 | Draw A re-sweep with balance sheets and cash flows | open | |
+| 4 | Draw A re-sweep with balance sheets and cash flows: zero wrong; 5,506 verified; read income 26/33, balance sheet 32/33, cash flow 32/33; all three 24/33 (73%, 56-85%) | done | sweep `p4b-d5032a1`, sha256 `98eeafcb…` |
 | 4 | Multi-document input (R10), LTM (R11) | todo | |
 | 4 | F4 two-file join (STOP-ASK) | todo | |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
@@ -233,6 +233,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 31. **Statements beyond income: Inline XBRL only.** A balance sheet or cash flow statement from a PDF or a `Financial_Report.xlsx` sheet keeps refusing plainly. A PDF figure carries no `decimals` and no concept, so the identities (R9) would rest on guessed tolerances and guessed line roles. The workbook is not published for recent filings (F2). Section 5's 90% target counts Inline XBRL filings only.
 
 32. **No workbook for statement comparisons in Phase 4.** `--xlsx` on a balance sheet or cash flow comparison refuses plainly, since today's workbook prints revenue and expense totals and recommendations. Phase 6 adds a statement sheet if STOP 2 keeps it.
+
+33. **Oracle: a concept whose facts are all nil is not a monetary line.** "Commitments and contingencies (Note 9)" prints no figure, and its instance facts are `xsi:nil`. The reader treats nil as blank (Decision 26), so the line has nothing to verify. The structure oracle counted it as monetary, which made 18 Draw A balance sheets look partly read. A statement still counts as read only when every line with an amount is covered and verified.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
