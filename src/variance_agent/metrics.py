@@ -76,8 +76,8 @@ def load_metrics(data: bytes) -> list[Metric]:
         if better is not None and better not in {"Higher", "Lower"}:
             raise _bad(f"better must be Higher or Lower (metric '{name}').")
 
-        def terms(key: str, required: bool, metric: str = name) -> tuple[Term, ...]:
-            raw = item.get(key)
+        def terms(key: str, required: bool, metric: str = name, entry: dict[str, object] = item) -> tuple[Term, ...]:
+            raw = entry.get(key)
             if raw is None and not required:
                 return ()
             if not isinstance(raw, list) or not raw:
