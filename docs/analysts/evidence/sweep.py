@@ -300,7 +300,7 @@ def _run(document: Path, period: str, sheet: str | None, out: Path) -> tuple[int
     return done.returncode, message.removeprefix("variance-agent: error: "), time.monotonic() - started
 
 
-_LISTED = re.compile(r"Statements found: (.*)\.$")
+_LISTED = re.compile(r"Statements found: (.*?)\.(?: Choose one of those statements\.)?$")
 
 
 _LISTINGS: dict[Path, list[str]] = {}
