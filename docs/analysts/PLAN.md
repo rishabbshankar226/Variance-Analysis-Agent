@@ -32,7 +32,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | Draw A re-sweep with balance sheets and cash flows: zero wrong; 5,506 verified; read income 26/33, balance sheet 32/33, cash flow 32/33; all three 24/33 (73%, 56-85%) | done | sweep `p4b-d5032a1`, sha256 `98eeafcb…` |
 | 4 | LTM (R11) and `--ltm-from` (R10, CLI) | done | this commit |
 | 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
-| 4 | F4 two-file join (STOP-ASK) | todo | |
+| 4 | F4 two-file join | open (STOP-ASK written, awaiting the owner) | `docs/analysts/evidence/stop-ask-f4/` |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
@@ -251,7 +251,7 @@ Phase 1 (grep of `tests/` on 2026-10-26):
 - **E8:** the messages for `.xls` and `.htm` change; no existing test pins them. These stay unchanged: `test_pdf_intake.py:168` (the full `.docx` message) and `test_chat.py:320` ("Unsupported input format" for `.docx`).
 - **E3 to E6** must not change: `test_intake_ambiguous_columns.py:27` (unbanded `Actual` + `Actual YTD` stays ambiguous), `test_intake_comparison.py:269` (`Name,Amount` keeps the header-row refusal), `test_intake_comparison.py:263`, `test_chat_blank_budgets.py:76` and `test_realworld_intake_baseline.py:119` (true blank budgets still read as 0 with the note).
 
-Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fails with "Could not find a header row with Line Item, Budget, and Actual columns". New: written at the F4 STOP-ASK.
+Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fails with "Could not find a header row with Line Item, Budget, and Actual columns". New (proposed at the F4 STOP-ASK, `docs/analysts/evidence/stop-ask-f4/README.md`): "'fixture_f_budget_separate.csv' has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by 'GL Account'." The phase on line 153 stays `AWAITING_FILE`.
 
 ## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
 
