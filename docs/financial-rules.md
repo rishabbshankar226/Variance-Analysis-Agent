@@ -195,25 +195,27 @@ The words describe the supplied comparison and are never advice.
 
 **Limit.** Each row declares `Limit Kind` Max or Min, and may declare a `Buffer`
 (zero or more, in the row's unit). Breach is strictly beyond the limit: Actual >
-limit for Max, Actual < limit for Min. A row equal to its limit is Within, with or
-without a buffer. Headroom is limit minus Actual for Max and Actual minus limit
-for Min, in the row's unit. Near is 0 < headroom <= buffer, and only with a
+limit for Max, Actual < limit for Min. A row exactly at its limit is At limit
+(the owner's choice at STOP 2; it was Within). Headroom is limit minus Actual for
+Max and Actual minus limit for Min, in the row's unit, also shown as a share of
+the limit's absolute value. Near is 0 < headroom <= buffer, and only with a
 declared buffer. Utilization is Actual divided by limit, for both kinds, and NM
-for a zero limit. Order: Breach, then Near, then Within; within each, headroom
-ascending. Status is Neutral.
+for a zero limit (as is headroom's share). Order: Breach, At limit, Near, Within;
+within each, headroom ascending. Status is Neutral.
 
-Boundary cases: Actual = limit is Within; a step past a Max (or below a Min) is
+Boundary cases: Actual = limit is At limit; a step past a Max (or below a Min) is
 Breach; headroom equal to the buffer is Near, and a step more is Within; a zero
 limit has NM utilization.
 
 **Benchmark.** Each row declares `Better` Higher or Lower. Active difference is
 Actual minus benchmark, in basis points for Percent rows. In line means |active|
 <= a declared `Tolerance` (in the row's unit, percentage points for rates), or
-exact equality without one. Otherwise the row is Above or Below. F or U follows
-Better and the difference's sign; In line is Neutral.
+exact equality without one. Otherwise the row is Higher than benchmark or Lower
+than benchmark (the words describe the figures, never whether that is good). F or
+U follows Better and the difference's sign; In line is Neutral.
 
-Boundary cases: |active| equal to the tolerance is In line; a step more is Above
-or Below; without a tolerance, only zero is In line.
+Boundary cases: |active| equal to the tolerance is In line; a step more is Higher
+or Lower than benchmark; without a tolerance, only zero is In line.
 
 **Target.** Difference is Actual minus target, in basis points for Percent rows.
 On target means |difference| <= a declared `Tolerance`, or exact equality without

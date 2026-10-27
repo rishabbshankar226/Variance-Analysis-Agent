@@ -257,10 +257,11 @@ def test_a_cash_outflow_that_grows_is_a_decrease_of_its_printed_figure() -> None
     analysis, _ = _analyse(_read(FLOWS), "FY2025")
     capex = next(row for row in analysis.rows if row.line_item == "Purchases of property and equipment")  # type: ignore[attr-defined]
     assert (capex.actual, capex.budget, capex.variance_dollars) == (-600 * M, -500 * M, -100 * M)
-    assert display_outcome(capex, ComparisonBasis.PRIOR_PERIOD) == "Decrease"
+    assert display_outcome(capex, ComparisonBasis.PRIOR_PERIOD) == "Decrease, larger negative"
 
 
-@pytest.mark.parametrize(("better", "label"), [("Higher", "Decrease (U)"), ("Lower", "Decrease (F)")])
+@pytest.mark.parametrize(("better", "label"), [("Higher", "Decrease, larger negative (U)"),
+                                               ("Lower", "Decrease, larger negative (F)")])
 def test_a_declared_better_direction_gives_a_statement_line_f_or_u(better: str, label: str) -> None:
     result = _read(FLOWS)
     for row_dict in result.rows:
@@ -349,3 +350,15 @@ def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_tota
     labels = [line.label for line in sheet.lines]
     assert "Total, printed without a label (us-gaap:StockholdersEquityBeforeTreasuryStock)" in labels
     assert labels.count("Total stockholders' equity") == 1
+
+
+
+@pytest.mark.parametrize(("comparison", "actual", "label"), [
+    ("-500", "-600", "Decrease, larger negative"), ("-600", "-500", "Increase, smaller negative"),
+    ("0", "-5", "Decrease, larger negative"), ("10", "-20", "Decrease"), ("-5", "5", "Increase"), ("-5", "-5", "No change"),
+])
+def test_a_negative_printed_figure_says_whether_it_grew_or_shrank(comparison: str, actual: str, label: str) -> None:
+    config = AnalysisConfig("FY", Decimal("1"), Decimal("0.01"), comparison_basis=ComparisonBasis.PRIOR_PERIOD)
+    analysis = analyze_rows([{"Line Item": "Line", "Budget": comparison, "Actual": actual,
+                              "Statement Kind": "cash_flow"}], config)
+    assert display_outcome(analysis.rows[0], ComparisonBasis.PRIOR_PERIOD) == label

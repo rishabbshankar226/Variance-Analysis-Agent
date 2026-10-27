@@ -294,14 +294,14 @@ def _rate(value: Decimal) -> str:
 
 
 _BASIS_NOTES = {
-    "limit": "Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row "
-             "declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a "
+    "limit": "Breach is strictly beyond a limit; a row exactly at its limit is At limit. Near appears only where a "
+             "row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a "
              "negative headroom is a Breach for either kind. Utilization is actual over limit: above 100% is beyond a "
              "Max, and below 100% is short of a Min.",
     "benchmark": "Active difference is actual minus benchmark (basis points for rates). A row is In line when the "
                  "difference is within its declared tolerance, edge included, or exactly zero without one; In line is "
                  "Neutral. Otherwise F or U follows the row's declared Better direction. Above and Below say only "
-                 "whether the figure is higher or lower than its benchmark.",
+                 "whether the figure is higher or lower than its benchmark, never whether that is good.",
     "target": "Difference is actual minus target (basis points for rates). A row is On target when the difference is "
               "within its declared tolerance, edge included, or exactly zero without one. A target is neutral: no F or U.",
 }
@@ -323,18 +323,20 @@ def render_basis_report(result: AnalysisResult) -> str:
     if basis == "limit":
         rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
         counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
-                  for word in ("Breach", "Near", "Within")]
+                  for word in ("Breach", "At limit", "Near", "Within")]
         lines[lines.index("- No revenue, expense or net totals apply to this comparison.") + 1:0] = [
-            "", f"**{counts[0]} Breach, {counts[1]} Near, {counts[2]} Within.**"]
-        lines += ["## Lines, by severity", "", "| Line Item | Kind | Limit | Actual | Headroom | Utilization | Buffer | Status |",
-                  "|---|---|---:|---:|---:|---:|---:|---|"]
+            "", f"**{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within.**"]
+        lines += ["## Lines, by severity", "",
+                  "| Line Item | Kind | Limit | Actual | Headroom | Headroom (% of limit) | Utilization | Buffer | Status |",
+                  "|---|---|---:|---:|---:|---:|---:|---:|---|"]
         for row in rows:
             d = row.basis_details
             assert d is not None and d.headroom is not None
             utilization = "NM" if d.utilization is None else _rate(d.utilization)
             lines.append("| " + " | ".join([
                 _safe_inline(row.line_item), str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
-                amount(d.headroom, row, variance=True), utilization,
+                amount(d.headroom, row, variance=True), "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
+                utilization,
                 "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome]) + " |")
     else:
         status = basis != "target"  # a target is neutral: no Status column

@@ -41,7 +41,7 @@ def test_ines_limits_are_labelled_and_ordered_by_severity(tmp_path: Path) -> Non
     details = _details(record)
     assert {name: d["outcome"] for name, d in details.items()} == {
         "Desk A gross exposure": "Near", "Desk B gross exposure": "Breach", "Desk C liquidity reserve": "Breach",
-        "Desk D liquidity reserve": "Within", "Desk E net exposure": "Within"}
+        "Desk D liquidity reserve": "At limit", "Desk E net exposure": "Within"}
     # Fraction oracle: headroom is limit - actual for Max and actual - limit for Min; utilization actual / limit.
     for name, actual, limit, kind in [("Desk A gross exposure", 480, 500, "Max"), ("Desk B gross exposure", 510, 500, "Max"),
                                       ("Desk C liquidity reserve", 95, 100, "Min"), ("Desk D liquidity reserve", 100, 100, "Min"),
@@ -50,23 +50,25 @@ def test_ines_limits_are_labelled_and_ordered_by_severity(tmp_path: Path) -> Non
         assert Fraction(str(details[name]["headroom"])) == headroom, name
         assert Fraction(str(details[name]["utilization"])) == Fraction(actual, limit), name
     order = [line.split(" | ")[0].lstrip("| ") for line in report.splitlines() if line.startswith("| Desk")]
-    assert order == ["Desk B gross exposure", "Desk C liquidity reserve", "Desk A gross exposure",
-                     "Desk D liquidity reserve", "Desk E net exposure"]
+    assert order == ["Desk B gross exposure", "Desk C liquidity reserve", "Desk D liquidity reserve",
+                     "Desk A gross exposure", "Desk E net exposure"]
+    # Fraction oracle: headroom as a share of the limit's absolute value.
+    assert Fraction(str(details["Desk B gross exposure"]["headroom_percent"])) == Fraction(-10, 500)
     assert {row["status"] for row in record["measure_rows"]} == {"Neutral"}  # type: ignore[union-attr, index]
-    assert "**2 Breach, 1 Near, 2 Within.**" in report
+    assert "**2 Breach, 1 At limit, 1 Near, 1 Within.**" in report
     for absent in ("Total Revenue", "Favorable", "Unfavorable", "Mitigation"):
         assert absent not in report
 
 
 @pytest.mark.parametrize(("actual", "limit", "kind", "buffer", "outcome"), [
-    ("500", "500", "Max", "", "Within"),          # equal to the limit: Within (section 3)
-    ("500", "500", "Max", "25", "Within"),        # equal, with a buffer: still Within
+    ("500", "500", "Max", "", "At limit"),        # equal to the limit (Decision 38; section 3 said Within)
+    ("500", "500", "Max", "25", "At limit"),      # equal, with a buffer
     ("500.01", "500", "Max", "25", "Breach"),     # one step beyond a Max
     ("499.99", "500", "Max", "25", "Near"),       # headroom 0.01 within the buffer
     ("475", "500", "Max", "25", "Near"),          # headroom equal to the buffer: Near
     ("474.99", "500", "Max", "25", "Within"),     # one step beyond the buffer
     ("99.99", "100", "Min", "10", "Breach"),      # one step below a Min
-    ("100", "100", "Min", "10", "Within"),
+    ("100", "100", "Min", "10", "At limit"),
     ("110", "100", "Min", "10", "Near"),
     ("110.01", "100", "Min", "10", "Within"),
 ])
@@ -154,16 +156,18 @@ def test_theo_active_returns_in_basis_points_above_or_below(tmp_path: Path) -> N
     # Fraction oracle: active difference = actual - benchmark, in basis points for rates.
     assert Fraction(str(details["Fund return"]["difference_bps"])) == (Fraction("7.25") - Fraction("6.80")) * 100
     assert {n: d["outcome"] for n, d in details.items()} == {
-        "Fund return": "Above", "Tracking fund return": "In line", "Management fee rate": "Above"}
+        "Fund return": "Higher than benchmark", "Tracking fund return": "In line",
+        "Management fee rate": "Higher than benchmark"}
     statuses = {row["line_item"]: row["status"] for row in record["measure_rows"]}  # type: ignore[union-attr, index]
     assert statuses == {"Fund return": "F", "Tracking fund return": "Neutral", "Management fee rate": "U"}
-    assert "| Fund return | 6.8% | 7.25% | 45 bps | 10 bps | Above | Favorable |" in report
-    assert "| Management fee rate | 0.8% | 0.82% | 2 bps | none (exact) | Above | Unfavorable |" in report
+    assert "| Fund return | 6.8% | 7.25% | 45 bps | 10 bps | Higher than benchmark | Favorable |" in report
+    assert "| Management fee rate | 0.8% | 0.82% | 2 bps | none (exact) | Higher than benchmark | Unfavorable |" in report
 
 
 @pytest.mark.parametrize(("actual", "tolerance", "outcome"), [
-    ("5.05%", "0.05", "In line"), ("5.06%", "0.05", "Above"), ("4.95%", "0.05", "In line"), ("4.94%", "0.05", "Below"),
-    ("5.00%", "", "In line"), ("5.01%", "", "Above"), ("4.99%", "", "Below"),
+    ("5.05%", "0.05", "In line"), ("5.06%", "0.05", "Higher than benchmark"), ("4.95%", "0.05", "In line"),
+    ("4.94%", "0.05", "Lower than benchmark"), ("5.00%", "", "In line"), ("5.01%", "", "Higher than benchmark"),
+    ("4.99%", "", "Lower than benchmark"),
 ])
 def test_benchmark_in_line_straddles_its_tolerance(tmp_path: Path, actual: str, tolerance: str, outcome: str) -> None:
     text = f"Line Item,Actual,Benchmark,Better,Tolerance,Measure\nFund,{actual},5.00%,Higher,{tolerance},Percent\n"

@@ -109,7 +109,8 @@ class BasisDetails:
     headroom: Decimal | None = None
     utilization: Decimal | None = None  # None is NM: a zero limit
     tolerance: Decimal | None = None
-    severity: int | None = None  # 0 Breach, 1 Near, 2 Within
+    severity: int | None = None  # 0 Breach, 1 At limit, 2 Near, 3 Within
+    headroom_percent: Decimal | None = None  # headroom over the limit's absolute value; None is NM
 
 
 @dataclass(frozen=True)

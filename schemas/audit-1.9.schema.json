@@ -2489,7 +2489,8 @@
               "headroom",
               "utilization",
               "tolerance",
-              "severity"
+              "severity",
+              "headroom_percent"
             ],
             "properties": {
               "line_item": {
@@ -2505,10 +2506,11 @@
               "outcome": {
                 "enum": [
                   "Breach",
+                  "At limit",
                   "Near",
                   "Within",
-                  "Above",
-                  "Below",
+                  "Higher than benchmark",
+                  "Lower than benchmark",
                   "In line",
                   "Over",
                   "Under",
@@ -2580,7 +2582,18 @@
                   null,
                   0,
                   1,
-                  2
+                  2,
+                  3
+                ]
+              },
+              "headroom_percent": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               }
             }

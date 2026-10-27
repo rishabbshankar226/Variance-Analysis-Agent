@@ -47,20 +47,23 @@ def basis_details(raw: dict[str, object], comparison: Decimal, actual: Decimal, 
             buffer = _optional(raw, "buffer", "Buffer", name)
             headroom = comparison - actual if kind == "max" else actual - comparison
             utilization = None if comparison == 0 else ratio(actual, comparison)
+            share = None if comparison == 0 else ratio(headroom, abs(comparison))
             if headroom < 0:
                 outcome, severity = "Breach", 0
-            elif buffer is not None and 0 < headroom <= buffer:
-                outcome, severity = "Near", 1
+            elif headroom == 0:
+                outcome, severity = "At limit", 1  # the owner's call at STOP 2 (Decision 38); section 3 said Within
+            elif buffer is not None and headroom <= buffer:
+                outcome, severity = "Near", 2
             else:
-                outcome, severity = "Within", 2  # a row equal to its limit is Within (section 3)
+                outcome, severity = "Within", 3
             return BasisDetails("limit", outcome, difference, bps, kind.title(), buffer, headroom, utilization,
-                                severity=severity)
+                                severity=severity, headroom_percent=share)
         tolerance = _optional(raw, "tolerance", "Tolerance", name)
         in_line = abs(difference) <= tolerance if tolerance is not None else difference == 0
         if basis is ComparisonBasis.BENCHMARK:
             if better is None:
                 raise ValueError(f"{name}: is Higher or Lower better against the benchmark? Supply Better as Higher or Lower.")
-            outcome = "In line" if in_line else "Above" if difference > 0 else "Below"
+            outcome = "In line" if in_line else "Higher than benchmark" if difference > 0 else "Lower than benchmark"
             return BasisDetails("benchmark", outcome, difference, bps, tolerance=tolerance)
         if better is not None:
             raise ValueError(f"{name}: a target is neutral, so it takes no Better direction; remove Better for this row.")
