@@ -142,6 +142,25 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - **Stale caches** (recommended as part of E7, and droppable): when `workbook.xml` sets `calcPr fullCalcOnLoad="1"`, the producer asked Excel to recalculate on open, so saved results may be stale. Formula cells in read columns refuse with the same fix. openpyxl sets this flag on every workbook it writes (checked on the E7 probe: `<calcPr calcId="124519" fullCalcOnLoad="1" />`), but it writes formulas with an empty `<v />`, which already refuse under the rule above. So this part bites only on files that hold formula cells with saved results *and* the flag, the output of producers that write both.
 - Tests: Budget formula (probe E7b, no longer $180 against $100); Actual formula (probe E7, the new wording); Line Item formula; a driver-column formula; a `Var $` formula (listed, the read proceeds); a cached formula (read as today); a cached empty string; a shared-formula dependent; `fullCalcOnLoad` 0 against 1; eleven cells ("…and 1 more").
 
+### R5. Subtotal footing for filing reads (identity, constraint 2), confirmed against Calculations 1.1
+
+- **Confirmed 2026-10-26** against XBRL Calculations 1.1 (REC 2023-02-22, sections 5.2 and 5.2.3, round-to-nearest mode). The specification does not re-round terms to a common `decimals`, so the spec's shorthand ("round each term and the total to the least precise decimals") is replaced by the specification's interval rule. Each fact with finite `decimals` d is the closed interval [v - 0.5*10^-d, v + 0.5*10^-d]; `INF` is the point v. The calculated total is the sum of the weighted term intervals. The subtotal is consistent when that sum overlaps the reported total's interval, touching endpoints included.
+- Applied to the displayed values (constraint 10): for each subtotal the statement shaper matches, with the weights (+1/-1) it found, in every period column. The precision recorded is each fact's own `decimals`.
+- A matched subtotal that fails the check, or a subtotal-named line the shaper cannot match to any lines above it, refuses the statement plainly, naming the line. Lines the arithmetic leaves unlabeled (several sign readings fit) are asked about, as for PDFs.
+- The shaper finds structure with a single tolerance unit, 10^-d at the statement's least precise `decimals`. The interval rule then decides consistency with per-fact precision.
+- Boundary tests: foots exactly; off by less than the summed half-widths; off by exactly the summed half-widths (consistent: closed intervals); off by more (refuse); mixed `decimals` (-6 and -3) on one subtotal; `INF` decimals.
+
+### R6. Dimensional facts on a face statement
+
+- Dimensionless facts make the consolidated statement, and only they enter its footing.
+- One-axis facts on a face line (for example revenue by product, on a product/service axis) feed the flat segment dimension, keyed by concept, axis and member, when the run recognizes segments (an earnings or quant preset, or extended headers). On the plain FP&A path, which is the sweep's fixed command, they are left out and listed by line and member, because a Segment column there would not be read as one. This narrows "feed the segment dimension" on the FP&A path, and is a STOP 1 question.
+- Facts on two or more axes are always left out and listed.
+- When a fact appears on the face and again in a note, the face table's copy is read: the first table in document order that holds the statement.
+
+## STOP 1 settings (committed before the sample is drawn)
+
+- Fresh-eyes seed: `20261027`. The five Draw A filings are `random.Random(20261027).sample` of Draw A's Inline XBRL accessions, sorted. The reviewer gets the sweep table, those filings and the tool's outputs, and none of this plan's reasoning.
+
 ## Existing assertions expected to change
 
 Phase 1 (grep of `tests/` on 2026-10-26):
