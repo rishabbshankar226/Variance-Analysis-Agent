@@ -82,3 +82,103 @@ def statement(title: str, rows: list[str], caption: str = "(In millions, except 
 def income_filing(rows: list[str] | None = None, hidden: str = "", extra: str = "") -> bytes:
     body = statement("CONSOLIDATED STATEMENTS OF OPERATIONS", rows or income_rows()) + extra
     return document(body, hidden).encode("utf-8")
+
+
+# Balance sheet and cash flow statements (PLAN.md R7-R9). The extra resources go in only when asked
+# for, so the income fixtures keep their bytes.
+POSITION_RESOURCES = """<xbrli:context id="I23"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0009999999</xbrli:identifier></xbrli:entity>
+<xbrli:period><xbrli:instant>2023-09-30</xbrli:instant></xbrli:period></xbrli:context>
+<xbrli:unit id="shares"><xbrli:measure>xbrli:shares</xbrli:measure></xbrli:unit>
+"""
+
+
+def balance_rows() -> list[str]:
+    def money(label: str, concept: str, now: str, before: str, *, sign: str | None = None) -> str:
+        if sign:  # printed in parentheses: the instance holds it negative (sign="-")
+            return row(label, "(" + fact(concept, "I25", now, sign=sign) + ")", "(" + fact(concept, "I24", before, sign=sign) + ")")
+        return row(label, fact(concept, "I25", now), fact(concept, "I24", before))
+
+    return [
+        row("ASSETS"),
+        row("Current assets:"),
+        row("Cash and cash equivalents", "$" + fact("us-gaap:CashAndCashEquivalentsAtCarryingValue", "I25", "2,600"),
+            "$" + fact("us-gaap:CashAndCashEquivalentsAtCarryingValue", "I24", "2,000")),
+        money("Accounts receivable, net", "us-gaap:AccountsReceivableNetCurrent", "800", "770"),
+        money("Total current assets", "us-gaap:AssetsCurrent", "3,400", "2,770"),
+        money("Property and equipment, net", "us-gaap:PropertyPlantAndEquipmentNet", "3,100", "2,700"),
+        money("Total assets", "us-gaap:Assets", "6,500", "5,470"),
+        row("LIABILITIES AND STOCKHOLDERS' EQUITY"),
+        money("Accounts payable", "us-gaap:AccountsPayableCurrent", "900", "820"),
+        money("Total current liabilities", "us-gaap:LiabilitiesCurrent", "900", "820"),
+        money("Long-term debt", "us-gaap:LongTermDebtNoncurrent", "1,500", "1,500"),
+        money("Total liabilities", "us-gaap:Liabilities", "2,400", "2,320"),
+        row("Commitments and contingencies (Note 9)"),
+        row("Stockholders' equity:"),
+        # Share counts and par value are tagged inside the label, as filings print them.
+        row("Common stock, $" + fact("us-gaap:CommonStockParOrStatedValuePerShare", "I25", "0.01", unit="usdPerShare",
+                                     scale="0", decimals="2") + " par value; "
+            + fact("us-gaap:CommonStockSharesAuthorized", "I25", "500", unit="shares") + " shares authorized; "
+            + fact("us-gaap:CommonStockSharesIssued", "I25", "120", unit="shares") + " and "
+            + fact("us-gaap:CommonStockSharesIssued", "I24", "118", unit="shares") + " shares issued",
+            fact("us-gaap:CommonStockValue", "I25", "1"), fact("us-gaap:CommonStockValue", "I24", "1")),
+        money("Additional paid-in capital", "us-gaap:AdditionalPaidInCapital", "1,200", "1,100"),
+        money("Retained earnings", "us-gaap:RetainedEarningsAccumulatedDeficit", "2,999", "2,149"),
+        row("Treasury stock, at cost", "(" + fact("us-gaap:TreasuryStockValue", "I25", "100") + ")",
+            "(" + fact("us-gaap:TreasuryStockValue", "I24", "100") + ")"),
+        money("Total stockholders' equity", "us-gaap:StockholdersEquity", "4,100", "3,150"),
+        money("Total liabilities and stockholders' equity", "us-gaap:LiabilitiesAndStockholdersEquity", "6,500", "5,470"),
+    ]
+
+
+def cash_flow_rows() -> list[str]:
+    def flow(label: str, concept: str, now: str, before: str, *, out: tuple[bool, bool] = (False, False),
+             sign: tuple[bool, bool] = (False, False)) -> str:
+        cells = []
+        for context, text, printed_out, negative in (("FY25", now, out[0], sign[0]), ("FY24", before, out[1], sign[1])):
+            tag = fact(concept, context, text, sign="-" if negative else None)
+            cells.append(f"({tag})" if printed_out else tag)
+        return row(label, *cells)
+
+    return [
+        row("Operating activities:"),
+        flow("Net income", "us-gaap:NetIncomeLoss", "1,450", "1,330"),
+        flow("Depreciation and amortization", "us-gaap:DepreciationDepletionAndAmortization", "200", "180"),
+        flow("Increase in accounts receivable", "us-gaap:IncreaseDecreaseInAccountsReceivable", "30", "20", out=(True, True)),
+        flow("Net cash provided by operating activities", "us-gaap:NetCashProvidedByUsedInOperatingActivities",
+             "1,620", "1,490"),
+        row("Investing activities:"),
+        flow("Purchases of property and equipment", "us-gaap:PaymentsToAcquirePropertyPlantAndEquipment", "600", "500",
+             out=(True, True)),
+        flow("Net cash used in investing activities", "us-gaap:NetCashProvidedByUsedInInvestingActivities", "600", "500",
+             out=(True, True), sign=(True, True)),
+        row("Financing activities:"),
+        flow("Dividends paid", "us-gaap:PaymentsOfDividends", "400", "350", out=(True, True)),
+        flow("Net cash used in financing activities", "us-gaap:NetCashProvidedByUsedInFinancingActivities", "400", "350",
+             out=(True, True), sign=(True, True)),
+        flow("Effect of exchange rate changes on cash",
+             "us-gaap:EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "20", "10",
+             out=(True, False), sign=(True, False)),
+        flow("Net increase in cash, cash equivalents and restricted cash",
+             "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect",
+             "600", "650"),
+        row("Cash, cash equivalents and restricted cash, beginning of year",
+            fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I24", "2,000"),
+            fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I23", "1,350")),
+        row("Cash, cash equivalents and restricted cash, end of year",
+            "$" + fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I25", "2,600"),
+            "$" + fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I24", "2,000")),
+        row("Supplemental disclosure:"),
+        flow("Cash paid for interest", "us-gaap:InterestPaidNet", "45", "38"),
+    ]
+
+
+def position_filing(title: str, rows: list[str], caption: str = "(In millions, except per-share amounts)") -> bytes:
+    body = statement(title, rows, caption)
+    return document(body).replace("</ix:resources>", POSITION_RESOURCES + "</ix:resources>").encode("utf-8")
+
+
+def all_statements_filing() -> bytes:
+    body = (statement("CONSOLIDATED STATEMENTS OF OPERATIONS", income_rows())
+            + statement("CONSOLIDATED BALANCE SHEETS", balance_rows())
+            + statement("CONSOLIDATED STATEMENTS OF CASH FLOWS", cash_flow_rows()))
+    return document(body).replace("</ix:resources>", POSITION_RESOURCES + "</ix:resources>").encode("utf-8")

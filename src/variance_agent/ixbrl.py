@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 
@@ -134,6 +134,7 @@ class Line:
     measure: str  # "Currency", "Per Share", "Count"
     keys: list[LineKey | None]  # by column
     dash: bool = False  # prints an untagged dash: a column without a fact reads as 0
+    balance: str = ""  # "beginning" or "ending": a cash flow line of instants placed in duration columns (R8)
 
     @property
     def total(self) -> bool:
@@ -498,7 +499,10 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
         for cells in table.rows:
             flat: list[tuple[str, str | int]] = []
             label_parts: list[str] = []
-            first_figure = next((n for n, cell in enumerate(cells) if any(k in {"fact", "ref"} for k, _ in cell.tokens)), None)
+            figured = [n for n, cell in enumerate(cells) if any(k in {"fact", "ref"} for k, _ in cell.tokens)]
+            # Figures tagged inside the label (a par value, shares authorized) are label text when the
+            # row prints figures in later cells too.
+            first_figure = next((n for n in figured if n > 0), figured[0] if figured else None)
             # A "$" or "(" printed in its own cell before the first figure belongs to the figure, not the label.
             while first_figure is not None and first_figure > 1 and re.fullmatch(
                     r"[\s\u00a0$€£¥(\-\u2212]*", "".join(str(t) for k, t in cells[first_figure - 1].tokens if k == "text")) \
@@ -508,7 +512,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
             for n, cell in enumerate(cells):
                 cell_text = "".join(str(t) for k, t in cell.tokens if k == "text")
                 if (first_figure is None or n < first_figure) and not (n and _DASH_CELL.fullmatch(cell_text)):
-                    label_parts.append(cell_text)
+                    label_parts.append(_printed_text(cell, reader, by_id))
                 else:
                     dash = dash or bool(_DASH_CELL.fullmatch(cell_text))
                     flat.extend(cell.tokens)
@@ -544,14 +548,47 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
     groups: dict[int, list[tuple[str, ...]]] = {}
     for period in periods:
         groups.setdefault(_months(period), []).append(period)
+    # A cash flow statement's beginning and ending cash are instants that belong in its duration
+    # columns (R8), not a statement of their own.
+    place_instants = kind == "cash_flow" and any(months and len(group) > 1 for months, group in groups.items())
+    if place_instants:
+        groups.pop(0, None)
     statements = []
     for months, group in sorted(groups.items(), key=lambda item: -len(item[1])):
         if len(group) < 2:
             continue
         group.sort(key=lambda p: p[-1], reverse=True)
         name = title if len(groups) == 1 or months == 0 else f"{title}, {months} Months Ended"
-        statements.append(_statement(kind, name, group, rows, reader, per_share_lines))
+        statements.append(_statement(kind, name, group, rows, reader, per_share_lines, place_instants))
     return statements
+
+
+def _printed_text(cell: _Cell, reader: _Reader, by_id: dict[str, int]) -> str:
+    """A cell as printed: its text, with any figure tagged in it as the figure's own text."""
+    parts = []
+    for kind, value in cell.tokens:
+        if kind == "text":
+            parts.append(str(value))
+        else:
+            index = value if kind == "fact" else by_id.get(str(value))
+            if isinstance(index, int):
+                parts.append(reader.facts[index].text)
+    return "".join(parts)
+
+
+def _placement(dates: set[str], periods: list[tuple[str, ...]], label: str) -> tuple[dict[str, int], str]:
+    """Where a line's instants sit among duration columns (R8): each column's end, or the day before its start."""
+    ends = {p[2]: n for n, p in enumerate(periods) if p[0] == "duration"}
+    starts = {(date.fromisoformat(p[1]) - timedelta(days=1)).isoformat(): n for n, p in enumerate(periods) if p[0] == "duration"}
+    as_end, as_start = dates <= ends.keys(), dates <= starts.keys()
+    if as_end and as_start:  # one shared date: the label says which balance it is
+        as_end = not re.search(r"\bbeginning\b|\bstart\b", label, re.IGNORECASE)
+        as_start = not as_end
+    if as_end:
+        return {d: ends[d] for d in dates}, "ending"
+    if as_start:
+        return {d: starts[d] for d in dates}, "beginning"
+    return {}, "its balances fall at the end of one column and the start of another"
 
 
 def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -> str:
@@ -566,7 +603,7 @@ def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -
 
 def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]], reader: _Reader,
-               per_share_lines: bool) -> Statement:
+               per_share_lines: bool, place_instants: bool = False) -> Statement:
     labels = [_period_label(p) for p in periods]
     statement = Statement(kind, name, periods, labels, [])
     if len(set(labels)) != len(labels):
@@ -577,6 +614,16 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
         keys: list[LineKey | None] = [None] * len(periods)
         concept, measure, dims_seen, problem = "", "", set(), ""
         plain = any(not reader.contexts[f.context].dims for f, _ in figures if f.context in reader.contexts)
+        placed: dict[str, int] = {}
+        balance = ""
+        if place_instants:
+            instants = {reader.contexts[f.context].period[1] for f, _ in figures if f.context in reader.contexts
+                        and reader.contexts[f.context].period[0] == "instant" and not reader.contexts[f.context].dims
+                        and _monetary(reader.units.get(f.unit, ""))}
+            if instants:
+                placed, balance = _placement(instants, periods, label)
+                if not placed:
+                    problem, balance = balance, ""
         for fact, negated in figures:
             context = reader.contexts.get(fact.context)
             unit = reader.units.get(fact.unit, "")
@@ -588,7 +635,8 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                 # must foot over it (R5, R6). Facts on two or more axes are left out.
                 if plain or len(context.dims) > 1:
                     continue
-            if context.period not in periods:
+            column = placed.get(context.period[1]) if context.period[0] == "instant" and placed else None
+            if column is None and context.period not in periods:
                 continue
             fact_measure = _measure(unit)
             if not fact_measure:
@@ -602,10 +650,10 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                 problem = problem or "a parenthesis that opens or closes on one side only"
                 continue
             displayed = -fact.magnitude if negated else fact.magnitude
-            keys[periods.index(context.period)] = LineKey(fact.name, fact.context, context.period, context.dims,
-                                                          fact.stored, displayed, fact.decimals)
+            keys[periods.index(context.period) if column is None else column] = LineKey(
+                fact.name, fact.context, context.period, context.dims, fact.stored, displayed, fact.decimals)
             concept, measure = concept or fact.name, measure or fact_measure
-        if not any(keys):
+        if not any(keys) and not problem:
             if dims_seen:
                 statement.left_out.append(f"'{label}' (a breakdown by several axes)")
             continue
@@ -617,7 +665,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
         if measure != "Currency" and not per_share_lines:
             statement.left_out.append(f"'{label}' (per-share and share counts are not money totals)")
             continue
-        statement.lines.append(Line(label, section, concept, measure, keys, dash))
+        statement.lines.append(Line(label, section, concept, measure, keys, dash, balance))
     if breakdowns:
         statement.notes.append(f"Read {len(breakdowns)} line{'s' if len(breakdowns) != 1 else ''} that break a total down "
                                f"by one axis (such as '{breakdowns[0]}') as printed lines; the audit names each axis and member")
