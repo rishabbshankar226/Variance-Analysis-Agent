@@ -27,7 +27,11 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message` (removed), the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help | done | this commit |
 | 3 | `ixbrl.py` reader, `.htm` routing (CLI, chat, file API), audit 1.9 `ixbrl` documents | done | `cd23bf0` |
 | 3 | `Financial_Report.xlsx` reader fixes from Draw A (breakdowns, binary floats) | done | `d7fd9a2` |
-| 4 | Balance sheet / cash flow statements, identities, multi-document input, LTM, F4 (STOP-ASK) | todo | |
+| 4 | R8 cash flow columns; R9 footing and identities (pure, probed on Draw A: balance sheets 32/33, cash flows 32/33) | done | `e841b4b` … `991450f`, `e390eb4` |
+| 4 | R7 statement comparisons wired through intake, engine, report, audit 1.9, CLI and chat | done | `c75c364`, `ac34c70` |
+| 4 | Draw A re-sweep with balance sheets and cash flows | open | |
+| 4 | Multi-document input (R10), LTM (R11) | todo | |
+| 4 | F4 two-file join (STOP-ASK) | todo | |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
@@ -191,6 +195,22 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - **Cash flow identity.** The ending balance foots on a run that includes the beginning balance plus the flows printed between them: the net change, the exchange-rate effect, discontinued operations. A missing beginning or ending balance refuses.
 - **Recorded.** Audit 1.9 records each identity checked, its lines, and the `decimals` used per term and column.
 - **Boundaries (tests).** Total assets equal to total liabilities and equity exactly; off within the summed half-widths; off by exactly the half-widths (consistent); off beyond them (refuse). Mezzanine equity and noncontrolling interests between total liabilities and total equity. No total liabilities line. "Less accumulated depreciation" printed without parentheses. Exchange-rate effect before the net change. Beginning cash printed before the net change. No net change line. Missing beginning cash (refuse). A subtotal with nothing above it (refuse).
+
+### R10. Multi-document input is opt-in
+
+- **CLI.** One primary input, as today, plus `--ltm-from PATH`: the latest 10-K, from which the primary 10-Q's statement builds LTM (R11). Without the flag nothing changes. The second document goes through the same intake and limits as a primary, and audit 1.9 records it with its own name and sha256 (multi-document provenance).
+- **Chat.** After a 10-Q's income or cash flow statement is read, the chat offers "Build LTM". It then asks for the 10-K upload and keeps both files in the session.
+- **F4** (budget and actuals in two files) joins through the same mechanism. Its rule and the edit to `test_realworld_intake_baseline.py:154` are its STOP-ASK.
+
+### R11. LTM (section 3), for flows
+
+- **Formula.** For each line of the 10-Q's year-to-date income statement or cash flow statement, LTM = FY + YTD - prior YTD. FY is the 10-K's latest fiscal-year column, YTD the 10-Q's current year-to-date column, and prior YTD the 10-Q's prior-year year-to-date column. Each of the three is cited by document (name and sha256), column label and XBRL context. The arithmetic is exact Decimal, with a Fraction oracle.
+- **Continuity, not dates.** The prior YTD must start where the 10-K's year starts, and the current YTD must start the day after the 10-K's year ends. That accepts 52/53-week years. Anything else refuses, naming the dates. The year-to-date column is always used, never the three-month one; a first-quarter 10-Q's year-to-date column is its three-month column.
+- **Lines join by XBRL key** (concept and dimensions), never by label. A line in one document only refuses the build, naming it, because leaving it out would change a total without a trace. A line typed revenue in one statement and expense in the other refuses.
+- **Comparison.** By default LTM is compared with the 10-K's fiscal year, labeled with that year. Variance and the F/U labels work as for any income statement.
+- **Not LTM.** Per-share amounts and share counts are left out with "not computable as LTM". A balance sheet is point in time: with `--ltm-from` it is read from the primary as usual, with a note. With a 10-K and no later 10-Q, LTM equals the fiscal year, and the report says so.
+- **Recast.** When the 10-K's instance holds a fact for the 10-Q's prior-YTD period and key that differs from the 10-Q's figure, or the 10-Q's statement headers say "recast", "restated" or "as adjusted", the flag is shown beside the figure and recorded.
+- **Boundaries (tests).** A 52/53-week year (FY ends 2025-09-27; the YTD starts 2025-09-28). A YTD starting one day late or one day early (refuse). A Q1 10-Q. A line only in the 10-K (refuse). The three-month column present beside the YTD one (the YTD is used). A recast header. LTM equal to FY when the YTDs are equal.
 
 ### Phase 3 decisions (2026-10-26)
 
