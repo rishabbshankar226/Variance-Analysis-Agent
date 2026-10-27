@@ -51,7 +51,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | One guide per new reader (`docs/analysts/{owen,clara,marcus,ines,theo}.md`), written by `build_guides.py` from the commands it runs; inputs committed under `tests/fixtures/analysts/` | done | this commit |
 | 6 | Phase 6 exit: gates green (2,467), every guide command executed, each new reader reaches a first answer in the chat | done | `0ad4f64` |
 | 7 | Draw B drawn (seed 20261029) and swept once at `3f731a7`: **1 wrong** (derived revenue subtotal), 4,193 verified, all three read 12/28 (43%, 27-61%); fresh eyes (seed 20261030): 3 more wrong headline figures; dist gates PASS (2,467) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-b/` |
-| 7 | STOP-ASK answered (Decision 39): fixes, then Draw C (seed 20261031), `REPORT.md`, CHANGELOG | open | seeds committed |
+| 7 | Decision 39 tool fixes 1-7, each pinned by a fictional fixture that failed first (`tests/test_filing_headlines.py`); sweep scores every headline figure; oracle reads combined income-and-comprehensive titles | done | this commit |
+| 7 | Docs, Draw A re-sweep, chat fixes, Draw C (seed 20261031), `REPORT.md`, CHANGELOG | open | |
 
 ## Baseline (measured 2026-10-26)
 
@@ -392,6 +393,14 @@ Phase 5 (scope only; no assertion changes, to confirm at STOP 2):
 - `tests/test_comparison_basis.py::test_numbers_identical_across_bases`. Old: `[analyze_rows(ROWS, cfg(b)) for b in ComparisonBasis]`. New: the same over the bases without per-row declarations, so limit, benchmark and target are left out. The assertion still compares budget, forecast and prior period.
 - `tests/test_quality_audit.py::test_financial_invariants_against_independent_fraction_oracle`. Old: parametrized over `list(ComparisonBasis)`. New: the same list less limit, benchmark and target. Those refuse rows without their declarations, by design, and have their own Fraction oracles in `tests/test_bases.py`.
 - `tests/test_cli_comparison.py::test_mapping_rejects_unknown_comparison_basis` is unchanged: mapping files still accept only the earlier bases.
+
+Phase 7 (Decision 39, approved at the Draw B STOP-ASK):
+- `tests/test_ixbrl.py:201` and `:535`, and `tests/test_ixbrl_statements.py::test_a_cash_line_that_would_be_both_a_beginning_and_an_ending_balance_refuses`.
+  - Old: "… Upload the filing's PDF, or a CSV or Excel copy of the statement."
+  - New: "… Upload a CSV or Excel copy of the statement, or the filing's PDF." (item 3; EDGAR carries no PDF for recent filings, F2.)
+- `tests/test_ixbrl_statements.py::test_a_negative_printed_figure_says_whether_it_grew_or_shrank`, a Phase 6 case.
+  - Old: `("0", "-5", "Decrease, larger negative")`.
+  - New: `("0", "-5", "Decrease")`, plus `("-5", "0", "Increase")` (item 7: the cue only where both figures are negative).
 
 ## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
 

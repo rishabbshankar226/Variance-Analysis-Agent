@@ -198,6 +198,32 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
         if isinstance(latest, dict) and Fraction(str(total["actual"])) != Fraction(str(latest.get("displayed"))):
             score.wrong += 1
             problems.append(f"Total Revenue {total['actual']} is not the filing's revenue {latest.get('displayed')}")
+    # Every headline figure (Decision 39) must be its own fact, and its change must recompute; where the statement
+    # prints one dimensionless revenue line, the headline must carry it.
+    headline = _group(_group(_group(audit, "source"), "document"), "headline")
+    for item in _items(headline, "items"):
+        if not isinstance(item, dict):
+            continue
+        keys = [item.get("actual"), item.get("comparison")]
+        for key in keys:
+            if not isinstance(key, dict):
+                score.wrong += 1
+                problems.append(f"headline {item.get('line_item')} has no fact key")
+                continue
+            period = tuple(str(part) for part in _items(key, "period"))
+            facts = [f for f in instance.lookup(str(key.get("concept")), period, ()) if f.value is not None]
+            if not any(Fraction(str(f.value)) == Fraction(str(key.get("stored"))) for f in facts):
+                score.wrong += 1
+                problems.append(f"headline {item.get('line_item')}: stored {key.get('stored')} is not a filing fact")
+        if all(isinstance(key, dict) for key in keys) and Fraction(str(item.get("change"))) != (
+                Fraction(str(keys[0]["displayed"])) - Fraction(str(keys[1]["displayed"]))):  # type: ignore[index]
+            score.wrong += 1
+            problems.append(f"headline {item.get('line_item')} change does not recompute")
+    if headline and len(revenue_lines) == 1 and not any(
+            isinstance(item, dict) and item.get("concept") == revenue_lines[0].get("concept")
+            and item.get("role") == "revenue" for item in _items(headline, "items")):
+        score.wrong += 1
+        problems.append("headline lacks the filing's one revenue line")
     score.covered = len(covered)
     score.details = "; ".join(problems)[:500]
     return score

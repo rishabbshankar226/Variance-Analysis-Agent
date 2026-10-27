@@ -1,0 +1,253 @@
+"""Decision 39: the fixes after Draw B, each pinned by a fictional filing (HALVORSEN.FAKE)."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from tests.fixtures.ixbrl.build_ixbrl import operations_and_comprehensive_loss_filing
+from variance_agent.intake import IntakeResult, read_input_assisted
+
+M = Decimal(1_000_000)
+
+
+def _read(data: bytes, **options: object) -> IntakeResult:
+    return read_input_assisted(data, ".htm", filename="hal-20250927.htm", **options)  # type: ignore[arg-type]
+
+
+def test_net_loss_printed_twice_keeps_its_name_and_is_the_bottom_line() -> None:
+    result = _read(operations_and_comprehensive_loss_filing())
+    assert not result.has_fatal_errors, result.fatal_error_message
+    names = [str(r["line_item"]) for r in result.rows]
+    assert "Operating expenses: Net loss" not in names
+    assert not any(name.startswith("Operating expenses:") for name in names)
+    # The bottom line is a subtotal the statement computes, so the arithmetic places interest income.
+    assert not any("Couldn't tell" in note for note in result.reader_notes), result.reader_notes
+    assert any(note.startswith("Left out 3 lines below 'Net loss'") for note in result.reader_notes), result.reader_notes
+
+
+def test_interest_income_below_the_operating_loss_is_never_revenue() -> None:
+    result = _read(operations_and_comprehensive_loss_filing())
+    assert not result.has_fatal_errors, result.fatal_error_message
+    revenue = [str(r["line_item"]) for r in result.rows if r["type"] == "Revenue"]
+    assert revenue == ["Collaboration revenue"]
+    interest = next(r for r in result.rows if r["line_item"] == "Interest income")
+    assert (interest["type"], Decimal(str(interest["actual"])), Decimal(str(interest["budget"]))) == (
+        "Expense", -27 * M, -34 * M)
+
+
+def _engine(result: IntakeResult) -> dict[str, str]:
+    from variance_agent.analysis import analyze_rows
+    from variance_agent.models import AnalysisConfig, ComparisonBasis
+    assert not result.has_fatal_errors, result.fatal_error_message
+    config = AnalysisConfig("FY2025", Decimal(1), Decimal("0.01"), comparison_basis=ComparisonBasis.PRIOR_PERIOD)
+    return {row.line_item: row.line_type.value for row in analyze_rows(result.rows, config).rows}
+
+
+def test_a_line_the_arithmetic_cannot_place_is_not_typed_revenue_by_its_label() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, row
+    # No subtotal covers 'Interest income', so the statement's arithmetic can't say whether it adds to income;
+    # the filing prints its revenue ('Net sales'), so the line's label must not make it revenue (Decision 39).
+    rows = [row("Net sales", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900")),
+            row("Cost of sales", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), fact("us-gaap:CostOfRevenue", "FY24", "2,250")),
+            row("Gross margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), fact("us-gaap:GrossProfit", "FY24", "1,650")),
+            row("Interest income", fact("us-gaap:InvestmentIncomeInterest", "FY25", "27"),
+                fact("us-gaap:InvestmentIncomeInterest", "FY24", "34"))]
+    result = _read(income_filing(rows))
+    types = _engine(result)
+    assert types["Net sales"] == "Revenue"
+    assert types["Interest income"] == "Unclassified"
+    assert ("Left 'Interest income' unlabeled: the statement's arithmetic doesn't show whether it adds to or reduces "
+            "income, and the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part of") \
+        in result.reader_notes
+
+
+def test_a_lone_revenue_line_printed_as_a_total_reads_as_the_revenue_line() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing, income_rows
+    rows = income_rows()
+    rows[0] = rows[0].replace("<td>Net sales</td>", "<td>Total revenue, net</td>")
+    result = _read(income_filing(rows))
+    types = _engine(result)  # the engine's own Total check never stops a line the reader placed
+    assert types["Total revenue, net"] == "Revenue"
+    assert next(r for r in result.rows if r["line_item"] == "Total revenue, net")["Row Kind"] == "Detail"
+
+
+def _fifty_three_week_filing() -> bytes:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, quarter_filing, row
+    years = {"Y26": ("2024-12-29", "2026-01-03"), "Y24": ("2023-12-31", "2024-12-28"), "Y23": ("2023-01-01", "2023-12-30")}
+
+    def line(label: str, concept: str, *values: str) -> str:
+        return row(label, *(fact(concept, c, v) for c, v in zip(years, values, strict=True)))
+    rows = [line("Net sales", "us-gaap:Revenues", "1,004", "1,145", "1,412"),
+            line("Cost of sales", "us-gaap:CostOfRevenue", "500", "560", "700"),
+            line("Net income", "us-gaap:NetIncomeLoss", "504", "585", "712")]
+    return quarter_filing(rows, title="CONSOLIDATED STATEMENTS OF INCOME", periods=years)
+
+
+def test_consecutive_52_53_week_years_are_named_by_their_end_month_not_as_a_gap() -> None:
+    result = _read(_fifty_three_week_filing())
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert result.comparison_label == "Dec 2024"
+    assert "Read the column for 2026-01-03 as Jan 2026" in result.reader_notes
+    assert not any("FY2026" in note for note in result.reader_notes)
+
+
+def test_years_that_name_cleanly_keep_their_fiscal_year_labels() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    result = _read(income_filing())
+    assert result.comparison_label == "FY2024"
+
+
+# Fix 5: a filing's income headline shows the filing's own printed totals, each from its fact.
+
+def _report(data: bytes, **options: object) -> tuple[str, dict[str, object]]:
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from variance_agent.cli import main
+    with tempfile.TemporaryDirectory() as folder:
+        source, out, audit = Path(folder, "hal-20250927.htm"), Path(folder, "r.md"), Path(folder, "a.json")
+        source.write_bytes(data)
+        extra = [str(v) for pair in options.items() for v in pair]
+        code = main([str(source), "--assisted", "--compare-to", "prior-period", "--period", "FY2025",
+                     "--dollar-threshold", "1", "--percent-threshold", "1", "-o", str(out), "--audit-json", str(audit),
+                     *extra])
+        assert code == 0
+        return out.read_text(encoding="utf-8"), json.loads(audit.read_text(encoding="utf-8"))
+
+
+def test_the_headline_is_the_filings_own_totals_not_revenue_less_expense() -> None:
+    report, audit = _report(operations_and_comprehensive_loss_filing())
+    summary = report.split("## Material Variances")[0]
+    assert "- Collaboration revenue: $0.00 vs. $29,000,000.00 (-$29,000,000.00, -100.0%)" in summary
+    assert "- Total operating expenses: $601,000,000.00 vs. $534,000,000.00 ($67,000,000.00, 12.5%)" in summary
+    assert "- Loss from operations: -$601,000,000.00 vs. -$505,000,000.00 (-$96,000,000.00, -19.0%)" in summary
+    assert "- Net loss: -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%)" in summary
+    assert "- Headline figures are the filing's own printed totals, each from its XBRL fact." in summary
+    assert "Total Revenue" not in summary and "Total Expenses" not in summary and "net operating" not in summary
+    assert audit["totals"] is None
+    document = audit["source"]["document"]
+    assert [item["line_item"] for item in document["headline"]["items"]] == [
+        "Collaboration revenue", "Total operating expenses", "Loss from operations", "Net loss"]
+
+
+def test_each_headline_figure_is_its_fact_and_its_change_matches_a_fraction_oracle() -> None:
+    from fractions import Fraction
+    _, audit = _report(operations_and_comprehensive_loss_filing())
+    for item in audit["source"]["document"]["headline"]["items"]:
+        actual, comparison = item["actual"], item["comparison"]
+        assert actual["concept"] == comparison["concept"] == item["concept"] and not actual["dims"]
+        change = Fraction(actual["displayed"]) - Fraction(comparison["displayed"])
+        assert Fraction(item["change"]) == change
+        if Fraction(comparison["displayed"]) != 0:
+            exact = change / abs(Fraction(comparison["displayed"]))
+            assert abs(Fraction(item["change_percent"]) - exact) < Fraction(1, 10**30)
+
+
+def test_a_lone_revenue_line_and_net_income_head_a_simple_statement() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    report, audit = _report(income_filing())
+    summary = report.split("## Material Variances")[0]
+    assert "- Net sales: $4,100,000,000.00 vs. $3,900,000,000.00 ($200,000,000.00, 5.1%)" in summary
+    assert "- Net income: $1,450,000,000.00 vs. $1,330,000,000.00 ($120,000,000.00, 9.0%)" in summary
+    assert "Total Expenses" not in summary
+
+
+def test_revenue_printed_as_several_lines_without_a_total_is_named_not_summed() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, income_rows, row
+    rows = income_rows()
+    rows[0:1] = [row("Products", fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "FY25", "3,000"),
+                     fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "FY24", "2,900")),
+                 row("Services", fact("us-gaap:Revenues", "FY25", "1,100"), fact("us-gaap:Revenues", "FY24", "1,000"))]
+    report, audit = _report(income_filing(rows))
+    summary = report.split("## Material Variances")[0]
+    assert ("- The filing prints its revenue as 2 lines with no total of its own ('Products', 'Services'), so no "
+            "revenue figure heads this report.") in summary
+    assert not any(item["line_item"] in {"Products", "Services"} for item in audit["source"]["document"]["headline"]["items"])
+
+
+def test_an_ltm_headline_is_built_from_each_printed_totals_facts() -> None:
+    from fractions import Fraction
+
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing, quarter_filing
+    from variance_agent.ltm import build_ltm
+    result = build_ltm(quarter_filing(), "hal-20260328.htm", income_filing(), "hal-20250927.htm")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert result.filing_headline is not None and result.ltm is not None
+    assert result.ltm["headline"] == result.filing_headline
+    items = {str(item["line_item"]): item for item in result.filing_headline["items"]}  # type: ignore[union-attr]
+    assert sorted(items) == ["Net income", "Net sales"]
+    sales = items["Net sales"]
+    assert (sales["ltm"], sales["comparison"], sales["change"]) == ("4300000000", "4100000000", "200000000")
+    weights = [(component["document"], component["weight"], Fraction(str(component["used"])))
+               for component in sales["components"]]  # type: ignore[union-attr]
+    assert weights == [("hal-20250927.htm", 1, 4100 * 10**6), ("hal-20260328.htm", 1, 2200 * 10**6),
+                       ("hal-20260328.htm", -1, 2000 * 10**6)]
+    assert Fraction(str(sales["ltm"])) == sum(weight * used for _, weight, used in weights)
+    from variance_agent.report import _filing_headline_lines
+    lines = _filing_headline_lines(result.filing_headline, "USD", 2)
+    assert "- Net sales: $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)" in lines
+    assert lines[-1].startswith("- Headline figures are LTM of the filing's own printed totals")
+
+
+def test_filing_and_ltm_audits_with_a_headline_validate_against_schema_1_9() -> None:
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator
+
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing, quarter_filing
+    from variance_agent.cli import main
+    schema = json.loads((Path(__file__).resolve().parents[1] / "schemas" / "audit-1.9.schema.json").read_text())
+    validator = Draft202012Validator(schema)
+    with tempfile.TemporaryDirectory() as folder:
+        annual, quarter = Path(folder, "hal-20250927.htm"), Path(folder, "hal-20260328.htm")
+        annual.write_bytes(income_filing())
+        quarter.write_bytes(quarter_filing())
+        for name, extra in (("plain", []), ("ltm", ["--ltm-from", str(annual)])):
+            audit = Path(folder, f"{name}.json")
+            source = annual if name == "plain" else quarter
+            assert main([str(source), "--assisted", "--period", "X", "--dollar-threshold", "1", "--percent-threshold", "1",
+                         "--audit-json", str(audit), "-o", str(Path(folder, f"{name}.md")), *extra]) == 0
+            record = json.loads(audit.read_text())
+            assert record["source"]["document"]["headline"]["items"], name
+            assert not list(validator.iter_errors(record)), name
+
+
+def test_a_dollar_sign_in_its_own_cell_after_a_blank_spacer_is_not_label_text() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, income_rows
+    rows = income_rows()
+    rows[0] = ("<tr><td>Net sales</td><td> </td><td>$</td><td>&#160;</td><td>"
+               + fact("us-gaap:Revenues", "FY25", "4,100") + "</td><td> </td><td>$</td><td> </td><td>"
+               + fact("us-gaap:Revenues", "FY24", "3,900") + "</td></tr>")
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert result.rows[0]["line_item"] == "Net sales"
+
+
+def test_the_report_itself_says_why_a_line_is_a_credit_among_costs() -> None:
+    report, _ = _report(operations_and_comprehensive_loss_filing())
+    section = report.split("## How the filing was read", 1)
+    assert len(section) == 2, report
+    assert ("- Read 'Interest income' as a credit among costs: the filing's revenue is 'Collaboration revenue' "
+            "(us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax), and this line is not part of it") in section[1]
+
+
+def test_an_ltm_report_keeps_the_reading_notes_beside_its_build() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, income_rows, quarter_filing, quarter_rows, row
+    annual = income_rows()
+    annual[4:6] = [row("Other income, net", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                       fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40")),
+                   row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,410"))]
+    quarter = quarter_rows()
+    quarter[4] = row("Other income, net", *(fact("us-gaap:OtherNonoperatingIncomeExpense", c, v) for c, v in
+                                            zip(("Q26", "Q25", "YTD26", "YTD25"), ("13", "10", "25", "20"), strict=True)))
+    quarter[5] = row("Net income", *(fact("us-gaap:NetIncomeLoss", c, v) for c, v in
+                                     zip(("Q26", "Q25", "YTD26", "YTD25"), ("463", "395", "865", "770"), strict=True)))
+    from variance_agent.ltm import build_ltm
+    result = build_ltm(quarter_filing(quarter), "hal-20260328.htm", income_filing(annual), "hal-20250927.htm")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    text = "\n".join(result.report_appendix)
+    assert text.index("## How the filing was read") < text.index("## LTM build")
+    assert "- Read 'Other income, net' as a credit among costs" in text

@@ -259,3 +259,37 @@ def quarter_all_filing() -> bytes:
         for cid, day in QUARTER_INSTANTS.items())
     resources = _contexts(QUARTER_CONTEXTS) + instants
     return document(body).replace("</ix:resources>", resources + "</ix:resources>").encode("utf-8")
+
+
+def operations_and_comprehensive_loss_rows() -> list[str]:
+    """A combined statement of operations and comprehensive loss (Draw B's W-B1 shape, Decision 39): 'Net loss'
+    printed twice, revenue printed as a fixed-zero dash this year, and interest income below the operating loss."""
+    def money(label: str, concept: str, now: str, before: str, *, negative: bool = False) -> str:
+        if now == "—":
+            first = fact(concept, "FY25", "—", fmt="ixt:fixed-zero")
+        else:
+            first = fact(concept, "FY25", now, sign="-" if negative else None)
+        second = fact(concept, "FY24", before, sign="-" if negative else None)
+        wrap = (lambda cell: "(" + cell + ")") if negative else (lambda cell: cell)
+        return row(label, wrap(first) if now != "—" else first, wrap(second))
+    return [
+        money("Collaboration revenue", "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "—", "29"),
+        row("Operating expenses:", "", ""),
+        money("In-process research and development", "hal:InProcessResearchAndDevelopmentExpense", "—", "67"),
+        money("Research and development", "us-gaap:ResearchAndDevelopmentExpense", "492", "372"),
+        money("General and administrative", "us-gaap:GeneralAndAdministrativeExpense", "109", "95"),
+        money("Total operating expenses", "us-gaap:OperatingExpenses", "601", "534"),
+        money("Loss from operations", "us-gaap:OperatingIncomeLoss", "601", "505", negative=True),
+        money("Interest income", "us-gaap:InterestIncomeExpenseNet", "27", "34"),
+        money("Net loss", "us-gaap:NetIncomeLoss", "574", "471", negative=True),
+        row("Comprehensive loss:", "", ""),
+        money("Net loss", "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic", "574", "471", negative=True),
+        money("Unrealized gain on marketable securities", "us-gaap:DebtSecuritiesAvailableForSaleUnrealizedGainLoss",
+              "1", "2"),
+        money("Comprehensive loss", "us-gaap:ComprehensiveIncomeNetOfTax", "573", "469", negative=True),
+    ]
+
+
+def operations_and_comprehensive_loss_filing() -> bytes:
+    body = statement("CONSOLIDATED STATEMENTS OF OPERATIONS AND COMPREHENSIVE LOSS", operations_and_comprehensive_loss_rows())
+    return document(body).encode("utf-8")

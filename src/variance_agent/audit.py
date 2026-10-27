@@ -167,6 +167,17 @@ def write_audit_json(path: str | Path, record: Mapping[str, object]) -> None:
 
 
 @financial_context()
+def _headline_record(headline: object) -> JSONObject:
+    """A filing's own printed totals heading its report (Decision 39): items and notes."""
+    if not isinstance(headline, Mapping) or not isinstance(headline.get("items"), (list, tuple)) \
+            or not isinstance(headline.get("notes"), (list, tuple)):
+        raise ValueError("source_document headline must hold items and notes lists.")
+    items, notes = headline["items"], headline["notes"]
+    assert isinstance(items, (list, tuple)) and isinstance(notes, (list, tuple))
+    return {"items": [_json_value(item) for item in items],
+            "notes": [validate_text(note, field="source_document headline note") for note in notes]}
+
+
 def _document_record(document: Mapping[str, object] | None) -> JSONObject | None:
     """Validate how a PDF statement was read: its name, pages and the reader's notes.
 
@@ -184,6 +195,8 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
         record: JSONObject = {"kind": "ixbrl", "statement": str(statement),
                               "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
                               "lines": [_json_value(line) for line in lines]}
+        if "headline" in document:
+            record["headline"] = _headline_record(document["headline"])
         if "statement_kind" in document:  # a balance sheet or cash flow statement and its identity (PLAN.md R9)
             if document["statement_kind"] not in {"balance_sheet", "cash_flow"}:
                 raise ValueError("source_document statement_kind must be balance_sheet or cash_flow.")
@@ -232,10 +245,13 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
         if not all(isinstance(value, (list, tuple)) for value in (notes, documents, lines)):
             raise ValueError("source_document reader_notes, documents and lines must be lists.")
         assert isinstance(notes, (list, tuple)) and isinstance(documents, (list, tuple)) and isinstance(lines, (list, tuple))
-        return {"kind": "ltm", "statement": str(statement),
-                "documents": [_json_value(item) for item in documents],
-                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
-                "lines": [_json_value(line) for line in lines]}
+        ltm: JSONObject = {"kind": "ltm", "statement": str(statement),
+                           "documents": [_json_value(item) for item in documents],
+                           "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                           "lines": [_json_value(line) for line in lines]}
+        if "headline" in document:
+            ltm["headline"] = _headline_record(document["headline"])
+        return ltm
     if kind == "edgar_xlsx":
         validate_text(statement, field="source_document statement", nonblank=True)
         sheet = document.get("sheet")
@@ -282,6 +298,7 @@ def build_audit_record(
     # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
     workbook = transformations.get("workbook") if transformations is not None else None
     opt_in = result.config.comparison_basis in OPT_IN_BASES  # limit, benchmark, target (PLAN.md R13-R15)
+    headline = source_document is not None and "headline" in source_document
     multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
         isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
     needs_19 = workbook is not None or opt_in or multiple or (
@@ -379,9 +396,10 @@ def build_audit_record(
             "logic": "absolute_dollar_or_absolute_percent",
         },
         "data_quality": data_quality,
-        # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value.
-        "totals": None if opt_in or any(row.statement_kind or row.classification_source == "metric"
-                                        for row in result.rows) else {
+        # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value. A filing's
+        # income statement records its own printed totals as its headline instead of computed ones (Decision 39).
+        "totals": None if opt_in or headline or any(row.statement_kind or row.classification_source == "metric"
+                                                    for row in result.rows) else {
             "revenue": _aggregate_record(
                 result.revenue,
                 present=has_revenue,

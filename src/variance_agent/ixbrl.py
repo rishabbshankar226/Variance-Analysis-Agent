@@ -388,6 +388,18 @@ def _period_label(period: tuple[str, ...]) -> str:
     return f"{_MONTHS[end.month - 1]} {end.year}"
 
 
+def _period_labels(periods: list[tuple[str, ...]]) -> list[str]:
+    """Each column's label. Where consecutive fiscal years would read as a skipped or repeated year (52/53-week
+    years ending early in January), every year column is named by its end month instead (Decision 39)."""
+    labels = [_period_label(p) for p in periods]
+    years = sorted((date.fromisoformat(p[-1]), i) for i, p in enumerate(periods) if labels[i].startswith("FY"))
+    if any(330 <= (later - earlier).days <= 400 and later.year - earlier.year != 1
+           for (earlier, _), (later, _) in zip(years, years[1:], strict=False)):
+        for end, i in years:
+            labels[i] = f"{_MONTHS[end.month - 1]} {end.year}"
+    return labels
+
+
 def _months(period: tuple[str, ...]) -> int:
     if period[0] != "duration":
         return 0
@@ -421,7 +433,7 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
     """Every face statement the filing prints, first copy of each kind, in document order."""
     if _DECLARATION.search(data):
         raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses. "
-                         "Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+                         "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -521,11 +533,17 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
             # Figures tagged inside the label (a par value, shares authorized) are label text when the
             # row prints figures in later cells too.
             first_figure = next((n for n in figured if n > 0), figured[0] if figured else None)
-            # A "$" or "(" printed in its own cell before the first figure belongs to the figure, not the label.
-            while first_figure is not None and first_figure > 1 and re.fullmatch(
-                    r"[\s\u00a0$€£¥(\-\u2212]*", "".join(str(t) for k, t in cells[first_figure - 1].tokens if k == "text")) \
-                    and any(str(t).strip() for k, t in cells[first_figure - 1].tokens if k == "text"):
-                first_figure -= 1
+            # A "$" or "(" printed in its own cell before the first figure belongs to the figure, not the label,
+            # across blank spacer cells too (Decision 39).
+            if first_figure is not None:
+                start = first_figure
+                while start > 1 and re.fullmatch(r"[\s\u00a0$€£¥(\-\u2212]*",
+                                                 "".join(str(t) for k, t in cells[start - 1].tokens if k == "text")):
+                    start -= 1
+                while start < first_figure and not "".join(
+                        str(t) for k, t in cells[start].tokens if k == "text").replace("\u00a0", " ").strip():
+                    start += 1
+                first_figure = start
             dash = False
             for n, cell in enumerate(cells):
                 cell_text = "".join(str(t) for k, t in cell.tokens if k == "text")
@@ -647,7 +665,7 @@ def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -
 def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]], reader: _Reader,
                per_share_lines: bool, durations: list[tuple[str, ...]] | None = None) -> Statement:
-    labels = [_period_label(p) for p in periods]
+    labels = _period_labels(periods)
     statement = Statement(kind, name, periods, labels, [])
     if len(set(labels)) != len(labels):
         statement.notes.append("Two columns share a period label")
@@ -707,7 +725,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             breakdowns.append(label)
         if problem and not statement.problem:
             statement.problem = (f"I could not read every figure of '{label or 'an unlabeled line'}' in the {name}: "
-                                 f"{problem}. Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+                                 f"{problem}. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
         if measure != "Currency" and not per_share_lines:
             statement.left_out.append(f"'{label}' (per-share and share counts are not money totals)")
             continue

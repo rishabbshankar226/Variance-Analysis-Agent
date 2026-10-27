@@ -1595,8 +1595,10 @@ def _report_text(session: Session) -> str:
     assert session.result is not None
     checks = _statement_checks(session)
     appendix = list(session.intake_result.report_appendix) if session.intake_result is not None else []
-    if checks or appendix:
-        return render_markdown(session.result, statement_checks=checks or None, appendix=appendix or None)
+    headline = session.intake_result.filing_headline if session.intake_result is not None else None
+    if checks or appendix or headline is not None:
+        return render_markdown(session.result, statement_checks=checks or None, appendix=appendix or None,
+                               filing_headline=headline)
     return render_markdown(session.result)
 
 

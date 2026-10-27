@@ -633,8 +633,10 @@ def _run(args: Arguments) -> int:
         raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, "
                          "or choose the filing's income statement.")
     appendix = intake_res.report_appendix if intake_res is not None else []
-    report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None)
-              if statement_checks or appendix else render_markdown(result))
+    headline = intake_res.filing_headline if intake_res is not None else None
+    report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None,
+                              filing_headline=headline)
+              if statement_checks or appendix or headline is not None else render_markdown(result))
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)

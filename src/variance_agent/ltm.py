@@ -18,7 +18,7 @@ from decimal import Decimal
 from .intake import CanonicalRole, IntakeResult, _read_ixbrl_bytes, read_input_assisted
 from .ixbrl import IxbrlError, Statement, fact_values, read_statements
 from .models import ComparisonBasis
-from .numeric import financial_context
+from .numeric import financial_context, ratio
 
 _FIX = "LTM needs the 10-Q that follows that 10-K; upload the 10-K the 10-Q's year continues."
 _RECAST = re.compile(r"\b(?:recast|restated|as\s+adjusted)\b", re.IGNORECASE)
@@ -188,13 +188,56 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
     result.column_mapping = {**q_read.column_mapping,
                              CanonicalRole.BUDGET: f"{fy_label} in {annual_name}",
                              CanonicalRole.ACTUAL: f"LTM = {fy_label} + {columns[0]} - {columns[1]}"}
+    headline = _ltm_headline(q_read, k_read, quarter_name, annual_name, fy_label, columns)
+    record["headline"] = headline
+    result.filing_headline = headline
     result.ltm = record
     result.report_appendix = [
+        *(q_read.report_appendix and [*q_read.report_appendix, ""]),  # the 10-Q's reading notes (Decision 39)
         "## LTM build", "", *("- " + _safe_inline(note) for note in notes), "",
         f"| Line Item | {_safe_inline(fy_label)} | + {columns[0]} | - {columns[1]} | = LTM |", "|---|---:|---:|---:|---:|",
         *(f"| {_safe_inline(name)} | {_money(fy)} | {_money(now)} | {_money(before)} | {_money(ltm)} |"
           for name, fy, now, before, ltm in build)]
     return result
+
+
+def _ltm_headline(q_read: IntakeResult, k_read: IntakeResult, quarter_name: str, annual_name: str, fy_label: str,
+                  columns: list[str]) -> dict[str, object]:
+    """LTM of each printed total heading both filings, matched by concept: FY + YTD - prior YTD (Decision 39, R11)."""
+    def items(read: IntakeResult) -> list[dict[str, object]]:
+        found = read.filing_headline.get("items") if read.filing_headline is not None else None
+        return [item for item in found if isinstance(item, dict)] if isinstance(found, list) else []
+
+    annual = {str(item["concept"]): item for item in items(k_read)}
+    quarter_concepts = {str(item["concept"]) for item in items(q_read)}
+    built: list[dict[str, object]] = []
+    quarter_notes = q_read.filing_headline.get("notes") if q_read.filing_headline is not None else None
+    notes = [str(note) for note in quarter_notes] if isinstance(quarter_notes, list) else []
+    for item in items(q_read):
+        concept = str(item["concept"])
+        k_item = annual.get(concept)
+        if k_item is None:
+            notes.append(f"'{item['line_item']}' ({concept}) is printed in '{quarter_name}' but not in '{annual_name}', "
+                         "so it isn't in the LTM headline.")
+            continue
+        keys = [(annual_name, fy_label, k_item["actual"], 1), (quarter_name, columns[0], item["actual"], 1),
+                (quarter_name, columns[1], item["comparison"], -1)]
+        components: list[dict[str, object]] = []
+        with financial_context():
+            values = [Decimal(str(key["displayed"])) for _, _, key, _ in keys]  # type: ignore[index]
+            fy, ltm = values[0], values[0] + values[1] - values[2]
+            change = ltm - fy
+            percent = ratio(change, abs(fy)) if fy != 0 else None
+        for (document, column, key, weight), value in zip(keys, values, strict=True):
+            assert isinstance(key, dict)
+            components.append({"document": document, "column": column, "context": str(key["context"]),
+                               "displayed": str(key["displayed"]), "weight": weight, "used": format(value, "f")})
+        built.append({"role": item["role"], "line_item": item["line_item"], "concept": concept, "components": components,
+                      "ltm": format(ltm, "f"), "comparison": format(fy, "f"), "change": format(change, "f"),
+                      "change_percent": None if percent is None else format(percent, "f")})
+    notes += [f"'{item['line_item']}' ({concept}) is printed in '{annual_name}' but not in '{quarter_name}', so it isn't "
+              "in the LTM headline." for concept, item in annual.items() if concept not in quarter_concepts]
+    return {"items": built, "notes": notes}
 
 
 def _safe_inline(text: str) -> str:

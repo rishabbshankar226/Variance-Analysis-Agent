@@ -161,8 +161,9 @@ def statement_kind(title: str) -> str | None:
         return "balance_sheet"
     if _EQUITY.search(title) and not re.search(r"operations|earnings", title, re.IGNORECASE):
         return None
-    if re.search(r"comprehensive", title, re.IGNORECASE) and not re.search(r"operations|earnings|income\s+and", title,
-                                                                              re.IGNORECASE):
+    # "Income (Loss) and Comprehensive Income (Loss)" is an income statement too (Decision 39).
+    if re.search(r"comprehensive", title, re.IGNORECASE) and not re.search(
+            r"operations|earnings|(?:income|loss)(?:\s*\([^)]*\))?\s+and", title, re.IGNORECASE):
         return None  # a separate statement of comprehensive income
     if re.search(r"operations|income|earnings|loss", title, re.IGNORECASE):
         return "income"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
@@ -76,6 +77,33 @@ def _pct(budget: Decimal, variance: Decimal, label: str | None = None) -> str:
         tenths += 1
     sign = "-" if tenths and (scaled < 0) else ""
     return f"{sign}{tenths // 10}.{tenths % 10}%"
+
+
+def _filing_headline_lines(headline: Mapping[str, object], currency: str, places: int) -> list[str]:
+    """The filing's own printed totals (Decision 39): each item's two figures, its change and percent."""
+    items, notes = headline.get("items"), headline.get("notes")
+    assert isinstance(items, list) and isinstance(notes, list)
+    lines: list[str] = []
+    for item in items:
+        assert isinstance(item, Mapping)
+        if "ltm" in item:  # an LTM item: each figure built from the filings' facts (PLAN.md R11)
+            actual, comparison = Decimal(str(item["ltm"])), Decimal(str(item["comparison"]))
+        else:
+            actual_key, comparison_key = item["actual"], item["comparison"]
+            assert isinstance(actual_key, Mapping) and isinstance(comparison_key, Mapping)
+            actual, comparison = Decimal(str(actual_key["displayed"])), Decimal(str(comparison_key["displayed"]))
+        change = Decimal(str(item["change"]))
+        lines.append(f"- {_safe_inline(str(item['line_item']))}: {_money(actual, currency, places)} vs. "
+                     f"{_money(comparison, currency, places)} ({_money(change, currency, places)}, {_pct(comparison, change)})")
+    lines.extend(f"- {_safe_inline(str(note))}" for note in notes)
+    if not items and not notes:
+        lines.append("- The statement prints no revenue, total expenses, operating income or net income to head this report.")
+    elif any(isinstance(item, Mapping) and "ltm" in item for item in items):
+        lines.append("- Headline figures are LTM of the filing's own printed totals, each built from its XBRL facts as "
+                     "the LTM build shows.")
+    elif items:
+        lines.append("- Headline figures are the filing's own printed totals, each from its XBRL fact.")
+    return lines
 
 
 def _report_places(result: AnalysisResult) -> int:
@@ -371,9 +399,10 @@ def render_basis_report(result: AnalysisResult) -> str:
 
 @financial_context()
 def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None,
-                    appendix: list[str] | None = None) -> str:
+                    appendix: list[str] | None = None, filing_headline: Mapping[str, object] | None = None) -> str:
     if appendix:  # sections intake wrote that the analysis can't know of, such as an LTM build (PLAN.md R11)
-        body = render_markdown(result, top_root_causes=top_root_causes, statement_checks=statement_checks)
+        body = render_markdown(result, top_root_causes=top_root_causes, statement_checks=statement_checks,
+                               filing_headline=filing_headline)
         return body.rstrip("\n") + "\n\n" + "\n".join(appendix) + "\n"
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
@@ -434,9 +463,9 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
         f"- Reporting Currency: {cfg.currency}",
         *([] if cfg.comparison_basis is ComparisonBasis.BUDGET
           else [f"- Compared Against: {heading}"]),
-        revenue_line,
-        expense_line,
-        f"- Bottom Line Impact: {bottom_line}",
+        # A filing's income statement is headed by its own printed totals, never by computed ones (Decision 39).
+        *(_filing_headline_lines(filing_headline, cfg.currency, places) if filing_headline is not None
+          else [revenue_line, expense_line, f"- Bottom Line Impact: {bottom_line}"]),
     ]
     if result.warnings:
         lines.append(

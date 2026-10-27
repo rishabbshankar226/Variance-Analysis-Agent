@@ -66,8 +66,8 @@ def test_a_cash_line_that_would_be_both_a_beginning_and_an_ending_balance_refuse
                         ' format="ixt:num-dot-decimal">5</ix:nonFraction>'))
     flows = _statement(position_filing("CONSOLIDATED STATEMENTS OF CASH FLOWS", rows), "cash_flow")
     assert flows.problem == ("I could not read every figure of 'Cash, mixed' in the Consolidated Statements of Cash Flows: "
-                             "its balances fall at the end of one column and the start of another. Upload the filing's "
-                             "PDF, or a CSV or Excel copy of the statement.")
+                             "its balances fall at the end of one column and the start of another. Upload a CSV or "
+                             "Excel copy of the statement, or the filing's PDF.")
 
 
 def test_a_balance_sheet_keeps_its_instant_columns() -> None:
@@ -355,7 +355,8 @@ def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_tota
 
 @pytest.mark.parametrize(("comparison", "actual", "label"), [
     ("-500", "-600", "Decrease, larger negative"), ("-600", "-500", "Increase, smaller negative"),
-    ("0", "-5", "Decrease, larger negative"), ("10", "-20", "Decrease"), ("-5", "5", "Increase"), ("-5", "-5", "No change"),
+    ("0", "-5", "Decrease"), ("-5", "0", "Increase"), ("10", "-20", "Decrease"), ("-5", "5", "Increase"),
+    ("-5", "-5", "No change"),
 ])
 def test_a_negative_printed_figure_says_whether_it_grew_or_shrank(comparison: str, actual: str, label: str) -> None:
     config = AnalysisConfig("FY", Decimal("1"), Decimal("0.01"), comparison_basis=ComparisonBasis.PRIOR_PERIOD)

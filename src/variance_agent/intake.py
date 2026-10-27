@@ -55,7 +55,7 @@ from .limits import (
 )
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
-from .numeric import financial_context
+from .numeric import financial_context, ratio
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
 from .ixbrl import BOTTOM_LINE, BOTTOM_LINE_LABEL, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
@@ -479,6 +479,8 @@ class IntakeResult:
     # An LTM build from a 10-K and a 10-Q (PLAN.md R11): its audit record and the report section citing it.
     ltm: dict[str, object] | None = None
     report_appendix: list[str] = field(default_factory=list)
+    # A filing's income statement: its own printed totals, which head the report in place of computed ones (Decision 39).
+    filing_headline: dict[str, object] | None = None
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
@@ -491,6 +493,8 @@ class IntakeResult:
                                            "reader_notes": list(self.reader_notes), "lines": list(self.xbrl_lines)}
             if self.statement_kind:
                 document.update(statement_kind=self.statement_kind, identities=list(self.identities))
+            if self.filing_headline is not None:
+                document["headline"] = dict(self.filing_headline)
             return document
         if self.source_kind == "edgar_xlsx" and self.sheet_name is not None and self.source_statement is not None:
             return {"kind": "edgar_xlsx", "statement": self.source_statement, "sheet": self.sheet_name,
@@ -2277,15 +2281,31 @@ def _foots(terms: list[tuple[Decimal, str, int]], total: tuple[Decimal, str]) ->
         return abs(centre - total[0]) <= spread
 
 
-def _unique_names(lines: list[tuple[str, str]]) -> list[str]:
-    """Tell repeated labels apart by section, else by their place; keys stay with the line by position."""
+_SECTION_CLOSER = re.compile(r"^total\b", re.IGNORECASE)
+
+
+def _unique_names(lines: list[tuple[str, str]], keep: int | None = None) -> list[str]:
+    """Tell repeated labels apart by section, else by their place; keys stay with the line by position.
+
+    A line printed after its section's own Total line is not in that section, so it is never named by
+    it; and the line at ``keep`` (a statement's bottom line, Decision 39) keeps its printed label.
+    """
     labels = [label for label, _ in lines]
+    closed: set[str] = set()
+    sections: list[str] = []
+    for label, section in lines:
+        sections.append("" if section in closed else section)
+        if section and _SECTION_CLOSER.match(label):
+            closed.add(section)
     names = list(labels)
     for label in {label for label in labels if labels.count(label) > 1}:
         at = [i for i, name in enumerate(labels) if name == label]
-        sections = [lines[i][1] for i in at]
+        by_section = [sections[i] for i in at]
         for n, i in enumerate(at, start=1):
-            names[i] = f"{sections[n - 1]}: {label}" if all(sections) and len(set(sections)) == len(at) else f"{label} ({n})"
+            if i == keep:
+                continue
+            names[i] = (f"{by_section[n - 1]}: {label}" if all(by_section) and len(set(by_section)) == len(at)
+                        else f"{label} ({n})")
     return names
 
 
@@ -2327,10 +2347,11 @@ def _read_ixbrl_bytes(
         result.candidate_sheets, result.available_sheets, result.comparable_sheets = ranked, names, comparable
         return result
     all_lines = chosen.lines
-    all_names = _unique_names([(line.label, line.section) for line in all_lines])
-    # A comprehensive-income statement opens with net income, so only an income statement ends there.
+    # A comprehensive-income statement opens with net income, so only an income statement ends there. The
+    # bottom line is found by its concept or printed label before repeated labels are told apart (Decision 39).
     bottom = next((i for i, line in enumerate(all_lines) if BOTTOM_LINE.match(line.concept)
-                   or BOTTOM_LINE_LABEL.match(all_names[i])), None) if chosen.kind == "income" else None
+                   or BOTTOM_LINE_LABEL.match(line.label)), None) if chosen.kind == "income" else None
+    all_names = _unique_names([(line.label, line.section) for line in all_lines], keep=bottom)
     below = [] if bottom is None else list(range(bottom + 1, len(all_lines)))
     lines = all_lines[:bottom + 1] if bottom is not None else all_lines
     names_by_line = all_names[:len(lines)]
@@ -2358,7 +2379,8 @@ def _read_ixbrl_bytes(
                                         frozenset(i for i in hints if lines[i].section_total), zero_lines_signless=True,
                                         openings_as_lines=True)
         matched = {row for row, _ in shaped.matches} | set(shaped.openings)
-        demote = {i for i in hints if i not in matched and not names_subtotal(names_by_line[i])
+        # The bottom line is net income by its concept, whatever it is named (Decision 39): never demoted.
+        demote = {i for i in hints if i not in matched and i != bottom and not names_subtotal(names_by_line[i])
                   and not FILING_SUBTOTALS.search(names_by_line[i])}
         if not demote:
             break
@@ -2376,15 +2398,30 @@ def _read_ixbrl_bytes(
     blank_notes = [f"Read the blank {chosen.labels[column]} figure of '{names_by_line[at]}' as 0: the subtotal it sits "
                    "in adds up with it at 0" for at, column in blanks]
     credits = _revenue_block_credits(shaped, lines, names_by_line)
+    # Footing has already set the statement's subtotals aside, so every line kept is a detail line, whatever
+    # its label says ("Total revenue, net" printed alone); the engine's own Total check never stops it (Decision 39).
+    header_at = next(i for i, row in enumerate(shaped.rows) if row and row[0] == "Line Item")
+    shaped.rows[header_at:] = [[*shaped.rows[header_at], "Row Kind"],
+                               *([*row, "Detail"] for row in shaped.rows[header_at + 1:])]
     result = _process_raw_table(
         shaped.rows, filename, sheet_name=chosen.name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
         selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
     )
+    if not result.has_fatal_errors:
+        actual_label = str(result.column_mapping.get(CanonicalRole.ACTUAL, ""))
+        comparison_label = str(result.column_mapping.get(CanonicalRole.BUDGET, ""))
+        if actual_label in chosen.labels and comparison_label in chosen.labels:
+            result.filing_headline = _filing_headline(
+                shaped, lines, names_by_line, bottom,
+                (chosen.labels.index(actual_label), chosen.labels.index(comparison_label)), (actual_label, comparison_label))
     left_out = [f"Left out {item}" for item in chosen.left_out]
     if below and bottom is not None:
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
                         f"attributed): {', '.join(repr(all_names[i]) for i in below)}".replace('"', "'"))
     result.visible_transformations[:0] = credits
+    if credits:  # the report itself says why a line is read as it is (Decision 39)
+        from .report import _safe_inline
+        result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in credits)]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
     result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits, *blank_notes]
@@ -2468,14 +2505,9 @@ _REVENUE_CONCEPT = re.compile(r"^us-gaap:(?:Revenues|RevenueFromContractWithCust
                               r"|RevenuesNetOfInterestExpense|RevenueNet)$")
 
 
-def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: list[str]) -> list[str]:
-    """Keep Total Revenue to the filing's revenue: lines outside it that add to income are cost-side credits.
-
-    The shaper labels every line that adds to income as revenue. Where the statement prints its
-    revenue (a revenue concept, or a total summing such lines), only that block is revenue; other
-    income (equity earnings, gains, other income, net) is relabeled an expense with its sign turned,
-    which leaves net income and the net variance unchanged. Returns the notes it adds.
-    """
+def _revenue_block(shaped: ShapedStatement, lines: list[IxLine]) -> tuple[set[int], int | None]:
+    """The lines of the filing's printed revenue, and the one that names it: its total when the statement prints
+    one, else its first line (Decision 28). Empty, and None, where the statement prints no revenue concept."""
     terms = dict(shaped.matches)
     block: set[int] = set()
 
@@ -2492,17 +2524,77 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
         if _REVENUE_CONCEPT.match(line.concept) and not any(key is not None and key.dims for key in line.keys):
             take(i)
     if not block:
+        return block, None
+    totals = [i for i in sorted(block) if i in terms]
+    return block, totals[-1] if totals else min(block)
+
+
+_EXPENSE_TOTAL = re.compile(r"^us-gaap:(?:CostsAndExpenses|OperatingExpenses|BenefitsLossesAndExpenses|NoninterestExpense)$")
+_OPERATING_INCOME = "us-gaap:OperatingIncomeLoss"
+
+
+def _filing_headline(shaped: ShapedStatement, lines: list[IxLine], names: list[str], bottom: int | None,
+                     columns: tuple[int, int], labels: tuple[str, str]) -> dict[str, object]:
+    """The filing's own printed totals for the report's headline (Decision 39): its revenue, total expenses,
+    operating income and net income, whichever it prints, each from its fact for the two columns compared.
+    Nothing here is added up: a revenue printed as several lines without a total is named, not summed."""
+    block, named = _revenue_block(shaped, lines)
+    roles: dict[int, str] = {}
+    notes: list[str] = []
+    if named is not None and (named in dict(shaped.matches) or len(block) == 1):
+        roles[named] = "revenue"
+    elif named is not None:
+        shown = ", ".join(f"'{names[i]}'" for i in sorted(block))
+        notes.append(f"The filing prints its revenue as {len(block)} lines with no total of its own ({shown}), so no "
+                     "revenue figure heads this report.")
+    for i, line in enumerate(lines):
+        if _EXPENSE_TOTAL.match(line.concept):
+            roles.setdefault(i, "expenses")
+        elif line.concept == _OPERATING_INCOME:
+            roles.setdefault(i, "operating_income")
+    if bottom is not None and bottom < len(lines):
+        roles.setdefault(bottom, "net_income")
+    items: list[dict[str, object]] = []
+    for i in sorted(roles):
+        now, before = (lines[i].keys[c] for c in columns)
+        if now is None or before is None or now.dims or before.dims:
+            notes.append(f"'{names[i]}' has no fact for both columns, so it is not in the headline.")
+            continue
+        with financial_context():
+            change = now.displayed - before.displayed
+            percent = ratio(change, abs(before.displayed)) if before.displayed != 0 else None
+        items.append({"role": roles[i], "line_item": names[i], "concept": lines[i].concept,
+                      "actual": _key_record(labels[0], now), "comparison": _key_record(labels[1], before),
+                      "change": format(change, "f"), "change_percent": None if percent is None else format(percent, "f")})
+    return {"items": items, "notes": notes}
+
+
+def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: list[str]) -> list[str]:
+    """Keep Total Revenue to the filing's revenue: lines outside it that add to income are cost-side credits.
+
+    The shaper labels every line that adds to income as revenue. Where the statement prints its
+    revenue (a revenue concept, or a total summing such lines), only that block is revenue; other
+    income (equity earnings, gains, other income, net) is relabeled an expense with its sign turned,
+    which leaves net income and the net variance unchanged. Returns the notes it adds.
+    """
+    block, named = _revenue_block(shaped, lines)
+    if named is None:
         return []
     header = next(row for row in shaped.rows if row and row[0] == "Line Item")
     at = shaped.rows.index(header)
     type_at = header.index("Type")
-    # Name the revenue by its total when the statement prints one, else by its first line.
-    totals = [i for i in sorted(block) if i in terms]
-    named = totals[-1] if totals else min(block)
     revenue, concept = names[named], lines[named].concept
     notes: list[str] = []
     credited: set[str] = set()
     for data_index, row in zip(shaped.kept, shaped.rows[at + 1:], strict=True):
+        if not str(row[type_at] or "").strip() and data_index not in block \
+                and infer_line_type(str(row[0]))[0] is LineType.REVENUE:
+            # A line the arithmetic couldn't place is not made revenue by its label (Decision 39): it stays for
+            # the analyst to label, listed as unclassified.
+            row[type_at] = "Unclassified"
+            notes.append(f"Left '{row[0]}' unlabeled: the statement's arithmetic doesn't show whether it adds to or "
+                         f"reduces income, and the filing's revenue is '{revenue}' ({concept}), which it is not part of")
+            continue
         if row[type_at] != "Revenue" or data_index in block:
             continue
         row[type_at] = "Expense"
@@ -2535,7 +2627,7 @@ _LABEL_COUNT = re.compile(r"^Labeled (?P<revenue>\d+) lines? revenue and (?P<exp
 
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
     """R5's refusal, or None when every subtotal foots within its facts' rounding."""
-    fix = "Upload the filing's PDF, or a CSV or Excel copy of the statement."
+    fix = "Upload a CSV or Excel copy of the statement, or the filing's PDF."
     matched = {total_row for total_row, _ in shaped.matches} | set(shaped.openings)
     # A subtotal is left out of the lines only once it is shown to add up; one that is never checked
     # (nothing above it to add up) would drop a printed figure, so it refuses too.

@@ -198,7 +198,7 @@ def test_a_balance_sheet_without_its_identity_lines_refuses_plainly() -> None:
 def test_entity_declarations_and_doctype_subsets_are_refused_before_reading(prolog: bytes) -> None:
     assert _read(prolog + income_filing()).fatal_error_message == (
         "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. "
-        "Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+        "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
 
 
 def test_a_plain_html_doctype_is_read() -> None:
@@ -532,7 +532,7 @@ def test_a_blank_figure_whose_zero_does_not_foot_refuses() -> None:
     result = _read(income_filing(rows))
     assert result.fatal_error_message == (
         "I couldn't tell which lines 'Net income' adds up in the Consolidated Statements of Operations, so I can't check "
-        "it and stopped instead of guessing. Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+        "it and stopped instead of guessing. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
 
 
 def test_a_row_printed_only_as_dashes_is_listed_and_does_not_rename_the_next_line() -> None:
