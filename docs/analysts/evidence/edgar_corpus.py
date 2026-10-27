@@ -201,12 +201,12 @@ def draw_a(seed: int) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
     return picks, sizes
 
 
-def draw_b(seed: int) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
-    """Draw B, the held-out set (section 5): 30 filings, 15 of each form, uniform over the same four quarters,
-    one per filer, excluding every Draw A accession and filer."""
+def draw_b(seed: int, earlier: tuple[str, ...] = ("A",)) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
+    """A held-out draw (section 5): 30 filings, 15 of each form, uniform over the same four quarters, one per
+    filer, excluding every accession and filer of the earlier draws (Draw B: A; Draw C: A and B, Decision 39)."""
     recent = [f for quarter in _RECENT for f in parse_index(fetch_index(quarter).decode("latin-1"), quarter)]
-    drawn_a = list(csv.DictReader((CORPUS / "draw_A.csv").open(encoding="utf-8")))
-    excluded = {row["cik"] for row in drawn_a} | {row["accession"] for row in drawn_a}
+    drawn = [row for name in earlier for row in csv.DictReader((CORPUS / f"draw_{name}.csv").open(encoding="utf-8"))]
+    excluded = {row["cik"] for row in drawn} | {row["accession"] for row in drawn}
     rng = random.Random(seed)
     used: set[str] = set()
     picks: list[tuple[str, Filing]] = []
@@ -332,10 +332,10 @@ def main(argv: list[str] | None = None) -> int:
     index = sub.add_parser("index")
     index.add_argument("quarters", nargs="+")
     draw = sub.add_parser("draw")
-    draw.add_argument("name", choices=("A", "B"))
+    draw.add_argument("name", choices=("A", "B", "C"))
     draw.add_argument("--seed", type=int, required=True)
     get = sub.add_parser("fetch")
-    get.add_argument("name", choices=("A", "B"))
+    get.add_argument("name", choices=("A", "B", "C"))
     args = parser.parse_args(argv)
     try:
         if args.command == "index":
@@ -344,7 +344,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{quarter}: {len(rows):,} rows; 10-K {sum(r.form == '10-K' for r in rows):,}, "
                       f"10-Q {sum(r.form == '10-Q' for r in rows):,}, 10-K/A {sum(r.form == '10-K/A' for r in rows):,}")
         elif args.command == "draw":
-            picks, sizes = draw_a(args.seed) if args.name == "A" else draw_b(args.seed)
+            picks, sizes = (draw_a(args.seed) if args.name == "A" else draw_b(args.seed) if args.name == "B"
+                            else draw_b(args.seed, ("A", "B")))
             with (CORPUS / f"draw_{args.name}.csv").open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["label", "accession", "form", "cik", "company", "date_filed", "quarter", "seed"])
