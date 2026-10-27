@@ -56,7 +56,7 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
-from .ixbrl import BOTTOM_LINE, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
+from .ixbrl import BOTTOM_LINE, BOTTOM_LINE_LABEL, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
 from .ixbrl import Line as IxLine
@@ -2229,8 +2229,8 @@ def _read_ixbrl_bytes(
     all_lines = chosen.lines
     all_names = _unique_names([(line.label, line.section) for line in all_lines])
     # A comprehensive-income statement opens with net income, so only an income statement ends there.
-    bottom = next((i for i, line in enumerate(all_lines) if BOTTOM_LINE.match(line.concept)), None) \
-        if chosen.kind == "income" else None
+    bottom = next((i for i, line in enumerate(all_lines) if BOTTOM_LINE.match(line.concept)
+                   or BOTTOM_LINE_LABEL.match(all_names[i])), None) if chosen.kind == "income" else None
     below = [] if bottom is None else list(range(bottom + 1, len(all_lines)))
     lines = all_lines[:bottom + 1] if bottom is not None else all_lines
     names_by_line = all_names[:len(lines)]

@@ -49,6 +49,10 @@ FILING_SUBTOTALS = re.compile(
 # The bottom line: lines after the first of these only attribute net income (to noncontrolling
 # interests, preferred holders) or restate it, and are listed rather than analysed.
 BOTTOM_LINE = re.compile(r"^us-gaap:(?:NetIncomeLoss|ProfitLoss)$")
+BOTTOM_LINE_LABEL = re.compile(
+    r"^net\s+(?:\((?:loss|income|earnings)\)\s+)?(?:income|earnings|loss|profit)(?:\s*\((?:loss|income|earnings)\))?$",
+    re.IGNORECASE,
+)
 # us-gaap concepts that are always a statement's own totals (never a detail line), as hints for the
 # shaper; noncontrolling-interest and per-share variants are details or not money, and excluded.
 _TOTAL_CONCEPT = re.compile(

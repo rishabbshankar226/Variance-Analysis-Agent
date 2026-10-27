@@ -477,3 +477,13 @@ def test_lines_below_net_income_are_listed_not_analysed() -> None:
     assert record is not None
     assert [line["line_item"] for line in record["lines"] if line["left_out"]] == [  # type: ignore[index, union-attr]
         "Less - income attributable to non-controlling interests", "Net income attributable to HALVORSEN.FAKE"]
+
+
+def test_a_net_income_line_tagged_with_an_extension_concept_is_still_the_bottom_line() -> None:
+    rows = income_rows()
+    rows[5:6] = [row("Net (loss) income", fact("hal:NetIncomeLossBeforeParticipatingSecurities", "FY25", "1,450"),
+                     fact("hal:NetIncomeLossBeforeParticipatingSecurities", "FY24", "1,330")),
+                 row("Less - preferred dividends", fact("us-gaap:PreferredStockDividendsIncomeStatementImpact", "FY25", "50"),
+                     fact("us-gaap:PreferredStockDividendsIncomeStatementImpact", "FY24", "30"))]
+    result = _read(income_filing(rows))
+    assert [r["line_item"] for r in result.rows][-1] == "Interest expense"

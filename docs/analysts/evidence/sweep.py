@@ -169,29 +169,29 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
     for line in lines.values():
         if not (line.get("subtotal") or line.get("left_out")):
             continue
-        for key in _items(line, "columns"):
-            if not isinstance(key, dict):
+        for column in _items(line, "columns"):
+            if not isinstance(column, dict):
                 continue
-            period = tuple(str(part) for part in _items(key, "period"))
-            dims = tuple(sorted((str(d.get("axis")), str(d.get("member"))) for d in _items(key, "dims") if isinstance(d, dict)))
-            facts = [f for f in instance.lookup(str(key.get("concept")), period, dims) if f.value is not None]
+            period = tuple(str(part) for part in _items(column, "period"))
+            dims = tuple(sorted((str(d.get("axis")), str(d.get("member"))) for d in _items(column, "dims") if isinstance(d, dict)))
+            facts = [f for f in instance.lookup(str(column.get("concept")), period, dims) if f.value is not None]
             if not facts:
                 score.unverified += 1
-            elif any(Fraction(str(f.value)) == Fraction(str(key.get("stored"))) for f in facts):
+            elif any(Fraction(str(f.value)) == Fraction(str(column.get("stored"))) for f in facts):
                 score.verified += 1
             else:
                 score.wrong += 1
-                problems.append(f"{line.get('line_item')}: stored {key.get('stored')}, filing {facts[0].value}")
+                problems.append(f"{line.get('line_item')}: stored {column.get('stored')}, filing {facts[0].value}")
     # A derived figure: where the statement prints its revenue as one fact, Total Revenue must equal it.
     revenue_lines = [line for line in lines.values() if _REVENUE.match(str(line.get("concept")))
                      and not any(isinstance(c, dict) and _items(c, "dims") for c in _items(line, "columns"))]
     total = _group(_group(audit, "totals"), "revenue")
     if len(revenue_lines) == 1 and total.get("actual") is not None:
-        current = next((c for c in _items(revenue_lines[0], "columns")
-                        if isinstance(c, dict) and c.get("label") != comparison_label), None)
-        if isinstance(current, dict) and Fraction(str(total["actual"])) != Fraction(str(current.get("displayed"))):
+        latest = next((c for c in _items(revenue_lines[0], "columns")
+                       if isinstance(c, dict) and c.get("label") != comparison_label), None)
+        if isinstance(latest, dict) and Fraction(str(total["actual"])) != Fraction(str(latest.get("displayed"))):
             score.wrong += 1
-            problems.append(f"Total Revenue {total['actual']} is not the filing's revenue {current.get('displayed')}")
+            problems.append(f"Total Revenue {total['actual']} is not the filing's revenue {latest.get('displayed')}")
     score.covered = len(covered)
     score.details = "; ".join(problems)[:500]
     return score
