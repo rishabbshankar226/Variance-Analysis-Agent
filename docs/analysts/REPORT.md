@@ -84,6 +84,26 @@ Drawn as Draws B and C were, excluding every Draw A, B and C accession and filer
 
 The two 10-Ks without XBRL are outside the denominator. Run by hand, each refuses plainly with what to upload.
 
+Draw D's final fresh eyes found figures printed twice inside labels (above). The owner chose the fix and a fresh draw (Decision 41). Draw D stays here as measured.
+
+### Draw E (seed `20261104`), after Decision 41, swept once at `1b10d97`
+
+Drawn as Draws B, C and D were, excluding every Draw A-D accession and filer. It was swept once, with label text scored as well, and informed no code change. Results file sha256 `2ce5dbdac9f9cba39eb51ad59b25544d8d6ecbce155e594f3ddd04dd97ac8d45`.
+
+| Measure | Draw E (27 Inline XBRL filings) |
+|---|---|
+| Wrong values (lines and every headline figure) | **0** |
+| Wrong labels, as the sweep scored them | 6, all in one bank's cash flow statement, and **all 6 checked and found right**. Labels such as "Loans held for sale: Proceeds from sales" and "Securities AFS and restricted stock: Purchases" name headings the filing prints directly above those rows. The sweep judges a section name by the filing's presentation linkbase, which doesn't carry these printed sub-headings. Left as measured, since Draw E informs no change, scorer included |
+| Values verified / unverified | 3,822 / 36 (every unverified one a printed dash or confirmed blank with no fact) |
+| All three statements read | **10 of 27 (37%, 22-56%)**: the 90% target is **not reached** |
+| All three read without a refusal | 17 of 27 (63%, 44-78%) |
+| Read without a refusal, by statement | income 20/26, balance sheet 23/27, cash flow 25/27 |
+| Fully read, by statement | income 16/26, balance sheet 22/27, cash flow 15/27 |
+| Of the 7 read without a refusal but not fully | 4 short only by printed dashes or confirmed blanks; 3 by an oracle line the reader doesn't cover |
+| Refusals | 12, **all plain** |
+
+One filing's income statement wasn't swept, because the oracle found two statements in it. The three 10-Ks without XBRL are outside the denominator; run by hand, each refuses plainly with what to upload.
+
 ### Draw A, the development set (seed `20261026`, 40 filings; 33 Inline XBRL)
 
 | When | Commit | Wrong | All three read (Inline XBRL) | Without a refusal |
@@ -93,6 +113,7 @@ The two 10-Ks without XBRL are outside the denominator. Run by hand, each refuse
 | STOP 2 | `1d903a6` | 0 | 15 of 33 (45%, 30-62%) | 26 of 33 (79%, 62-89%) |
 | Phase 7, after Decision 39 | `1a585fe` | 0 | 14 of 33 (42%, 27-59%) | 25 of 33 (76%, 59-87%) |
 | Phase 7, after Decision 40 | `273fd98` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
+| Phase 7, after Decision 41, label text scored too | `1b10d97` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
 
 The drop from STOP 2 is an investment company's statement of operations. At STOP 2 it counted as fully read, but it read its subtotals as lines: net investment income was typed revenue, and the totals the report computed double-counted. Since Decision 39 its bottom line must add up, so it refuses plainly. The `Financial_Report.xlsx` reader on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
 
@@ -106,9 +127,10 @@ At each point, five filings were drawn with a seed committed first. A subagent w
 | STOP 2 (Draw A) | `20261028` | 4: a sweep artifact, a mislabeled unlabeled subtotal, and a bank's Total Revenue and Total Expenses | Decision 37 |
 | Draw B, final | `20261030` | Draw B's wrong revenue subtotal, plus 3 more wrong headline figures; 10 balance sheet and cash flow reports clean | STOP-ASK, then Decision 39 |
 | Draw C, final | `20261101` | Every line, change, subtotal and headline matched. 7 wrong figures in one insurer's balance sheet: labels quote amounts in thousands beside whole-dollar columns, with no unit stated. One percent follows the documented half-even rule | STOP-ASK (`evidence/stop-ask-draw-c/`); the class runs through every draw (A 40 labels in 18 filings, B 23 in 8, C 21 in 10); Decision 40 |
-| Draw D, final | `20261103` | FRESH_D_FOUND | FRESH_D_DONE |
+| Draw D, final | `20261103` | Every line, change, subtotal and headline matched. 3 wrong figures in one balance sheet's labels: "75,000,00075,000,000 shares authorized", where nested hidden-fact spans printed each figure twice. Also 2 cash rows named by a section they aren't in, and a credit note on a line of dashes | STOP-ASK (`evidence/stop-ask-draw-d/`); the doubled figures run through every draw (19 labels in 13 filings); Decision 41, and the sweep now scores label text |
+| Draw E, final | `20261105` | FRESH_E_FOUND | FRESH_E_DONE |
 
-The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found sat elsewhere. Most were headline figures added up from the lines; since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact. The last was an amount inside a line's label, quoted in the filing's unit beside figures shown in full; since Decision 40 every filing report states that unit.
+The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found sat elsewhere. Most were headline figures added up from the lines; since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact. Then came label text: an amount quoted in the filing's unit beside figures shown in full (Decision 40: every filing report states that unit), and figures printed twice inside labels (Decision 41, after which the sweep scores label text too).
 
 ## E and F items, final state
 
@@ -204,6 +226,7 @@ The lesson from all of them: the sweep scored line values, and every wrong figur
 38. STOP 2 answers: At limit, the benchmark words, Phase 6 kept (a), (b), (e) and the scorecard, and dropped (c) and (d).
 39. Draw B STOP-ASK answers: net income by concept; revenue on final types; filing refusals; 52/53-week labels; the headline from the filing's own totals; reading notes in the report; small fixes; chat panels and tables; the oracle title rule; Draw C.
 40. Draw C STOP-ASK answer: every filing report states the unit the filing prints in and that label amounts are quoted as printed; Draw D.
+41. Draw D STOP-ASK answer: a figure inside nested hidden spans is printed once; a section's own subtotal closes it for naming; no credit note on all-zero lines; the headline's negative cue; the sweep scores label text; Draw E.
 
 ## Existing assertions edited, with reasons
 
@@ -223,10 +246,10 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 
 ## Gates
 
-`sh docs/ui/evidence/gates.sh dist` on the final code (`src/` as at `273fd98`), on macOS with Python 3.11.16. All PASS:
+`sh docs/ui/evidence/gates.sh dist` on the final code (`src/` as at `1b10d97`), on macOS with Python 3.11.16. All PASS:
 - ruff
 - mypy, strict, 71 files: `src/variance_agent`, `scripts` and `deterministic_conditioning` (the evidence tools pass `mypy --strict docs/analysts/evidence` separately)
-- pytest: **2,497 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
+- pytest: **2,501 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
 - compileall
 - pip check
 - contracts: 19 fixtures unchanged
@@ -234,7 +257,7 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 - both artifacts installed without the Excel and PDF extras, each passing `check_installation.py` and pip check
 - the wheel installed with the PDF extra alone
 
-The log is at `~/vaa-edgar-corpus/final-d/gates_dist.log`.
+The log is at `~/vaa-edgar-corpus/final-e/gates_dist.log`.
 
 ## Browser check
 
@@ -276,7 +299,8 @@ This check found two problems, both fixed:
 
 ## Not verified
 
-- **The 90% target.** It is not reached on Draw B, C or D under Decision 35's strict definition (above).
+- **The 90% target.** It is not reached on Draw B, C, D or E under Decision 35's strict definition (above).
+- **Section names in labels, by the sweep.** The sweep checks a section name against the filing's presentation linkbase. That linkbase can lack sub-headings the filing prints (Draw E's 6 flags), and where it holds no heading above a line the name isn't checked at all. A check against the printed rows above each line would be exact.
 - **Cross-reader agreement.** EDGAR carries no PDFs for recent filings, and the SEC no longer publishes `Financial_Report.xlsx` (F2), so the readers could not be compared on the same recent filing (Decision 30).
 - **The new comparisons on real filings.** The sweeps measure one statement per run. LTM, derived metrics and covenants, two-file joins, the limit, benchmark and target bases, and the holdings scorecard were exercised on fictional fixtures and in the guides, never on a drawn filing.
 - **Real analysts.** The per-reader reviews at STOP 2 were subagents given each seat's row of section 3, not people in those seats.
@@ -319,6 +343,7 @@ This check found two problems, both fixed:
 - **Measured.**
   - Draw B: 1 wrong figure, plus 3 headline figures found by fresh eyes, all added up from the lines. Fixed under Decision 39.
   - Draw C: 0 wrong values, but its fresh eyes found label amounts quoted at the filing's unit with no unit stated. Fixed under Decision 40.
-  - Draw D, the last held-out draw: 0 wrong values, every headline figure scored.
-  - All three statements read on 39% (24-58%) of Draw D, short of the 90% target.
+  - Draw D: 0 wrong values, but its fresh eyes found figures printed twice inside labels. Fixed under Decision 41, and the sweep now scores label text.
+  - Draw E, the last held-out draw: 0 wrong values. Its 6 scored label flags all name headings the filing prints, so they are a limit of the checker.
+  - All three statements read on 37% (22-56%) of Draw E, short of the 90% target.
 - **Unchanged.** The 19 contract fixtures and schemas 1.0-1.8. No new dependency.

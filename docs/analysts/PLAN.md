@@ -59,7 +59,9 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Decision 40: every filing report states the unit the filing prints in (`cef2664`); Draw A re-swept at `273fd98`, every scored row unchanged (0 wrong) | done | sweep `p8-273fd98`, sha256 `d271f089…` |
 | 7 | Draw D (seed 20261102) swept once at `0f1d284`: **0 wrong**, 11/28 (39%, 24-58%), 12 refusals all plain; screenshots retaken; final dist gates PASS (2,497) | done | sweep `D-0f1d284`, sha256 `b2589644…` |
 | 7 | Draw D fresh eyes (seed 20261103): 3 doubled figures in equity labels (nested hidden spans), systematic across draws (19 labels in 13 filings); 2 wrong section names; 1 wrong credit note | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-d/` |
-| 7 | STOP-ASK answered (Decision 41): fixes 1-5, Draw A re-sweep, Draw E (seed 20261104) | open | seeds committed |
+| 7 | Decision 41 fixes 1-5 (`a12889c`); the label checks found one more section name on Draw A, fixed by closing a section at every footed subtotal (`1b10d97`); Draw A re-swept with label text scored: 0 wrong, every scored row unchanged | done | sweep `p10-1b10d97`, sha256 `7d379189…` |
+| 7 | Draw E (seed 20261104) swept once at `1b10d97`: **0 wrong values**, 6 label flags all checked right (a checker limit), 10/27 (37%, 22-56%), 12 refusals all plain; final dist gates PASS (2,501); screenshots retaken | done | sweep `E-1b10d97`, sha256 `2ce5dbda…` |
+| 7 | Draw E fresh eyes (seed 20261105): wrong signs, types and F/U in two income statements (label-typed lines; a tax line typed Revenue) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-e/` |
 
 ## Baseline (measured 2026-10-26)
 
