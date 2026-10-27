@@ -2483,7 +2483,9 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
             take(term)
 
     for i, line in enumerate(lines):
-        if _REVENUE_CONCEPT.match(line.concept):
+        # A revenue concept on a one-axis breakdown line (fees by product on a bank's statement) is part of
+        # some revenue, not the filing's revenue: only a dimensionless revenue fact defines the block.
+        if _REVENUE_CONCEPT.match(line.concept) and not any(key is not None and key.dims for key in line.keys):
             take(i)
     if not block:
         return []

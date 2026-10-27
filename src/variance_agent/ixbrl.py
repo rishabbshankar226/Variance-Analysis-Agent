@@ -545,8 +545,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                 continue
             if not label and wrapped:
                 label = wrapped  # the label ran onto the row above
-            elif not label and section and rows and rows[-1][1] == section:
-                label = f"Total {section}"  # an unlabeled figures row closing its section is the section's total
+            unlabeled = not label and bool(section) and bool(rows) and rows[-1][1] == section
             wrapped = ""
             figures: list[tuple[Fact, bool | None]] = []
             for position, (token_kind, value) in enumerate(flat):
@@ -558,6 +557,10 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                 before = _text_since(flat, position, -1)
                 after = _text_since(flat, position, 1)
                 figures.append((reader.facts[index], _negation(before, after)))
+            if unlabeled and figures:
+                # An unlabeled figures row closing its section sums lines above it, but which total it is the filing
+                # doesn't say (equity before treasury stock is not total equity): it is named by its concept.
+                label = f"Total, printed without a label ({figures[0][0].name})"
             rows.append((label, section, figures, dash))
     # Columns: the periods of the dimensionless money facts, newest first, split by duration.
     periods: dict[tuple[str, ...], None] = {}

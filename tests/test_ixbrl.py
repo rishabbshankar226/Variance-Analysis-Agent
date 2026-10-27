@@ -319,7 +319,7 @@ def test_a_total_named_only_by_its_concept_is_a_subtotal() -> None:
     assert "Net other expense" in result.detected_totals
 
 
-def test_an_unlabeled_figures_row_after_a_section_is_that_sections_total() -> None:
+def test_an_unlabeled_figures_row_after_a_section_is_a_total_named_by_its_concept() -> None:
     rows = income_rows()
     rows[0:3] = ["<tr><td>Revenues:</td></tr>",
                  row("Rental income", fact("us-gaap:Revenues", "FY25_products", "4,000"),
@@ -330,7 +330,8 @@ def test_an_unlabeled_figures_row_after_a_section_is_that_sections_total() -> No
                  row("Gross margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), fact("us-gaap:GrossProfit", "FY24", "1,650"))]
     result = _read(income_filing(rows))
     assert not result.has_fatal_errors, result.fatal_error_message
-    assert "Total Revenues" in result.detected_totals
+    # Which total it is, the filing doesn't print, so the reader doesn't invent "Total Revenues" (STOP 2 fresh eyes).
+    assert "Total, printed without a label (us-gaap:Revenues)" in result.detected_totals
 
 
 def test_a_subtotal_named_first_figure_is_read_as_the_line_it_prints() -> None:
@@ -539,3 +540,19 @@ def test_a_row_printed_only_as_dashes_is_listed_and_does_not_rename_the_next_lin
     assert not result.has_fatal_errors, result.fatal_error_message
     assert "Left out 'Other income (expense)' (printed as dashes with no tagged figure)" in result.visible_transformations
     assert "Interest expense" in [r["line_item"] for r in result.rows]
+
+
+def test_revenue_breakdown_lines_on_one_axis_are_not_the_filing_s_revenue() -> None:
+    # A bank: interest income plus a revenue-from-contracts breakdown by one axis (fees), no dimensionless revenue fact.
+    fees = row("Service charges", fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "FY25_services", "100"),
+               fact("us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax", "FY24_services", "90"))
+    rows = [row("Interest on loans", fact("us-gaap:InterestAndFeeIncomeLoansAndLeases", "FY25", "1,000"),
+                fact("us-gaap:InterestAndFeeIncomeLoansAndLeases", "FY24", "900")),
+            fees,
+            row("Interest expense", "(" + fact("us-gaap:InterestExpense", "FY25", "300") + ")",
+                "(" + fact("us-gaap:InterestExpense", "FY24", "250") + ")"),
+            row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "800"), fact("us-gaap:NetIncomeLoss", "FY24", "740"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    notes = [*result.visible_transformations, *result.reader_notes]
+    assert not any("credit among costs" in note or "the filing's revenue is" in note for note in notes)

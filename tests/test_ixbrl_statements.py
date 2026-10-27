@@ -338,3 +338,14 @@ def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
     assert handle_message(session, "export excel").text == (
         "A workbook isn't available for a balance sheet or cash flow comparison yet. The report and the audit file "
         "are; type `export report` or `export audit`.")
+
+
+def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_total() -> None:
+    rows = balance_rows()
+    at = next(i for i, r in enumerate(rows) if "Treasury stock" in r)
+    rows[at:at] = [row("", fact("us-gaap:StockholdersEquityBeforeTreasuryStock", "I25", "4,200"),
+                       fact("us-gaap:StockholdersEquityBeforeTreasuryStock", "I24", "3,250"))]
+    sheet = _statement(position_filing("CONSOLIDATED BALANCE SHEETS", rows), "balance_sheet")
+    labels = [line.label for line in sheet.lines]
+    assert "Total, printed without a label (us-gaap:StockholdersEquityBeforeTreasuryStock)" in labels
+    assert labels.count("Total stockholders' equity") == 1
