@@ -487,3 +487,26 @@ def test_a_net_income_line_tagged_with_an_extension_concept_is_still_the_bottom_
                      fact("us-gaap:PreferredStockDividendsIncomeStatementImpact", "FY24", "30"))]
     result = _read(income_filing(rows))
     assert [r["line_item"] for r in result.rows][-1] == "Interest expense"
+
+
+def test_a_credited_line_is_never_also_described_as_revenue() -> None:
+    rows = income_rows()
+    rows[4:6] = [row("Other income, net", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                     fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40")),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,410"))]
+    result = _read(income_filing(rows))
+    notes = [*result.visible_transformations, *result.reader_notes]
+    assert not any("'Other income, net' as revenue" in note for note in notes)
+    revenue = sum(r["type"] == "Revenue" for r in result.rows)
+    expense = sum(r["type"] == "Expense" for r in result.rows)
+    count = f"Labeled {revenue} line{'s' if revenue != 1 else ''} revenue and {expense} line{'s' if expense != 1 else ''} expense"
+    assert any(note.startswith(count) for note in result.visible_transformations), result.visible_transformations
+
+
+def test_a_credited_label_with_an_apostrophe_is_relabeled_in_the_audit() -> None:
+    rows = income_rows()
+    rows[4:6] = [row("Members' share of other income", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                     fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40")),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,410"))]
+    result = _read(income_filing(rows))
+    assert "Labeled 'Members' share of other income' as expense, a credit among costs" in result.reader_notes

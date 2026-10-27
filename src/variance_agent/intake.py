@@ -2323,7 +2323,8 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
     totals = [i for i in sorted(block) if i in terms]
     named = totals[-1] if totals else min(block)
     revenue, concept = names[named], lines[named].concept
-    notes = []
+    notes: list[str] = []
+    credited: set[str] = set()
     for data_index, row in zip(shaped.kept, shaped.rows[at + 1:], strict=True):
         if row[type_at] != "Revenue" or data_index in block:
             continue
@@ -2336,7 +2337,23 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
                 row[column] = format(-Decimal(str(row[column]).replace(",", "")), "f")
         notes.append(f"Read '{row[0]}' as a credit among costs: the filing's revenue is '{revenue}' ({concept}), "
                      "and this line is not part of it")
+        credited.add(f"Labeled '{row[0]}' as revenue")
+    # The shaper's own notes were written before this: keep them true to the final labels.
+    moved = sum(note in credited for note in shaped.audit_notes)
+    shaped.audit_notes = [f"{note.removesuffix(' as revenue')} as expense, a credit among costs" if note in credited else note
+                          for note in shaped.audit_notes]
+    for at_note, note in enumerate(shaped.notes):
+        count = _LABEL_COUNT.match(note)
+        if count and moved:
+            revenue_lines, expense_lines = int(count["revenue"]) - moved, int(count["expense"]) + moved
+            shaped.notes[at_note] = (f"Labeled {_plural(revenue_lines, 'line')} revenue and "
+                                     f"{_plural(expense_lines, 'line')} expense{count['rest']}")
+            audit_at = shaped.audit_notes.index(note)
+            shaped.audit_notes[audit_at] = shaped.notes[at_note]
     return notes
+
+
+_LABEL_COUNT = re.compile(r"^Labeled (?P<revenue>\d+) lines? revenue and (?P<expense>\d+) lines? expense(?P<rest> .*)$")
 
 
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
