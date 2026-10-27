@@ -335,7 +335,13 @@ def _xlsx_sheets(path: Path) -> list[str]:
 
 def _targets(reader: str, folder: Path, row: dict[str, str], statement: oracle.Statement, page: str) -> tuple[Path, str | None] | None:
     if reader == "primary":
-        return folder / row["primary"], _statement_name(folder / row["primary"], statement.kind)
+        document = folder / row["primary"]
+        name = _statement_name(document, statement.kind)
+        # A statement the tool doesn't list is asked for by the filing's own title, so the run records the tool's
+        # plain "No statement called ..." refusal instead of reading its default statement (STOP 2 fresh eyes, W1).
+        if name is None and document.name.lower().endswith((".htm", ".html")):
+            name = statement.title or statement.kind.replace("_", " ")
+        return document, name
     if reader == "financial_report":
         path = folder / "Financial_Report.xlsx"
         number = re.fullmatch(r"R(\d+)\.htm", page)
