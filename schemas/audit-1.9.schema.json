@@ -3664,6 +3664,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "unit": {
+          "type": "string"
         }
       },
       "required": [
@@ -3783,6 +3786,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "unit": {
+          "type": "string"
         }
       },
       "required": [

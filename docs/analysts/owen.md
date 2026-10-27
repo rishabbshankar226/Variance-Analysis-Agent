@@ -18,6 +18,7 @@ Output:
 ## Executive Summary
 - Reporting Currency: USD
 - Compared Against: Prior Period (FY2025)
+- Units: Both filings print these figures in millions; this report shows them in full, and amounts inside line labels are quoted as the filing prints them.
 - Net sales: $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)
 - Net income: $1,535,000,000.00 vs. $1,450,000,000.00 ($85,000,000.00, 5.9%)
 - Headline figures are LTM of the filing's own printed totals, each built from its XBRL facts as the LTM build shows.

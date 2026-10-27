@@ -340,3 +340,46 @@ def test_the_chat_offers_no_workbook_for_a_filing() -> None:
     assert handle_message(session, "export excel").text == (
         "A workbook isn't available for this comparison yet. The report and the audit file are; type "
         "`export report` or `export audit`.")
+
+
+# Decision 40: a filing report states the unit the filing prints in, and how label amounts are quoted.
+
+UNIT_MILLIONS = ("The filing prints these figures in millions; this report shows them in full, and amounts inside line "
+                 "labels are quoted as the filing prints them.")
+
+
+def test_an_income_report_states_the_filings_unit() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    report, audit = _report(income_filing())
+    summary = report.split("## Material Variances")[0]
+    assert f"- Units: {UNIT_MILLIONS}" in summary
+    assert audit["source"]["document"]["headline"]["unit"] == UNIT_MILLIONS
+
+
+def test_a_balance_sheet_report_states_the_unit_its_labels_are_quoted_in() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import POSITION_RESOURCES, document, fact, position_filing, row, statement
+    from tests.fixtures.ixbrl.build_ixbrl import balance_rows
+    rows = balance_rows()
+    # A label quoting an allowance as the filing prints it, in thousands (Draw C's fresh-eyes finding).
+    rows = [r.replace("<td>Accounts receivable, net</td>",
+                      "<td>Accounts receivable, net of allowance of $750 and $740</td>") for r in rows]
+    data = position_filing("CONSOLIDATED BALANCE SHEETS", [r.replace('scale="6"', 'scale="3"').replace('decimals="-6"', 'decimals="-3"')
+                                                             for r in rows])
+    report, audit = _report(data, **{"--sheet": "Consolidated Balance Sheets"})
+    unit = UNIT_MILLIONS.replace("millions", "thousands")
+    assert "Accounts receivable, net of allowance of $750 and $740" in report
+    assert f"- Units: {unit}" in report.split("## Lines")[0]
+    assert f"Units: {unit}" in audit["source"]["document"]["reader_notes"]
+
+
+def test_an_ltm_report_states_each_filings_unit() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing, quarter_filing
+    from variance_agent.ltm import build_ltm
+    result = build_ltm(quarter_filing(), "hal-20260328.htm", income_filing(), "hal-20250927.htm")
+    assert result.filing_headline is not None and result.filing_headline["unit"] == UNIT_MILLIONS.replace(
+        "The filing prints", "Both filings print")
+
+
+def test_the_chat_summary_of_a_filing_states_its_unit() -> None:
+    _, reply = _filing_session()
+    assert f"Units: {UNIT_MILLIONS}" in reply.text

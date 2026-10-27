@@ -237,7 +237,14 @@ def _ltm_headline(q_read: IntakeResult, k_read: IntakeResult, quarter_name: str,
                       "change_percent": None if percent is None else format(percent, "f")})
     notes += [f"'{item['line_item']}' ({concept}) is printed in '{annual_name}' but not in '{quarter_name}', so it isn't "
               "in the LTM headline." for concept, item in annual.items() if concept not in quarter_concepts]
-    return {"items": built, "notes": notes}
+    record: dict[str, object] = {"items": built, "notes": notes}
+    units = [str(read.filing_headline.get("unit", "")) if read.filing_headline is not None else "" for read in (q_read, k_read)]
+    if units[0] and units[0] == units[1]:  # Decision 40: the unit each filing prints in
+        record["unit"] = units[0].replace("The filing prints", "Both filings print", 1)
+    elif any(units):
+        record["unit"] = " ".join(f"'{name}': {unit}" for name, unit in zip((quarter_name, annual_name), units, strict=True)
+                                  if unit)
+    return record
 
 
 def _safe_inline(text: str) -> str:

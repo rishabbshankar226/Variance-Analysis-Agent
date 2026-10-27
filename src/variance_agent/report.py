@@ -478,6 +478,9 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
         f"- Reporting Currency: {cfg.currency}",
         *([] if cfg.comparison_basis is ComparisonBasis.BUDGET
           else [f"- Compared Against: {heading}"]),
+        # The unit the filing prints in, which its label text keeps (Decision 40).
+        *([f"- Units: {_safe_inline(str(filing_headline['unit']))}"]
+          if filing_headline is not None and filing_headline.get("unit") else []),
         # A filing's income statement is headed by its own printed totals, never by computed ones (Decision 39).
         *(_filing_headline_lines(filing_headline, cfg.currency, places) if filing_headline is not None
           else [revenue_line, expense_line, f"- Bottom Line Impact: {bottom_line}"]),

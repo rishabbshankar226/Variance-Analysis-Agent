@@ -1989,7 +1989,9 @@ def _filing_summary(session: Session, headline: dict[str, object]) -> Response:
     heading = _plain_heading(cfg)
     items, notes = headline.get("items"), headline.get("notes")
     assert isinstance(items, list) and isinstance(notes, list)
+    unit = str(headline.get("unit") or "")
     lines = ["**Analysis Complete**\n", f"**Period:** {safe_inline(cfg.period)}", f"**Currency:** {cfg.currency}",
+             *([f"Units: {safe_inline(unit)}"] if unit else []),
              f"**Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
              f"{format_threshold_pct(cfg.percent_threshold)}\n"]
     figures: list[dict[str, object]] = []
@@ -2021,7 +2023,7 @@ def _filing_summary(session: Session, headline: dict[str, object]) -> Response:
                  pair("Material at", f"{format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
                                      f"{format_threshold_pct(cfg.percent_threshold)}"),
                  pair("Lines read", str(len(result.rows)))],
-        figures=figures, notes=[*(str(note) for note in notes), totals_note],
+        figures=figures, notes=[*([f"Units: {unit}"] if unit else []), *(str(note) for note in notes), totals_note],
         table_title=material_text.capitalize() if table else f"No {material_text[2:]}",
     )
     chips = [f"Why {result.material_rows[0].line_item}?"] if result.material_rows else []

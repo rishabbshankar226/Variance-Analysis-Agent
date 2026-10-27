@@ -17,6 +17,7 @@ Output:
 
 Reporting currency: USD
 
+- Units: The filing prints these figures in millions; this report shows them in full, and amounts inside line labels are quoted as the filing prints them.
 - Checked every subtotal and the balance sheet identity: Total assets equals Total liabilities and stockholders' equity in Sep 2025 and Sep 2024, within the rounding each figure's decimals state
 - Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease
 - Lines marked (Total) are the statement's own subtotals.
@@ -55,6 +56,7 @@ Output:
 
 Reporting currency: USD
 
+- Units: The filing prints these figures in millions; this report shows them in full, and amounts inside line labels are quoted as the filing prints them.
 - Checked every subtotal and the cash roll-forward: Ending cash equals beginning cash plus the flows printed between them in FY2025 and FY2024, within the rounding each figure's decimals state
 - Left out 1 line after 'Cash, cash equivalents and restricted cash, end of year' (supplemental disclosures): 'Cash paid for interest'
 - Compared each line as an Increase or Decrease of its printed figure: a figure printed in parentheses is negative, so a larger outflow or deduction shows as a Decrease

@@ -270,8 +270,10 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   `operating_income`, `net_income`), `line_item`, `concept`, the `actual` and `comparison` fact
   keys (as a line's columns record them), the `change` (actual minus comparison, as printed) and
   `change_percent` (the change over the comparison's absolute value, or null at zero); and
-  `notes`, each total left out and why. The record's `totals` is null: the report shows these
-  printed totals, never revenue, expense or net totals added up from the lines.
+  `notes`, each total left out and why; and `unit`, the sentence stating the unit the filing
+  prints in, whose amounts inside line labels keep that unit (Decision 40; every Inline XBRL
+  statement's `reader_notes` carry it too, as `Units: …`). The record's `totals` is null: the
+  report shows these printed totals, never revenue, expense or net totals added up from the lines.
 - `source.document` may also be `{kind: "ltm", statement, documents, reader_notes, lines}`, an
   LTM build from a 10-K and a later 10-Q (`--ltm-from`). `documents` names both filings with
   their sha256 and statement. Each line carries its `line_item` and `concept`, the `ltm` value,

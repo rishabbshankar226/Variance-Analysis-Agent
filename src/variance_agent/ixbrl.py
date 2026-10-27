@@ -129,6 +129,7 @@ class LineKey:
     stored: Decimal  # v
     displayed: Decimal  # d
     decimals: str
+    scale: int = 0  # the power of ten the filing prints the figure in (Decision 40: the report states it)
 
 
 @dataclass
@@ -715,7 +716,8 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                 continue
             displayed = -fact.magnitude if negated else fact.magnitude
             keys[periods.index(context.period) if column is None else column] = LineKey(
-                fact.name, fact.context, context.period, context.dims, fact.stored, displayed, fact.decimals)
+                fact.name, fact.context, context.period, context.dims, fact.stored, displayed, fact.decimals,
+                int(fact.attributes.get("scale", "0") or "0"))
             concept, measure = concept or fact.name, measure or fact_measure
         if not any(keys) and not problem:
             if dims_seen:

@@ -174,8 +174,11 @@ def _headline_record(headline: object) -> JSONObject:
         raise ValueError("source_document headline must hold items and notes lists.")
     items, notes = headline["items"], headline["notes"]
     assert isinstance(items, (list, tuple)) and isinstance(notes, (list, tuple))
-    return {"items": [_json_value(item) for item in items],
-            "notes": [validate_text(note, field="source_document headline note") for note in notes]}
+    record: JSONObject = {"items": [_json_value(item) for item in items],
+                          "notes": [validate_text(note, field="source_document headline note") for note in notes]}
+    if "unit" in headline:  # the unit the filing prints in (Decision 40)
+        record["unit"] = validate_text(headline["unit"], field="source_document headline unit")
+    return record
 
 
 def _document_record(document: Mapping[str, object] | None) -> JSONObject | None:

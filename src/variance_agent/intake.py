@@ -2414,6 +2414,8 @@ def _read_ixbrl_bytes(
             result.filing_headline = _filing_headline(
                 shaped, lines, names_by_line, bottom,
                 (chosen.labels.index(actual_label), chosen.labels.index(comparison_label)), (actual_label, comparison_label))
+            if unit_text := _unit_sentence(lines):
+                result.filing_headline["unit"] = unit_text
     left_out = [f"Left out {item}" for item in chosen.left_out]
     if below and bottom is not None:
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
@@ -2424,7 +2426,8 @@ def _read_ixbrl_bytes(
         result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in credits)]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
-    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits, *blank_notes]
+    unit_note = [f"Units: {unit_text}"] if (unit_text := _unit_sentence(lines)) else []
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes]
     result.xbrl_lines = [
         {"line_item": all_names[i], "concept": all_lines[i].concept, "measure": all_lines[i].measure,
          "subtotal": i < len(lines) and i not in shaped.kept, "left_out": i >= len(lines),
@@ -2475,12 +2478,13 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
         left_out.append(f"Left out {_plural(len(after), 'line')} after '{names[closing]}' (supplemental disclosures): "
                         + ", ".join(f"'{name}'" for name in after))
     identity = f"Checked every subtotal and {_IDENTITY_NAME[chosen.kind]}: {checked.identity}"
+    unit_note = [f"Units: {unit}"] if (unit := _unit_sentence(money)) else []  # Decision 40
     blanks = [f"Read the blank {chosen.labels[column]} figure of '{names[row]}' as 0: the subtotal it sits in adds up "
               "with it at 0" for row, column in checked.blanks if not money[row].dash]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
     result.statement_kind = chosen.kind
-    result.statement_checks = [identity, *left_out, *blanks, _CHANGE_NOTE]
+    result.statement_checks = [*unit_note, identity, *left_out, *blanks, _CHANGE_NOTE]
     left, right = checked.sides
     rule = ("total assets = total liabilities and equity" if chosen.kind == "balance_sheet"
             else "ending cash = beginning cash + the flows printed between them")
@@ -2490,7 +2494,7 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
                           "footing": [{"subtotal": names[total], "terms": [{"line_item": names[term], "weight": weight}
                                                                            for term, weight in terms]}
                                       for total, terms in checked.matches]}]
-    result.reader_notes = [*chosen.notes, *left_out, identity, *blanks, _CHANGE_NOTE]
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, identity, *blanks, _CHANGE_NOTE]
     result.xbrl_lines = [
         {"line_item": names[i], "concept": line.concept, "measure": line.measure,
          "subtotal": i in totals, "left_out": i > closing,
@@ -2527,6 +2531,28 @@ def _revenue_block(shaped: ShapedStatement, lines: list[IxLine]) -> tuple[set[in
         return block, None
     totals = [i for i in sorted(block) if i in terms]
     return block, totals[-1] if totals else min(block)
+
+
+_SCALE_WORDS = {0: "full amounts", 3: "thousands", 6: "millions", 9: "billions"}
+
+
+def _unit_sentence(lines: list[IxLine]) -> str:
+    """The unit the filing prints a statement's money in, from its facts' scale (Decision 40). Label text is quoted
+    as printed, so its amounts are in that unit while the report shows every figure in full."""
+    scales: dict[int, int] = {}
+    for line in lines:
+        if line.measure == "Currency":
+            for key in line.keys:
+                if key is not None:
+                    scales[key.scale] = scales.get(key.scale, 0) + 1
+    if not scales:
+        return ""
+    words = [_SCALE_WORDS.get(scale, f"units of 10^{scale}") for scale, _ in sorted(scales.items(), key=lambda kv: -kv[1])]
+    if words == ["full amounts"]:
+        return "The filing prints these figures in full, as this report shows them."
+    unit = f"at more than one scale ({' and '.join(words)})" if len(words) > 1 else f"in {words[0]}"
+    return (f"The filing prints these figures {unit}; this report shows them in full, and amounts inside line labels "
+            "are quoted as the filing prints them.")
 
 
 _EXPENSE_TOTAL = re.compile(r"^us-gaap:(?:CostsAndExpenses|OperatingExpenses|BenefitsLossesAndExpenses|NoninterestExpense)$")
