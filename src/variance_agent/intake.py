@@ -217,6 +217,7 @@ class _ExcelSheet:
     # A divisor of None is a format this reader cannot interpret. Plain cells are not kept.
     display: dict[int, tuple[str, Decimal | None, bool]] = field(default_factory=dict)
     hidden_rows: str | None = None  # the person's answer for rows hidden in Excel: include or exclude
+    block: str | None = None  # "columns E-G": which of several side-by-side tables to read (E5)
 
 
 def _display_entry(code: object, value: object, cache: dict[tuple[str, int], tuple[Decimal | None, bool]],
@@ -1684,6 +1685,8 @@ def _read_excel_bytes(
                     compare_to=compare_to)
                 statement.available_sheets = sheetnames
                 return statement
+            if duration is not None:
+                excel = replace(excel, block=duration)
             result = _process_raw_table(
                 full_raw_rows,
                 filename,
@@ -1719,6 +1722,86 @@ def _read_excel_bytes(
         finally:
             if wb is not None:
                 wb.close()
+
+
+def _period_bands(
+    raw_rows: list[list[object]], header_idx: int, layout: SheetLayout,
+) -> tuple[list[list[object]], list[str]] | None:
+    """The rows with each period heading joined onto the Budget/Actual columns below it (E4).
+
+    A heading spans its merged cells, or runs right across blank cells when it is not merged.
+    None unless at least two distinct period headings sit directly above the header row.
+    """
+    if header_idx == 0:
+        return None
+    above, header = raw_rows[header_idx - 1], raw_rows[header_idx]
+    bands = [_statement_cell(above[c]) if c < len(above) else "" for c in range(len(header))]
+    merged = [(c1, c2) for r1, c1, _, c2 in layout.merged if r1 == header_idx and c2 > c1]
+    carried = ""
+    for column in range(len(header)):
+        span = next(((c1, c2) for c1, c2 in merged if c1 <= column + 1 <= c2), None)
+        if span is not None:
+            bands[column] = bands[span[0] - 1]
+        elif bands[column]:
+            carried = bands[column]
+        else:
+            bands[column] = carried
+    labels = list(dict.fromkeys(band for band in bands if band))
+    if len(labels) < 2 or not all(_PERIOD_RE.fullmatch(label) for label in labels):
+        return None
+    combined: list[object] = []
+    for column, cell in enumerate(header):
+        role = match_column_synonym(str(cell).strip())[0] if cell is not None and str(cell).strip() else None
+        joins = bands[column] and role in {CanonicalRole.BUDGET, CanonicalRole.ACTUAL}
+        combined.append(f"{bands[column]} {str(cell).strip()}" if joins else cell)
+    return [*raw_rows[:header_idx], combined, *raw_rows[header_idx + 1:]], labels
+
+
+def _table_blocks(raw_rows: list[list[object]], header_idx: int) -> list[tuple[int, int]]:
+    """Column ranges of tables side by side, split by columns blank from the header down (E5)."""
+    below = raw_rows[header_idx:]
+    width = max((len(row) for row in below), default=0)
+
+    def blank(column: int) -> bool:
+        return all(column >= len(row) or row[column] is None or str(row[column]).strip() == "" for row in below)
+
+    blocks: list[tuple[int, int]] = []
+    start: int | None = None
+    for column in range(width + 1):
+        if column == width or blank(column):
+            if start is not None:
+                blocks.append((start, column - 1))
+                start = None
+        elif start is None:
+            start = column
+    return blocks if len(blocks) >= 2 else []
+
+
+def _block_name(block: tuple[int, int]) -> str:
+    return f"columns {column_letters(block[0] + 1)}-{column_letters(block[1] + 1)}"
+
+
+def _only_block(raw_rows: list[list[object]], header_idx: int, block: tuple[int, int]) -> list[list[object]]:
+    """The rows with every other table blanked from the header down; columns keep their places."""
+    first, last = block
+    return [*raw_rows[:header_idx],
+            *([cell if first <= c <= last else None for c, cell in enumerate(row)] for row in raw_rows[header_idx:])]
+
+
+def _block_reads(raw_rows: list[list[object]], header_idx: int, block: tuple[int, int],
+                 compare_to: ComparisonBasis | None) -> bool:
+    rows = _only_block(raw_rows, header_idx, block)
+    found, _, _ = detect_header_row(rows)
+    return found == header_idx and detect_comparison_columns(rows[header_idx], compare_to=compare_to).basis is not None
+
+
+def _block_note(raw_rows: list[list[object]], header_idx: int, chosen: tuple[int, int],
+                blocks: list[tuple[int, int]], sheet_name: str | None) -> str:
+    header = raw_rows[header_idx]
+    others = [f"a table in {_block_name(b)} "
+              f"({', '.join(str(header[c]).strip() for c in range(b[0], b[1] + 1) if c < len(header) and header[c] is not None)}), "
+              f"chosen as sheet '{sheet_name} ({_block_name(b)})'" for b in blocks if b != chosen]
+    return f"Read the table in {_block_name(chosen)}; this sheet also has {'; '.join(others)}."
 
 
 _STATEMENT_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -1972,11 +2055,13 @@ def _process_raw_table(
     signs_resolved: bool = False,
     from_pdf: bool = False,
     excel: _ExcelSheet | None = None,
+    layout_retry: bool = True,
 ) -> IntakeResult:
     """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
     financial statement: their signs are settled and their subtotals already removed, so the
     signed-ledger flip and sum-based subtotal detection are skipped. ``excel`` carries what the
-    workbook preflight saw on the sheet; raw row ``i`` is physical row ``i + 1``."""
+    workbook preflight saw on the sheet; raw row ``i`` is physical row ``i + 1``. ``layout_retry``
+    allows one re-read of a workbook as period bands (E4) or side-by-side tables (E5)."""
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
@@ -2012,6 +2097,23 @@ def _process_raw_table(
             )
         return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name)
 
+    def reread(rows: list[list[object]], note: str, period: str | None) -> IntakeResult:
+        result = _process_raw_table(rows, filename, sheet_name, treat_blank_budgets_as_zero, period, compare_to,
+                                    signs_resolved, from_pdf, None if excel is None else replace(excel, block=None),
+                                    layout_retry=False)
+        if not result.has_fatal_errors:
+            result.visible_transformations.insert(0, note)
+        return result
+
+    if excel is not None and excel.block is not None and layout_retry:
+        blocks = _table_blocks(raw_rows, header_idx)
+        chosen_block = next((b for b in blocks if _block_name(b) == excel.block), None)
+        if chosen_block is None:
+            return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
+                f"Sheet '{sheet_name}' has no separate table in {excel.block}."))
+        return reread(_only_block(raw_rows, header_idx, chosen_block),
+                      _block_note(raw_rows, header_idx, chosen_block, blocks, sheet_name), selected_period)
+
     header_row = raw_rows[header_idx]
     header_row_number = header_idx + 1
     skipped_count = header_idx
@@ -2020,6 +2122,22 @@ def _process_raw_table(
         skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
 
     detection = detect_comparison_columns(header_row, compare_to=compare_to)
+    if detection.basis is None and excel is not None and layout_retry:
+        # Only a read that stops is tried again, so a sheet that reads today reads the same.
+        banded = _period_bands(raw_rows, header_idx, excel.layout)
+        if banded is not None:
+            rows, labels = banded
+            named = next((label for label in labels if selected_period and label.lower() == selected_period.lower()), None)
+            newest = order_period_labels(labels)
+            combined = [str(c) for c in rows[header_idx] if c is not None and str(c).strip()]
+            band_note = ("Read the period headings above the header row with the columns below them: "
+                         f"{', '.join(c for c in combined if any(c.startswith(label) for label in labels))}.")
+            return reread(rows, band_note, named or (newest[0] if newest else selected_period))
+        blocks = _table_blocks(raw_rows, header_idx)
+        readable = [b for b in blocks if _block_reads(raw_rows, header_idx, b, compare_to)]
+        if readable:
+            return reread(_only_block(raw_rows, header_idx, readable[0]),
+                          _block_note(raw_rows, header_idx, readable[0], blocks, sheet_name), selected_period)
     if detection.basis is None:
         return IntakeResult(
             has_fatal_errors=True,
