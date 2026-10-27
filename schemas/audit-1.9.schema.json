@@ -1070,6 +1070,137 @@
                       }
                     }
                   }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Holdings labeled by one deciding metric against consensus, with weight shares (R18).",
+                  "required": [
+                    "kind",
+                    "key",
+                    "metric",
+                    "documents",
+                    "holdings",
+                    "shares",
+                    "reader_notes"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "scorecard"
+                    },
+                    "key": {
+                      "type": "string"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "sha256",
+                          "role"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "$ref": "#/$defs/sha256"
+                          },
+                          "role": {
+                            "enum": [
+                              "holdings",
+                              "panel"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "holdings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "key",
+                          "weight",
+                          "label"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "weight": {
+                            "$ref": "#/$defs/decimal"
+                          },
+                          "label": {
+                            "enum": [
+                              "Beat",
+                              "Miss",
+                              "In line",
+                              null
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "shares": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "label",
+                          "weight",
+                          "share_of_book",
+                          "share_of_covered"
+                        ],
+                        "properties": {
+                          "label": {
+                            "enum": [
+                              "Beat",
+                              "In line",
+                              "Miss",
+                              "Not covered"
+                            ]
+                          },
+                          "weight": {
+                            "$ref": "#/$defs/decimal"
+                          },
+                          "share_of_book": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/decimal"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "share_of_covered": {
+                            "anyOf": [
+                              {
+                                "$ref": "#/$defs/decimal"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
                 }
               ]
             }

@@ -193,6 +193,19 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
             record.update(statement_kind=str(document["statement_kind"]),
                           identities=[_json_value(identity) for identity in identities])
         return record
+    if kind == "scorecard":  # holdings labeled by a deciding metric against consensus (PLAN.md R18)
+        lists = [document.get(name) for name in ("documents", "holdings", "shares")]
+        if not all(isinstance(value, (list, tuple)) for value in (notes, *lists)):
+            raise ValueError("source_document reader_notes, documents, holdings and shares must be lists.")
+        assert isinstance(notes, (list, tuple))
+        card: JSONObject = {"kind": "scorecard",
+                            "key": validate_text(document.get("key"), field="scorecard key", nonblank=True),
+                            "metric": validate_text(document.get("metric"), field="scorecard metric", nonblank=True)}
+        for name, value in zip(("documents", "holdings", "shares"), lists, strict=True):
+            assert isinstance(value, (list, tuple))
+            card[name] = [_json_value(item) for item in value]
+        card["reader_notes"] = [validate_text(note, field="source_document reader note") for note in notes]
+        return card
     if kind == "metrics":  # declared metrics joined with a case or schedule (PLAN.md R17)
         documents, lines, key, metrics = (document.get("documents"), document.get("lines"), document.get("key"),
                                           document.get("metrics"))
@@ -272,7 +285,7 @@ def build_audit_record(
     multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
         isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
     needs_19 = workbook is not None or opt_in or multiple or (
-        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join", "metrics"})
+        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join", "metrics", "scorecard"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:

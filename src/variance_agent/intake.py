@@ -470,6 +470,7 @@ class IntakeResult:
     # against for audit 1.9, and the sentences the report shows in place of totals.
     half_filled: bool = False  # one half of a two-file pair, read with a placeholder column (PLAN.md R12)
     join: dict[str, object] | None = None  # the pair's join, for audit 1.9
+    scorecard: dict[str, object] | None = None  # a holdings scorecard awaiting its labels (PLAN.md R18)
     statement_kind: str = ""
     identities: list[dict[str, object]] = field(default_factory=list)
     statement_checks: list[str] = field(default_factory=list)

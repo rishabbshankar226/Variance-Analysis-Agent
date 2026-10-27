@@ -24,3 +24,19 @@ NORDVIK.FAKE,12.40%,12.00%,0.25,Percent
 HALVORSEN.FAKE,7.90%,8.00%,0.25,Percent
 OSTRAVA.FAKE,5.00%,6.00%,0.25,Percent
 """
+
+# Marcus (portfolio manager): the book's holdings and a consensus panel for them (R18).
+MARCUS_HOLDINGS = """Ticker,Weight
+NORDVIK.FAKE,12.40%
+HALVORSEN.FAKE,7.90%
+OSTRAVA.FAKE,5.00%
+BRAVIK.FAKE,3.00%
+"""
+
+MARCUS_PANEL = """Ticker,Line Item,Actual,Consensus,Measure,Better
+NORDVIK.FAKE,Diluted EPS,1.25,1.10,Per Share,Higher
+NORDVIK.FAKE,Revenue,500,480,Currency,Higher
+HALVORSEN.FAKE,Diluted EPS,0.80,0.80,Per Share,Higher
+OSTRAVA.FAKE,Diluted EPS,0.40,0.55,Per Share,Higher
+TROLL.FAKE,Diluted EPS,2.00,1.90,Per Share,Higher
+"""

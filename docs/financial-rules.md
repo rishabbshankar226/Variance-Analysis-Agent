@@ -247,3 +247,18 @@ metric name, and the schedule's declarations (Limit Kind, Buffer, Measure, Bette
 apply. The report shows each value beside its formula. Audit 1.9 records every
 term with its document, statement, column and context, and LTM terms with their
 three components.
+
+## Holdings scorecard (unreleased, opt-in)
+
+`--panel PANEL --join-key KEY --deciding-metric NAME` joins a holdings sheet
+(the key and a Weight column) with a consensus panel (the key, Line Item, Actual,
+Consensus, and the Measure and Better the consensus basis needs) on the declared
+key. Each holding's row for the deciding metric is compared with consensus by the
+consensus rules above, and its label is that row's Beat, Miss or In line; no
+other metric decides it. Weights read as printed, as percentage points with or
+without `%`, and a sheet mixing the two refuses. Weights are shared out by label
+twice, over the whole book and over the covered holdings (exact ratios), and the
+uncovered weight is shown. A repeated holding, a holding with two rows for the
+metric, a missing key column, or no covered holding refuses; a panel row for a
+holding not in the sheet is listed and left out. The tool gives no trade or
+rebalancing view.

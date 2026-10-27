@@ -105,6 +105,9 @@ class Arguments(Protocol):
     ltm_from: str | None
     compare_file: str | None
     metrics: str | None
+    panel: str | None
+    join_key: str | None
+    deciding_metric: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -195,6 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="A JSON file of derived metrics (name, signed numerator and denominator terms by XBRL "
                              "concept or exact label, statement and period) read from the input filing; needs "
                              "--compare-file with the case or covenant schedule. See docs/financial-rules.md.")
+    source.add_argument("--panel", metavar="PATH",
+                        help="A consensus panel for the input holdings sheet: label each holding by its "
+                             "--deciding-metric against consensus and share the weights out. Needs --join-key.")
+    source.add_argument("--join-key", metavar="COLUMN", help="The column the holdings sheet and the panel share (e.g. Ticker).")
+    source.add_argument("--deciding-metric", metavar="NAME", help="The panel metric that decides a holding (e.g. Diluted EPS).")
     source.add_argument("--hidden-rows", choices=("include", "exclude"),
                         help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
     source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
@@ -359,6 +367,11 @@ def _run(args: Arguments) -> int:
             raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
     if args.ltm_from and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
         raise ValueError("--ltm-from needs --assisted (and no --mapping): LTM is built from the filings' own statements.")
+    if any((args.panel, args.join_key, args.deciding_metric)) and not all((args.panel, args.join_key, args.deciding_metric)):
+        raise ValueError("A holdings scorecard needs --panel, --join-key and --deciding-metric together.")
+    if args.panel and (not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.compare_file
+                       or args.metrics or args.ltm_from):
+        raise ValueError("--panel needs --assisted, and no --mapping, --compare-file, --metrics or --ltm-from.")
     if args.metrics and not args.compare_file:
         raise ValueError("--metrics needs --compare-file: the metrics are compared with the case or covenant schedule "
                          "that file holds.")
@@ -481,7 +494,13 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
-        if args.metrics:
+        if args.panel:
+            from .scorecard import build_scorecard
+            assert args.join_key is not None and args.deciding_metric is not None
+            panel = Path(args.panel)
+            intake_res = build_scorecard(source_bytes, input_path.name, read_input_bytes(panel), panel.name,
+                                         args.join_key, args.deciding_metric)
+        elif args.metrics:
             from .metrics import compare_metrics
             assert args.compare_file is not None  # checked with the other flags above
             other, annual_path = Path(args.compare_file), Path(args.ltm_from) if args.ltm_from else None
@@ -603,6 +622,9 @@ def _run(args: Arguments) -> int:
               f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
               f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
+    if intake_res is not None and intake_res.scorecard is not None:
+        from .scorecard import finish_scorecard
+        finish_scorecard(intake_res, result)
     statement_checks = intake_res.statement_checks if intake_res is not None else []
     if result.config.comparison_basis in OPT_IN_BASES and args.xlsx:
         raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "

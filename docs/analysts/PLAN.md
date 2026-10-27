@@ -44,8 +44,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 5 | Fresh-eyes fixes (Decision 37): honest names for unlabeled totals, revenue blocks from dimensionless facts only, sweep artifacts | done | `141c236`, `abbb52e`, `95a13f7`, `1d903a6` |
 | 5 | STOP 2: Draw A at `1d903a6` zero wrong, all three read 15/33 (45%, 30-62%), 26/33 without a refusal; dist gates PASS (2,449) | done | evidence `docs/analysts/evidence/stop-2/` |
 | 5 | STOP 2 answered (Decision 38) | done | |
-| 6 | Rule changes from STOP 2 (R7 cue, R13 At limit and headroom %, R14 labels) | todo | |
-| 6 | Marcus's holdings scorecard (R18) | todo | |
+| 6 | Rule changes from STOP 2 (R7 cue, R13 At limit and headroom %, R14 labels) | done | `594bdcf` |
+| 6 | Marcus's holdings scorecard (R18) | done | this commit |
 | 6 | Chat: each new reader reaches a first answer from upload | todo | |
 | 6 | Report and audit cleanup for the new seats | todo | |
 | 6 | One guide per new reader, commands run and outputs pasted | todo | |
@@ -274,6 +274,20 @@ Each is opt-in (`--compare-to limit|benchmark|target`, `Measure: Multiple`, `--m
 - Terms are read from the filing's own statements: an XBRL concept matches by concept (dimensionless), a label by exact printed label. `instant` is the balance sheet's latest column, `fy` the 10-K's fiscal year, `ytd` the 10-Q's year to date, and `ltm` the R11 build (needs `--ltm-from`). A single cash flow line (D&A for EBITDA, as section 3's example needs) takes LTM by key, just as an income line does; a term resolving to a cash balance (R8's beginning or ending line) refuses. The value used is the stored XBRL value (see the amendment below). **Amended at STOP 2 (Owen's seat review):** the value used is the term's stored XBRL value, whose sign the taxonomy fixes, so one metrics file means the same on every filing however each prints a line. The printed figure is cited beside it. Using the printed figure had made EBITDA depend on whether a filing printed interest in parentheses.
 - The value is the sum of sign x term, divided by the denominator's sum for a ratio, in exact Decimal. A missing term refuses that metric by name; the other metrics are still read, and a run with none left refuses. A zero or negative denominator shows `NM` with the reason. No expression is ever evaluated.
 - The formula is shown beside the figure, and audit 1.9 records it with every term's cited value (document, statement, column, context). With `--compare-file schedule.xlsx --compare-to limit`, the metrics join a covenant schedule by exact metric name (R12), and Clara's ratios meet her limits.
+
+#### R18. Marcus's holdings scorecard (Phase 6, Decision 38)
+
+- `variance-agent holdings.csv --assisted --panel panel.csv --join-key Ticker --deciding-metric "Diluted EPS"` with the consensus thresholds (`--per-share-threshold` etc.). The holdings sheet has the join key and a `Weight` column; the consensus panel has the join key, `Line Item` (the metric), `Actual`, `Consensus`, and the `Measure` and `Better` declarations the consensus basis already needs.
+- **Rows.** For each holding, the panel's row for the deciding metric is compared with its consensus by the existing consensus rules. Its label is that row's Beat, Miss or In line: nothing new is invented, and only that metric decides.
+- **Weights.** Weights read as printed, as percentage points with or without `%`; a sheet mixing the two refuses. They are shared out by label twice: over the whole book (every holding's weight), and over the covered holdings (those with a panel row for the metric). The uncovered weight is shown with its holdings. Shares are exact ratios.
+- **Refusals.** A holding key repeated in the sheet, a holding with two panel rows for the metric, a missing key column, or no holding covered at all refuses, naming them. A panel row whose holding is not in the sheet is listed and left out.
+- **Recorded.** Audit 1.9 records `source.document` `{kind: "scorecard", documents, key, metric, holdings, shares, reader_notes}`.
+- **Boundaries (tests).**
+  - A holding exactly at consensus (In line).
+  - Each label's share summing to the covered weight, a Fraction oracle.
+  - An uncovered holding.
+  - A repeated key.
+  - A panel row for an unknown holding.
 
 #### Not in Phase 5
 
