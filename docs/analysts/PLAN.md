@@ -77,6 +77,13 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 21. **The 1.9 schema is generated from 1.8** by a one-off script (scratch, not committed). The script asserts that the 1.8 file round-trips byte for byte, so 1.8 is unchanged.
 22. **A finding makes the chat confirm the read.** `IntakeResult.has_transformations` is true when the examination has a finding, so the chat shows the summary before analysis instead of going straight to the period question. A clean workbook is unaffected.
 
+## Phase 2 corpus settings (committed before the draw)
+
+- **Network check, 2026-10-26:** `www.sec.gov` folder `index.json` returned HTTP 200 (10,170 bytes). `data.sec.gov` submissions returned HTTP 200 (163,917 bytes). The contact header was sent inline.
+- **Draw A seed: `20261026`.** Quarters: the four most recent complete ones, 2025 QTR4, 2026 QTR1, QTR2 and QTR3, plus 2018 QTR1 for the six pre-Inline-XBRL filings.
+- **Draw rules.** `form.idx` rows are confirmed against the header line, keyed by accession, and sorted before any random call. Forms match exactly (`10-K`, `10-Q`, `10-K/A`). Each pool is shuffled with one `random.Random(seed)`, and filings are taken in shuffled order, skipping any filer already drawn. Strata take the first shuffled candidate whose submissions record matches, so a filing can never count twice. The draw order is fixed: 14 10-K, 14 10-Q, banks, insurers, REITs, a large accelerated filer, a smaller reporting company, a `10-K/A`, then 3 10-K and 3 10-Q from 2018 QTR1.
+- **Also fetched:** the label linkbase `*_lab.xml`. The structure oracle needs each line's printed label to match readers that carry no XBRL key (PDF and `Financial_Report.xlsx`). It is cheap and public, so this is an addition, not a substitution.
+
 ## Known limits left by Phase 1 (for REPORT.md)
 
 - Bare-year bands (`2025` / `2026` merged over Budget/Actual) do not take the E4 path. `_PERIOD_RE` has no bare-year form, and `detect_period_pairs` would not pair them. Such a sheet still stops with "more than one Actual column".
