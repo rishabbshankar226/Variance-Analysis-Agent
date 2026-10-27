@@ -2314,7 +2314,8 @@ def _read_ixbrl_bytes(
     chosen = next((s for s in statements if s.name == (ranked[0].name if sheet is None else sheet)), None)
     if chosen is None:
         return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl", fatal_error_message=(
-            f"No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}."))
+            f"No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. "
+            "Choose one of those statements."))
     if chosen.problem:
         return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl",
                             fatal_error_message=chosen.problem)

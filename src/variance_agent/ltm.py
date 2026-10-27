@@ -79,7 +79,7 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
     named = next((s for s in quarter_statements if s.name == sheet), None) if sheet else None
     if sheet and named is None:
         return _fail(f"No statement called '{sheet}' was found in '{quarter_name}'. "
-                     f"Statements found: {', '.join(s.name for s in quarter_statements)}.")
+                     f"Statements found: {', '.join(s.name for s in quarter_statements)}. Choose one of those statements.")
     kind = named.kind if named is not None else "income"
     if kind == "cash_flow":
         return _fail("LTM is built for income statements: a cash flow statement's beginning and ending cash are "

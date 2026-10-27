@@ -415,7 +415,9 @@ def test_the_cli_chooses_a_statement_of_an_html_filing(tmp_path: Path, capsys: p
     with pytest.raises(SystemExit):
         cli.main([str(path), "--assisted", "--sheet", "Consolidated Balance Sheets", "--period", "FY2025",
                   "--dollar-threshold", "1", "--percent-threshold", "1"])
-    assert "No statement called 'Consolidated Balance Sheets' was found" in capsys.readouterr().err
+    err = capsys.readouterr().err.replace("\n", " ")
+    assert "No statement called 'Consolidated Balance Sheets' was found" in err
+    assert err.rstrip().endswith("Choose one of those statements.")
 
 
 def test_hidden_references_side_by_side_do_not_swallow_the_text_after_them() -> None:
