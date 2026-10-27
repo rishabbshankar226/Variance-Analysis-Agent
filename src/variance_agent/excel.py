@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import posixpath
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import IO, BinaryIO, Protocol
@@ -128,6 +128,84 @@ class WorkbookFacts:
     recalculate_on_open: bool = False
     external_links: int = 0
     tables: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)  # sheet path -> (name, range)
+
+    def may_have_unsaved_formulas(self, worksheet_path: str) -> bool:
+        """Whether the sheet has a formula whose result might not be usable; False means skip the check."""
+        layout = self.layouts.get(worksheet_path)
+        return layout is not None and bool(layout.formulas if self.recalculate_on_open else layout.uncached)
+
+
+_MAX_LISTED_FORMULAS = 10
+_NEVER_CALCULATED = ("These cells hold formulas that Excel never calculated, so the file has no saved "
+                     "result for them:")
+_RECALCULATE_ON_OPEN = ("The file asks Excel to recalculate its formulas when it is opened, so these cells "
+                        "may have no saved result or an out-of-date one:")
+
+
+def column_letters(column: int) -> str:
+    """Spreadsheet letters for a 1-based column: 1 -> 'A', 28 -> 'AB'."""
+    letters = ""
+    while column:
+        column, remainder = divmod(column - 1, 26)
+        letters = chr(ord("A") + remainder) + letters
+    return letters
+
+
+def unsaved_formula_cells(
+    layout: SheetLayout, recalculate_on_open: bool, include: Callable[[int, int], bool],
+) -> list[tuple[int, int]]:
+    """The (row, column) cells, row by row, whose formula result cannot be used and `include` reads.
+
+    A formula Excel never calculated has no saved result. In a workbook that asks Excel to
+    recalculate on open, a saved result may be stale, so every formula cell counts. Only
+    formula cells are visited, so a large sheet costs nothing here.
+    """
+    pool = layout.formulas if recalculate_on_open else layout.uncached
+    return sorted(cell for cell in (divmod(key, MAX_COLUMNS + 1) for key in pool) if include(*cell))
+
+
+def unsaved_formulas_message(filename: str, descriptions: list[str], *, recalculate_on_open: bool) -> str:
+    """Stop-and-fix message for formula cells whose results cannot be read (never read as blank)."""
+    lead = _RECALCULATE_ON_OPEN if recalculate_on_open else _NEVER_CALCULATED
+    lines = [f"I could not read every amount in '{filename}', so I stopped instead of guessing. {lead}"]
+    lines.extend(f"- {text}" for text in descriptions[:_MAX_LISTED_FORMULAS])
+    if len(descriptions) > _MAX_LISTED_FORMULAS:
+        lines.append(f"- ...and {len(descriptions) - _MAX_LISTED_FORMULAS} more.")
+    lines.append("Open the file in Excel, let it calculate, save it, and upload it again.")
+    return "\n".join(lines)
+
+
+def describe_cell(row: int, column: int, *, line_item: str = "", field: str = "") -> str:
+    """'Row 4, Other income, Budget column (cell B4)', with the parts a reader knows."""
+    parts = [f"Row {row}", *([line_item] if line_item else []), *([f"{field} column"] if field else [])]
+    return f"{', '.join(parts)} (cell {column_letters(column)}{row})"
+
+
+def table_formulas_message(
+    facts: WorkbookFacts, worksheet_path: str, filename: str, *, header_row: int, headers: list[str],
+    rows: dict[int, list[object]], line_item_column: int | None,
+) -> str | None:
+    """The unsaved-formula stop for a table read whole: every data row under a named header.
+
+    `headers` is the header row's text by 0-based column; `rows` maps physical row numbers to
+    their raw values. Returns None when every read formula has a usable saved result.
+    """
+    layout = facts.layouts.get(worksheet_path, SheetLayout())
+
+    def read(row: int, column: int) -> bool:
+        return row in rows and column <= len(headers) and bool(headers[column - 1].strip())
+
+    def describe(row: int, column: int) -> str:
+        values = rows[row]
+        label = values[line_item_column] if line_item_column is not None and line_item_column < len(values) else None
+        return describe_cell(row, column, line_item="" if label is None else str(label).strip(),
+                             field=headers[column - 1].strip())
+
+    unsaved = unsaved_formula_cells(layout, facts.recalculate_on_open, read)
+    if not unsaved:
+        return None
+    return unsaved_formulas_message(filename, [describe(*cell) for cell in unsaved],
+                                    recalculate_on_open=any(not layout.is_uncached(*cell) for cell in unsaved))
 
 
 def _truthy(value: str | None) -> bool:

@@ -56,7 +56,13 @@ validation on every selected sheet.
 Audit 1.4 records the actual selected worksheet name, including the active-sheet
 default; CSV/JSON use null. Older explicitly selected audit versions omit this
 metadata. Excel values come from cached formula results (`data_only=True`);
-formulas are never recalculated. Missing caches remain missing input values.
+formulas are never recalculated. A formula with no saved result (one Excel never
+calculated) is never read as blank or 0: intake stops, names each cell the read uses
+(`Row 4, Other income, Budget column (cell B4)`), and asks for the file to be opened,
+calculated and saved in Excel. A workbook that asks Excel to recalculate on open
+(`fullCalcOnLoad`, which XlsxWriter sets while saving 0 as every result) gets the same
+stop for every formula it reads, since its saved results may be stale. Formulas in
+ignored computed columns such as `Var $` do not stop intake.
 Numeric cells use the stored XML decimal text directly rather than openpyxl's
 binary float conversion. This preserves stored fractional cents but cannot
 recover precision discarded by the workbook's producer.

@@ -12,7 +12,7 @@ from typing import Iterable, cast
 from zipfile import BadZipFile
 
 from .currencies import SYMBOL_CURRENCIES
-from .excel import WorkbookLoader, cell_value, inspect_archive
+from .excel import WorkbookLoader, cell_value, inspect_workbook, table_formulas_message
 from .limits import (
     MAX_CELLS, MAX_COLUMNS, MAX_INPUT_BYTES, MAX_JSON_DEPTH, MAX_NUMBER_LENGTH,
     MAX_ROWS, validate_text,
@@ -312,7 +312,8 @@ def load_input(
                         if isinstance(table, list) else ())
         return ParsedInput(load_json_text(text), raw_headers=json_headers)
     if suffix in {".xlsx", ".xlsm"}:
-        stored_numbers = inspect_archive(data)
+        facts = inspect_workbook(data)
+        stored_numbers = facts.numbers
         load_workbook = _excel_loader()
 
         # Own the capture handle even if workbook construction fails.
@@ -336,9 +337,13 @@ def load_input(
                     raise ValueError("Excel input is empty.") from exc
                 headers = _normalized_headers(raw_headers)
                 output: list[dict[str, object]] = []
+                read_rows: dict[int, list[object]] = {}
+                track_formulas = facts.may_have_unsaved_formulas(ws._worksheet_path)
                 for row_number, cells in enumerate(rows, start=2):
                     values = tuple(cell_value(cell, numbers=numbers, row=row_number, column=column)
                                    for column, cell in enumerate(cells, start=1))
+                    if track_formulas:
+                        read_rows[row_number] = list(values)
                     if all(value is None or value == "" for value in values):
                         continue
                     if any(value is not None and value != ""
@@ -351,6 +356,13 @@ def load_input(
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded, strict=False) if h})
+                # A formula Excel never calculated reads as blank; name it instead (R4).
+                stop = None if not track_formulas else table_formulas_message(
+                    facts, ws._worksheet_path, source_name, header_row=1,
+                    headers=["" if h is None else str(h) for h in raw_headers], rows=read_rows,
+                    line_item_column=headers.index("line_item") if "line_item" in headers else None)
+                if stop is not None:
+                    raise ValueError(stop)
                 return ParsedInput(output, ws.title, tuple(wb.sheetnames), tuple(str(h) if h is not None else "" for h in raw_headers))
             except (BadZipFile, KeyError, SyntaxError) as exc:
                 raise ValueError(f"Invalid Excel workbook {source_name!r}: {exc}") from exc

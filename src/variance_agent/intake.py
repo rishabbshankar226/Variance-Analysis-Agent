@@ -22,10 +22,19 @@ from dataclasses import dataclass, field, replace
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from enum import StrEnum
 from typing import cast
+from collections.abc import Callable
 
 from .classification import infer_line_type
 from .currencies import SYMBOL_CURRENCIES
-from .excel import WorkbookLoader, cell_value, inspect_archive
+from .excel import (
+    SheetLayout,
+    WorkbookLoader,
+    cell_value,
+    describe_cell,
+    inspect_workbook,
+    unsaved_formula_cells,
+    unsaved_formulas_message,
+)
 from .limits import (
     MAX_CELLS,
     MAX_COLUMNS,
@@ -186,6 +195,34 @@ class IntakeProblem:
     message: str
     fix_chip: str | None = None
     technical_detail: str | None = None
+
+
+@dataclass(frozen=True)
+class _ExcelSheet:
+    """What the preflight saw on the worksheet being read, for checks only a workbook needs."""
+
+    layout: SheetLayout
+    recalculate_on_open: bool = False
+
+
+def _unsaved_formulas_stop(
+    excel: _ExcelSheet | None, filename: str, include: Callable[[int, int], bool],
+    describe: Callable[[int, int], str], sheet_name: str | None,
+) -> IntakeResult | None:
+    """Stop when a read cell holds a formula whose result can't be used (R4); never read it as blank."""
+    if excel is None:
+        return None
+    unsaved = unsaved_formula_cells(excel.layout, excel.recalculate_on_open, include)
+    if not unsaved:
+        return None
+    return IntakeResult(
+        has_fatal_errors=True,
+        fatal_error_message=unsaved_formulas_message(
+            filename, [describe(*cell) for cell in unsaved],
+            # The recalculation wording only when a listed cell does hold a (possibly stale) result.
+            recalculate_on_open=any(not excel.layout.is_uncached(*cell) for cell in unsaved)),
+        sheet_name=sheet_name,
+    )
 
 
 @dataclass
@@ -1444,7 +1481,8 @@ def _read_excel_bytes(
     compare_to: ComparisonBasis | None = None,
 ) -> IntakeResult:
     try:
-        stored_numbers = inspect_archive(data)
+        facts = inspect_workbook(data)
+        stored_numbers = facts.numbers
     except Exception as exc:
         reason = str(exc) if isinstance(exc, ValueError) else ""
         if any(term in reason for term in ("worksheet exceeds", "physical rows", "physical coordinates")):
@@ -1519,6 +1557,10 @@ def _read_excel_bytes(
                 ]
                 full_raw_rows.append(row_vals)
 
+            excel = _ExcelSheet(
+                layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
+                recalculate_on_open=facts.recalculate_on_open,
+            )
             result = _process_raw_table(
                 full_raw_rows,
                 filename,
@@ -1526,6 +1568,7 @@ def _read_excel_bytes(
                 treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
                 selected_period=selected_period,
                 compare_to=compare_to,
+                excel=excel,
             )
             if result.comparison_basis is not ComparisonBasis.BUDGET:
                 # Same scores; the rationale names the comparison this file was read against.
@@ -1707,10 +1750,12 @@ def _process_raw_table(
     compare_to: ComparisonBasis | None = None,
     signs_resolved: bool = False,
     from_pdf: bool = False,
+    excel: _ExcelSheet | None = None,
 ) -> IntakeResult:
     """Map, parse and check one table of rows. ``signs_resolved`` marks rows from a shaped
     financial statement: their signs are settled and their subtotals already removed, so the
-    signed-ledger flip and sum-based subtotal detection are skipped."""
+    signed-ledger flip and sum-based subtotal detection are skipped. ``excel`` carries what the
+    workbook preflight saw on the sheet; raw row ``i`` is physical row ``i + 1``."""
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
@@ -1720,6 +1765,11 @@ def _process_raw_table(
 
     header_idx, roles, ignored_col_indices = detect_header_row(raw_rows, selected_period=selected_period)
     if header_idx is None:
+        # A header cell that is a formula Excel never calculated reads as blank; say so instead.
+        stop = _unsaved_formulas_stop(excel, filename, lambda r, c: r <= min(len(raw_rows), 25), describe_cell,
+                                      sheet_name)
+        if stop is not None:
+            return stop
         if compare_to is None:
             message = (
                 f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
@@ -1813,6 +1863,26 @@ def _process_raw_table(
         if idx not in mapped and header_row[idx] is not None and str(header_row[idx]).strip()
         and normalize_key(str(header_row[idx])) not in _ROLE_ALIAS_KEYS
     ]
+
+    if excel is not None:
+        # Every column this read uses, named the way the amount messages name them.
+        read_columns: dict[int, str] = {idx: header for idx, header in passthrough}
+        for role, idx in roles.items():
+            read_columns[idx] = (comparison_field if role is CanonicalRole.BUDGET else "Actual"
+                                 if role is CanonicalRole.ACTUAL else column_mapping.get(role, ""))
+        line_item_column = roles[CanonicalRole.LINE_ITEM]
+
+        def describe(row_number: int, column: int) -> str:
+            row = raw_rows[row_number - 1]
+            label = row[line_item_column] if line_item_column < len(row) else None
+            return describe_cell(row_number, column, line_item="" if label is None else str(label).strip(),
+                                 field=read_columns[column - 1])
+
+        stop = _unsaved_formulas_stop(
+            excel, filename, lambda r, c: header_row_number < r <= len(raw_rows) and c - 1 in read_columns,
+            describe, sheet_name)
+        if stop is not None:
+            return stop
 
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
