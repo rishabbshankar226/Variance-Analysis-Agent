@@ -201,6 +201,35 @@ def draw_a(seed: int) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
     return picks, sizes
 
 
+def draw_b(seed: int) -> tuple[list[tuple[str, Filing]], dict[str, int]]:
+    """Draw B, the held-out set (section 5): 30 filings, 15 of each form, uniform over the same four quarters,
+    one per filer, excluding every Draw A accession and filer."""
+    recent = [f for quarter in _RECENT for f in parse_index(fetch_index(quarter).decode("latin-1"), quarter)]
+    drawn_a = list(csv.DictReader((CORPUS / "draw_A.csv").open(encoding="utf-8")))
+    excluded = {row["cik"] for row in drawn_a} | {row["accession"] for row in drawn_a}
+    rng = random.Random(seed)
+    used: set[str] = set()
+    picks: list[tuple[str, Filing]] = []
+    sizes: dict[str, int] = {}
+    for label in ("10-K", "10-Q"):
+        pool = [f for f in _pool(recent, label) if f.cik not in excluded and f.accession not in excluded]
+        order = list(pool)
+        rng.shuffle(order)
+        sizes[label] = len(pool)
+        taken = 0
+        for filing in order:
+            if taken == 15:
+                break
+            if filing.cik in used:
+                continue
+            used.add(filing.cik)
+            picks.append((label, filing))
+            taken += 1
+        if taken < 15:
+            raise ValueError(f"{label}: only {taken} of 15 filings found")
+    return picks, sizes
+
+
 def _filing_record(cik: str, accession: str) -> dict[str, str]:
     """The submissions entry for one accession, searching the paged history when needed."""
     data = submissions(cik)
@@ -303,10 +332,10 @@ def main(argv: list[str] | None = None) -> int:
     index = sub.add_parser("index")
     index.add_argument("quarters", nargs="+")
     draw = sub.add_parser("draw")
-    draw.add_argument("name", choices=("A",))
+    draw.add_argument("name", choices=("A", "B"))
     draw.add_argument("--seed", type=int, required=True)
     get = sub.add_parser("fetch")
-    get.add_argument("name", choices=("A",))
+    get.add_argument("name", choices=("A", "B"))
     args = parser.parse_args(argv)
     try:
         if args.command == "index":
@@ -315,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{quarter}: {len(rows):,} rows; 10-K {sum(r.form == '10-K' for r in rows):,}, "
                       f"10-Q {sum(r.form == '10-Q' for r in rows):,}, 10-K/A {sum(r.form == '10-K/A' for r in rows):,}")
         elif args.command == "draw":
-            picks, sizes = draw_a(args.seed)
+            picks, sizes = draw_a(args.seed) if args.name == "A" else draw_b(args.seed)
             with (CORPUS / f"draw_{args.name}.csv").open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["label", "accession", "form", "cik", "company", "date_filed", "quarter", "seed"])

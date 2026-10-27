@@ -49,7 +49,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | Chat: each new reader reaches a first answer from upload (limit/benchmark/target files read by their column; reader questions routed; covenant headroom by two uploads; Multiple cutoff asked) | done | this commit |
 | 6 | Report cleanup for the new seats: currency line only with currency rows, no revenue-totals boilerplate, notes that restate declarations dropped; audit measure-run fields keep their 1.8 meaning (REPORT.md lists them) | done | this commit |
 | 6 | One guide per new reader (`docs/analysts/{owen,clara,marcus,ines,theo}.md`), written by `build_guides.py` from the commands it runs; inputs committed under `tests/fixtures/analysts/` | done | this commit |
-| 7 | Draw B, gates, `REPORT.md` | todo | |
+| 6 | Phase 6 exit: gates green (2,467), every guide command executed, each new reader reaches a first answer in the chat | done | `0ad4f64` |
+| 7 | Draw B, gates, `REPORT.md` | open | seeds committed |
 
 ## Baseline (measured 2026-10-26)
 
@@ -344,6 +345,11 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
 ## STOP 1 settings (committed before the sample is drawn)
 
 - Fresh-eyes seed: `20261027`. The five Draw A filings are `random.Random(20261027).sample` of Draw A's Inline XBRL accessions, sorted. The reviewer gets the sweep table, those filings and the tool's outputs, and none of this plan's reasoning.
+
+## Phase 7 settings (committed before the draw)
+
+- **Draw B seed: `20261029`.** 30 filings: 15 10-K and 15 10-Q, uniform over 2025Q4-2026Q3 (the four most recent complete quarters on 2026-10-27), one per filer, excluding every Draw A accession and filer (`edgar_corpus.py draw B --seed 20261029`). It is swept once on unchanged code, and never informs a code change.
+- **Final fresh-eyes seed: `20261030`.** Five Draw B Inline XBRL accessions, `random.Random(20261030).sample` of the sorted list.
 
 ## STOP 2 settings (committed before the sample is drawn)
 
