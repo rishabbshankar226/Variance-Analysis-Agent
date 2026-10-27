@@ -56,6 +56,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Chat: filing sessions show their own printed totals and answer questions about computed totals with them; no workbook for a filing's income statement; limit, benchmark and target results get the report's own table; replies render Markdown tables. Docs for Decision 39 | done | this commit |
 | 7 | Screenshots (122, `evidence/final/shots/`); Draw C swept once at `cabf9a8`: **0 wrong**, 12/27 (44%, 28-63%); final dist gates PASS (2,493); `REPORT.md` and CHANGELOG drafted | done | `55e23c2` |
 | 7 | Draw C fresh eyes (seed 20261101): 7 label amounts quoted at the filing's printed scale beside whole-dollar columns, systematic across draws | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-c/` |
+| 7 | STOP-ASK answered (Decision 40): unit statement in filing reports, Draw A re-sweep, Draw D (seed 20261102) | open | seeds committed |
 
 ## Baseline (measured 2026-10-26)
 
@@ -362,6 +363,16 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
       - limit, benchmark and target results get their own panel: outcome, headroom and utilization by severity, with no budget totals line and no Export Excel
     - **Sweep:** the oracle takes an "income … and comprehensive income" title as the income statement.
     - **The 90% target** is reported as not reached on Draw B, under Decision 35's strict definition.
+
+40. **Draw C STOP-ASK answered (owner, 2026-10-27: "do what you recommend and continue").** Draw C stays in REPORT.md exactly as swept (`C-cabf9a8`), and its fresh-eyes finding is reported as wrong figures.
+    - **The fix, report-side only.** A report of an Inline XBRL statement states the unit the filing prints its figures in, from the facts' `scale`, and that amounts inside line labels are quoted as the filing prints them. Label text is never rewritten.
+    - It changes no value the tool reads or computes. A fictional fixture fails first, and Draw A is re-swept to show nothing scored moves.
+    - **Measured on a fresh Draw D.**
+
+## Draw D settings (committed before the draw, Decision 40)
+
+- **Draw D seed: `20261102`.** 30 filings: 15 10-K and 15 10-Q, uniform over 2025Q4-2026Q3, one per filer, excluding every Draw A, B and C accession and filer (`edgar_corpus.py draw D --seed 20261102`). It is swept once, on the fixed code, and never informs a code change.
+- **Final fresh-eyes seed: `20261103`.** Five Draw D Inline XBRL accessions, `random.Random(20261103).sample` of the sorted list. The brief names amounts inside line labels among the things to check.
 
 ## Draw C settings (committed before the draw, Decision 39)
 
