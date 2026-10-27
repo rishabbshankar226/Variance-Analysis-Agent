@@ -303,6 +303,11 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
 
 36. **Phase 5's rules are new and opt-in, specified by section 3, so they are not STOP-ASKs.** Section 7's "a financial rule" STOP-ASK covers changing an existing rule. `limit`, `benchmark`, `target`, `Multiple` and derived metrics are added rules that no existing input reaches without a new flag or column. They go in `docs/financial-rules.md` as new sections, and the existing sections keep their text.
 
+37. **STOP 2 fresh-eyes fixes.**
+    - An unlabeled total closing a section is named by its concept ("Total, printed without a label (us-gaap:...)"), never "Total <section>": a bank's equity before treasury stock had read as total equity.
+    - Decision 28's revenue block is defined only by dimensionless revenue facts. A one-axis breakdown (ASC 606 fees) is part of some revenue, not the filing's revenue, and had led to interest income being credited among costs.
+    - The sweep asks for a statement the tool doesn't list by the filing's own title, so the tool's plain refusal is scored. Before, the tool read its default statement and the sweep filed that output under the wrong kind.
+
 ## STOP 1 settings (committed before the sample is drawn)
 
 - Fresh-eyes seed: `20261027`. The five Draw A filings are `random.Random(20261027).sample` of Draw A's Inline XBRL accessions, sorted. The reviewer gets the sweep table, those filings and the tool's outputs, and none of this plan's reasoning.

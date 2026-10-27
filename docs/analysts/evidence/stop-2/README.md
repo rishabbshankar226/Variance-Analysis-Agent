@@ -62,7 +62,18 @@ Raised for the owner, since they are rules or Phase 6 work, not defects:
 
 ## Fresh eyes
 
-FRESH_EYES_RESULT
+Five Draw A Inline XBRL filings were drawn with `random.Random(20261028).sample`, the seed committed before the draw. A subagent with none of the plan's reasoning checked the tool's balance sheet, cash flow and income outputs (sweep `p5-f3e0a5f`) against each printed filing and its instance, defaulting to "wrong" under doubt. It reported **4 wrong figures in 2 filings**:
+- **W1.** A SPAC's "income" output was its balance sheet.
+- **W2.** A bank's unlabeled equity-before-treasury subtotal was named "Total Shareholders' equity".
+- **W3, W4.** The same bank's headline Total Revenue and Total Expenses: interest income was credited among costs, because a revenue-from-contracts breakdown was taken for the filing's revenue.
+
+Every line value it checked matched its fact and its printed cell, and every variance and identity recomputed.
+
+What was done:
+- **W1** is a sweep artifact. The tool lists no income statement for that filing, whose two periods differ in length, so the sweep ran without naming one and the tool read its default statement. The sweep now asks for the statement by the filing's title and scores the tool's plain refusal (`abbb52e`).
+- **W2-W4** were real and are fixed, each pinned by a fictional test (`141c236`, Decision 37).
+
+Report: `~/vaa-edgar-corpus/stop-2/fresh_eyes_report.md`.
 
 ## Browser check
 
