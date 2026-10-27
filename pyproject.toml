@@ -37,8 +37,9 @@ path = "src/variance_agent/version.py"
 include = ["/src", "/deterministic_conditioning", "/tests", "/schemas", "/examples", "/docs", "/scripts",
            "/README.md", "/pyproject.toml", "/requirements-typecheck.txt", "/LICENSE", "/CHANGELOG.md",
            "/CONTRIBUTING.md", "/SECURITY.md"]
-# Redesign screenshots and the harness that takes them are review evidence, not part of a release.
-exclude = ["/docs/ui/evidence"]
+# Redesign screenshots, analyst sweep evidence and the harnesses that make them are review
+# evidence, not part of a release.
+exclude = ["/docs/ui/evidence", "/docs/analysts/evidence"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

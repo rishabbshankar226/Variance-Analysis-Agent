@@ -42,6 +42,8 @@ def main() -> None:
             assert any(name.endswith("/" + required) for name in names), required
         # The redesign's screenshots and harness are review evidence, not part of a release.
         assert not any("/docs/ui/evidence" in name for name in names), "docs/ui/evidence in the sdist"
+        # The analyst sweep evidence and its corpus tools are development material too.
+        assert not any("/docs/analysts/evidence" in name for name in names), "docs/analysts/evidence in the sdist"
     print("Wheel/sdist contents, license, Python support, and entry point verified")
 
 

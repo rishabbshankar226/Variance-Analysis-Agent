@@ -9,8 +9,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | Phase | Task | State | Commit |
 |---|---|---|---|
 | 0 | Read, measure, plan; E/F items confirmed; STOP-ASK for E1, E2, E7 written | done | `a37c9c9` |
-| 1 | Packaging exclusion for `docs/analysts/evidence` | todo | |
-| 1 | E1 display scaling, E2 hidden rows, E7 uncached formulas (STOP-ASK awaiting the owner) | open | |
+| 1 | Packaging exclusion for `docs/analysts/evidence` | done | next commit |
+| 1 | E1 display scaling, E2 hidden rows, E7 uncached formulas (owner approved, Decision 13) | todo | |
 | 1 | E3 EDGAR workbook, E4 banded headers, E5 side-by-side blocks, E6 date headers, E8 legacy/web formats | todo | |
 | 1 | Workbook examination summary + audit 1.9 | todo | |
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | todo | |
@@ -56,6 +56,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 9. **Packaging lands first in Phase 1.** `/docs/analysts/evidence` goes into the sdist `exclude` in `pyproject.toml`, with an assertion in `scripts/check_distribution.py`. Phase 0 may not touch `scripts/`. Until then the evidence folder is only this plan's README and is not released.
 10. **Three Excel readers exist.** They are `parsing.py` (strict), `intake.py::_read_excel_bytes` (assisted, `--mapping`, chat) and `comparisons.py` (file API). Layout facts (hidden rows and columns with outline level, merged ranges, formulas without stored results, error cells, external links, defined tables, `calcPr`) are collected once in `excel.py`, in the same bounded stdlib pass that already reads every worksheet for stored decimals. That pass runs behind the existing limits and the DOCTYPE/ENTITY refusal. `inspect_archive` keeps its return type, and a sibling returns the new facts. Number formats come from openpyxl's read-only `number_format` (no second load).
 11. **Rules-file drift.** `.agents/rules/variance-intake.md` still names schema 1.5, two `chat.html` copies, commit `a3ce6bb` and `intake/phase-N` branches. The prompt's overrides apply: audit 1.9, one packaged page, this branch.
+13. **Owner answer to the E1/E2/E7 STOP-ASK (2026-10-26): "do what you recommend".** E1, E2 and E7 land as R2, R3 and R4. E7 keeps the `fullCalcOnLoad` part. Strict mode stays unchanged for E2. This part matters more than the STOP-ASK said: XlsxWriter stores 0 as every formula's result and sets this same flag, so without the rule such a workbook reads as zeros.
+14. **The examination summary appears only with a finding.** A finding is a fact that changes or could change the read of the chosen sheet: hidden data rows, hidden read columns, error cells, formulas without saved results, display-scaled amount cells, a merged header band that was read, external links, or a recalculate-on-open flag on a workbook with formulas. Sheets with their visibility, defined tables and outline levels are listed only beside a finding. A clean workbook's stderr, chat reply and 1.7 audit are byte-identical to today, and hidden worksheets alone are not a finding (they are already ranked last).
 12. **Audit 1.9 timing.** E1 and E2 land before the 1.9 schema. Until 1.9 exists, they record only what 1.7 can already hold (the unit multiplier actually applied). The examination summary commit then adds 1.9 and records the display-format reconciliation and the hidden-row choice. A file with no finding keeps its 1.7 audit (constraint 6).
 
 ## Rules written before code
