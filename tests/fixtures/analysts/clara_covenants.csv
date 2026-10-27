@@ -1,0 +1,4 @@
+Line Item,Limit,Limit Kind,Buffer,Measure
+Gross leverage,1.25x,Max,0.50,Multiple
+Interest cover,4.00x,Min,1.00,Multiple
+Fixed charge cover,1.50x,Min,,Multiple

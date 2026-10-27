@@ -131,6 +131,16 @@ financial context. Money scaling and subtotal inference never apply to a declare
 rate, per-share value, or count. A standalone count is in its supplied units;
 there is no inference that a caption about money also scales counts.
 
+### Multiple (unreleased, opt-in)
+
+A Multiple row (`3.25x`, or `3.25` with `Measure: Multiple`) uses Actual minus the
+supplied comparison, shown in turns (`0.75x`), with percentage variance against
+the comparison's absolute nonzero value. Its absolute cutoff is the required
+`--multiple-threshold`, in turns, OR the percentage cutoff; strict `>`. A Better
+direction is required, as for Percent and Count. An `x` on any other measure is an
+unreadable amount. A computed ratio is shown to two places; the audit keeps the
+exact value. Any further measure kind is a STOP-ASK.
+
 ## Supplied earnings bases (unreleased)
 
 Consensus, Estimate, and Guidance reuse single-basis variance and materiality.
@@ -174,3 +184,64 @@ Dispersion surprise divides the same numerator by supplied estimate standard
 deviation. Percent dispersion is supplied in percentage points and converted to
 bps before division. Absent or zero dispersion produces null with a reason.
 These are descriptive statistics of supplied numbers; they make no predictions.
+
+## Limit, benchmark and target bases (unreleased, opt-in)
+
+Selected with `--assisted --compare-to limit|benchmark|target`, one per run. Each
+row declares what its comparison means; nothing is defaulted, and a missing
+declaration refuses the row by name. These rows are never Revenue or Expense, and
+the run has no revenue, expense or net totals (the audit records `totals` as null).
+The words describe the supplied comparison and are never advice.
+
+**Limit.** Each row declares `Limit Kind` Max or Min, and may declare a `Buffer`
+(zero or more, in the row's unit). Breach is strictly beyond the limit: Actual >
+limit for Max, Actual < limit for Min. A row equal to its limit is Within, with or
+without a buffer. Headroom is limit minus Actual for Max and Actual minus limit
+for Min, in the row's unit. Near is 0 < headroom <= buffer, and only with a
+declared buffer. Utilization is Actual divided by limit, for both kinds, and NM
+for a zero limit. Order: Breach, then Near, then Within; within each, headroom
+ascending. Status is Neutral.
+
+Boundary cases: Actual = limit is Within; a step past a Max (or below a Min) is
+Breach; headroom equal to the buffer is Near, and a step more is Within; a zero
+limit has NM utilization.
+
+**Benchmark.** Each row declares `Better` Higher or Lower. Active difference is
+Actual minus benchmark, in basis points for Percent rows. In line means |active|
+<= a declared `Tolerance` (in the row's unit, percentage points for rates), or
+exact equality without one. Otherwise the row is Above or Below. F or U follows
+Better and the difference's sign; In line is Neutral.
+
+Boundary cases: |active| equal to the tolerance is In line; a step more is Above
+or Below; without a tolerance, only zero is In line.
+
+**Target.** Difference is Actual minus target, in basis points for Percent rows.
+On target means |difference| <= a declared `Tolerance`, or exact equality without
+one. Otherwise the row is Over or Under. A target is neutral: no F or U, and a
+declared Better refuses the row.
+
+## Derived metrics (unreleased, opt-in)
+
+`--metrics PATH` declares each metric as a closed JSON structure: a `name`, a
+`measure` (Currency or Multiple), an optional `better`, and signed lists of
+`numerator` and, for a ratio, `denominator` terms. A term names one printed line
+by XBRL `concept` or exact `label`, with its `statement` (income, balance_sheet,
+cash_flow), its `period` (instant, fy, ytd, ltm) and a `sign` of 1 or -1. Unknown
+keys refuse.
+
+Each statement a term reads is first read and checked as on its own (footing and
+identities). The value used is the printed figure. `instant` is the balance
+sheet's latest column; `fy` the 10-K's fiscal year; `ytd` the 10-Q's year to
+date; `ltm` is FY + YTD - prior YTD by key, with `--ltm-from` and the same
+continuity check as an LTM statement. A single cash flow line (D&A) is a flow; a
+cash balance refuses as an LTM term.
+
+The value is the sum of sign x term, divided by the denominator's sum for a ratio,
+in exact Decimal (a repeating ratio rounds once, at the financial context's
+precision). A missing term leaves that metric out by name. A zero or negative
+denominator is NM with its reason. No expression is evaluated. The metrics are
+compared with `--compare-file` (a case or a covenant schedule), joined by exact
+metric name, and the schedule's declarations (Limit Kind, Buffer, Measure, Better)
+apply. The report shows each value beside its formula. Audit 1.9 records every
+term with its document, statement, column and context, and LTM terms with their
+three components.
