@@ -167,7 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # Groups only change how --help reads; every flag, default and type is as before.
     source = parser.add_argument_group("Input", "The file to analyze and how to read it.")
-    source.add_argument("input", nargs="?", default=None, help="Input CSV, JSON, XLSX, or XLSM file, or a PDF filing with --assisted.")
+    source.add_argument("input", nargs="?", default=None,
+                        help="Input CSV, JSON, XLSX, or XLSM file, or a PDF or Inline XBRL (.htm) filing with --assisted.")
     source.add_argument("--sheet", help="Exact Excel worksheet name (default: active worksheet), or the statement to read from a PDF.")
     source.add_argument(
         "--assisted",
@@ -222,7 +223,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write a machine-readable audit/agent-context record with source provenance.",
     )
     outputs.add_argument("--audit-schema-version", choices=SUPPORTED_SCHEMA_VERSIONS,
-                         default=None, help="Audit JSON format version (legacy 1.7; explicit measures 1.8).")
+                         default=None,
+                         help="Audit JSON format version (legacy 1.7; explicit measures 1.8; workbook examination and filings 1.9).")
     outputs.add_argument(
         "--commentary",
         action="store_true",

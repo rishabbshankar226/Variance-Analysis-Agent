@@ -417,9 +417,9 @@ def read_comparison_input(
             raise ValueError("hidden_rows requires assisted or mapped Excel input; strict intake reads every row as given.")
     if metadata is not None and column_mapping:
         metadata["transformations"] = {"column_mapping": dict(column_mapping)}
-    if suffix.lower() == ".pdf":
+    if suffix.lower() in {".pdf", ".htm", ".html"}:
         if not assisted:
-            raise ValueError("PDF input requires --assisted.")
+            raise ValueError("PDF and HTML filings require --assisted.")
         if column_mapping:
             raise ValueError("PDF columns are selected by statement and period, not CSV column mappings.")
         from .intake import read_input_assisted, audit_transformations, CanonicalRole

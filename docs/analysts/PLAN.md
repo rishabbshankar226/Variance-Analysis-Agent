@@ -22,7 +22,9 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 1 | Earnings chat path asks about hidden rows (advisor check) | done | `fdc6508` |
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | done | `be7d4dc`, `7c7d38e` |
 | 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; STOP 1 | todo | |
-| 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message`, the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help (still "legacy 1.7; explicit measures 1.8") | todo | |
+| 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message` (removed), the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help | done | this commit |
+| 3 | `ixbrl.py` reader, `.htm` routing (CLI, chat, file API), audit 1.9 `ixbrl` documents | done | `cd23bf0` |
+| 3 | `Financial_Report.xlsx` reader fixes from Draw A (breakdowns, binary floats) | done | `d7fd9a2` |
 | 4 | Balance sheet / cash flow statements, identities, multi-document input, LTM, F4 (STOP-ASK) | todo | |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
