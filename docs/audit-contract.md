@@ -228,12 +228,12 @@ The long-format number contract uses strings even for counts; audit metadata
 counts remain JSON integers as the schema specifies. Missing comparisons never
 occupy an analyzed row's numeric comparison field with a fabricated zero.
 
-## Unreleased 1.9: workbook examination and EDGAR statement sheets
+## Unreleased 1.9: workbook examination and EDGAR statements
 
-Schema 1.9 is selectable and unreleased. It is audit 1.8 plus two closed additions, and every
+Schema 1.9 is selectable and unreleased. It is audit 1.8 plus closed additions, and every
 1.0 to 1.8 schema keeps its bytes. A run selects 1.9 automatically only when it has something
-1.8 cannot hold: a workbook examination finding, or a statement read from a sheet laid out like
-EDGAR's `Financial_Report.xlsx`. A clean workbook keeps its 1.7 record. Choosing 1.0 to 1.8
+1.8 cannot hold: a workbook examination finding, a statement read from a sheet laid out like
+EDGAR's `Financial_Report.xlsx`, or a statement read from an Inline XBRL filing. A clean workbook keeps its 1.7 record. Choosing 1.0 to 1.8
 explicitly for such a run is refused before any output is written: "Audit schema {version}
 cannot record what the workbook examination found; use --audit-schema-version 1.9."
 
@@ -250,6 +250,12 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
 - `source.document` may also be `{kind: "edgar_xlsx", statement, sheet, reader_notes}`, the
   statement a `Financial_Report.xlsx`-style sheet held and every adjustment the reader made, as
   for a PDF.
+- `source.document` may also be `{kind: "ixbrl", statement, reader_notes, lines}`, a statement
+  read from an Inline XBRL filing. Each line carries its `line_item`, `concept`, `measure`,
+  whether it is a `subtotal` (checked and left out of the analysis) or `left_out` (read but not
+  analysed, such as the lines below net income), and one entry per column (or null) with the
+  column `label` and the fact's `concept`, `context`, `period`, `dims` (axis and member),
+  `stored` value (as the XBRL instance holds it), `displayed` value (as printed) and `decimals`.
 
 These facts are source-derived data and enter the payload digest and analysis fingerprint.
 Comparison-set records stay 1.8; their intake notes, these included, are in each child's
