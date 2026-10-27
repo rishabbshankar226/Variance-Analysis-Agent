@@ -62,6 +62,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Decision 41 fixes 1-5 (`a12889c`); the label checks found one more section name on Draw A, fixed by closing a section at every footed subtotal (`1b10d97`); Draw A re-swept with label text scored: 0 wrong, every scored row unchanged | done | sweep `p10-1b10d97`, sha256 `7d379189…` |
 | 7 | Draw E (seed 20261104) swept once at `1b10d97`: **0 wrong values**, 6 label flags all checked right (a checker limit), 10/27 (37%, 22-56%), 12 refusals all plain; final dist gates PASS (2,501); screenshots retaken | done | sweep `E-1b10d97`, sha256 `2ce5dbda…` |
 | 7 | Draw E fresh eyes (seed 20261105): wrong signs, types and F/U in two income statements (label-typed lines; a tax line typed Revenue) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-e/` |
+| 7 | STOP-ASK answered (Decision 42): fixes 1-5, Draw A re-sweep, Draw F (seed 20261106) | open | seeds committed |
 
 ## Baseline (measured 2026-10-26)
 
@@ -381,6 +382,19 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
     4. **Headline cue.** A headline figure printed negative in both columns gets R7's "larger negative" or "smaller negative" cue.
     5. **Sweep.** A line label holding a figure printed twice scores as wrong. A label's section prefix must be a heading the oracle's statement prints above the line, or it scores as wrong.
     - Draw A is re-swept with the new checks, then the fixes are **measured on a fresh Draw E**.
+
+42. **Draw E STOP-ASK answered (owner, 2026-10-27: "do what you recommend and continue").** Draw E stays in REPORT.md exactly as swept (`E-1b10d97`), and its fresh-eyes finding is reported as wrong figures. Each fix gets a fictional fixture that fails first.
+    1. **No label typing on filings.** A line the statement's arithmetic can't place stays Unclassified, shown as printed, with no F/U. This extends Decision 39 item 2 from revenue to every type.
+    2. **Every sign turn is explained in the report** ("How the filing was read"), not only in the audit.
+    3. **A line the shaper must turn keeps the latest compared year's printed sign where it can.** A line printed positive and subtracted is an expense, not negative income. This is a financial-rule change, approved here.
+    4. **Slash forms are subtotal labels:** "Income / (loss) before …".
+    5. **Sweep.** A row's shown figure must equal its printed figure, or the report must state the turn. A row typed by its label on a filing scores as wrong.
+    - Draw A is re-swept, then the fixes are **measured on a fresh Draw F**. The owner was told that if Draw F's fresh eyes find another class, the recommendation is to finish with it listed.
+
+## Draw F settings (committed before the draw, Decision 42)
+
+- **Draw F seed: `20261106`.** 30 filings: 15 10-K and 15 10-Q, uniform over 2025Q4-2026Q3, one per filer, excluding every Draw A-E accession and filer (`edgar_corpus.py draw F --seed 20261106`). It is swept once, on the fixed code, and never informs a code change.
+- **Final fresh-eyes seed: `20261107`.** Five Draw F Inline XBRL accessions, `random.Random(20261107).sample` of the sorted list.
 
 ## Draw E settings (committed before the draw, Decision 41)
 
