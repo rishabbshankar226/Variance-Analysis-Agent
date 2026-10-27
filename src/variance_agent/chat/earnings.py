@@ -17,6 +17,7 @@ from variance_agent.earnings import display_rows
 from variance_agent.models import MeasureKind
 from variance_agent.xlsx import render_comparison_xlsx
 from .responses import Response
+from variance_agent.excel import HIDDEN_ROWS_LEAD
 from .views import comparison_groups, earnings_intake_view, figures_view, pair
 from .session import Phase, Session
 
@@ -105,7 +106,8 @@ def explicit_comparison(session: Session, basis: ComparisonBasis) -> Response:
         session.compare_to = basis
         return Response(text=f"Upload the file to compare against supplied {basis_noun(basis)}.", phase=session.phase)
     rows, headers, worksheet, notes = read_comparison_input(session.source_bytes, Path(session.source_name).suffix,
-                                                           filename=session.source_name, assisted=True, sheet=session.sheet)
+                                                           filename=session.source_name, assisted=True, sheet=session.sheet,
+                                                           hidden_rows=session.hidden_rows)
     session.earnings_mode = True
     session.parsed_rows = [normalize_row(row) for row in rows]
     session.earnings_headers, session.earnings_choices, session.earnings_notes = headers, detect_comparison_bases(headers), notes
@@ -191,15 +193,26 @@ def handle_question(session: Session, intent_id: str) -> Response:
     return explicit_comparison(session, ComparisonBasis.GUIDANCE if intent_id == "earnings_guidance" else ComparisonBasis.CONSENSUS)
 
 
-def review_upload(session: Session, data: bytes, filename: str, basis: ComparisonBasis | None, sheet: str | None) -> Response:
+def review_upload(session: Session, data: bytes, filename: str, basis: ComparisonBasis | None, sheet: str | None,
+                  hidden_rows: str | None = None) -> Response:
     metadata: dict[str, object] = {}
     try:
         rows, headers, worksheet, notes = read_comparison_input(data, Path(filename).suffix, filename=filename,
-                                                               assisted=True, sheet=sheet, per_share_lines=True, metadata=metadata)
-    except (ValueError, OSError, RuntimeError):
+                                                               assisted=True, sheet=sheet, per_share_lines=True, metadata=metadata,
+                                                               hidden_rows=hidden_rows)
+    except (ValueError, OSError, RuntimeError) as exc:
+        question = str(exc).split("\nChoose whether to count them", 1)[0]
+        if question.startswith(HIDDEN_ROWS_LEAD):
+            # Rows hidden in Excel are asked about here too; the answer re-reads this review (R3).
+            session.reset()
+            session.source_bytes, session.source_name, session.source_suffix = data, filename, Path(filename).suffix
+            session.sheet, session.compare_to, session.earnings_requested = sheet, basis, True
+            return Response(text=question, chips=["Count the hidden rows", "Leave the hidden rows out",
+                                                  "Upload a different file"], phase=session.phase, level="error")
         return Response(text="I could not read a supported financial table in this file. Upload a CSV, JSON or Excel table "
                              "with a line item, Actual and your supplied comparison.", phase=session.phase)
     session.reset()
+    session.hidden_rows = hidden_rows
     session.source_bytes, session.source_name, session.source_suffix = data, filename, Path(filename).suffix
     session.sheet, session.worksheet = sheet, worksheet
     session.earnings_mode, session.compare_to = True, basis

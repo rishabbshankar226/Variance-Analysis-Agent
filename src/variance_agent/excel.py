@@ -209,6 +209,7 @@ def table_formulas_message(
 
 
 HIDDEN_ROW_CHOICES = ("include", "exclude")
+HIDDEN_ROWS_LEAD = "These rows are hidden in Excel but have amounts, so I need to know whether to count them:"
 _MAX_LISTED_ROWS = 10
 
 
@@ -233,7 +234,7 @@ def hidden_data_rows(
 
 def hidden_rows_question(rows: list[tuple[int, str, bool]]) -> str:
     """Ask whether rows hidden in Excel are counted (R3); a person answers, never a default."""
-    lines = ["These rows are hidden in Excel but have amounts, so I need to know whether to count them:"]
+    lines = [HIDDEN_ROWS_LEAD]
     for number, label, collapsed in rows[:_MAX_LISTED_ROWS]:
         how = "in a collapsed outline group" if collapsed else "hidden"
         lines.append(f"- Row {number}{f', {label}' if label else ''} ({how})")

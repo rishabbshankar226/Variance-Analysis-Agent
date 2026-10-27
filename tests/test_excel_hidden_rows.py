@@ -216,3 +216,24 @@ def test_the_flag_needs_assisted_intake_because_strict_reads_every_row(tmp_path:
     assert stopped.value.code == 2
     assert ("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given."
             in capsys.readouterr().err)
+
+
+def test_an_earnings_review_asks_the_same_question_and_stays_an_earnings_review() -> None:
+    session = Session()
+    handle_message(session, "review earnings")
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    for row in (["Line Item", "Consensus", "Actual", "Measure", "Better"], ["Revenue", 100, 110, "Currency", "Higher"],
+                ["Draft EPS", "0.5", "0.6", "Per Share", "Higher"], ["Diluted EPS", "1.10", "1.25", "Per Share", "Higher"]):
+        sheet.append(row)
+    sheet.row_dimensions[3].hidden = True
+    capture = io.BytesIO()
+    workbook.save(capture)
+    asked = handle_upload(session, capture.getvalue(), "street.xlsx")
+    assert asked.text == f"{ASK}\n- Row 3, Draft EPS (hidden)"
+    assert asked.chips[:2] == ["Count the hidden rows", "Leave the hidden rows out"]
+    answered = handle_message(session, "Leave the hidden rows out")
+    assert session.earnings_mode, answered.text
+    assert "Left out 1 row hidden in Excel: row 3 (Draft EPS)." in answered.text
+    assert [row["line_item"] for row in session.parsed_rows] == ["Revenue", "Diluted EPS"]

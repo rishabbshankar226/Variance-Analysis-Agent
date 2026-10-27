@@ -3590,6 +3590,9 @@ def _handle_hidden_rows(session: Session, intent: ParsedIntent) -> Response:
         return Response(text="Upload a workbook first; I'll ask about hidden rows if it has any.",
                         phase=session.phase)
     filename = session.source_name or "input"
+    if session.earnings_requested:
+        from .earnings import review_upload
+        return review_upload(session, session.source_bytes, filename, session.compare_to, session.sheet, hidden_rows=choice)
     session.hidden_rows = choice
     intake_res = read_input_assisted(
         session.source_bytes,
