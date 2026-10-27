@@ -42,8 +42,13 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 5 | Rules in `docs/financial-rules.md`; contracts; reader fixtures in `tests/fixtures/analysts/` | done | `977fec1` |
 | 5 | Seat-review fixes; second-file drop zone in the chat | done | `52ae8ab`, `f6dffd6`, `625fac7` |
 | 5 | Fresh-eyes fixes (Decision 37): honest names for unlabeled totals, revenue blocks from dimensionless facts only, sweep artifacts | done | `141c236`, `abbb52e`, `95a13f7`, `1d903a6` |
-| 5 | STOP 2: Draw A at `1d903a6` zero wrong, all three read 15/33 (45%, 30-62%), 26/33 without a refusal; dist gates PASS (2,449) | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-2/` |
-| 6 | Reader surfaces kept at STOP 2 | todo | |
+| 5 | STOP 2: Draw A at `1d903a6` zero wrong, all three read 15/33 (45%, 30-62%), 26/33 without a refusal; dist gates PASS (2,449) | done | evidence `docs/analysts/evidence/stop-2/` |
+| 5 | STOP 2 answered (Decision 38) | done | |
+| 6 | Rule changes from STOP 2 (R7 cue, R13 At limit and headroom %, R14 labels) | todo | |
+| 6 | Marcus's holdings scorecard (R18) | todo | |
+| 6 | Chat: each new reader reaches a first answer from upload | todo | |
+| 6 | Report and audit cleanup for the new seats | todo | |
+| 6 | One guide per new reader, commands run and outputs pasted | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
 
 ## Baseline (measured 2026-10-26)
@@ -308,6 +313,19 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
     - An unlabeled total closing a section is named by its concept ("Total, printed without a label (us-gaap:...)"), never "Total <section>": a bank's equity before treasury stock had read as total equity.
     - Decision 28's revenue block is defined only by dimensionless revenue facts. A one-axis breakdown (ASC 606 fees) is part of some revenue, not the filing's revenue, and had led to interest income being credited among costs.
     - The sweep asks for a statement the tool doesn't list by the filing's own title, so the tool's plain refusal is scored. Before, the tool read its default statement and the sweep filed that output under the wrong kind.
+
+38. **STOP 2 answers (owner, 2026-10-27: "do what you recommend and continue").**
+    - **Decision 35 stays:** a printed dash with no fact is unverified, and the strict "all three read" rate is the target measure. The 90% target is reported as not reached under it.
+    - **R7.** The arithmetic stays, and a line whose figures print negative gets a cue: "Decrease (larger negative)" or "Increase (smaller negative)".
+    - **R13.** A row exactly at its limit is **At limit**, ordered after Breach and before Near; this departs from section 3's "Within" at the owner's word. Each row also reports headroom as a percentage of the limit's absolute value (`NM` for a zero limit). The ranking is unchanged.
+    - **R14.** The outcomes are **Higher than benchmark**, **Lower than benchmark** and **In line**.
+    - **Phase 6 keeps:**
+      - (a) chat questions per reader, including choosing a limit, benchmark or target and declared metrics from the chat
+      - (b) report and audit cleanup for the new seats
+      - (e) one guide per reader
+      - Marcus's holdings scorecard (section 3; R18)
+    - **Phase 6 drops** (c) workbook sheets and (d) Wei's batch run; both go in REPORT.md as not built.
+    - **The six remaining income refusals** stay plain refusals and are listed as known limits.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
