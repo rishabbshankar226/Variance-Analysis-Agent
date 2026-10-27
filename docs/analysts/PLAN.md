@@ -225,6 +225,47 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 - **CLI:** `--compare-file PATH` with `--assisted` (no `--mapping` or `--ltm-from`). **Chat:** a file with a comparison column and no Actual, or the reverse, asks for the other file, and the next upload is joined.
 - **Boundaries (tests).** The repository's fixture pair (different labels, same accounts). A line in one file only, on each side. A repeated key. No account column (joined by label; a differing label refuses). Different unit captions in the two files. A comparison file that also has an Actual column (refused: it is not a half).
 
+### Phase 5 rules (section 3), written before code
+
+Each is opt-in (`--compare-to limit|benchmark|target`, `Measure: Multiple`, `--metrics PATH`), each goes in `docs/financial-rules.md`, and each is recorded in audit 1.9 (`comparison.basis`, per-row details, metric formulas). A run using them selects 1.9 automatically. Every rule gets a Fraction oracle and straddling tests at each label boundary.
+
+#### R13. `limit` (Ines, Clara)
+
+- The comparison column is the row's limit (headers `Limit`, `Covenant`, `Covenant Level`). Each row must declare `Limit Kind`, either `Max` or `Min`; otherwise the run refuses, naming the row. An optional `Buffer` (zero or more, in the row's own unit) is the only source of Near. No buffer is defaulted.
+- **Breach** is strictly beyond the limit: actual > limit for Max, actual < limit for Min. A row equal to its limit is not a Breach, since covenants read "not greater than" or "not less than".
+- **Headroom** is limit - actual for Max and actual - limit for Min, in the row's unit. **Utilization** is actual / limit for both, and `NM` for a zero limit.
+- **Near** applies when the row is not a Breach, declares a buffer, and headroom <= buffer, so a row at its limit with a buffer is Near. **Within** is everything else.
+- **Order.** Breach, then Near, then Within; within each, headroom ascending. Status stays Neutral, never F or U: the label describes the supplied comparison (constraint 9).
+- **Boundaries (tests).** Actual = limit (Within; Near with a buffer). Limit +/- the smallest step. Headroom = buffer (Near) and buffer + the smallest step (Within). A zero limit (utilization NM). Min mirrored. A missing Limit Kind (refuse). A negative buffer (refuse).
+
+#### R14. `benchmark` (Theo)
+
+- The comparison column is the benchmark (`Benchmark`, `Index`, `Benchmark Return`). The active difference is actual - benchmark, shown in basis points for Percent rows.
+- Each row must declare `Better` (Higher or Lower), as the 1.8 mechanism does; otherwise the run refuses, naming it. F or U comes from Better and the active difference's sign.
+- **In line** when |active difference| <= a declared `Tolerance` in the row's unit (percentage points for Percent rows); without one, only exact equality is In line. Otherwise **Above** (active > 0) or **Below** (active < 0).
+- **Boundaries (tests).** |active| = tolerance (In line); tolerance + the smallest step (Above or Below); no tolerance with active 0 (In line) and active +/- the smallest step.
+
+#### R15. `target` (Marcus)
+
+- The comparison column is the target (`Target`, `Target Weight`). The difference is actual - target, in basis points for Percent rows.
+- **Over**, **Under**, or **On target** when |difference| <= a declared `Tolerance` (exact equality without one). Never F or U: a declared Better is refused for target rows, naming them.
+- **Boundaries** as R14.
+
+#### R16. `Multiple` (Clara, Owen)
+
+- A new measure kind for figures like 3.25x, read from `3.25x` or from `3.25` with `Measure: Multiple`. Its materiality cutoff is `--multiple-threshold`, in turns, and is required, as for Count and Per Share. `Better` is required. Variance is shown in turns (`0.25x`). No other new measure kind; any further one is a STOP-ASK.
+
+#### R17. Derived metrics (Clara, Owen)
+
+- `--metrics PATH` is a closed JSON structure: `{"metrics": [{"name", "numerator": [term...], "denominator": [term...] (optional), "measure": "Currency" | "Multiple"}]}`. A term is `{"concept" or "label", "statement": "income" | "balance_sheet" | "cash_flow", "period": "instant" | "fy" | "ytd" | "ltm", "sign": 1 | -1}`. Unknown keys refuse.
+- Terms are read from the filing's own statements: an XBRL concept matches by concept (dimensionless), a label by exact printed label. `instant` is the balance sheet's latest column, `fy` the 10-K's fiscal year, `ytd` the 10-Q's year to date, and `ltm` the R11 build (needs `--ltm-from`). The value used is the printed figure, as the statement shows it.
+- The value is the sum of sign x term, divided by the denominator's sum for a ratio, in exact Decimal. A missing term refuses that metric by name; the other metrics are still read, and a run with none left refuses. A zero or negative denominator shows `NM` with the reason. No expression is ever evaluated.
+- The formula is shown beside the figure, and audit 1.9 records it with every term's cited value (document, statement, column, context). With `--compare-file schedule.xlsx --compare-to limit`, the metrics join a covenant schedule by exact metric name (R12), and Clara's ratios meet her limits.
+
+#### Not in Phase 5
+
+Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel joined on a ticker) is a section 3 design rule but not in Phase 5's list. It is offered at STOP 2 for Phase 6.
+
 ### Phase 3 decisions (2026-10-26)
 
 23. **DOCTYPE (constraint 3).** `html.parser` never reads a DTD, so the Inline XBRL reader refuses an `ENTITY` declaration or a `DOCTYPE` with an internal subset, but reads a plain `<!DOCTYPE html …>` (the four 2018 HTML 10-Ks carry one). Every XML parse in `src/` (the workbook preflight) still refuses any DOCTYPE. This is a STOP 1 question.
@@ -252,6 +293,8 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 34. **LTM is built for income statements in this run.** A cash flow statement's beginning and ending cash are balances, which don't add across periods, and its flows would need their own roll-forward. `--ltm-from` on a cash flow statement refuses plainly, and on a balance sheet it reads the primary as of its latest period with a note (R11).
 
 35. **A printed dash stays unverified (owner, 2026-10-27: "do what you recommend").** Section 5 calls a read with no key unverified, never correct, and an untagged dash has no key. The strict "all three read" rate stays the target. The sweep reports beside it how many unverified values are dashes or confirmed blanks, so the gap is visible. Decisions 31-34 stand, for confirmation at STOP 2.
+
+36. **Phase 5's rules are new and opt-in, specified by section 3, so they are not STOP-ASKs.** Section 7's "a financial rule" STOP-ASK covers changing an existing rule. `limit`, `benchmark`, `target`, `Multiple` and derived metrics are added rules that no existing input reaches without a new flag or column. They go in `docs/financial-rules.md` as new sections, and the existing sections keep their text.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
