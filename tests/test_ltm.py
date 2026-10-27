@@ -197,3 +197,12 @@ def test_the_chat_offers_ltm_on_a_first_quarter_10q() -> None:
     session = Session()
     assert "Build LTM" in (handle_upload(session, quarter_filing(rows, periods=periods), "hal-20251227.htm").chips or [])
     assert "Build LTM" not in (handle_upload(Session(), income_filing(), "hal-20250927.htm").chips or [])
+
+
+def test_the_ltm_request_shows_the_drop_zone() -> None:
+    from variance_agent.chat.handlers import handle_message, handle_upload
+    from variance_agent.chat.session import Session
+
+    session = Session()
+    handle_upload(session, quarter_filing(), "hal-20260328.htm")
+    assert handle_message(session, "Build LTM").ask_upload is True

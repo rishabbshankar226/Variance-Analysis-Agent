@@ -561,7 +561,7 @@ def _half_request(session: Session, file_bytes: bytes, filename: str) -> Respons
     else:
         text = (f"'{safe_inline(filename)}' has Actual figures but no Budget column. Upload the file with the budget, "
                 f"forecast or prior period, and I'll join the two by {key}.")
-    return Response(text=text, phase=session.phase)
+    return Response(text=text, phase=session.phase, ask_upload=True)
 
 
 def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_visit: bool | None) -> Response:
@@ -578,7 +578,7 @@ def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_v
     if intake_res.has_fatal_errors:
         session.pending_half = (held, held_name, missing)
         return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
-                        phase=session.phase, level="error")
+                        phase=session.phase, level="error", ask_upload=True)
     session.reset()
     session.source_bytes, session.source_name = actual, actual_name
     session.source_suffix = Path(actual_name).suffix.lower()
@@ -609,7 +609,7 @@ def _handle_build_ltm(session: Session) -> Response:
         return Response(text="LTM is built from a 10-Q and a 10-K filed on EDGAR. Upload the 10-Q's .htm document first.",
                         phase=session.phase)
     session.awaiting_ltm_annual = True
-    return Response(text=_LTM_ASK, phase=session.phase)
+    return Response(text=_LTM_ASK, phase=session.phase, ask_upload=True)
 
 
 def _load_ltm_annual(session: Session, file_bytes: bytes, filename: str) -> Response:
@@ -620,7 +620,7 @@ def _load_ltm_annual(session: Session, file_bytes: bytes, filename: str) -> Resp
     intake_res = build_ltm(session.source_bytes, session.source_name, file_bytes, filename)
     if intake_res.has_fatal_errors:
         return Response(text=intake_res.fatal_error_message or "I couldn't build LTM from these two filings.",
-                        chips=["Build LTM"], phase=session.phase, level="error")
+                        chips=["Build LTM"], phase=session.phase, level="error", ask_upload=False)
     session.ltm_annual = (file_bytes, filename)
     return _intake_response(session, intake_res, session.source_name)
 

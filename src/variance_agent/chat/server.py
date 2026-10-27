@@ -423,6 +423,8 @@ class _ChatHandler(BaseHTTPRequestHandler):
             payload["level"] = response.level
         if response.view is not None:
             payload["view"] = response.view
+        if response.ask_upload:
+            payload["ask_upload"] = True
         if response.download is not None:
             # Stage the download and return a URL
             for filename, content in response.download.items():

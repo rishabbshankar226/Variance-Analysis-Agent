@@ -119,3 +119,9 @@ def test_the_chat_asks_for_the_comparison_when_actuals_come_first() -> None:
     first = handle_upload(session, ACTUALS.read_bytes(), ACTUALS.name)
     assert first.text == ("'fixture\\_f\\_actuals\\_separate.csv' has Actual figures but no Budget column. Upload the file with "
                           "the budget, forecast or prior period, and I'll join the two by 'GL Account'.")
+
+
+def test_a_request_for_the_other_file_shows_the_drop_zone() -> None:
+    assert handle_upload(Session(), BUDGET.read_bytes(), BUDGET.name).ask_upload is True
+    script = (ROOT / "src/variance_agent/static/chat.js").read_text("utf-8")
+    assert "data.ask_upload === true ||" in script

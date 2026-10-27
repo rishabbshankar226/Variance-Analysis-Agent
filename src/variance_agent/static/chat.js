@@ -1258,7 +1258,8 @@ function boot() {
     if (leftUploadStep && (fromUpload || currentPhase === 'awaiting_file')) markIntroSeen();
     if (data.phase) updatePhase(data.phase);
 
-    const showDrop = !fromUpload && data.phase === 'awaiting_file';
+    // A reply asking for a second file (LTM's 10-K, the other half of a pair) shows the drop zone too.
+    const showDrop = data.ask_upload === true || (!fromUpload && data.phase === 'awaiting_file');
     const msg = addAgentMessage(data.text, data.table, data.chips, showDrop, data.level, data.view);
     if (data.download_url) {
       addDownloadLink(msg, data.download_url, data.download_filename);
