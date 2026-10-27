@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from decimal import Decimal, Inexact, ROUND_HALF_EVEN
 
 from .models import Aggregate, AnalysisResult, AnalyzedRow, LineType, Status, MeasureKind
@@ -263,6 +265,16 @@ def _data_request(top_rows: tuple[AnalyzedRow, ...], *, plain: bool = False) -> 
     return "No additional driver data is required for the analyzed top material variances."
 
 
+# Notes that only restate what the file declared outright (a Measure, a Better direction) add nothing to read.
+_RESTATED = re.compile(r": (?:read Measure as|read Better to|read Better as|read % values as percentage points)")
+
+
+def _read_notes(lines: list[str], result: AnalysisResult) -> None:
+    notes = [note for note in result.warnings if not _RESTATED.search(note)]
+    if notes:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in notes]])
+
+
 @financial_context()
 def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
     """A balance sheet or cash flow comparison: the checks the read passed, then each line's change (PLAN.md R7)."""
@@ -271,7 +283,7 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
     heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
     lines = [f"# Statement Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
              *("- " + _safe_inline(check) for check in checks),
-             "- No revenue, expense or net totals apply to this statement; lines marked Total are its own subtotals.",
+             "- Lines marked (Total) are the statement's own subtotals.",
              "", "## Lines", "",
              f"| Line Item | {heading} | Actual | Change | Change (%) | Direction | Material |",
              "|---|---:|---:|---:|---:|---|---|"]
@@ -281,8 +293,7 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
             name, _money(row.budget, cfg.currency, places), _money(row.actual, cfg.currency, places),
             _money(row.variance_dollars, cfg.currency, places), _pct(row.budget, row.variance_dollars, row.percent_label),
             display_outcome(row, cfg.comparison_basis), "Yes" if row.material else "No"]) + " |")
-    if result.warnings:
-        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    _read_notes(lines, result)
     return "\n".join([*lines, ""])
 
 
@@ -300,8 +311,8 @@ _BASIS_NOTES = {
              "Max, and below 100% is short of a Min.",
     "benchmark": "Active difference is actual minus benchmark (basis points for rates). A row is In line when the "
                  "difference is within its declared tolerance, edge included, or exactly zero without one; In line is "
-                 "Neutral. Otherwise F or U follows the row's declared Better direction. Above and Below say only "
-                 "whether the figure is higher or lower than its benchmark, never whether that is good.",
+                 "Neutral. Otherwise F or U follows the row's declared Better direction. Higher and Lower than "
+                 "benchmark describe the figures, never whether that is good.",
     "target": "Difference is actual minus target (basis points for rates). A row is On target when the difference is "
               "within its declared tolerance, edge included, or exactly zero without one. A target is neutral: no F or U.",
 }
@@ -318,13 +329,13 @@ def render_basis_report(result: AnalysisResult) -> str:
     def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
         return format_measure(value, row.measure, cfg.currency, variance=variance)
 
-    lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
-             "- " + _BASIS_NOTES[basis], "- No revenue, expense or net totals apply to this comparison.", ""]
+    currency = [f"Reporting currency: {cfg.currency}", ""] if any(currency_row(r) for r in rows) else []
+    lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", *currency, "- " + _BASIS_NOTES[basis], ""]
     if basis == "limit":
         rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
         counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
                   for word in ("Breach", "At limit", "Near", "Within")]
-        lines[lines.index("- No revenue, expense or net totals apply to this comparison.") + 1:0] = [
+        lines[lines.index("- " + _BASIS_NOTES[basis]) + 1:0] = [
             "", f"**{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within.**"]
         lines += ["## Lines, by severity", "",
                   "| Line Item | Kind | Limit | Actual | Headroom | Headroom (% of limit) | Utilization | Buffer | Status |",
@@ -354,8 +365,7 @@ def render_basis_report(result: AnalysisResult) -> str:
             cells = [_safe_inline(row.line_item), amount(row.budget, row), amount(row.actual, row), difference, tolerance,
                      d.outcome, *([_status_text(row.status, True)] if status else [])]
             lines.append("| " + " | ".join(cells) + " |")
-    if result.warnings:
-        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    _read_notes(lines, result)
     return "\n".join([*lines, ""])
 
 
