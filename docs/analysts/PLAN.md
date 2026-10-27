@@ -41,7 +41,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 5 | Derived metrics (R17), amended to stored XBRL values after Owen's review | done | `078b38a`, `77acf37` |
 | 5 | Rules in `docs/financial-rules.md`; contracts; reader fixtures in `tests/fixtures/analysts/` | done | `977fec1` |
 | 5 | Seat-review fixes; second-file drop zone in the chat | done | `52ae8ab`, `f6dffd6`, `625fac7` |
-| 5 | STOP 2 | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-2/` |
+| 5 | Fresh-eyes fixes (Decision 37): honest names for unlabeled totals, revenue blocks from dimensionless facts only, sweep artifacts | done | `141c236`, `abbb52e`, `95a13f7`, `1d903a6` |
+| 5 | STOP 2: Draw A at `1d903a6` zero wrong, all three read 15/33 (45%, 30-62%), 26/33 without a refusal; dist gates PASS (2,449) | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-2/` |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
 

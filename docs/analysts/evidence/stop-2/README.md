@@ -17,18 +17,22 @@ Branch `analysts/filings-and-excel`. Only aggregates are kept here. Per-filing r
 
 ## Draw A at STOP 2
 
-The sweep ran at `8e7131e` (`p5b`); the results file sha256 is `d0c0ceb5084a034b8c8e3bb73d4fa1ac76d0894c97c0763b257ce5b0e8f82c6e`.
+The final sweep ran at `1d903a6` (`p5e`, after the fresh-eyes fixes); the results file sha256 is `13badea7ffaa02efe6ff99c1e1e91a59f460f5eb3a834e8edc12228406474332`.
 
 | Measure | Inline XBRL primaries (33 filings) |
 |---|---|
 | Wrong values | **0** |
-| Values verified / unverified | 5,596 / 80; every unverified one is a printed dash or a confirmed blank, with no fact behind it (Decision 35) |
+| Values verified / unverified | 5,560 / 78; every unverified one is a printed dash or a confirmed blank, with no fact behind it (Decision 35) |
 | All three statements read, by section 5's definition | **15 of 33 (45%, Wilson 95% 30-62%)** |
 | All three read without a refusal | 26 of 33 (79%, 62-89%) |
-| Read without a refusal, by statement | income 28/33, balance sheet 32/33, cash flow 32/33 |
-| Refusals | 24, every one plain |
+| Read without a refusal, by statement | income 27/33, balance sheet 32/33, cash flow 32/33 |
+| Refusals | 25, every one plain |
 
 The `Financial_Report.xlsx` reader on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
+
+Earlier sweeps at this stop (`p5-f3e0a5f`, `p5b-8e7131e`) also showed zero wrong. The fresh-eyes sample came from `p5-f3e0a5f`. Between `p5b` and `p5e`:
+- Income went from 28 to 27, because the SPAC's balance sheet is no longer counted as its income statement.
+- One sweep (`p5d`) misparsed the statement listing after its refusal gained a fix sentence; the sweep was fixed (`1d903a6`) and rerun.
 
 ## Per-reader reviews
 
@@ -89,4 +93,4 @@ Every file uploaded is fictional (`../shots_analysts.py`). The first run stopped
 
 ## Gates
 
-`sh docs/ui/evidence/gates.sh dist` at `8e7131e`: ruff, mypy (70 files), pytest **2447 passed**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, and both artifacts installed without the Excel and PDF extras: **all PASS**. The log is at `~/vaa-edgar-corpus/stop-2/gates_dist.log`.
+`sh docs/ui/evidence/gates.sh dist` at `95a13f7` (`src/` unchanged since): ruff, mypy (70 files), pytest **2449 passed**, compileall, pip check, contracts (19 unchanged), build, twine, distribution, and both artifacts installed without the Excel and PDF extras: **all PASS**. The log is at `~/vaa-edgar-corpus/stop-2/gates_dist.log`.
