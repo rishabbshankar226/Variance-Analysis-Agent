@@ -74,3 +74,9 @@ def test_owen_builds_ltm_from_two_uploads() -> None:
     read = handle_upload(session, income_filing(), "hal-20250927.htm")
     reply = _answer_until_report(session, read, ["Looks right", "LTM Mar 2026", "$1 or 1%", "USD"])
     assert "Total Revenue:** $4,300,000,000.00 vs. $4,100,000,000.00" in reply.text
+
+
+def test_the_committed_guide_inputs_match_their_builders() -> None:
+    from tests.fixtures.analysts.build_analysts import files
+    for name, data in files().items():
+        assert (FIXTURES / name).read_bytes() == data, name

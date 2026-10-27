@@ -48,7 +48,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | Marcus's holdings scorecard (R18) | done | this commit |
 | 6 | Chat: each new reader reaches a first answer from upload (limit/benchmark/target files read by their column; reader questions routed; covenant headroom by two uploads; Multiple cutoff asked) | done | this commit |
 | 6 | Report cleanup for the new seats: currency line only with currency rows, no revenue-totals boilerplate, notes that restate declarations dropped; audit measure-run fields keep their 1.8 meaning (REPORT.md lists them) | done | this commit |
-| 6 | One guide per new reader, commands run and outputs pasted | todo | |
+| 6 | One guide per new reader (`docs/analysts/{owen,clara,marcus,ines,theo}.md`), written by `build_guides.py` from the commands it runs; inputs committed under `tests/fixtures/analysts/` | done | this commit |
 | 7 | Draw B, gates, `REPORT.md` | todo | |
 
 ## Baseline (measured 2026-10-26)

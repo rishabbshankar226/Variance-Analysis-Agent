@@ -1,0 +1,6 @@
+Ticker,Line Item,Actual,Consensus,Measure,Better
+NORDVIK.FAKE,Diluted EPS,1.25,1.10,Per Share,Higher
+NORDVIK.FAKE,Revenue,500,480,Currency,Higher
+HALVORSEN.FAKE,Diluted EPS,0.80,0.80,Per Share,Higher
+OSTRAVA.FAKE,Diluted EPS,0.40,0.55,Per Share,Higher
+TROLL.FAKE,Diluted EPS,2.00,1.90,Per Share,Higher
