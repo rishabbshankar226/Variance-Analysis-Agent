@@ -1526,8 +1526,30 @@ def _rerun_after_classification(session: Session) -> Response:
                      "those items stay Unclassified.\n\n")
 
 
+def _basis_summary(result: AnalysisResult) -> Response:
+    """A limit, benchmark or target comparison: the report's own table, with no budget totals (Decision 39)."""
+    from ..report import basis_table
+    cfg = result.config
+    columns, rows, counts = basis_table(result)
+    table = [dict(zip(columns, cells, strict=True)) for cells in rows]
+    figures = ([figure(word, count) for word, count in
+                (part.rstrip(".").split(" ", 1)[::-1] for part in counts.split(", "))] if counts is not None else [])
+    view = figures_view(
+        f"{cfg.period} against {comparison_heading(cfg.comparison_basis, cfg.comparison_label)}",
+        context=[pair("Currency", cfg.currency)] if any(currency_row(row) for row in result.rows) else [],
+        figures=figures,
+        sections=[("How the file was read", [pair(*note.split(": ", 1)) if ": " in note else pair("Note", note)
+                                             for note in result.warnings])] if result.warnings else (),
+        table_title="Lines, by severity" if cfg.comparison_basis.value == "limit" else "Lines",
+    )
+    return Response(text=render_markdown(result), table=table, chips=["Export report", "Export audit"],
+                    phase=Phase.EXPLORING, view=view)
+
+
 def _audience_summary(result: AnalysisResult) -> Response:
     """A comparison set: the report as text, and the same rows as a results view and one table."""
+    if any(row.basis_details is not None for row in result.rows):
+        return _basis_summary(result)
     cfg = result.config
     heading = extended_heading(cfg)
     money = [row for row in result.rows if currency_row(row)]
@@ -1615,6 +1637,8 @@ def _build_analysis_summary(session: Session) -> Response:
            for row in result.rows):
         # A balance sheet, cash flow, limit, benchmark, target or metric comparison has no revenue or expense totals.
         return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+    if session.intake_result is not None and session.intake_result.filing_headline is not None:
+        return _filing_summary(session, session.intake_result.filing_headline)
     cfg = result.config
     places = report_places(result)
 
@@ -1843,6 +1867,9 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
+    filing = session.intake_result is not None and session.intake_result.filing_headline is not None
+    if filing and intent.intent_id == "export_xlsx":  # the workbook adds up totals of its own (Decision 39)
+        return Response(text=_STATEMENT_WORKBOOK, chips=["Export report", "Export audit"], phase=Phase.EXPLORING)
     if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
            for row in session.result.rows):
         if intent.intent_id == "export_xlsx":
@@ -1854,6 +1881,11 @@ def _handle_exploring(session: Session, text: str) -> Response:
     }:
         return Response(text=render_markdown(session.result),
                         chips=["Summary", "Material", "Export report", "Export Excel"], phase=Phase.EXPLORING)
+    headline = session.intake_result.filing_headline if session.intake_result is not None else None
+    if headline is not None and (intent.intent_id in _COMPUTED_TOTALS or (intent.intent_id == "compare_items" and {
+            str(intent.captures.get(key, "")).strip().strip("'\"?").lower() for key in ("item1", "item2")}
+            & {"actual", "actuals", "act", "budget", "budgeted", "plan", "target", "targets", "bgt"})):
+        return _filing_summary(session, headline)
     handler = _EXPLORING_HANDLERS.get(intent.intent_id)
     if handler is not None:
         return handler(session, intent)
@@ -1938,6 +1970,63 @@ def _handle_reset(session: Session) -> Response:
         text="Session cleared. Upload a new file to begin.",
         phase=Phase.AWAITING_FILE,
     )
+
+
+_FILING_TOTALS_NOTE = ("For a filing I show its own printed totals, each from its XBRL fact, rather than totals added up "
+                       "from its lines.")
+# Questions whose answers rest on revenue, expense or profit totals added up from the lines (Decision 39).
+_COMPUTED_TOTALS = {"summary", "totals", "waterfall", "what_if", "sensitivity", "run_rate", "revenue_status",
+                    "expense_status", "budget_utilization", "profitability", "tldr", "executive_memo"}
+
+
+def _filing_summary(session: Session, headline: dict[str, object]) -> Response:
+    """A filing's income statement: its own printed totals, never computed ones (Decision 39)."""
+    from ..report import _filing_headline_lines
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+    heading = _plain_heading(cfg)
+    items, notes = headline.get("items"), headline.get("notes")
+    assert isinstance(items, list) and isinstance(notes, list)
+    lines = ["**Analysis Complete**\n", f"**Period:** {safe_inline(cfg.period)}", f"**Currency:** {cfg.currency}",
+             f"**Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+             f"{format_threshold_pct(cfg.percent_threshold)}\n"]
+    figures: list[dict[str, object]] = []
+    bullets = _filing_headline_lines({"items": items, "notes": []}, cfg.currency, places)[:len(items)]  # not its closing sentence
+    for bullet, item in zip(bullets, items, strict=True):
+        assert isinstance(item, dict)
+        name, _, rest = bullet.removeprefix("- ").partition(": ")
+        lines.append(f"**{name}:** {rest}")
+        actual, _, after = rest.partition(" vs. ")
+        compared, _, change = after.partition(" (")
+        figures.append(figure(str(item["line_item"]), actual, f"{heading} {compared}", f"Change {change.rstrip(')')}"))
+    lines.extend(safe_inline(str(note)) for note in notes)
+    ltm = any(isinstance(item, dict) and "ltm" in item for item in items)
+    totals_note = (_FILING_TOTALS_NOTE.replace("its own printed totals, each from its XBRL fact",
+                                               "LTM of the filing's own printed totals, each built from its XBRL facts")
+                   if ltm else _FILING_TOTALS_NOTE)
+    lines.append(totals_note)
+    material_count = len(result.material_rows)
+    material_text = f"{material_count} material variance{'s' if material_count != 1 else ''}"
+    lines.append(f"\n**{material_count}** material variance{'s' if material_count != 1 else ''} found.")
+    table = None
+    if result.material_rows:
+        session.last_table_items = [r.line_item for r in result.material_rows]
+        session.last_focused_item = session.last_table_items[0]
+        table = [row_to_table_dict(row, cfg.currency, places, _heading(cfg)) for row in result.material_rows]
+    view = figures_view(
+        f"{cfg.period} against {_noun(cfg)}",
+        context=[pair("Currency", cfg.currency),
+                 pair("Material at", f"{format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or "
+                                     f"{format_threshold_pct(cfg.percent_threshold)}"),
+                 pair("Lines read", str(len(result.rows)))],
+        figures=figures, notes=[*(str(note) for note in notes), totals_note],
+        table_title=material_text.capitalize() if table else f"No {material_text[2:]}",
+    )
+    chips = [f"Why {result.material_rows[0].line_item}?"] if result.material_rows else []
+    chips.extend(["Show unfavorable", "Export report", "Export audit"])
+    return Response(text="\n".join(lines), table=table, chips=chips, phase=Phase.EXPLORING, view=view)
 
 
 def _handle_summary(session: Session) -> Response:
@@ -4533,6 +4622,11 @@ def _handle_driver_summary(session: Session) -> Response:
 
 def _handle_greeting(session: Session) -> Response:
     """Respond politely to conversational greetings with context-aware guidance."""
+    filing = session.intake_result is not None and session.intake_result.filing_headline is not None
+    if session.phase == Phase.EXPLORING and session.result is not None and filing:
+        return Response(text=f"I am ready to explore **{safe_inline(session.result.config.period)}** from this filing. "
+                             "Type `summary` for its own printed totals, or drill into any line (e.g. "
+                             f"`why {safe_inline(session.result.rows[0].line_item)}`).", phase=session.phase)
     if session.phase == Phase.EXPLORING and session.result is not None:
         cfg = session.result.config
         places = report_places(session.result)

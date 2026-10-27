@@ -280,3 +280,63 @@ def test_a_total_without_a_fact_in_one_column_is_left_out_of_the_headline_by_nam
     notes = audit["source"]["document"]["headline"]["notes"]
     assert "'Net sales' prints no tagged figure for FY2024, so it isn't in the headline." in notes
     assert "- 'Net sales' prints no tagged figure for FY2024, so it isn't in the headline." in report
+
+
+# Fix 5 in the chat: a filing session never shows computed revenue, expense or net operating totals.
+
+def _filing_session() -> object:
+    from variance_agent.chat.handlers import handle_message, handle_upload
+    from variance_agent.chat.session import Session
+    session = Session()
+    reply = handle_upload(session, operations_and_comprehensive_loss_filing(), "hal-20250927.htm")
+    for answer in ("Looks right", "FY2025", "$1 or 1%", "USD"):
+        if reply.text.startswith(("**Analysis Complete**", "#")):
+            break
+        reply = handle_message(session, answer)
+    return session, reply
+
+
+def test_the_chat_summary_of_a_filing_shows_its_own_printed_totals() -> None:
+    session, reply = _filing_session()
+    assert "**Net loss:** -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%)" in reply.text
+    assert "Total Revenue" not in reply.text and "Net Operating Impact" not in reply.text
+    labels = [str(figure["label"]) for figure in reply.view["figures"]]  # type: ignore[index]
+    assert labels == ["Collaboration revenue", "Total operating expenses", "Loss from operations", "Net loss"]
+
+
+def test_questions_about_computed_totals_answer_with_the_filings_own() -> None:
+    from variance_agent.chat.handlers import handle_message
+    session, _ = _filing_session()
+    for question in ("summary", "totals", "waterfall", "tldr", "memo", "profitability", "sensitivity", "run rate",
+                     "compare actual vs budget"):
+        reply = handle_message(session, question)
+        assert "Net Operating Impact" not in reply.text and "Total Revenue" not in reply.text, question
+        assert "**Net loss:**" in reply.text, question
+    greeting = handle_message(session, "hello").text
+    assert "net operating impact" not in greeting.lower()
+
+
+def test_the_workbook_refuses_for_a_filings_income_statement() -> None:
+    import tempfile
+    from pathlib import Path
+
+    import pytest
+
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    from variance_agent.cli import main
+    with tempfile.TemporaryDirectory() as folder:
+        source = Path(folder, "hal-20250927.htm")
+        source.write_bytes(income_filing())
+        with pytest.raises(SystemExit):
+            main([str(source), "--assisted", "--period", "FY2025", "--dollar-threshold", "1", "--percent-threshold", "1",
+                  "--xlsx", str(Path(folder, "out.xlsx"))])
+        assert not Path(folder, "out.xlsx").exists()
+
+
+def test_the_chat_offers_no_workbook_for_a_filing() -> None:
+    from variance_agent.chat.handlers import handle_message
+    session, reply = _filing_session()
+    assert "Export Excel" not in (reply.chips or [])
+    assert handle_message(session, "export excel").text == (
+        "A workbook isn't available for this comparison yet. The report and the audit file are; type "
+        "`export report` or `export audit`.")

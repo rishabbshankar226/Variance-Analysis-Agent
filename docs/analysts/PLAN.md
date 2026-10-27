@@ -52,7 +52,9 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | Phase 6 exit: gates green (2,467), every guide command executed, each new reader reaches a first answer in the chat | done | `0ad4f64` |
 | 7 | Draw B drawn (seed 20261029) and swept once at `3f731a7`: **1 wrong** (derived revenue subtotal), 4,193 verified, all three read 12/28 (43%, 27-61%); fresh eyes (seed 20261030): 3 more wrong headline figures; dist gates PASS (2,467) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-b/` |
 | 7 | Decision 39 tool fixes 1-7, each pinned by a fictional fixture that failed first (`tests/test_filing_headlines.py`); sweep scores every headline figure; oracle reads combined income-and-comprehensive titles | done | this commit |
-| 7 | Docs, Draw A re-sweep, chat fixes, Draw C (seed 20261031), `REPORT.md`, CHANGELOG | open | |
+| 7 | Draw A re-swept on the fixed code: `p7-177bfa7` 1 wrong (the new headline check, too strict on a revenue dash; fixed in the sweep) and the investment company's income statement now refusing instead of misread; `p7b-1a585fe` **0 wrong**, 5,490 verified, all three read 14/33 (42%, 27-59%), 25/33 without a refusal, 26 refusals all plain | done | sweep `p7b-1a585fe`, sha256 `bd8dbe9f…` |
+| 7 | Chat: filing sessions show their own printed totals and answer questions about computed totals with them; no workbook for a filing's income statement; limit, benchmark and target results get the report's own table; replies render Markdown tables. Docs for Decision 39 | done | this commit |
+| 7 | Screenshots, Draw C (seed 20261031), fresh eyes (20261101), `REPORT.md`, CHANGELOG | open | |
 
 ## Baseline (measured 2026-10-26)
 
@@ -401,6 +403,13 @@ Phase 7 (Decision 39, approved at the Draw B STOP-ASK):
 - `tests/test_ixbrl_statements.py::test_a_negative_printed_figure_says_whether_it_grew_or_shrank`, a Phase 6 case.
   - Old: `("0", "-5", "Decrease, larger negative")`.
   - New: `("0", "-5", "Decrease")`, plus `("-5", "0", "Increase")` (item 7: the cue only where both figures are negative).
+- `tests/test_ixbrl_statements.py::test_the_cli_refuses_a_workbook_for_a_statement_comparison`.
+  - Old: "… Leave out --xlsx, or choose the filing's income statement."
+  - New: "… Leave out --xlsx; the report and the audit file hold every figure." (item 5: a filing's income statement refuses the workbook too, so it is no longer an alternative.)
+- `tests/test_reader_chat.py::test_owen_builds_ltm_from_two_uploads`, a Phase 6 test.
+  - Old: `"Total Revenue:** $4,300,000,000.00 vs. $4,100,000,000.00"`.
+  - New: `"**Net sales:** $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)"` (item 5: the headline is the filing's own totals).
+- `tests/test_frontend_contract.py::test_markdown_rendering_never_emits_markup_from_the_text`. The allowed generated tags gain `table|thead|tbody|tr|th|td` (the chat item: replies render Markdown tables). The invariant is unchanged: no markup comes from the text.
 
 ## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
 

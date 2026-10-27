@@ -305,8 +305,8 @@ def test_the_cli_records_a_statement_comparison_in_audit_19(tmp_path: Path) -> N
 def test_the_cli_refuses_a_workbook_for_a_statement_comparison(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         cli.main(_cli(tmp_path, FLOWS, "FY2025", "--xlsx", str(tmp_path / "out.xlsx")))
-    assert ("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, or choose the "
-            "filing's income statement.") in capsys.readouterr().err.replace("\n", " ")
+    assert ("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; the report and "
+            "the audit file hold every figure.") in capsys.readouterr().err.replace("\n", " ")
     assert not (tmp_path / "out.xlsx").exists()
 
 

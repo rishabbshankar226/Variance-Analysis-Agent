@@ -630,8 +630,12 @@ def _run(args: Arguments) -> int:
         raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "
                          "the report and the audit file hold every outcome.")
     if statement_checks and args.xlsx:
-        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, "
-                         "or choose the filing's income statement.")
+        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; "
+                         "the report and the audit file hold every figure.")
+    if intake_res is not None and intake_res.filing_headline is not None and args.xlsx:
+        # The workbook adds up revenue and expense totals of its own; a filing is headed by its printed ones (Decision 39).
+        raise ValueError("--xlsx isn't available for a filing's income statement yet: the workbook adds up revenue and "
+                         "expense totals of its own. Leave out --xlsx; the report and the audit file hold every figure.")
     appendix = intake_res.report_appendix if intake_res is not None else []
     headline = intake_res.filing_headline if intake_res is not None else None
     report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None,

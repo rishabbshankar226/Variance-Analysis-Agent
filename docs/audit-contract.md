@@ -265,13 +265,22 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   (a failed identity refuses, so none is recorded). Its rows have `classification_source`
   `statement`, never revenue or expense, and the record's `totals` is null, because no revenue,
   expense or net total applies.
+- An income statement read from Inline XBRL adds `headline` (Decision 39): `items`, the filing's
+  own printed totals in statement order, each with its `role` (`revenue`, `expenses`,
+  `operating_income`, `net_income`), `line_item`, `concept`, the `actual` and `comparison` fact
+  keys (as a line's columns record them), the `change` (actual minus comparison, as printed) and
+  `change_percent` (the change over the comparison's absolute value, or null at zero); and
+  `notes`, each total left out and why. The record's `totals` is null: the report shows these
+  printed totals, never revenue, expense or net totals added up from the lines.
 - `source.document` may also be `{kind: "ltm", statement, documents, reader_notes, lines}`, an
   LTM build from a 10-K and a later 10-Q (`--ltm-from`). `documents` names both filings with
   their sha256 and statement. Each line carries its `line_item` and `concept`, the `ltm` value,
   the `comparison` (the fiscal year), and three `components`: fiscal year (weight 1), year to
   date (1) and prior year to date (-1). Each component gives its `document`, `column`,
   `context`, printed `displayed` value and the value `used` after the statement's own sign
-  conventions.
+  conventions. Its `headline` gives LTM of each printed total heading both filings (matched by
+  concept): `components` cited the same way, the `ltm` value, the `comparison` (the fiscal year),
+  `change` and `change_percent`; `totals` is null.
 - `source.document` may also be `{kind: "join", key, documents, reader_notes, lines}`, budget and
   actuals from two files (`--compare-file`, or two uploads in the chat). `key` names the join
   column (an account ID both files carry) or `line item`. `documents` gives both files' `name`,

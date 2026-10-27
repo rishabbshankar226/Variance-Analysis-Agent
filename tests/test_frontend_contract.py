@@ -387,7 +387,7 @@ def test_markdown_rendering_never_emits_markup_from_the_text(run_js: Callable[[s
     assert isinstance(html, str)
     # Whatever the renderer generated carries only a fixed tag name and one of its own classes;
     # every other angle bracket in the text must have been escaped.
-    generated = r"</?(strong|em|code|h[234]|div|br|hr)( class=\"md-[a-z0-9]+\")?>"
+    generated = r"</?(strong|em|code|h[234]|div|br|hr|table|thead|tbody|tr|th|td)( class=\"md-[a-z0-9]+\")?>"
     assert "<" not in re.sub(generated, "", html), html
 
 
@@ -397,6 +397,22 @@ def test_markdown_uses_classes_not_inline_styles(run_js: Callable[[str], object]
     assert "style" not in html
     for cls in ("md-h2", "md-h3", "md-h4", "md-hr", "md-bullet"):
         assert cls in html
+
+
+def test_a_markdown_table_in_a_reply_renders_as_a_table(run_js: Callable[[str], object]) -> None:
+    html = run_js(r"""return m.renderMarkdown('Lead\n\n| Line | Limit | Status |\n|---|---:|---|\n'
+                                              + '| Desk A \\| B | $500.00 | **Breach** |\n\nAfter');""")
+    assert isinstance(html, str)
+    assert ('<div class="md-tablewrap"><table class="md-table"><thead><tr><th>Line</th><th class="md-num">Limit</th>'
+            '<th>Status</th></tr></thead><tbody><tr><td>Desk A | B</td><td class="md-num">$500.00</td>'
+            '<td><strong>Breach</strong></td></tr></tbody></table></div>') in html
+    assert html.startswith("Lead<br><br>") and html.endswith("<br>After")
+    assert "|---" not in html
+
+
+def test_pipes_without_a_separator_row_stay_text(run_js: Callable[[str], object]) -> None:
+    html = run_js("return m.renderMarkdown('| not | a table |');")
+    assert html == "| not | a table |"
 
 
 def test_server_escapes_are_decoded_once_for_text_and_cells(run_js: Callable[[str], object]) -> None:

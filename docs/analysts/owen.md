@@ -18,9 +18,9 @@ Output:
 ## Executive Summary
 - Reporting Currency: USD
 - Compared Against: Prior Period (FY2025)
-- Total Revenue: $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%, F)
-- Total Expenses: $2,765,000,000.00 vs. $2,650,000,000.00 ($115,000,000.00, 4.3%, U)
-- Bottom Line Impact: Revenue and expense variances imply a net operating variance of $85,000,000.00, above prior period on this simplified revenue-less-expense basis. The largest material variance is Net sales at $200,000,000.00 (F).
+- Net sales: $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)
+- Net income: $1,535,000,000.00 vs. $1,450,000,000.00 ($85,000,000.00, 5.9%)
+- Headline figures are LTM of the filing's own printed totals, each built from its XBRL facts as the LTM build shows.
 
 ## Material Variances
 Thresholds: $1.00 or 1.0%

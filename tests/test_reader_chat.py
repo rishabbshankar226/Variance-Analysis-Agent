@@ -73,10 +73,33 @@ def test_owen_builds_ltm_from_two_uploads() -> None:
     handle_message(session, "Build LTM")
     read = handle_upload(session, income_filing(), "hal-20250927.htm")
     reply = _answer_until_report(session, read, ["Looks right", "LTM Mar 2026", "$1 or 1%", "USD"])
-    assert "Total Revenue:** $4,300,000,000.00 vs. $4,100,000,000.00" in reply.text
+    assert "**Net sales:** $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)" in reply.text
+    assert "LTM of the filing's own printed totals" in reply.text
 
 
 def test_the_committed_guide_inputs_match_their_builders() -> None:
     from tests.fixtures.analysts.build_analysts import files
     for name, data in files().items():
         assert (FIXTURES / name).read_bytes() == data, name
+
+
+def test_a_limit_result_panel_shows_outcomes_by_severity_without_budget_totals() -> None:
+    session = Session()
+    first = handle_upload(session, INES_LIMITS.encode(), "desk_limits.csv")
+    reply = _answer_until_report(session, first, ["Looks right", "Oct 2026", "$1 or 1%", "USD"])
+    assert reply.table is not None and reply.view is not None
+    assert list(reply.table[0]) == ["Line Item", "Kind", "Limit", "Actual", "Headroom", "Headroom (% of limit)",
+                                    "Utilization", "Buffer", "Status"]
+    assert [row["Status"] for row in reply.table] == ["Breach", "Breach", "At limit", "Near", "Within"]
+    assert "Currency totals are incomplete; net operating impact is unavailable." not in reply.view["notes"]
+    assert [(f["label"], f["value"]) for f in reply.view["figures"]] == [  # type: ignore[index]
+        ("Breach", "2"), ("At limit", "1"), ("Near", "1"), ("Within", "1")]
+    assert "Export Excel" not in (reply.chips or [])
+
+
+def test_a_target_result_panel_keeps_the_report_columns() -> None:
+    session = Session()
+    first = handle_upload(session, MARCUS_TARGETS.encode(), "weights.csv")
+    reply = _answer_until_report(session, first, ["Looks right", "Oct 2026", "$1 or 1%", "USD", "1"])
+    assert reply.table is not None
+    assert list(reply.table[0]) == ["Line Item", "Target", "Actual", "Difference", "Tolerance", "Outcome"]
