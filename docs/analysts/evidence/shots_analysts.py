@@ -27,13 +27,20 @@ FILES = {"filing": "hal-20250927.htm", "hidden": "plan_hidden_rows.xlsx", "formu
          "budget": "fixture_f_budget_separate.csv", "actuals": "fixture_f_actuals_separate.csv",
          # Phase 6: the new readers' own files (tests/fixtures/analysts/).
          "limits": "ines_limits.csv", "benchmark": "theo_benchmark.csv", "targets": "marcus_targets.csv",
-         "metrics": "clara_metrics.json", "covenants": "clara_covenants.csv"}
+         "metrics": "clara_metrics.json", "covenants": "clara_covenants.csv",
+         # Phase 7 (Decision 39): a filing headed by its own printed totals.
+         "operations": "hal-operations-20250927.htm"}
 
 
 def build(scratch: Path) -> None:
     from openpyxl import Workbook  # type: ignore[import-untyped]
 
-    from tests.fixtures.ixbrl.build_ixbrl import all_statements_filing, income_filing, quarter_all_filing
+    from tests.fixtures.ixbrl.build_ixbrl import (
+        all_statements_filing,
+        income_filing,
+        operations_and_comprehensive_loss_filing,
+        quarter_all_filing,
+    )
 
     def save(name: str, rows: list[list[object]], hide: int | None = None) -> Path:
         workbook = Workbook()
@@ -53,6 +60,7 @@ def build(scratch: Path) -> None:
     (scratch / FILES["filing"]).write_bytes(income_filing())
     (scratch / FILES["statements"]).write_bytes(all_statements_filing())
     (scratch / FILES["quarter"]).write_bytes(quarter_all_filing())
+    (scratch / FILES["operations"]).write_bytes(operations_and_comprehensive_loss_filing())
     realworld = ROOT / "tests" / "fixtures" / "realworld"
     for key in ("budget", "actuals"):
         (scratch / FILES[key]).write_bytes((realworld / FILES[key]).read_bytes())
@@ -81,6 +89,11 @@ def main(out: Path, scratch: Path) -> None:
         "ltm": [("upload", str(files["quarter"]), "ltm-offer"), ("say", "Build LTM", "ltm-ask"),
                 ("upload", str(files["filing"]), "ltm-summary")],
         "join": [("upload", str(files["budget"]), "join-ask"), ("upload", str(files["actuals"]), "join-summary")],
+        # Phase 7: a filing's summary headed by its own printed totals, and a question about computed totals.
+        "headline": [("upload", str(files["operations"]), "headline-upload"), ("say", "Looks right", "headline-period"),
+                     ("say", "FY2025", "headline-thresholds"), ("say", "$1 or 1%", "headline-currency"),
+                     ("say", "USD", "headline-summary"), ("say", "waterfall", "headline-waterfall"),
+                     ("say", "export report", "headline-report")],
         # Phase 6: each new reader from upload to a first answer.
         "limits": [("upload", str(files["limits"]), "limits-summary"), ("say", "Looks right", "limits-period"),
                    ("say", "Oct 2026", "limits-thresholds"), ("say", "$1 or 1%", "limits-currency"),
