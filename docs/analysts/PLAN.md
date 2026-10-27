@@ -56,7 +56,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Chat: filing sessions show their own printed totals and answer questions about computed totals with them; no workbook for a filing's income statement; limit, benchmark and target results get the report's own table; replies render Markdown tables. Docs for Decision 39 | done | this commit |
 | 7 | Screenshots (122, `evidence/final/shots/`); Draw C swept once at `cabf9a8`: **0 wrong**, 12/27 (44%, 28-63%); final dist gates PASS (2,493); `REPORT.md` and CHANGELOG drafted | done | `55e23c2` |
 | 7 | Draw C fresh eyes (seed 20261101): 7 label amounts quoted at the filing's printed scale beside whole-dollar columns, systematic across draws | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-c/` |
-| 7 | STOP-ASK answered (Decision 40): unit statement in filing reports, Draw A re-sweep, Draw D (seed 20261102) | open | seeds committed |
+| 7 | Decision 40: every filing report states the unit the filing prints in (`cef2664`); Draw A re-swept at `273fd98`, every scored row unchanged (0 wrong) | done | sweep `p8-273fd98`, sha256 `d271f089…` |
+| 7 | Draw D (seed 20261102) swept once, fresh eyes (20261103), `REPORT.md`, CHANGELOG | open | |
 
 ## Baseline (measured 2026-10-26)
 

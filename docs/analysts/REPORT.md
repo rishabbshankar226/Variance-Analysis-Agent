@@ -65,6 +65,12 @@ Drawn as Draw B was: 15 10-K and 15 10-Q from 2025Q4-2026Q3, one per filer, excl
 - **Two filings' income statements were not swept.** The oracle found two statements in each, so those filings count as not all-three-read.
 - **Three 10-Ks without XBRL** are outside the denominator. Run by hand, each refuses plainly with what to upload.
 
+Draw C's final fresh eyes found label amounts quoted at the filing's printed scale (above). Section 5 sends that to a STOP-ASK, and the owner chose the fix and a fresh draw (Decision 40). Draw C stays here as measured.
+
+### Draw D (seed `20261102`), after Decision 40, swept once at DRAW_D_COMMIT
+
+DRAW_D_TABLE
+
 ### Draw A, the development set (seed `20261026`, 40 filings; 33 Inline XBRL)
 
 | When | Commit | Wrong | All three read (Inline XBRL) | Without a refusal |
@@ -73,6 +79,7 @@ Drawn as Draw B was: 15 10-K and 15 10-Q from 2025Q4-2026Q3, one per filer, excl
 | STOP 1 (income only) | `69d8366` | 0 | income read 25 of 33 (76%) | |
 | STOP 2 | `1d903a6` | 0 | 15 of 33 (45%, 30-62%) | 26 of 33 (79%, 62-89%) |
 | Phase 7, after Decision 39 | `1a585fe` | 0 | 14 of 33 (42%, 27-59%) | 25 of 33 (76%, 59-87%) |
+| Phase 7, after Decision 40 | `273fd98` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
 
 The drop from STOP 2 is an investment company's statement of operations. At STOP 2 it counted as fully read, but it read its subtotals as lines: net investment income was typed revenue, and the totals the report computed double-counted. Since Decision 39 its bottom line must add up, so it refuses plainly. The `Financial_Report.xlsx` reader on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
 
@@ -85,9 +92,10 @@ At each point, five filings were drawn with a seed committed first. A subagent w
 | STOP 1 (Draw A) | `20261027` | 4 wrong headline Total Revenue figures in 2 filings: other income counted as revenue | Decisions 28-29: revenue is the printed revenue block; statements end at net income |
 | STOP 2 (Draw A) | `20261028` | 4: a sweep artifact, a mislabeled unlabeled subtotal, and a bank's Total Revenue and Total Expenses | Decision 37 |
 | Draw B, final | `20261030` | Draw B's wrong revenue subtotal, plus 3 more wrong headline figures; 10 balance sheet and cash flow reports clean | STOP-ASK, then Decision 39 |
-| Draw C, final | `20261101` | FRESH_C_FOUND | FRESH_C_DONE |
+| Draw C, final | `20261101` | Every line, change, subtotal and headline matched. 7 wrong figures in one insurer's balance sheet: labels quote amounts in thousands beside whole-dollar columns, with no unit stated. One percent follows the documented half-even rule | STOP-ASK (`evidence/stop-ask-draw-c/`); the class runs through every draw (A 40 labels in 18 filings, B 23 in 8, C 21 in 10); Decision 40 |
+| Draw D, final | `20261103` | FRESH_D_FOUND | FRESH_D_DONE |
 
-The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found was a headline figure added up from the lines. Since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact.
+The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found sat elsewhere. Most were headline figures added up from the lines; since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact. The last was an amount inside a line's label, quoted in the filing's unit beside figures shown in full; since Decision 40 every filing report states that unit.
 
 ## E and F items, final state
 
@@ -182,6 +190,7 @@ The lesson from all of them: the sweep scored line values, and every wrong figur
 37. STOP 2 fresh-eyes fixes.
 38. STOP 2 answers: At limit, the benchmark words, Phase 6 kept (a), (b), (e) and the scorecard, and dropped (c) and (d).
 39. Draw B STOP-ASK answers: net income by concept; revenue on final types; filing refusals; 52/53-week labels; the headline from the filing's own totals; reading notes in the report; small fixes; chat panels and tables; the oracle title rule; Draw C.
+40. Draw C STOP-ASK answer: every filing report states the unit the filing prints in and that label amounts are quoted as printed; Draw D.
 
 ## Existing assertions edited, with reasons
 
@@ -241,6 +250,10 @@ This check found two problems, both fixed:
 - **Bare-year bands** (`2025` / `2026` over Budget/Actual) don't take the E4 path.
 - **Strict and assisted intake differ on uncached formulas** in computed columns.
 - **Captions on the earnings path.** The earnings and quant CLI and file-API paths apply no unit caption, as before this run.
+- **10-Q column labels name the end month only.** A three-month income statement and a nine-month cash flow statement of one 10-Q both read "Jul 2026"; the statement's name carries its duration only where the filing prints more than one.
+- **A statement continued in an untitled table on the next page** with a different layout is not joined. Its refusal can misstate the cause (Draw C).
+- **Statements in a second document.** A filing whose statements sit in a second Inline XBRL document (a bank's annual report) refuses with "I could not find the financial statements", naming no fix. That message names no next step for any filing without statement tables (Draw C: 6 refusals in 2 filings).
+- **A pre-tax subtotal refused over a $1M gap** that should sit inside R5's rounding interval (Draw C fresh eyes). Not investigated: Draw C informs no change.
 - **A timing test flaked once.** `test_chat_hardening.py::test_unmatched_questions_on_a_big_file_stay_fast` failed twice in one gates run under load. It passed alone and on the rerun.
 
 ## Not built (Decision 38)
