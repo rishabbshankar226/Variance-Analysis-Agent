@@ -1194,6 +1194,7 @@ def _run_analysis(session: Session) -> Response:
     unclassified = list(dict.fromkeys(
         row.line_item for row in result.rows
         if row.line_type == LineType.UNCLASSIFIED and currency_row(row) and row.better is None
+        and not row.statement_kind  # balance sheet and cash flow lines are never revenue or expense (R7)
         and row.line_item not in session.skipped_items
     ))
 
@@ -1405,6 +1406,24 @@ def _audience_summary(result: AnalysisResult) -> Response:
                     phase=Phase.EXPLORING, view=view)
 
 
+_STATEMENT_CHIPS = ["Export report", "Export audit"]
+_STATEMENT_WORKBOOK = ("A workbook isn't available for a balance sheet or cash flow comparison yet. The report and "
+                       "the audit file are; type `export report` or `export audit`.")
+
+
+def _statement_checks(session: Session) -> list[str]:
+    """The identity and change notes of a balance sheet or cash flow read (PLAN.md R7), or none."""
+    if session.result is None or not any(row.statement_kind for row in session.result.rows):
+        return []
+    return list(session.intake_result.statement_checks) if session.intake_result is not None else []
+
+
+def _report_text(session: Session) -> str:
+    assert session.result is not None
+    checks = _statement_checks(session)
+    return render_markdown(session.result, statement_checks=checks) if checks else render_markdown(session.result)
+
+
 def _build_analysis_summary(session: Session) -> Response:
     """Build the initial analysis summary after successful analysis."""
     if session.earnings_mode and session.table_analysis is not None:
@@ -1414,6 +1433,9 @@ def _build_analysis_summary(session: Session) -> Response:
     assert result is not None
     if is_audience_result(result):
         return _audience_summary(result)
+    if any(row.statement_kind for row in result.rows):
+        # A balance sheet or cash flow comparison has no revenue, expense or net totals to summarize.
+        return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
     cfg = result.config
     places = report_places(result)
 
@@ -1642,6 +1664,11 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
+    if any(row.statement_kind for row in session.result.rows):
+        if intent.intent_id == "export_xlsx":
+            return Response(text=_STATEMENT_WORKBOOK, chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
+        if intent.intent_id not in {"export_report", "export_audit", "help", "reset"}:
+            return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
     if is_audience_result(session.result) and intent.intent_id not in {
         "summary", "material", "filter_favorable", "filter_unfavorable", "export_report", "export_audit", "export_xlsx",
     }:
@@ -2368,7 +2395,7 @@ def _handle_export_report(session: Session, intent: ParsedIntent) -> Response:
     result = session.result
     assert result is not None
 
-    report = render_markdown(result)
+    report = _report_text(session)
     period_slug = _period_slug(result.config.period)
     filename = f"variance_report_{period_slug}.md"
 

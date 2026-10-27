@@ -314,3 +314,21 @@ def test_a_balance_sheet_that_does_not_balance_refuses_on_the_cli(tmp_path: Path
         cli.main([str(path), "--assisted", "--sheet", BALANCE, "--compare-to", "prior-period", "--period", "Sep 2025",
                   "--dollar-threshold", "1", "--percent-threshold", "1"])
     assert "so I can't check it and stopped instead of guessing" in capsys.readouterr().err.replace("\n", " ")
+
+
+def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
+    from variance_agent.chat.handlers import handle_message, handle_upload
+    from variance_agent.chat.session import Session
+
+    session = Session()
+    handle_upload(session, all_statements_filing(), "hal-20250927.htm")
+    for message in ["statement Consolidated Balance Sheets", "Looks right", "Sep 2025", "$10,000 or 5%"]:
+        handle_message(session, message)
+    reply = handle_message(session, "USD")
+    assert reply.text.startswith("# Statement Comparison: Sep 2025")
+    assert IDENTITY in reply.text
+    assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export audit"]
+    assert handle_message(session, "waterfall").text.startswith("# Statement Comparison")
+    assert handle_message(session, "export excel").text == (
+        "A workbook isn't available for a balance sheet or cash flow comparison yet. The report and the audit file "
+        "are; type `export report` or `export audit`.")
