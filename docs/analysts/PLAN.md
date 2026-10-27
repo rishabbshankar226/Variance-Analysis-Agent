@@ -59,6 +59,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Decision 40: every filing report states the unit the filing prints in (`cef2664`); Draw A re-swept at `273fd98`, every scored row unchanged (0 wrong) | done | sweep `p8-273fd98`, sha256 `d271f089…` |
 | 7 | Draw D (seed 20261102) swept once at `0f1d284`: **0 wrong**, 11/28 (39%, 24-58%), 12 refusals all plain; screenshots retaken; final dist gates PASS (2,497) | done | sweep `D-0f1d284`, sha256 `b2589644…` |
 | 7 | Draw D fresh eyes (seed 20261103): 3 doubled figures in equity labels (nested hidden spans), systematic across draws (19 labels in 13 filings); 2 wrong section names; 1 wrong credit note | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-d/` |
+| 7 | STOP-ASK answered (Decision 41): fixes 1-5, Draw A re-sweep, Draw E (seed 20261104) | open | seeds committed |
 
 ## Baseline (measured 2026-10-26)
 
@@ -370,6 +371,19 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
     - **The fix, report-side only.** A report of an Inline XBRL statement states the unit the filing prints its figures in, from the facts' `scale`, and that amounts inside line labels are quoted as the filing prints them. Label text is never rewritten.
     - It changes no value the tool reads or computes. A fictional fixture fails first, and Draw A is re-swept to show nothing scored moves.
     - **Measured on a fresh Draw D.**
+
+41. **Draw D STOP-ASK answered (owner, 2026-10-27: "do what you recommend and continue").** Draw D stays in REPORT.md exactly as swept (`D-0f1d284`), and its fresh-eyes finding is reported as wrong figures. Each fix gets a fictional fixture that fails first.
+    1. **Nested hidden spans.** A figure is printed once, however many hidden-fact spans wrap it.
+    2. **Section names.** A repeated label is never named by a section whose own subtotal comes before it: a "Total …" line or a section-total concept, and a cash flow section's "Net cash … activities".
+    3. **Decision 28.** No credit among costs is noted for a line whose compared figures are both zero.
+    4. **Headline cue.** A headline figure printed negative in both columns gets R7's "larger negative" or "smaller negative" cue.
+    5. **Sweep.** A line label holding a figure printed twice scores as wrong. A label's section prefix must be a heading the oracle's statement prints above the line, or it scores as wrong.
+    - Draw A is re-swept with the new checks, then the fixes are **measured on a fresh Draw E**.
+
+## Draw E settings (committed before the draw, Decision 41)
+
+- **Draw E seed: `20261104`.** 30 filings: 15 10-K and 15 10-Q, uniform over 2025Q4-2026Q3, one per filer, excluding every Draw A-D accession and filer (`edgar_corpus.py draw E --seed 20261104`). It is swept once, on the fixed code, and never informs a code change.
+- **Final fresh-eyes seed: `20261105`.** Five Draw E Inline XBRL accessions, `random.Random(20261105).sample` of the sorted list. The brief names label text among the things to check.
 
 ## Draw D settings (committed before the draw, Decision 40)
 
