@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .models import (Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, BasisDetails, ComparisonBasis, ComparisonDetails,
-                     LineType)
+                     LineType, MeasureKind)
 from .audience import OPT_IN_BASES, AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
 from .measures import currency_row, metric_inferences
 from .comparison import display_outcome, extended_heading
@@ -258,12 +258,16 @@ def build_audit_record(
     # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
     workbook = transformations.get("workbook") if transformations is not None else None
     opt_in = result.config.comparison_basis in OPT_IN_BASES  # limit, benchmark, target (PLAN.md R13-R15)
-    needs_19 = workbook is not None or opt_in or (
+    multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
+        isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
+    needs_19 = workbook is not None or opt_in or multiple or (
         source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:
         raise ValueError("Audit schema 1.8 is required to record measure and direction choices.")
+    if multiple and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record a Multiple measure; use --audit-schema-version 1.9.")
     if opt_in and schema_version != "1.9":
         raise ValueError(f"Audit schema {schema_version} cannot record a limit, benchmark or target comparison; "
                          "use --audit-schema-version 1.9.")
@@ -476,6 +480,9 @@ def audience_configuration(cfg: AnalysisConfig) -> JSONObject:
         "preset": cfg.preset if isinstance(cfg, AudienceConfig) else "fpa",
         "layout": effective_layout(cfg), "per_share_lines": effective_per_share_lines(cfg),
         "headline_items": list(cfg.headline_items) if isinstance(cfg, AudienceConfig) else [],
+        # Only a 1.9 record holds it: a Multiple threshold selects 1.9 (PLAN.md R16).
+        **({"multiple_threshold": _decimal(cfg.multiple_threshold)}
+           if isinstance(cfg, AudienceConfig) and cfg.multiple_threshold is not None else {}),
         "currency": cfg.currency, "dollar_threshold": _decimal(cfg.dollar_threshold),
         "percent_threshold": _decimal(cfg.percent_threshold),
         "type_map": [{"line_item": key, "type": str(value)} for key, value in sorted(cfg.type_map.items())],

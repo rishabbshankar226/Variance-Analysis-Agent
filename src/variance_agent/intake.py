@@ -3023,8 +3023,9 @@ def _process_raw_table(
                                                       (actual_idx, raw_actual, "Actual")):
                 if isinstance(raw_value, Decimal):
                     currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
-        if kind is MeasureKind.PERCENT:
-            # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it.
+        if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
+            # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
+            # a multiple keeps its x, which the analysis reads as turns.
             row_dict["budget"] = raw_budget
             row_dict["actual"] = raw_actual
             if any(str(value).strip().endswith("%") for value in (raw_budget, raw_actual)):
@@ -3453,4 +3454,8 @@ def _row_measure(row: dict[str, object]) -> MeasureKind:
 
 
 def _rate_number(value: object, kind: MeasureKind) -> object:
-    return value.strip()[:-1] if kind is MeasureKind.PERCENT and isinstance(value, str) and value.strip().endswith("%") else value
+    """A rate's % sign, or a multiple's x (3.25x, PLAN.md R16), comes off before the number is read."""
+    if isinstance(value, str) and ((kind is MeasureKind.PERCENT and value.strip().endswith("%"))
+                                   or (kind is MeasureKind.MULTIPLE and value.strip().casefold().endswith("x"))):
+        return value.strip()[:-1]
+    return value

@@ -1435,6 +1435,9 @@
               "items": {
                 "type": "string"
               }
+            },
+            "multiple_threshold": {
+              "$ref": "#/$defs/decimal"
             }
           },
           "required": [
@@ -1481,7 +1484,8 @@
                   "Currency",
                   "Per Share",
                   "Percent",
-                  "Count"
+                  "Count",
+                  "Multiple"
                 ]
               },
               "type": {

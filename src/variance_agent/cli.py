@@ -111,6 +111,7 @@ class Arguments(Protocol):
     headline: list[str] | None
     per_share_threshold: Decimal | None
     count_threshold: Decimal | None
+    multiple_threshold: Decimal | None
     bps_threshold: Decimal | None
     percent_values: str | None
     group_by: str | None
@@ -211,9 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
     analysis.add_argument(
         "--compare-to",
         type=_comparison_argument,
-        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance.",
+        help="Comparison basis or comma list: budget, forecast, prior-period, consensus, estimate, guidance; "
+             "or, with --assisted and one per run, limit, benchmark or target (rows declare Limit Kind, Better, Tolerance).",
     )
-    for flag in ("per-share-threshold", "count-threshold", "bps-threshold"):
+    for flag in ("per-share-threshold", "count-threshold", "bps-threshold", "multiple-threshold"):
         analysis.add_argument("--" + flag, type=_decimal, help="Required absolute cutoff for its measure; strict >.")
     analysis.add_argument("--preset", choices=("fpa", "earnings", "quant"), default="fpa",
                           help="fpa: legacy headers/layout, per-share off; earnings: new headers, earnings layout, per-share on; "
@@ -524,6 +526,7 @@ def _run(args: Arguments) -> int:
         "per_share_threshold": getattr(args, "per_share_threshold", None),
         "count_threshold": getattr(args, "count_threshold", None),
         "bps_threshold": getattr(args, "bps_threshold", None),
+        "multiple_threshold": getattr(args, "multiple_threshold", None),
         "percent_values": getattr(args, "percent_values", None),
     }
     if mapping_obj is not None:
@@ -558,6 +561,7 @@ def _run(args: Arguments) -> int:
             per_share_threshold=cast(Decimal | None, audience_args["per_share_threshold"]),
             count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
             bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
+            multiple_threshold=cast(Decimal | None, audience_args["multiple_threshold"]),
             percent_values=cast(str | None, audience_args["percent_values"]),
         )
     try:

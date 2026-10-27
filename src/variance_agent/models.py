@@ -23,6 +23,7 @@ class MeasureKind(StrEnum):
     PER_SHARE = "Per Share"
     PERCENT = "Percent"
     COUNT = "Count"
+    MULTIPLE = "Multiple"  # 3.25x, in turns (PLAN.md R16)
 
 
 class BetterDirection(StrEnum):
