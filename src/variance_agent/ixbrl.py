@@ -43,6 +43,22 @@ FILING_SUBTOTALS = re.compile(
     r"(?:\s*\((?:loss|income|earnings)\))?\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b",
     re.IGNORECASE,
 )
+# us-gaap concepts that are always a statement's own totals (never a detail line), as hints for the
+# shaper; noncontrolling-interest and per-share variants are details or not money, and excluded.
+_TOTAL_CONCEPT = re.compile(
+    r"^us-gaap:(?:GrossProfit|OperatingIncomeLoss|CostsAndExpenses|OperatingExpenses|OperatingCostsAndExpenses"
+    r"|NonoperatingIncomeExpense|IncomeLossFromContinuingOperations(?:BeforeIncomeTaxes\w*)?"
+    r"|NetIncomeLoss|NetIncomeLossAvailableToCommonStockholders(?:Basic|Diluted)|ProfitLoss"
+    r"|NoninterestIncome|NoninterestExpense|InterestIncomeExpenseNet|InterestAndDividendIncomeOperating"
+    r"|InterestIncomeExpenseAfterProvisionForLoanLoss|BenefitsLossesAndExpenses"
+    r"|ComprehensiveIncomeNetOfTax|OtherComprehensiveIncomeLossNetOfTax|OtherComprehensiveIncomeLossBeforeTax)$"
+)
+_SECTION_TOTAL = re.compile(
+    r"^us-gaap:(?:CostsAndExpenses|OperatingExpenses|OperatingCostsAndExpenses|NonoperatingIncomeExpense"
+    r"|NoninterestIncome|NoninterestExpense|InterestAndDividendIncomeOperating|BenefitsLossesAndExpenses"
+    r"|OtherComprehensiveIncomeLossNetOfTax|OtherComprehensiveIncomeLossBeforeTax)$"
+)
+_INVISIBLE = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff]")
 _DASH_CELL = re.compile(r"[\s\u00a0$€£¥()]*[—–\-]+[\s\u00a0$€£¥()]*")
 _CURRENCY = re.compile(r"[\s $€£¥]+")
 _NUMBER_WORDS = {"no": 0, "none": 0, "nil": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
@@ -108,6 +124,16 @@ class Line:
     measure: str  # "Currency", "Per Share", "Count"
     keys: list[LineKey | None]  # by column
     dash: bool = False  # prints an untagged dash: a column without a fact reads as 0
+
+    @property
+    def total(self) -> bool:
+        """Whether the line's concept is always a total of the lines above it."""
+        return bool(_TOTAL_CONCEPT.match(self.concept))
+
+    @property
+    def section_total(self) -> bool:
+        """Whether that total may sum just the lines of its own section (as a "Total" row does)."""
+        return bool(_SECTION_TOTAL.match(self.concept))
 
 
 @dataclass
@@ -444,7 +470,7 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                 else:
                     dash = dash or bool(_DASH_CELL.fullmatch(cell_text))
                     flat.extend(cell.tokens)
-            label = " ".join(" ".join(label_parts).split())
+            label = " ".join(_INVISIBLE.sub("", " ".join(label_parts)).split())
             if first_figure is None:
                 if label and not re.fullmatch(r"[\d\s,.$()%\-—–]*", label):
                     section = label.rstrip(":")
@@ -452,6 +478,8 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                 continue
             if not label and wrapped:
                 label = wrapped  # the label ran onto the row above
+            elif not label and section and rows and rows[-1][1] == section:
+                label = f"Total {section}"  # an unlabeled figures row closing its section is the section's total
             wrapped = ""
             figures: list[tuple[Fact, bool | None]] = []
             for position, (token_kind, value) in enumerate(flat):

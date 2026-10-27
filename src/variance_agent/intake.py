@@ -58,7 +58,7 @@ from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
 from .ixbrl import FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
-from .statement_shape import ShapedStatement, shape_income_statement
+from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
 from .ixbrl import Line as IxLine
 from .measures import measure_kind
 from .models import MeasureKind
@@ -2241,7 +2241,19 @@ def _read_ixbrl_bytes(
     precisions = [int(key.decimals) for line in lines if line.measure == "Currency" for key in line.keys
                   if key is not None and re.fullmatch(r"-?\d+", key.decimals)]
     unit = Decimal(1).scaleb(-min(precisions)) if precisions else None
-    shaped = shape_income_statement(raw_rows, unit, FILING_SUBTOTALS)
+    # A line whose concept is a total is offered to the shaper as a subtotal; one that then adds up
+    # from nothing is a detail line that borrowed a total's concept, and is read as a line.
+    hints = {i for i, line in enumerate(lines) if line.total}
+    while True:
+        shaped = shape_income_statement(raw_rows, unit, FILING_SUBTOTALS, frozenset(hints),
+                                        frozenset(i for i in hints if lines[i].section_total), zero_lines_signless=True,
+                                        openings_as_lines=True)
+        matched = {row for row, _ in shaped.matches} | set(shaped.openings)
+        demote = {i for i in hints if i not in matched and not names_subtotal(names_by_line[i])
+                  and not FILING_SUBTOTALS.search(names_by_line[i])}
+        if not demote:
+            break
+        hints -= demote
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
@@ -2269,8 +2281,13 @@ def _read_ixbrl_bytes(
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
     """R5's refusal, or None when every subtotal foots within its facts' rounding."""
     fix = "Upload the filing's PDF, or a CSV or Excel copy of the statement."
-    if shaped.unmatched:
-        return (f"I couldn't tell which lines '{shaped.unmatched[0]}' adds up in the {statement}, so I can't check it "
+    matched = {total_row for total_row, _ in shaped.matches} | set(shaped.openings)
+    # A subtotal is left out of the lines only once it is shown to add up; one that is never checked
+    # (nothing above it to add up) would drop a printed figure, so it refuses too.
+    unchecked = [names[i] for i in range(len(lines)) if i not in shaped.kept and i not in matched]
+    if unchecked:
+        missing = unchecked[0]
+        return (f"I couldn't tell which lines '{missing}' adds up in the {statement}, so I can't check it "
                 f"and stopped instead of guessing. {fix}")
     for total_row, terms in shaped.matches:
         for column, total_key in enumerate(lines[total_row].keys):

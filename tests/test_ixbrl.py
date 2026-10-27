@@ -305,3 +305,65 @@ def test_an_untagged_dash_reads_as_zero_and_is_not_part_of_the_label() -> None:
     result = _read(income_filing(rows))
     restructuring = next(r for r in result.rows if r["line_item"] == "Restructuring")
     assert Decimal(str(restructuring["actual"])) == 0
+
+
+def test_a_total_named_only_by_its_concept_is_a_subtotal() -> None:
+    rows = income_rows()
+    rows[4:6] = [row("Interest expense", "(" + fact("us-gaap:InterestExpense", "FY25", "50") + ")",
+                     "(" + fact("us-gaap:InterestExpense", "FY24", "40") + ")"),
+                 row("Net other expense", "(" + fact("us-gaap:NonoperatingIncomeExpense", "FY25", "50") + ")",
+                     "(" + fact("us-gaap:NonoperatingIncomeExpense", "FY24", "40") + ")"),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,450"), fact("us-gaap:NetIncomeLoss", "FY24", "1,330"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Net other expense" in result.detected_totals
+
+
+def test_an_unlabeled_figures_row_after_a_section_is_that_sections_total() -> None:
+    rows = income_rows()
+    rows[0:3] = ["<tr><td>Revenues:</td></tr>",
+                 row("Rental income", fact("us-gaap:Revenues", "FY25_products", "4,000"),
+                     fact("us-gaap:Revenues", "FY24_products", "3,800")),
+                 row("Other", fact("us-gaap:Revenues", "FY25_services", "100"), fact("us-gaap:Revenues", "FY24_services", "100")),
+                 row("", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900")),
+                 row("Cost of sales", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), fact("us-gaap:CostOfRevenue", "FY24", "2,250")),
+                 row("Gross margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), fact("us-gaap:GrossProfit", "FY24", "1,650"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Total Revenues" in result.detected_totals
+
+
+def test_a_subtotal_named_first_figure_is_read_as_the_line_it_prints() -> None:
+    # Nothing above "Total revenues" adds up to it, so it is never dropped as a subtotal.
+    rows = [row("Total revenues", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900")),
+            *income_rows()[1:]]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert result.rows[0]["line_item"] == "Total revenues" and result.rows[0]["type"] == "Revenue"
+
+
+def test_zero_width_characters_are_not_part_of_a_label() -> None:
+    rows = income_rows()
+    rows[1] = row("Cost of sales​ ​", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), fact("us-gaap:CostOfRevenue", "FY24", "2,250"))
+    assert "Cost of sales" in [line for line, *_ in _amounts(_read(income_filing(rows)))]
+
+
+def test_a_total_concept_used_for_a_detail_line_is_read_as_a_line() -> None:
+    rows = income_rows()
+    rows[3] = row("Operating expenses", fact("us-gaap:OperatingExpenses", "FY25", "300"),
+                  fact("us-gaap:OperatingExpenses", "FY24", "280"))
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Operating expenses" in [r["line_item"] for r in result.rows]
+
+
+def test_a_comprehensive_statement_opening_with_net_income_reads() -> None:
+    oci = statement("CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME", [
+        row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,450"), fact("us-gaap:NetIncomeLoss", "FY24", "1,330")),
+        row("Foreign currency translation", fact("us-gaap:OtherComprehensiveIncomeForeignCurrency", "FY25", "50"),
+            fact("us-gaap:OtherComprehensiveIncomeForeignCurrency", "FY24", "30")),
+        row("Comprehensive income", fact("us-gaap:ComprehensiveIncomeNetOfTax", "FY25", "1,500"),
+            fact("us-gaap:ComprehensiveIncomeNetOfTax", "FY24", "1,360"))])
+    result = _read(income_filing(extra=oci), sheet="Consolidated Statements of Comprehensive Income")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert [r["line_item"] for r in result.rows] == ["Net income", "Foreign currency translation"]
