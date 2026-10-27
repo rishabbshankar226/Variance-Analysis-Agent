@@ -1,0 +1,128 @@
+# Analyst coverage: filings, Excel and every analyst seat (plan)
+
+Spec: `~/Desktop/prompt library/variance-analyst-coverage/VARIANCE_ANALYST_COVERAGE_PROMPT.md`, Revision 1 (read-only). When this plan and the spec disagree, the spec wins, except where a Decision below records an owner answer.
+
+Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and per-filing results live in `~/vaa-edgar-corpus/` and never in this tree. Every fixture here is fictional.
+
+## Status
+
+| Phase | Task | State | Commit |
+|---|---|---|---|
+| 0 | Read, measure, plan; E/F items confirmed; STOP-ASK for E1, E2, E7 | done (awaiting owner) | this commit |
+| 1 | Packaging exclusion for `docs/analysts/evidence` | todo | |
+| 1 | E1 display scaling, E2 hidden rows, E7 uncached formulas | todo (after STOP-ASK) | |
+| 1 | E3 EDGAR workbook, E4 banded headers, E5 side-by-side blocks, E6 date headers, E8 legacy/web formats | todo | |
+| 1 | Workbook examination summary + audit 1.9 | todo | |
+| 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | todo | |
+| 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; STOP 1 | todo | |
+| 4 | Balance sheet / cash flow statements, identities, multi-document input, LTM, F4 (STOP-ASK) | todo | |
+| 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
+| 6 | Reader surfaces kept at STOP 2 | todo | |
+| 7 | Draw B, gates, `REPORT.md` | todo | |
+
+## Baseline (measured 2026-10-26)
+
+- `8a609c4`, Python 3.11.16 (fresh venv, constraints file, `[dev,excel,pdf,release]`): **2100 passed in 42.04 s**. `pip check`: no broken requirements.
+- The probes were rebuilt with the prompt folder's `probes/build_probes.py` into `~/vaa-edgar-corpus/probes/` and run with `variance-agent FILE --assisted --period X --dollar-threshold 1 --percent-threshold 1`. Every outcome in the table below reproduced exactly.
+
+## E and F items
+
+| ID | Measured outcome at `8a609c4` | State |
+|---|---|---|
+| E1 | `($ in thousands)` + `#,##0,` on full stored values: Total Revenue $110,000,000.00 vs $100,000,000.00 (true $110,000), stderr "Amounts scaled from thousands (x1,000)" | confirmed, wrong number |
+| E2 | Hidden row 3 (Draft line 5/5) counted: Total Expenses $50.00 vs $45.00, no note; hidden column E unmentioned | confirmed, silent |
+| E3 | EDGAR statement shape (title cell, merged `12 Months Ended`, date-text periods): header-row refusal | confirmed |
+| E4 | `Q3 2026` / `Q2 2026` bands over Budget/Actual pairs: "Found more than one Actual column (Actual (column C), Actual (column E)); keep one and try again." | confirmed |
+| E5 | P&L block + KPI block separated by a blank column: "more than one Actual column (… column C, … column G)" | confirmed |
+| E6 | Real Excel dates as period headers: header-row refusal | confirmed |
+| E7 | Uncached `=C2+C3` in Actual: "Row 4, Total, Actual column: the amount is blank." | confirmed, misleading |
+| E7b | Uncached `=B2-B3` in Budget: "Treated blank budgets as 0 on 1 unbudgeted line", Total Revenue $180.00 vs $100.00 (true budget $160.00) | confirmed, wrong number |
+| E8 | `.xls` (renamed `.xlsx`) and `.htm`: "Unsupported input format '.xls'. Use CSV, JSON, XLSX, or XLSM." | confirmed |
+| F1 | `read_input_assisted` routes `.pdf` only for filings; `.htm` is refused (E8) | confirmed in code |
+| F2 | EDGAR folder contents (primary `.htm`, `_htm.xml`, `Financial_Report.xlsx`, `FilingSummary.xml`, R pages) | to confirm across Draw A in Phase 2 |
+| F3 | `fixture_o_10k_statements.pdf --sheet "Consolidated Balance Sheets (pp. 5-6)"`: "…lists assets, liabilities and equity, which can't be compared as revenue and expense yet. Choose an income statement instead: Consolidated Statements of Operations (p. 4)." The cash flow text comes from `_NOT_REVENUE_AND_EXPENSE` ("cash coming in and going out") and was not run. | confirmed |
+| F4 | `test_realworld_intake_baseline.py:154` pins the header-row message for a budget-only upload | confirmed |
+
+## Decisions
+
+1. **Worktree.** The main checkout is shared with another agent that commits there, so all work happens in `.claude/worktrees/analysts-coverage` (`git worktree add … -b analysts/filings-and-excel 8a609c4`). This deviates from Part A step 1.
+2. **Venv.** The worktree has its own Python 3.11 `.venv`, built with the constraints file. The checkout's `.venv` is 3.14 and is not used.
+3. **`CLAUDE.md` exclusion** goes in `$(git rev-parse --git-common-dir)/info/exclude`, since `.git` is a file in a worktree.
+4. **No Claude attribution** on any commit or PR in this repository. This is the owner's standing rule.
+5. **One stop for the three Phase 1 STOP-ASKs.** E1, E2 and E7 are written up together at the end of Phase 0, and none lands before the owner answers. F4 keeps its own STOP-ASK in Phase 4.
+6. **Prompt folder is read-only.** Probes build into `~/vaa-edgar-corpus/probes/`.
+7. **EDGAR contact.** The owner chose the account contact for `EDGAR_USER_AGENT`. It is exported inline on each corpus command and never written into this tree.
+8. **Gates.** Every phase runs `sh docs/ui/evidence/gates.sh` (ruff, mypy, pytest, compileall, pip check, contracts). The dist variant (`… gates.sh dist`) runs at each STOP and at the end. The browser check uses `~/.venvs/vaa-shots/bin/python docs/ui/evidence/shots.py`, which exists. The script's contracts gate compares with `822e522`; the contract files are identical at `8a609c4`, and `git diff 8a609c4 -- tests/fixtures/contracts` is checked too.
+9. **Packaging lands first in Phase 1.** `/docs/analysts/evidence` goes into the sdist `exclude` in `pyproject.toml`, with an assertion in `scripts/check_distribution.py`. Phase 0 may not touch `scripts/`. Until then the evidence folder is only this plan's README and is not released.
+10. **Three Excel readers exist.** They are `parsing.py` (strict), `intake.py::_read_excel_bytes` (assisted, `--mapping`, chat) and `comparisons.py` (file API). Layout facts (hidden rows and columns with outline level, merged ranges, formulas without stored results, error cells, external links, defined tables, `calcPr`) are collected once in `excel.py`, in the same bounded stdlib pass that already reads every worksheet for stored decimals. That pass runs behind the existing limits and the DOCTYPE/ENTITY refusal. `inspect_archive` keeps its return type, and a sibling returns the new facts. Number formats come from openpyxl's read-only `number_format` (no second load).
+11. **Rules-file drift.** `.agents/rules/variance-intake.md` still names schema 1.5, two `chat.html` copies, commit `a3ce6bb` and `intake/phase-N` branches. The prompt's overrides apply: audit 1.9, one packaged page, this branch.
+12. **Audit 1.9 timing.** E1 and E2 land before the 1.9 schema. Until 1.9 exists, they record only what 1.7 can already hold (the unit multiplier actually applied). The examination summary commit then adds 1.9 and records the display-format reconciliation and the hidden-row choice. A file with no finding keeps its 1.7 audit (constraint 6).
+
+## Rules written before code
+
+### R1. Sign and scale (constraint 10), for Phase 3
+
+For one `ix:nonFraction`: let `t` be its text after the declared `format` transform. `t` is non-negative by the Inline XBRL spec; a minus inside the element makes the fact invalid, and it is refused. Define:
+
+- Magnitude `m = Decimal(t).scaleb(scale)`, exact in `financial_context`, with `scale` defaulting to 0.
+- Stored `v = -m` when `sign="-"`, else `m`. `v` is what the oracle compares. Printed parentheses never enter `v`.
+- Display negation `n` is true when, in the same table row, the text between the previous fact (or the label cell) and this element ends with `(` and the text after it, up to the next fact or the row end, begins with `)`. It is also true when the preceding text ends with `-` or U+2212. Whitespace, NBSP and currency symbols are ignored when reading that text. Cell boundaries do not matter, because EDGAR tables often put `$`, `(` and `)` in their own `<td>`. An opening `(` without a closing `)`, or the reverse, makes the line ambiguous, and the read refuses that line.
+- Displayed `d = -m` when `n`, else `m`. `d` never uses the `sign` attribute. Subtotals foot on `d`, figures are shown as `d`, and `Financial_Report.xlsx` cells (displayed values in the caption unit) are compared with `d / 10^caption`.
+- `xsi:nil="true"`: no value. It is missing, never zero.
+- `decimals` (`INF` or an integer) is kept for the footing tolerance only. It never rounds `v` or `d`.
+
+Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"` without parentheses (v<0, d>0, e.g. a "Net loss" line printed positive); parentheses without `sign` (v>0, d<0, e.g. treasury stock); `(` and `)` in separate cells; `$` between `(` and the number; an unbalanced parenthesis (refuse); `scale` of -2, 0, 3, 6 and 9; dash and zero transforms (`fixed-zero`, `zerodash`) giving 0 with `n` false; a minus inside the element (refuse); `nil`; comma-decimal and dot-decimal transforms.
+
+### R2. E1: display scaling against the caption
+
+- **Format parse.** Split the format code into up to four `;` sections, ignoring separators inside `"…"`, after `\`, and inside `[…]`. In each section, skip quoted literals, the character after `\`, `_` or `*`, and bracketed tokens (`[Red]`, `[$-409]`). A comma that follows the section's last digit placeholder (`0`, `#`, `?`), with no placeholder after it, divides the display by 1,000. Commas between placeholders are grouping. Each unquoted `%` multiplies the display by 100. Display divisor `D = 1000^k / 100^p`. `General` gives D = 1. A section with a condition (`[>=1000]`) cannot be read, and the cell's D is unknown.
+- **Section for a cell.** Positive values use section 1. Negative values use section 2 when present, otherwise 1. Zero uses section 3 when present, otherwise 1.
+- **Reconcile.** Only numeric Currency amount cells in the comparison and Actual columns of data rows count. Text amounts are not formatted numbers. Let C be the caption multiplier (`detect_unit_scale`, or a mapping's declared unit, which is treated as a caption), and S the set of D values.
+  - C = 1: amounts are read as stored, unchanged. If any D ≠ 1, a note says which cells Excel displays scaled.
+  - C > 1 and S ⊆ {1}: the existing ×C applies, unchanged.
+  - C > 1 and S = {C}: no multiplier, because the cells already store full amounts. A note says so.
+  - Otherwise (a D outside {1, C}, S containing both 1 and C, an unknown D, or a `%` format on a Currency amount): refuse. The message names up to ten cells (existing "…and N more") and gives the fix: make the amounts use one number format, or change the caption.
+- **Tests (straddling k = 0, 1, 2, 3).** Each of these gets a test: `#,##0,` + thousands (probe E1, $110,000); `#,##0` + thousands (×1,000, unchanged); `#,##0,,` + millions; `#,##0,,` + thousands (refuse); `#,##0,` + millions (refuse); `#,##0,` with no caption (stored, note); `#,##0,,,` with no caption (stored, note) and with a caption (refuse); mixed `#,##0,` / `#,##0` under thousands (refuse); `0.0,`; `#,##0","` and `#,##0\,` (literal comma, D = 1); `#,##0,;(#,##0,)` on a negative value; `#,##0,;(#,##0)` mixed by sign (refuse under a caption); `_(* #,##0,_)` accounting; `[Red]#,##0,`; a conditional section (refuse under a caption); `0%` on Currency under a caption (refuse); Percent rows untouched.
+
+### R3. E2: hidden rows and columns
+
+- A row is hidden when its `<row>` has `hidden="1"`, or a custom height of 0. It was collapsed by an outline group when it is hidden and `outlineLevel ≥ 1`. Otherwise it was hidden one by one. A column is hidden by `<col … hidden="1">` or a width of 0.
+- A **hidden data row** is a hidden row below the header row with any non-blank cell. One or more hidden data rows make inclusion a confirmed choice:
+  - CLI: `--hidden-rows include|exclude`. Without it, intake exits 2: "Rows 3 (Draft line) … are hidden in Excel but have amounts. Rerun with --hidden-rows include to count them or --hidden-rows exclude to leave them out." The flag on a file with no hidden data rows is a no-op. On CSV, JSON or PDF it is refused, as `--sheet` is.
+  - Chat: two replies, "Count the hidden rows" and "Leave the hidden rows out". The summary then states the choice and names the rows.
+  - Mapping file: optional `hidden_rows` field. Older mappings without it ask.
+  - Exclusion happens before subtotal detection. Inclusion keeps today's arithmetic and adds the note.
+- Hidden rows above the header and hidden columns are listed only, in "Here's how I read your file" and later in the examination summary. A hidden column that intake reads (Line Item, the comparison, Actual) is named as hidden in that list.
+- Tests: 0 hidden data rows (output byte-identical to today) against 1 (asks); include and exclude totals (probe E2: Total Expenses $50.00 against $45.00, versus $45.00 against $40.00); outline-collapsed against one-by-one wording; a zero-height row; a hidden title-block row (listed, no question); a hidden Actual column (named, read); the flag on CSV (refused); mapping replay.
+
+### R4. E7: formulas without stored results
+
+- A cell has no stored result when it has an `<f>` child and either no `<v>`, or an empty `<v>` on a non-`str` cell. A cached empty string (`t="str"`, `<v></v>`) is a real result. This covers shared and array formula dependents.
+- Every column the read uses (header row and data rows of Line Item, the comparison, Actual, account, period, currency, type, measure, better, segment and pass-through columns such as drivers) refuses on such a cell. The message: "These cells hold formulas that Excel never calculated, so the file has no saved result for them: Row 4, Other income, Budget column; … Open the file in Excel, let it calculate, save it, and upload it again." A blank budget is never inferred from a formula. Ignored computed columns (`Var $`, `Var %`) and title-block cells are listed only.
+- **Stale caches** (recommended as part of E7, and droppable): when `workbook.xml` sets `calcPr fullCalcOnLoad="1"`, the producer asked Excel to recalculate on open, so saved results may be stale. Formula cells in read columns refuse with the same fix.
+- Tests: Budget formula (probe E7b, no longer $180 against $100); Actual formula (probe E7, the new wording); Line Item formula; a driver-column formula; a `Var $` formula (listed, the read proceeds); a cached formula (read as today); a cached empty string; a shared-formula dependent; `fullCalcOnLoad` 0 against 1; eleven cells ("…and 1 more").
+
+## Existing assertions expected to change
+
+Phase 1 (grep of `tests/` on 2026-10-26):
+
+- **E1, E2, E7: none.** No committed workbook (5 files, scanned) and no test-built workbook uses a display-scaling or `%` number format, a hidden row or column, or a formula. Hidden worksheets (`test_operator_controls.py:52`, `test_engine_polish.py:156,179`) are outside E2.
+- **E8:** the messages for `.xls` and `.htm` change; no existing test pins them. These stay unchanged: `test_pdf_intake.py:168` (the full `.docx` message) and `test_chat.py:320` ("Unsupported input format" for `.docx`).
+- **E3 to E6** must not change: `test_intake_ambiguous_columns.py:27` (unbanded `Actual` + `Actual YTD` stays ambiguous), `test_intake_comparison.py:269` (`Name,Amount` keeps the header-row refusal), `test_intake_comparison.py:263`, `test_chat_blank_budgets.py:76` and `test_realworld_intake_baseline.py:119` (true blank budgets still read as 0 with the note).
+
+Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fails with "Could not find a header row with Line Item, Budget, and Actual columns". New: written at the F4 STOP-ASK.
+
+## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
+
+**E1. Recommendation: reconcile each amount's number format with the caption (R2).** The unit caption describes what Excel shows. A cell formatted `#,##0,` shows its stored value divided by 1,000. A file captioned "in thousands" whose cells store full amounts under that format is therefore already at full scale, and multiplying again overstates it 1,000 times (probe E1: $110,000,000 for a true $110,000). I recommend R2: no second scaling when caption and format agree, today's scaling when the cells carry no display scaling, an unchanged read with a note when there is no caption, and a refusal naming the cells when caption and formats conflict or are mixed. Existing output changes only for workbooks whose amount cells carry a trailing-comma or `%` format. The change applies to assisted CLI runs, `--mapping` replays, the chat and the file API. Strict mode reads no captions and is untouched. No existing test changes. The audit records the multiplier actually applied (1.7) and, once 1.9 lands, the reconciliation.
+
+**E2. Recommendation: hidden data rows become a confirmed choice (R3), asked by default.** Today a row the analyst hid in Excel, often a draft or a superseded line, is counted without a word (probe E2: Total Expenses $50.00 against $45.00, including the hidden 5/5 line). I recommend asking, not picking a default. Excel's own `SUM` includes hidden rows and `SUBTOTAL(109, …)` excludes them, so neither default is right for every file. The analyst answers once: with `--hidden-rows include|exclude` on the CLI, with a reply in the chat, or through a saved mapping. Hidden columns and hidden rows outside the table are listed, not asked about. Existing output changes only for workbooks with hidden data rows, and their CLI runs now stop until the flag is given. **Strict mode** keeps reading every row, as its contract promises; making it refuse too would change a CLI default, and I do not recommend that in this run. No existing test changes. The choice is recorded in audit 1.9.
+
+**E7. Recommendation: a formula with no saved result is its own state and always refuses (R4).** The workbook is read with saved formula results (`data_only=True`), and a formula Excel never calculated has none. Today that reads as a blank: a budget then becomes 0 (probe E7b: Total Revenue $180.00 against a true $160.00 budget), and an Actual says "the amount is blank", which sends the analyst to the wrong fix. I recommend refusing in every column the read uses. The message names each cell and gives the one fix that works: open the file in Excel, let it calculate, and save it. This applies on every path, strict included. Strict mode already refuses these files, so for it only the wording changes, and a driver column now refuses where it silently dropped the driver evidence. `docs/input-contract.md`'s "Missing caches remain missing input values" becomes "…stop intake and name the cells". **Droppable part:** also treat formula results as unsaved when the workbook asks Excel to recalculate on open (`fullCalcOnLoad`), because a producer that sets that flag may have saved stale results. No existing test changes.
+
+## Phase records
+
+### Phase 0
+
+- Read: README, the rules file, `input-contract.md` (amounts, assisted, comparison, PDF and filing EPS sections), `financial-rules.md`, `audit-contract.md` (intro and 1.8), `excel.py`, `models.py`, `measures.py`, `audience.py`, `statement_shape.py`, `numeric.py`, and `intake.py` around `_read_excel_bytes`, `_read_pdf_bytes`, `detect_header_row`, `detect_unit_scale`, `read_input_assisted` and `_process_raw_table`. Also `MULTI_AUDIENCE_2026-10.md`'s interpretation and boundary sections, and the strict and API Excel reads (`parsing.py`, `comparisons.py`).
+- Looked at: the E1 probe report states the overstated totals with a confident thousands note. Nothing in the read says the cells were already full-scale. Phase 0 changed no report, workbook or chat reply.
