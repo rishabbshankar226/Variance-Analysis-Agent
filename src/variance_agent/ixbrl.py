@@ -628,11 +628,11 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                         and _monetary(reader.units.get(f.unit, ""))}
             if instants:
                 balance = _balance(instants, durations, label)
-                edge = {"ending": lambda p: p[2], "beginning": lambda p: _day_before(p[1])}.get(balance)
-                if edge is None:
+                if not balance:
                     problem = "its balances fall at the end of one column and the start of another"
                 else:
-                    placed = {edge(p): n for n, p in enumerate(periods) if p[0] == "duration"}
+                    placed = {(p[2] if balance == "ending" else _day_before(p[1])): n
+                              for n, p in enumerate(periods) if p[0] == "duration"}
         for fact, negated in figures:
             context = reader.contexts.get(fact.context)
             unit = reader.units.get(fact.unit, "")
