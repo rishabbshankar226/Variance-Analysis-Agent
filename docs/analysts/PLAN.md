@@ -64,7 +64,8 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Draw E fresh eyes (seed 20261105): wrong signs, types and F/U in two income statements (label-typed lines; a tax line typed Revenue) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-e/` |
 | 7 | Decision 42 fixes 1-5 (`3cf5714`); Draw A re-swept with unstated turns and label-typed rows scored: 0 wrong, every scored row unchanged | done | sweep `p11-3cf5714`, sha256 `e078e580…` |
 | 7 | Draw F (seed 20261106) swept once at `3cf5714`: **0 wrong values**, 1 label flag checked right (checker limit), 10/27 (37%, 22-56%), 15 refusals all plain; fresh eyes (20261107): **no wrong figure**, 2 place-numbered labels and 1 narrow credit note listed as known limits; final dist gates PASS (2,505); screenshots retaken (124) | done | sweep `F-3cf5714`, sha256 `a0a2c990…` |
-| 7 | `REPORT.md`, CHANGELOG, final commit | done | this commit |
+| 7 | `REPORT.md`, CHANGELOG, final commit | done | `448ba16` |
+| 7 | Pushed at the owner's word; PR #27 CI: Python 3.11-3.14, Windows output contracts, distribution and minimal installation all pass | done | this commit |
 
 ## Baseline (measured 2026-10-26)
 

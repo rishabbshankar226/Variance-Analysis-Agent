@@ -283,6 +283,8 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 
 The log is at `~/vaa-edgar-corpus/final-f/gates_dist.log`.
 
+CI on PR #27, run on `448ba16`: Python 3.11, 3.12, 3.13 and 3.14, Windows output contracts, distribution installation and minimal installation, **all pass**.
+
 ## Browser check
 
 `evidence/final/shots/` holds 124 images, retaken on the final code, at 1280 and 375 px of every chat screen changed since STOP 2, all from fictional files (`evidence/shots_analysts.py`):
@@ -330,7 +332,6 @@ This check found two problems, both fixed:
 - **Cross-reader agreement.** EDGAR carries no PDFs for recent filings, and the SEC no longer publishes `Financial_Report.xlsx` (F2), so the readers could not be compared on the same recent filing (Decision 30).
 - **The new comparisons on real filings.** The sweeps measure one statement per run. LTM, derived metrics and covenants, two-file joins, the limit, benchmark and target bases, and the holdings scorecard were exercised on fictional fixtures and in the guides, never on a drawn filing.
 - **Real analysts.** The per-reader reviews at STOP 2 were subagents given each seat's row of section 3, not people in those seats.
-- **Windows and Python 3.12-3.14.** These run only in CI, and nothing was pushed, so no CI result was seen. Every gate here ran on macOS with Python 3.11.16.
 - **Browsers.** The screenshots come from the Playwright harness in Chromium at 1280 and 375 px, not from Safari, Firefox or a physical phone.
 - **The chat on real filings.** It was driven with fictional files only.
 
