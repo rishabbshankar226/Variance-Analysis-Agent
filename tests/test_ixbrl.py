@@ -394,3 +394,9 @@ def test_an_untitled_table_of_other_periods_does_not_continue_a_statement() -> N
 def test_other_income_statement_titles_are_found(title: str) -> None:
     statement_ = read_statements(document(statement(title, income_rows())).encode("utf-8"), "hal.htm")[0]
     assert statement_.kind == "income"
+
+
+def test_a_title_split_across_spans_inside_a_word_is_found() -> None:
+    title = "<span>CONSOLIDATED STATEM</span><span>ENTS OF</span> <span>OPE</span><span>RATIONS</span>"
+    body = ("<p>" + "</p><p>".join(f"page header {n}" for n in range(30)) + "</p>" + statement(title, income_rows()))
+    assert read_statements(document(body).encode("utf-8"), "hal.htm")[0].name == "Consolidated Statements of Operations"

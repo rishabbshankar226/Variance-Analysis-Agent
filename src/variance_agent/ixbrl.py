@@ -27,7 +27,7 @@ _DECLARATION = re.compile(rb"<!\s*entity|<!\s*doctype[^>\[]*\[", re.IGNORECASE)
 _MAX_SECONDS = 20.0
 _MAX_TABLES = 20_000
 _MAX_CONTEXTS = 200_000
-_TITLE_PIECES = 12  # text pieces before a table searched for its statement title
+_TITLE_CHARACTERS = 2000  # text before a table searched for its statement title
 _STATEMENT_TITLE = re.compile(
     r"\b(?:condensed\s+)?(?:consolidated\s+)?(?:combined\s+)?(?:"
     r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?(?:net\s+)?"
@@ -37,6 +37,8 @@ _STATEMENT_TITLE = re.compile(
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
+# Elements that start a new line of printed text; inline elements (span, font, b) do not.
+_BLOCKS = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "td", "th", "table"})
 # Subtotal labels filings print that the shared statement shaper does not name (it serves PDFs too).
 FILING_SUBTOTALS = re.compile(
     r"^(?:\((?:loss|income|earnings)\)\s+)?(?:net\s+)?(?:income|earnings|loss|profit)"
@@ -193,7 +195,7 @@ class _Reader(HTMLParser):
         self._facts_open: list[Fact] = []
         self._table_stack: list[_Table] = []
         self._cell: _Cell | None = None
-        self._outside: list[str] = []
+        self._outside = ""  # the text since the last table, as printed (spans join without spaces)
         self._ref_depth: list[tuple[str, int]] = []
         self._tags = 0
 
@@ -204,6 +206,8 @@ class _Reader(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self._check()
+        if tag in _BLOCKS and self._cell is None:
+            self._outside += " "
         values = {name: value or "" for name, value in attrs}
         if tag in {"script", "style"}:
             self._skip += 1
@@ -240,11 +244,10 @@ class _Reader(HTMLParser):
         elif tag == "table":
             if len(self.tables) >= _MAX_TABLES:
                 raise IxbrlError("the filing has more tables than can be read")
-            title = " ".join(" ".join(self._outside[-_TITLE_PIECES:]).split())
-            table = _Table(title=title)
+            table = _Table(title=" ".join(self._outside.split()))
             self.tables.append(table)
             self._table_stack.append(table)
-            self._outside = []
+            self._outside = ""
         elif tag == "tr" and self._table_stack:
             if len(self._table_stack[-1].rows) >= MAX_ROWS:
                 raise IxbrlError("a table in the filing has more rows than can be read")
@@ -263,6 +266,8 @@ class _Reader(HTMLParser):
             self._ref_depth.append((tag, 1))
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in _BLOCKS and self._cell is None:
+            self._outside += " "
         if tag in {"script", "style"}:
             self._skip = max(0, self._skip - 1)
             return
@@ -316,9 +321,8 @@ class _Reader(HTMLParser):
             return
         if self._cell is not None:
             self._cell.tokens.append(("text", data))
-        elif data.strip():
-            self._outside.append(data.strip())
-            del self._outside[:-_TITLE_PIECES]
+        else:
+            self._outside = (self._outside + data)[-_TITLE_CHARACTERS:]
 
 
 def _read_facts(reader: _Reader) -> None:
@@ -420,7 +424,7 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         for cells in table.rows:
             if any(kind in {"fact", "ref"} for cell in cells for kind, _ in cell.tokens):
                 break
-            lead.extend(str(t) for cell in cells for kind, t in cell.tokens if kind == "text")
+            lead.append(" ".join("".join(str(t) for kind, t in cell.tokens if kind == "text") for cell in cells))
         if lead:
             table.title = " ".join(f"{table.title} {' '.join(lead)}".split())
         titles = list(_STATEMENT_TITLE.finditer(table.title))
