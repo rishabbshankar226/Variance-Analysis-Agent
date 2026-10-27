@@ -105,7 +105,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 - A filing with a blank amount refuses with the shared message "Fix these cells and upload the file again", which is the wrong fix for an EDGAR filing. Two Draw A income statements stop this way.
 - Five Draw A income statements stop on a subtotal whose lines the reader cannot trace (net income, pre-tax income, other income/expense, gross profit). Each refuses plainly. Reading them is structure work, not a sign or scale question.
 - Other income on a bank or insurer with no printed revenue total keeps the shaper's labels (Decision 28). A $1k securities loss on one bank therefore sits among expenses, which the fresh-eyes reviewer noted and did not count as wrong.
-- An untagged all-dash line is read as 0 only where it holds a column; one Draw A line that is all dashes is not listed. No figure changes.
+- A line printed with dashes in every column and no tag at all is not listed (one Draw A line). It is zero, so no figure changes.
 
 ## Rules written before code
 
