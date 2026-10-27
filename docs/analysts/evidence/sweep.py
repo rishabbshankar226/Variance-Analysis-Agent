@@ -45,6 +45,8 @@ TOOL = ([sys.executable, "-c", "import sys; from variance_agent.cli import main;
 _MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 _COLUMN_NOTE = re.compile(r"^Read column '(?P<header>.*)' as (?P<label>.+)$")
 _FLIP_NOTE = re.compile(r"^Read '(?P<label>.*)' as (?:income|an expense): the statement prints it as")
+_CREDIT_NOTE = re.compile(r"^Read '(?P<label>.*)' as a credit among costs")
+_REVENUE = re.compile(r"^us-gaap:(?:Revenues|RevenueFromContractWithCustomer\w*|SalesRevenue\w*|RevenuesNetOfInterestExpense)$")
 _FIX_WORDS = re.compile(r"\b(upload|rerun|save|choose|open|give|mark|remove|export|download|unhide|count|leave|pick)\b",
                         re.IGNORECASE)
 _JARGON = re.compile(r"Traceback|Error:|Exception|\bschema\b|\bpayload\b|\bXML\b|\bOOXML\b", re.IGNORECASE)
@@ -125,7 +127,9 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
     score = Score()
     document = _group(audit, "source").get("document")
     lines = {str(line.get("line_item")): line for line in _items(document, "lines") if isinstance(line, dict)}
-    flipped = {m.group("label") for m in (_FLIP_NOTE.match(str(n)) for n in _items(document, "reader_notes")) if m}
+    notes = [str(n) for n in _items(document, "reader_notes")]
+    flipped = {m.group("label") for m in (_FLIP_NOTE.match(n) for n in notes) if m}
+    credited = {m.group("label") for m in (_CREDIT_NOTE.match(n) for n in notes) if m}
     comparison_label = _group(audit, "comparison").get("label")
     money = {line.concept for line in statement.monetary(instance)}
     score.monetary = len(money)
@@ -147,7 +151,7 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
             dims = tuple(sorted((str(d.get("axis")), str(d.get("member"))) for d in _items(key, "dims") if isinstance(d, dict)))
             facts = [f for f in instance.lookup(str(key.get("concept")), period, dims)
                      if f.value is not None and f.unit.startswith("iso4217:") and "/" not in f.unit]
-            sign = -1 if name in flipped else 1
+            sign = (-1 if name in flipped else 1) * (-1 if name in credited else 1)
             shown_ok = Fraction(str(value)) == sign * Fraction(str(key.get("displayed")))
             if not facts:
                 score.unverified += 1
@@ -161,6 +165,16 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
             if Fraction(str(variance)) != Fraction(str(row["actual"])) - Fraction(str(row["comparison"])):
                 score.wrong += 1
                 problems.append(f"{name} variance does not recompute")
+    # A derived figure: where the statement prints its revenue as one fact, Total Revenue must equal it.
+    revenue_lines = [line for line in lines.values() if _REVENUE.match(str(line.get("concept")))
+                     and not any(isinstance(c, dict) and _items(c, "dims") for c in _items(line, "columns"))]
+    total = _group(_group(audit, "totals"), "revenue")
+    if len(revenue_lines) == 1 and total.get("actual") is not None:
+        current = next((c for c in _items(revenue_lines[0], "columns")
+                        if isinstance(c, dict) and c.get("label") != comparison_label), None)
+        if isinstance(current, dict) and Fraction(str(total["actual"])) != Fraction(str(current.get("displayed"))):
+            score.wrong += 1
+            problems.append(f"Total Revenue {total['actual']} is not the filing's revenue {current.get('displayed')}")
     score.covered = len(covered)
     score.details = "; ".join(problems)[:500]
     return score

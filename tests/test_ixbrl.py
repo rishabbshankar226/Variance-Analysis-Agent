@@ -428,3 +428,19 @@ def test_hidden_references_side_by_side_do_not_swallow_the_text_after_them() -> 
     body = sheet + statement("CONSOLIDATED STATEMENTS OF OPERATIONS", income_rows())
     names = [s.name for s in read_statements(document(body, hidden).encode("utf-8"), "hal.htm")]
     assert names == ["Consolidated Balance Sheets", "Consolidated Statements of Operations"]
+
+
+def test_other_income_below_the_revenue_total_is_a_credit_on_the_cost_side() -> None:
+    # Total revenue must equal the filing's printed revenue; other income below it nets against costs.
+    rows = income_rows()
+    rows[4:6] = [row("Other income, net", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                     fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40")),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,410"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    other = next(r for r in result.rows if r["line_item"] == "Other income, net")
+    assert (other["type"], Decimal(str(other["actual"]))) == ("Expense", -50 * M)
+    revenue = [r for r in result.rows if r["type"] == "Revenue"]
+    assert [r["line_item"] for r in revenue] == ["Net sales"]
+    assert ("Read 'Other income, net' as a credit among costs: the filing's revenue is 'Net sales' "
+            "(us-gaap:Revenues), and this line is not part of it") in result.visible_transformations

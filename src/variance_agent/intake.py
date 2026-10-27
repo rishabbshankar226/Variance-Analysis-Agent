@@ -2257,14 +2257,16 @@ def _read_ixbrl_bytes(
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
+    credits = _revenue_block_credits(shaped, lines, names_by_line)
     result = _process_raw_table(
         shaped.rows, filename, sheet_name=chosen.name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
         selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
     )
     left_out = [f"Left out {item}" for item in chosen.left_out]
+    result.visible_transformations[:0] = credits
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
-    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes]
+    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits]
     result.xbrl_lines = [
         {"line_item": names_by_line[i], "concept": lines[i].concept, "measure": lines[i].measure,
          "subtotal": i not in shaped.kept,
@@ -2276,6 +2278,53 @@ def _read_ixbrl_bytes(
     result.detected_totals[:0] = shaped.subtotals
     result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes]
     return result
+
+
+_REVENUE_CONCEPT = re.compile(r"^us-gaap:(?:Revenues|RevenueFromContractWithCustomer\w*|SalesRevenue\w*"
+                              r"|RevenuesNetOfInterestExpense|RevenueNet)$")
+
+
+def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: list[str]) -> list[str]:
+    """Keep Total Revenue to the filing's revenue: lines outside it that add to income are cost-side credits.
+
+    The shaper labels every line that adds to income as revenue. Where the statement prints its
+    revenue (a revenue concept, or a total summing such lines), only that block is revenue; other
+    income (equity earnings, gains, other income, net) is relabeled an expense with its sign turned,
+    which leaves net income and the net variance unchanged. Returns the notes it adds.
+    """
+    terms = dict(shaped.matches)
+    block: set[int] = set()
+
+    def take(row: int) -> None:
+        if row in block:
+            return
+        block.add(row)
+        for term, _ in terms.get(row, []):
+            take(term)
+
+    for i, line in enumerate(lines):
+        if _REVENUE_CONCEPT.match(line.concept):
+            take(i)
+    if not block:
+        return []
+    header = next(row for row in shaped.rows if row and row[0] == "Line Item")
+    at = shaped.rows.index(header)
+    type_at = header.index("Type")
+    revenue = next(names[i] for i in sorted(block) if i in shaped.kept or i in terms)
+    concept = lines[next(i for i in sorted(block) if names[i] == revenue)].concept
+    notes = []
+    for data_index, row in zip(shaped.kept, shaped.rows[at + 1:], strict=True):
+        if row[type_at] != "Revenue" or data_index in block:
+            continue
+        row[type_at] = "Expense"
+        for column in range(1, type_at):
+            if header[column] in {"Measure", "Better"} or row[column] in ("", "—"):
+                continue
+            with financial_context():
+                row[column] = format(-Decimal(str(row[column])), "f")
+        notes.append(f"Read '{row[0]}' as a credit among costs: the filing's revenue is '{revenue}' ({concept}), "
+                     "and this line is not part of it")
+    return notes
 
 
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
