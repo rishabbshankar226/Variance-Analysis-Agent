@@ -30,10 +30,10 @@ _MAX_CONTEXTS = 200_000
 _TITLE_PIECES = 12  # text pieces before a table searched for its statement title
 _STATEMENT_TITLE = re.compile(
     r"\b(?:condensed\s+)?(?:consolidated\s+)?(?:combined\s+)?(?:"
-    r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?"
-    r"(?:operations|income|earnings|comprehensive\s+(?:income|loss)|cash\s+flows|financial\s+(?:position|condition)"
+    r"statements?\s+of\s+(?:condensed\s+)?(?:consolidated\s+)?(?:net\s+)?"
+    r"(?:operations|income|earnings|loss|comprehensive\s+(?:income|loss)|cash\s+flows|financial\s+(?:position|condition)"
     r"|condition|assets\s+and\s+liabilities)(?:\s+and\s+comprehensive\s+(?:income|loss))?"
-    r"|balance\s+sheets?)\b",
+    r"|income\s+statements?|balance\s+sheets?)\b",
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
@@ -415,6 +415,14 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
     seen: set[str] = set()
     pending: tuple[str, str, list[_Table]] | None = None
     for table in reader.tables:
+        # A title may also be printed in the table's own leading rows, before any figure.
+        lead: list[str] = []
+        for cells in table.rows:
+            if any(kind in {"fact", "ref"} for cell in cells for kind, _ in cell.tokens):
+                break
+            lead.extend(str(t) for cell in cells for kind, t in cell.tokens if kind == "text")
+        if lead:
+            table.title = " ".join(f"{table.title} {' '.join(lead)}".split())
         titles = list(_STATEMENT_TITLE.finditer(table.title))
         match = titles[-1] if titles else None  # the title nearest the table
         facts = [reader.facts[i] for row in table.rows for cell in row for kind, i in cell.tokens
@@ -433,8 +441,8 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
             if kind not in seen:
                 seen.add(kind)
                 pending = (kind, _pretty(match.group(0)), [table])
-        elif pending is not None and money and not table.title.strip():
-            pending[2].append(table)  # the statement runs on in the next table, untitled
+        elif pending is not None and money and not table.title.strip() and _same_periods(pending[2][0], table, reader):
+            pending[2].append(table)  # the statement runs on in the next table, untitled, over the same periods
         elif pending is not None and money:
             statements.extend(_build(pending, reader, by_id, per_share_lines))
             pending = None
@@ -444,6 +452,24 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         raise IxbrlError(f"I could not find the financial statements in '{filename}': no table there is titled as an "
                          "income statement, balance sheet or cash flow statement and holds their tagged figures.")
     return statements
+
+
+def _money_periods(table: _Table, reader: _Reader) -> set[tuple[str, ...]]:
+    periods = set()
+    for cells in table.rows:
+        for cell in cells:
+            for kind, index in cell.tokens:
+                if kind == "fact" and isinstance(index, int):
+                    fact = reader.facts[index]
+                    context = reader.contexts.get(fact.context)
+                    if context is not None and not context.dims and _monetary(reader.units.get(fact.unit, "")):
+                        periods.add(context.period)
+    return periods
+
+
+def _same_periods(first: _Table, table: _Table, reader: _Reader) -> bool:
+    """Whether a following untitled table prints figures for the statement's own periods."""
+    return bool(_money_periods(table, reader)) and _money_periods(table, reader) <= _money_periods(first, reader)
 
 
 def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[str, int],

@@ -367,3 +367,30 @@ def test_a_comprehensive_statement_opening_with_net_income_reads() -> None:
     result = _read(income_filing(extra=oci), sheet="Consolidated Statements of Comprehensive Income")
     assert not result.has_fatal_errors, result.fatal_error_message
     assert [r["line_item"] for r in result.rows] == ["Net income", "Foreign currency translation"]
+
+
+def test_a_title_printed_inside_the_table_names_its_statement() -> None:
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        row("Cash", fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
+        row("Inventory", fact("us-gaap:InventoryNet", "I25", "300"), fact("us-gaap:InventoryNet", "I24", "250")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "800"), fact("us-gaap:Assets", "I24", "650"))])
+    inline_title = ("<table><tr><td>CONSOLIDATED STATEMENTS OF OPERATIONS</td></tr><tr><td>(In millions)</td></tr>"
+                    + "".join(income_rows()) + "</table>")
+    names = [s.name for s in read_statements(document(sheet + inline_title).encode("utf-8"), "hal.htm")]
+    assert names == ["Consolidated Balance Sheets", "Consolidated Statements of Operations"]
+
+
+def test_an_untitled_table_of_other_periods_does_not_continue_a_statement() -> None:
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        row("Cash", fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
+        row("Inventory", fact("us-gaap:InventoryNet", "I25", "300"), fact("us-gaap:InventoryNet", "I24", "250")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "800"), fact("us-gaap:Assets", "I24", "650"))])
+    untitled = "<table>" + "".join(income_rows()) + "</table>"
+    statements = read_statements(document(sheet + untitled).encode("utf-8"), "hal.htm")
+    assert [(s.name, len(s.lines)) for s in statements] == [("Consolidated Balance Sheets", 3)]
+
+
+@pytest.mark.parametrize("title", ["CONSOLIDATED STATEMENTS OF LOSS", "Consolidated Income Statements"])
+def test_other_income_statement_titles_are_found(title: str) -> None:
+    statement_ = read_statements(document(statement(title, income_rows())).encode("utf-8"), "hal.htm")[0]
+    assert statement_.kind == "income"
