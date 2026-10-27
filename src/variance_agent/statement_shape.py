@@ -123,11 +123,13 @@ def _term(item: _Item) -> int:
     return item.total_row if item.total_row is not None else item.rows[0]
 
 
-def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = None) -> ShapedStatement:
+def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = None,
+                           extra_subtotals: re.Pattern[str] | None = None) -> ShapedStatement:
     """Label each line of an income statement by how the statement's subtotals add up.
 
     ``unit`` sets the rounding unit of the printed figures; by default it is the finest place any
-    figure shows, as for a PDF statement printed in its caption's unit.
+    figure shows, as for a PDF statement printed in its caption's unit. ``extra_subtotals`` names
+    more subtotal labels for one reader; the PDF reader passes none, so its reading is unchanged.
     """
     header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
     if header_at is None:
@@ -157,7 +159,8 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
     with financial_context():
         for i, row in enumerate(data):
             values = amounts[i]
-            if not _SUBTOTAL_RE.search(str(row[0]).strip()):
+            label_text = str(row[0]).strip()
+            if not (_SUBTOTAL_RE.search(label_text) or (extra_subtotals and extra_subtotals.search(label_text))):
                 pending.append(_Item([i], values))
                 continue
             subtotal_rows.append(i)

@@ -56,7 +56,7 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
-from .ixbrl import IxbrlError, LineKey, read_statements
+from .ixbrl import FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, shape_income_statement
 from .ixbrl import Line as IxLine
@@ -2217,8 +2217,12 @@ def _read_ixbrl_bytes(
     if chosen is None:
         return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl", fatal_error_message=(
             f"No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}."))
+    if chosen.problem:
+        return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl",
+                            fatal_error_message=chosen.problem)
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
-        instead = f" Choose an income statement instead: {', '.join(comparable)}." if comparable else ""
+        instead = (f" Choose an income statement instead: {', '.join(comparable)}." if comparable
+                   else " Choose the filing's income statement instead.")
         return IntakeResult(has_fatal_errors=True, available_sheets=comparable, source_kind="ixbrl", fatal_error_message=(
             f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
             f"and expense yet.{instead}"))
@@ -2228,14 +2232,16 @@ def _read_ixbrl_bytes(
     header: list[object] = ["Line Item", *chosen.labels, *(["Measure", "Better"] if measures else [])]
     raw_rows: list[list[object]] = [header]
     for name, line in zip(names_by_line, lines, strict=True):
-        cells: list[object] = [format(key.displayed, "f") if key is not None else "" for key in line.keys]
+        # A column with no fact is blank (refused as unreadable) unless the line prints a dash there.
+        cells: list[object] = [format(key.displayed, "f") if key is not None else ("—" if line.dash else "")
+                               for key in line.keys]
         if measures:
             cells += [line.measure, "Higher" if line.measure == "Per Share" else ""]
         raw_rows.append([name, *cells])
     precisions = [int(key.decimals) for line in lines if line.measure == "Currency" for key in line.keys
                   if key is not None and re.fullmatch(r"-?\d+", key.decimals)]
     unit = Decimal(1).scaleb(-min(precisions)) if precisions else None
-    shaped = shape_income_statement(raw_rows, unit)
+    shaped = shape_income_statement(raw_rows, unit, FILING_SUBTOTALS)
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")

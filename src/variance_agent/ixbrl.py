@@ -21,7 +21,9 @@ from html.parser import HTMLParser
 from .limits import MAX_CELLS, MAX_ROWS
 from .numeric import financial_context
 
-_DECLARATION = re.compile(rb"<!\s*(?:doctype|entity)", re.IGNORECASE)
+# html.parser never reads a DTD, so a plain <!DOCTYPE html> is harmless; an ENTITY declaration or a
+# DOCTYPE with an internal subset is what an XML parser would expand, and is refused (constraint 3).
+_DECLARATION = re.compile(rb"<!\s*entity|<!\s*doctype[^>\[]*\[", re.IGNORECASE)
 _MAX_SECONDS = 20.0
 _MAX_TABLES = 20_000
 _MAX_CONTEXTS = 200_000
@@ -35,6 +37,13 @@ _STATEMENT_TITLE = re.compile(
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
+# Subtotal labels filings print that the shared statement shaper does not name (it serves PDFs too).
+FILING_SUBTOTALS = re.compile(
+    r"^(?:\((?:loss|income|earnings)\)\s+)?(?:net\s+)?(?:income|earnings|loss|profit)"
+    r"(?:\s*\((?:loss|income|earnings)\))?\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b",
+    re.IGNORECASE,
+)
+_DASH_CELL = re.compile(r"[\s\u00a0$€£¥()]*[—–\-]+[\s\u00a0$€£¥()]*")
 _CURRENCY = re.compile(r"[\s $€£¥]+")
 _NUMBER_WORDS = {"no": 0, "none": 0, "nil": 0, "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
                  "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
@@ -98,6 +107,7 @@ class Line:
     concept: str
     measure: str  # "Currency", "Per Share", "Count"
     keys: list[LineKey | None]  # by column
+    dash: bool = False  # prints an untagged dash: a column without a fact reads as 0
 
 
 @dataclass
@@ -111,6 +121,7 @@ class Statement:
     lines: list[Line]
     notes: list[str] = field(default_factory=list)
     left_out: list[str] = field(default_factory=list)
+    problem: str = ""  # why this statement cannot be read; other statements of the filing still can
 
 
 def _transform(fmt: str, text: str) -> Decimal:
@@ -193,7 +204,9 @@ class _Reader(HTMLParser):
                 raise IxbrlError("the filing has more figures than can be read")
             fact = Fact(values.get("name", ""), values.get("contextref", ""), values.get("unitref", ""),
                         values.get("decimals", ""), values.get("id", ""), hidden=self._hidden > 0,
-                        nil=values.get("xsi:nil", "").lower() == "true", attributes=values)
+                        # The XMLSchema-instance prefix is the filer's choice (xsi:nil, xs:nil, ...).
+                        nil=any(name.rpartition(":")[2] == "nil" and value.strip().lower() in {"true", "1"}
+                                for name, value in values.items()), attributes=values)
             self.facts.append(fact)
             if self._cell is not None and not fact.hidden and not self._facts_open:
                 self._cell.tokens.append(("fact", len(self.facts) - 1))
@@ -357,8 +370,9 @@ def _measure(unit: str) -> str:
 
 def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False) -> list[Statement]:
     """Every face statement the filing prints, first copy of each kind, in document order."""
-    if _DECLARATION.search(data[:65536]) or re.search(rb"<!\s*entity", data, re.IGNORECASE):
-        raise IxbrlError(f"'{filename}' declares a DOCTYPE or ENTITY, which this reader refuses.")
+    if _DECLARATION.search(data):
+        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses. "
+                         "Upload the filing's PDF, or a CSV or Excel copy of the statement.")
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -409,8 +423,9 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
 def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[str, int],
            per_share_lines: bool) -> list[Statement]:
     kind, title, tables = found
-    rows: list[tuple[str, str, list[tuple[Fact, bool | None]]]] = []  # label, section, figures with negation
+    rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]] = []  # label, section, figures, prints a dash
     section = ""
+    wrapped = ""  # a label row with no figures, which may be the start of the next row's label
     for table in tables:
         for cells in table.rows:
             flat: list[tuple[str, str | int]] = []
@@ -421,16 +436,23 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                     r"[\s\u00a0$€£¥(\-\u2212]*", "".join(str(t) for k, t in cells[first_figure - 1].tokens if k == "text")) \
                     and any(str(t).strip() for k, t in cells[first_figure - 1].tokens if k == "text"):
                 first_figure -= 1
+            dash = False
             for n, cell in enumerate(cells):
-                if first_figure is None or n < first_figure:
-                    label_parts.extend(str(t) for k, t in cell.tokens if k == "text")
+                cell_text = "".join(str(t) for k, t in cell.tokens if k == "text")
+                if (first_figure is None or n < first_figure) and not (n and _DASH_CELL.fullmatch(cell_text)):
+                    label_parts.append(cell_text)
                 else:
+                    dash = dash or bool(_DASH_CELL.fullmatch(cell_text))
                     flat.extend(cell.tokens)
             label = " ".join(" ".join(label_parts).split())
             if first_figure is None:
                 if label and not re.fullmatch(r"[\d\s,.$()%\-—–]*", label):
                     section = label.rstrip(":")
+                    wrapped = label
                 continue
+            if not label and wrapped:
+                label = wrapped  # the label ran onto the row above
+            wrapped = ""
             figures: list[tuple[Fact, bool | None]] = []
             for position, (token_kind, value) in enumerate(flat):
                 if token_kind not in {"fact", "ref"}:
@@ -441,10 +463,10 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
                 before = _text_since(flat, position, -1)
                 after = _text_since(flat, position, 1)
                 figures.append((reader.facts[index], _negation(before, after)))
-            rows.append((label, section, figures))
+            rows.append((label, section, figures, dash))
     # Columns: the periods of the dimensionless money facts, newest first, split by duration.
     periods: dict[tuple[str, ...], None] = {}
-    for _, _, figures in rows:
+    for _, _, figures, _ in rows:
         for fact, _ in figures:
             context = reader.contexts.get(fact.context)
             if context is not None and not context.dims and _monetary(reader.units.get(fact.unit, "")):
@@ -473,16 +495,18 @@ def _text_since(tokens: list[tuple[str, str | int]], position: int, step: int) -
 
 
 def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
-               rows: list[tuple[str, str, list[tuple[Fact, bool | None]]]], reader: _Reader,
+               rows: list[tuple[str, str, list[tuple[Fact, bool | None]], bool]], reader: _Reader,
                per_share_lines: bool) -> Statement:
     labels = [_period_label(p) for p in periods]
     statement = Statement(kind, name, periods, labels, [])
     if len(set(labels)) != len(labels):
         statement.notes.append("Two columns share a period label")
     statement.notes.extend(f"Read the column for {p[-1]} as {label}" for p, label in zip(periods, labels, strict=True))
-    for label, section, figures in rows:
+    breakdowns: list[str] = []
+    for label, section, figures, dash in rows:
         keys: list[LineKey | None] = [None] * len(periods)
         concept, measure, dims_seen, problem = "", "", set(), ""
+        plain = any(not reader.contexts[f.context].dims for f, _ in figures if f.context in reader.contexts)
         for fact, negated in figures:
             context = reader.contexts.get(fact.context)
             unit = reader.units.get(fact.unit, "")
@@ -490,12 +514,17 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                 continue
             if context.dims:
                 dims_seen.add(len(context.dims))
-                continue
+                # A line printing a one-axis breakdown (revenue by product) is a printed line: its total
+                # must foot over it (R5, R6). Facts on two or more axes are left out.
+                if plain or len(context.dims) > 1:
+                    continue
             if context.period not in periods:
                 continue
             fact_measure = _measure(unit)
             if not fact_measure:
                 continue
+            if fact.nil:
+                continue  # xsi:nil: the filing states there is no value, so the cell is blank
             if fact.problem or fact.stored is None or fact.magnitude is None:
                 problem = problem or (fact.problem or "no value")
                 continue
@@ -508,13 +537,18 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             concept, measure = concept or fact.name, measure or fact_measure
         if not any(keys):
             if dims_seen:
-                statement.left_out.append(f"'{label}' (a breakdown by {'one axis' if dims_seen == {1} else 'several axes'})")
+                statement.left_out.append(f"'{label}' (a breakdown by several axes)")
             continue
-        if problem:
-            raise IxbrlError(f"I could not read every figure of '{label}' in the {name}: {problem}. Upload the filing's "
-                             "PDF, or a CSV or Excel copy of the statement.")
+        if not plain:
+            breakdowns.append(label)
+        if problem and not statement.problem:
+            statement.problem = (f"I could not read every figure of '{label or 'an unlabeled line'}' in the {name}: "
+                                 f"{problem}. Upload the filing's PDF, or a CSV or Excel copy of the statement.")
         if measure != "Currency" and not per_share_lines:
             statement.left_out.append(f"'{label}' (per-share and share counts are not money totals)")
             continue
-        statement.lines.append(Line(label, section, concept, measure, keys))
+        statement.lines.append(Line(label, section, concept, measure, keys, dash))
+    if breakdowns:
+        statement.notes.append(f"Read {len(breakdowns)} line{'s' if len(breakdowns) != 1 else ''} that break a total down "
+                               f"by one axis (such as '{breakdowns[0]}') as printed lines; the audit names each axis and member")
     return statement

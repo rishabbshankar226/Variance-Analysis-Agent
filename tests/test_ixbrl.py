@@ -14,7 +14,7 @@ from variance_agent import cli
 from variance_agent.chat.handlers import handle_upload
 from variance_agent.chat.session import Session
 from variance_agent.intake import IntakeResult, read_input_assisted
-from variance_agent.ixbrl import IxbrlError, _transform, read_statements
+from variance_agent.ixbrl import _transform, read_statements
 from variance_agent.models import ComparisonBasis
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,15 +110,14 @@ def test_parentheses_split_across_cells_still_negate() -> None:
 def test_an_unbalanced_parenthesis_refuses_the_line() -> None:
     rows = income_rows()
     rows[4] = row("Interest expense", "(" + fact("us-gaap:InterestExpense", "FY25", "50"), fact("us-gaap:InterestExpense", "FY24", "40"))
-    with pytest.raises(IxbrlError, match="'Interest expense'.*a parenthesis that opens or closes on one side only"):
-        read_statements(income_filing(rows), "hal.htm")
+    problem = read_statements(income_filing(rows), "hal.htm")[0].problem
+    assert "'Interest expense'" in problem and "a parenthesis that opens or closes on one side only" in problem
 
 
 def test_a_minus_inside_the_tagged_figure_is_refused() -> None:
     rows = income_rows()
     rows[4] = row("Interest expense", fact("us-gaap:InterestExpense", "FY25", "-50"), fact("us-gaap:InterestExpense", "FY24", "40"))
-    with pytest.raises(IxbrlError, match="a minus sign inside the tagged figure"):
-        read_statements(income_filing(rows), "hal.htm")
+    assert "a minus sign inside the tagged figure" in read_statements(income_filing(rows), "hal.htm")[0].problem
 
 
 @pytest.mark.parametrize(("scale", "text", "expected"), [("-2", "5.2", Decimal("0.052")), ("0", "41", Decimal(41)),
@@ -141,14 +140,6 @@ def test_a_hidden_fact_printed_through_its_reference_is_the_cells_figure() -> No
     key = next(line for line in read_statements(income_filing(rows, hidden=hidden), "hal.htm")[0].lines
                if line.label.startswith("Research")).keys[1]
     assert key is not None and key.stored == 0 and key.context == "FY24"
-
-
-def test_a_one_axis_breakdown_line_is_left_out_on_the_fpa_path_and_listed() -> None:
-    rows = income_rows()
-    rows.insert(1, row("Products", fact("us-gaap:Revenues", "FY25_products", "3,000"), fact("us-gaap:Revenues", "FY24_products", "2,900")))
-    result = _read(income_filing(rows))
-    assert [line for line, *_ in _amounts(result)] == ["Net sales", "Cost of sales", "Research and development", "Interest expense"]
-    assert "Left out 'Products' (a breakdown by one axis)" in result.visible_transformations
 
 
 def test_a_subtotal_that_does_not_foot_refuses_the_statement() -> None:
@@ -203,9 +194,26 @@ def test_a_balance_sheet_is_listed_but_not_compared_yet() -> None:
                                           "instead: Consolidated Statements of Operations.")
 
 
-def test_doctype_and_entity_declarations_are_refused_before_reading() -> None:
-    data = b'<!DOCTYPE html [<!ENTITY x "y">]>' + income_filing()
-    assert _read(data).fatal_error_message == "'hal-20250927.htm' declares a DOCTYPE or ENTITY, which this reader refuses."
+@pytest.mark.parametrize("prolog", [b'<!DOCTYPE html [<!ENTITY x "y">]>', b'<!ENTITY x "y">', b"<!doctype x [ ]>"])
+def test_entity_declarations_and_doctype_subsets_are_refused_before_reading(prolog: bytes) -> None:
+    assert _read(prolog + income_filing()).fatal_error_message == (
+        "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. "
+        "Upload the filing's PDF, or a CSV or Excel copy of the statement.")
+
+
+def test_a_plain_html_doctype_is_read() -> None:
+    assert not _read(b'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "x.dtd">' + income_filing()).has_fatal_errors
+
+
+def test_a_problem_in_one_statement_leaves_the_others_readable() -> None:
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        row("Cash", "(" + fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
+        row("Inventory", fact("us-gaap:InventoryNet", "I25", "300"), fact("us-gaap:InventoryNet", "I24", "250")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "800"), fact("us-gaap:Assets", "I24", "650"))])
+    result = _read(income_filing(extra=sheet))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "a parenthesis that opens or closes on one side only" in (
+        _read(income_filing(extra=sheet), sheet="Consolidated Balance Sheets").fatal_error_message or "")
 
 
 def test_a_web_page_without_xbrl_figures_is_refused_plainly() -> None:
@@ -246,3 +254,54 @@ def test_the_chat_reads_an_uploaded_filing() -> None:
 def test_document_text_in_scripts_is_never_read() -> None:
     assert all(line.label != "trap" for line in read_statements(income_filing(), "hal.htm")[0].lines)
     assert document("<p>x</p>")  # the builder itself carries the script trap
+
+
+def test_one_axis_breakdown_lines_are_printed_lines_and_their_total_foots() -> None:
+    rows = income_rows()
+    rows[0:1] = [row("Products", fact("us-gaap:Revenues", "FY25_products", "3,000"), fact("us-gaap:Revenues", "FY24_products", "2,900")),
+                 row("Services", fact("us-gaap:Revenues", "FY25_services", "1,100"), fact("us-gaap:Revenues", "FY24_services", "1,000")),
+                 row("Total net sales", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900"))]
+    result = _read(income_filing(rows))
+    assert [(line, kind) for line, kind, *_ in _amounts(result)][:3] == [("Products", "Revenue"), ("Services", "Revenue"),
+                                                                         ("Cost of sales", "Expense")]
+    assert "Total net sales" in result.detected_totals
+    record = result.source_document()
+    assert record is not None
+    products = next(line for line in record["lines"] if line["line_item"] == "Products")  # type: ignore[union-attr, index]
+    assert products["columns"][0]["dims"] == [{"axis": "srt:ProductOrServiceAxis", "member": "us-gaap:ProductMember"}]
+
+
+def test_a_breakdown_that_does_not_add_up_to_its_total_refuses() -> None:
+    rows = income_rows()
+    rows[0:1] = [row("Products", fact("us-gaap:Revenues", "FY25_products", "3,000"), fact("us-gaap:Revenues", "FY24_products", "2,900")),
+                 row("Total net sales", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900"))]
+    assert _read(income_filing(rows)).has_fatal_errors
+
+
+def test_a_subtotal_named_net_income_before_taxes_is_a_subtotal() -> None:
+    rows = income_rows()
+    rows[5:6] = [row("Net income (loss) before income taxes", fact("us-gaap:IncomeLossBeforeTaxes", "FY25", "1,450"),
+                     fact("us-gaap:IncomeLossBeforeTaxes", "FY24", "1,330")),
+                 row("Income taxes", fact("us-gaap:IncomeTaxExpenseBenefit", "FY25", "450"),
+                     fact("us-gaap:IncomeTaxExpenseBenefit", "FY24", "330")),
+                 row("Net income (loss)", fact("us-gaap:NetIncomeLoss", "FY25", "1,000"), fact("us-gaap:NetIncomeLoss", "FY24", "1,000"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Net income (loss) before income taxes" in result.detected_totals
+
+
+def test_a_label_wrapped_onto_the_row_above_names_the_figures_row() -> None:
+    rows = income_rows()
+    rows[3:4] = ["<tr><td>Research and development, including</td></tr>",
+                 row("", fact("us-gaap:ResearchAndDevelopmentExpense", "FY25", "300"),
+                     fact("us-gaap:ResearchAndDevelopmentExpense", "FY24", "280"))]
+    names = [line for line, *_ in _amounts(_read(income_filing(rows)))]
+    assert "Research and development, including" in names
+
+
+def test_an_untagged_dash_reads_as_zero_and_is_not_part_of_the_label() -> None:
+    rows = income_rows()
+    rows.insert(4, row("Restructuring", "—", fact("us-gaap:RestructuringCharges", "FY24", "0", fmt="")))
+    result = _read(income_filing(rows))
+    restructuring = next(r for r in result.rows if r["line_item"] == "Restructuring")
+    assert Decimal(str(restructuring["actual"])) == 0
