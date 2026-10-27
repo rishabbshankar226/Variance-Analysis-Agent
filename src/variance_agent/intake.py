@@ -2281,31 +2281,37 @@ def _foots(terms: list[tuple[Decimal, str, int]], total: tuple[Decimal, str]) ->
         return abs(centre - total[0]) <= spread
 
 
-_SECTION_CLOSER = re.compile(r"^total\b", re.IGNORECASE)
+# A section's own subtotal closes it: a "Total …" line, or a cash flow section's "Net cash … activities" (Decision 41).
+_SECTION_CLOSER = re.compile(r"^total\b|^net\s+cash\b.*\bactivities\b", re.IGNORECASE)
 
 
-def _unique_names(lines: list[tuple[str, str]], keep: int | None = None) -> list[str]:
+def _unique_names(lines: list[tuple[str, str]], keep: int | None = None, closers: set[int] | None = None) -> list[str]:
     """Tell repeated labels apart by section, else by their place; keys stay with the line by position.
 
-    A line printed after its section's own Total line is not in that section, so it is never named by
-    it; and the line at ``keep`` (a statement's bottom line, Decision 39) keeps its printed label.
+    A line printed after its section's own subtotal (a "Total …" or "Net cash … activities" line, or one of
+    ``closers``) is not in that section, so it is never named by it. Where one occurrence of a label is in no
+    open section and the others are each in their own, that one keeps its printed label; so does the line at
+    ``keep`` (a statement's bottom line, Decision 39).
     """
     labels = [label for label, _ in lines]
     closed: set[str] = set()
     sections: list[str] = []
-    for label, section in lines:
+    for i, (label, section) in enumerate(lines):
         sections.append("" if section in closed else section)
-        if section and _SECTION_CLOSER.match(label):
+        if section and (_SECTION_CLOSER.match(label) or i in (closers or set())):
             closed.add(section)
     names = list(labels)
     for label in {label for label in labels if labels.count(label) > 1}:
         at = [i for i, name in enumerate(labels) if name == label]
         by_section = [sections[i] for i in at]
-        for n, i in enumerate(at, start=1):
-            if i == keep:
-                continue
-            names[i] = (f"{by_section[n - 1]}: {label}" if all(by_section) and len(set(by_section)) == len(at)
-                        else f"{label} ({n})")
+        named = [section for section in by_section if section]
+        distinct = len(set(named)) == len(named)
+        one_open = distinct and len(named) == len(at) - 1  # exactly one occurrence outside every open section
+        by_name = one_open or (distinct and len(named) == len(at))
+        for n, (i, section) in enumerate(zip(at, by_section, strict=True), start=1):
+            if i == keep or (one_open and not section):
+                continue  # keeps its printed label
+            names[i] = f"{section}: {label}" if by_name else f"{label} ({n})"
     return names
 
 
@@ -2351,7 +2357,8 @@ def _read_ixbrl_bytes(
     # bottom line is found by its concept or printed label before repeated labels are told apart (Decision 39).
     bottom = next((i for i, line in enumerate(all_lines) if BOTTOM_LINE.match(line.concept)
                    or BOTTOM_LINE_LABEL.match(line.label)), None) if chosen.kind == "income" else None
-    all_names = _unique_names([(line.label, line.section) for line in all_lines], keep=bottom)
+    all_names = _unique_names([(line.label, line.section) for line in all_lines], keep=bottom,
+                              closers={i for i, line in enumerate(all_lines) if line.section_total})
     below = [] if bottom is None else list(range(bottom + 1, len(all_lines)))
     lines = all_lines[:bottom + 1] if bottom is not None else all_lines
     names_by_line = all_names[:len(lines)]
@@ -2416,6 +2423,16 @@ def _read_ixbrl_bytes(
                 (chosen.labels.index(actual_label), chosen.labels.index(comparison_label)), (actual_label, comparison_label))
             if unit_text := _unit_sentence(lines):
                 result.filing_headline["unit"] = unit_text
+    if not result.has_fatal_errors and credits:
+        # A line both compared columns print as zero changes nothing compared: it is not called a credit among
+        # costs on the strength of another year the statement prints (Decision 41).
+        zero = {str(row["line_item"]) for row in result.rows
+                if Decimal(str(row.get("actual") or 0)) == 0 and Decimal(str(row.get("budget") or 0)) == 0}
+        credits = [note for note in credits if not any(note.startswith(f"Read '{name}' as a credit") for name in zero)]
+        for at, note in enumerate(shaped.audit_notes):
+            for name in zero:
+                if note == f"Labeled '{name}' as expense, a credit among costs":
+                    shaped.audit_notes[at] = f"Labeled '{name}' as expense"
     left_out = [f"Left out {item}" for item in chosen.left_out]
     if below and bottom is not None:
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
@@ -2453,7 +2470,8 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
     money = [line for line in chosen.lines if line.measure == "Currency"]
     others = [f"Left out '{line.label}' (per-share and share counts are not money totals)"
               for line in chosen.lines if line.measure != "Currency"]
-    names = _unique_names([(line.label, line.section) for line in money])
+    names = _unique_names([(line.label, line.section) for line in money],
+                          closers={i for i, line in enumerate(money) if line.section_total})
     figures = [CheckLine(names[i], line.concept, tuple(
         (key.displayed, key.decimals) if key is not None else ((Decimal(0), "INF") if line.dash else None)
         for key in line.keys), line.balance) for i, line in enumerate(money)]

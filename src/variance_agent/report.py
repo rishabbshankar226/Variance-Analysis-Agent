@@ -93,8 +93,12 @@ def _filing_headline_lines(headline: Mapping[str, object], currency: str, places
             assert isinstance(actual_key, Mapping) and isinstance(comparison_key, Mapping)
             actual, comparison = Decimal(str(actual_key["displayed"])), Decimal(str(comparison_key["displayed"]))
         change = Decimal(str(item["change"]))
+        # Printed negative in both columns (a loss, a total printed in parentheses): say whether it grew (Decision 41).
+        cue = (", larger negative" if abs(actual) > abs(comparison) else ", smaller negative") \
+            if actual < 0 and comparison < 0 and change != 0 else ""
         lines.append(f"- {_safe_inline(str(item['line_item']))}: {_money(actual, currency, places)} vs. "
-                     f"{_money(comparison, currency, places)} ({_money(change, currency, places)}, {_pct(comparison, change)})")
+                     f"{_money(comparison, currency, places)} ({_money(change, currency, places)}, "
+                     f"{_pct(comparison, change)}{cue})")
     lines.extend(f"- {_safe_inline(str(note))}" for note in notes)
     if not items and not notes:
         lines.append("- The statement prints no revenue, total expenses, operating income or net income to head this report.")

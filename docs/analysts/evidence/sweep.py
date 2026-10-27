@@ -123,6 +123,51 @@ def _items(record: object, key: str) -> list[object]:
     return value if isinstance(value, list) else []
 
 
+# Label checks (Decision 41): a figure printed twice in a label, and a section name the line isn't under.
+_DOUBLED = re.compile(r"(?<![\d,.])(\d[\d,]*(?:\.\d+)?)\1(?!\d)")
+_MINOR = {"and", "the", "from", "for", "of", "in", "abstract", "to", "by", "used", "provided"}
+
+
+def _words(text: str) -> set[str]:
+    return {word for word in _normal(text).split() if len(word) > 2 and word not in _MINOR}
+
+
+def _ancestors(statement: oracle.Statement, concept: str) -> list[str]:
+    """The headings the oracle's statement prints above a concept: its presentation ancestors, wherever it appears
+    (a cash balance can sit both in the flows and under a reconciliation heading)."""
+    lines = list(statement.lines)
+    found: list[str] = []
+    for at in (i for i, line in enumerate(lines) if line.concept == concept):
+        depth = lines[at].depth
+        for line in reversed(lines[:at]):
+            if line.depth < depth:
+                found.append(line.label)
+                depth = line.depth
+    return found
+
+
+def _label_problems(lines: dict[str, dict[str, object]], statement: oracle.Statement) -> list[str]:
+    """Labels the tool wrote that the filing doesn't print: a doubled figure, or a section prefix the tool added
+    (the label repeats in the statement) that names no heading printed above the line."""
+    problems = []
+    bases = [name.partition(": ")[2] or name for name in lines]
+    for name, line in lines.items():
+        doubled = _DOUBLED.search(name)
+        if doubled and len(doubled.group(1)) >= 3:
+            problems.append(f"label '{name[:80]}' prints {doubled.group(1)} twice")
+        prefix, sep, rest = name.partition(": ")
+        if not sep or name.startswith("Total, printed without a label") or bases.count(rest) < 2:
+            continue
+        concept = str(line.get("concept", ""))
+        own = [oracle_line.label for oracle_line in statement.lines if oracle_line.concept == concept]
+        if any(_normal(prefix) in _normal(label) for label in own):
+            continue  # the filing's own label carries it
+        ancestors = _ancestors(statement, concept)
+        if ancestors and not any(_words(prefix) <= _words(a) or _words(a) <= _words(prefix) for a in ancestors if _words(a)):
+            problems.append(f"label '{name[:80]}' names a section ('{prefix}') not printed above it")
+    return problems
+
+
 def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance) -> Score:
     """Verify an Inline XBRL read by the XBRL key each line carries (concept, period, dimensions)."""
     score = Score()
@@ -227,6 +272,9 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
             and item.get("role") == "revenue" for item in _items(headline, "items")):
         score.wrong += 1
         problems.append("headline lacks the filing's one revenue line")
+    labelled = _label_problems(lines, statement)
+    score.wrong += len(labelled)
+    problems += labelled
     score.covered = len(covered)
     score.details = "; ".join(problems)[:500]
     return score

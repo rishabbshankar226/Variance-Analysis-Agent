@@ -121,8 +121,9 @@ def test_the_headline_is_the_filings_own_totals_not_revenue_less_expense() -> No
     summary = report.split("## Material Variances")[0]
     assert "- Collaboration revenue: $0.00 vs. $29,000,000.00 (-$29,000,000.00, -100.0%)" in summary
     assert "- Total operating expenses: $601,000,000.00 vs. $534,000,000.00 ($67,000,000.00, 12.5%)" in summary
-    assert "- Loss from operations: -$601,000,000.00 vs. -$505,000,000.00 (-$96,000,000.00, -19.0%)" in summary
-    assert "- Net loss: -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%)" in summary
+    # Printed negative in both columns: the change says whether the loss grew (Decision 41, as R7 does for lines).
+    assert "- Loss from operations: -$601,000,000.00 vs. -$505,000,000.00 (-$96,000,000.00, -19.0%, larger negative)" in summary
+    assert "- Net loss: -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%, larger negative)" in summary
     assert "- Headline figures are the filing's own printed totals, each from its XBRL fact." in summary
     assert "Total Revenue" not in summary and "Total Expenses" not in summary and "net operating" not in summary
     assert audit["totals"] is None
@@ -298,7 +299,7 @@ def _filing_session() -> object:
 
 def test_the_chat_summary_of_a_filing_shows_its_own_printed_totals() -> None:
     session, reply = _filing_session()
-    assert "**Net loss:** -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%)" in reply.text
+    assert "**Net loss:** -$574,000,000.00 vs. -$471,000,000.00 (-$103,000,000.00, -21.9%, larger negative)" in reply.text
     assert "Total Revenue" not in reply.text and "Net Operating Impact" not in reply.text
     labels = [str(figure["label"]) for figure in reply.view["figures"]]  # type: ignore[index]
     assert labels == ["Collaboration revenue", "Total operating expenses", "Loss from operations", "Net loss"]
@@ -382,3 +383,69 @@ def test_an_ltm_report_states_each_filings_unit() -> None:
 def test_the_chat_summary_of_a_filing_states_its_unit() -> None:
     _, reply = _filing_session()
     assert f"Units: {UNIT_MILLIONS}" in reply.text
+
+
+# Decision 41: label text, section names, credit notes and the headline cue.
+
+def _balance_sheet_with(label_row: str) -> bytes:
+    from tests.fixtures.ixbrl.build_ixbrl import POSITION_RESOURCES, balance_rows, document, fact, statement
+    rows = [label_row if r.startswith("<tr><td>Common stock, $") else r for r in balance_rows()]
+    hidden = (fact("us-gaap:CommonStockParOrStatedValuePerShare", "I25", "0.01", unit="usdPerShare", scale="0",
+                   decimals="2", fact_id="p1")
+              + fact("us-gaap:CommonStockParOrStatedValuePerShare", "I24", "0.01", unit="usdPerShare", scale="0",
+                     decimals="2", fact_id="p2")
+              + fact("us-gaap:CommonStockSharesAuthorized", "I25", "500", unit="shares", fact_id="a1")
+              + fact("us-gaap:CommonStockSharesAuthorized", "I24", "500", unit="shares", fact_id="a2"))
+    body = statement("CONSOLIDATED BALANCE SHEETS", rows)
+    return document(body, hidden).replace("</ix:resources>", POSITION_RESOURCES + "</ix:resources>").encode("utf-8")
+
+
+def test_a_figure_inside_nested_hidden_spans_is_printed_once() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, row
+    # Draw D: one filing agent wraps each label figure in two hidden-fact spans, one per period.
+    label = ('Common stock, $<span style="-sec-ix-hidden:p1"><span style="-sec-ix-hidden:p2">0.01</span></span> par '
+             'value; <span style="-sec-ix-hidden:a1"><span style="-sec-ix-hidden:a2">500</span></span> shares authorized')
+    data = _balance_sheet_with(row(label, fact("us-gaap:CommonStockValue", "I25", "1"),
+                                   fact("us-gaap:CommonStockValue", "I24", "1")))
+    result = _read(data, sheet="Consolidated Balance Sheets")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    names = [str(r["line_item"]) for r in result.rows]
+    assert "Common stock, $0.01 par value; 500 shares authorized" in names, names
+
+
+def test_a_line_after_a_cash_flow_sections_net_cash_is_not_named_by_that_section() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import cash_flow_rows, fact, position_filing, row
+    rows = cash_flow_rows() + [row("Cash, cash equivalents and restricted cash, end of year",
+                                   fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I25", "2,600"),
+                                   fact("us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "I24", "2,000"))]
+    result = _read(position_filing("CONSOLIDATED STATEMENTS OF CASH FLOWS", rows), sheet="Consolidated Statements of Cash Flows")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    names = [str(r["line_item"]) for r in result.rows]
+    assert not any(name.startswith("Financing activities:") for name in names), names
+    assert "Cash, cash equivalents and restricted cash, end of year" in names
+    assert any("'Supplemental disclosure: Cash, cash equivalents and restricted cash, end of year'" in note
+               for note in result.reader_notes), result.reader_notes
+
+
+def test_a_line_printed_as_dashes_is_never_called_a_credit_among_costs() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, quarter_filing, row
+    # Draw D: dashes in both compared years, a credit only in the third year the statement prints.
+    years = {"Y25": ("2025-01-01", "2025-12-31"), "Y24": ("2024-01-01", "2024-12-31"), "Y23": ("2023-01-01", "2023-12-31")}
+
+    def line(label: str, concept: str, *cells: str) -> str:
+        printed = []
+        for context, text in zip(years, cells, strict=True):
+            if text == "—":
+                printed.append(fact(concept, context, "—", fmt="ixt:fixed-zero"))
+            elif text.startswith("("):
+                printed.append("(" + fact(concept, context, text.strip("()"), sign="-") + ")")
+            else:
+                printed.append(fact(concept, context, text))
+        return row(label, *printed)
+    rows = [line("Net sales", "us-gaap:Revenues", "1,004", "1,145", "1,412"),
+            line("Cost of sales", "us-gaap:CostOfRevenue", "500", "560", "700"),
+            line("Restructuring", "us-gaap:RestructuringCharges", "—", "—", "(14)"),
+            line("Net income", "us-gaap:NetIncomeLoss", "504", "585", "726")]
+    result = _read(quarter_filing(rows, title="CONSOLIDATED STATEMENTS OF INCOME", periods=years))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert not any("'Restructuring' as a credit among costs" in note for note in result.reader_notes), result.reader_notes

@@ -229,7 +229,10 @@ class _Reader(HTMLParser):
             self._skip += 1
             return
         hidden_ref = re.search(r"-sec-ix-hidden\s*:\s*([^;\s]+)", values.get("style", ""))
-        if self._ref_depth and self._ref_depth[-1][0] == tag and not hidden_ref:
+        # A hidden-fact span nested in one already open prints the same figure (a fact per period wrapped around one
+        # printed number): the outer span's token stands for it, so the figure is printed once (Decision 41).
+        nested_ref = bool(hidden_ref) and bool(self._ref_depth)
+        if self._ref_depth and self._ref_depth[-1][0] == tag and (not hidden_ref or nested_ref):
             self._ref_depth[-1] = (tag, self._ref_depth[-1][1] + 1)
         if tag == "ix:hidden":
             self._hidden += 1
@@ -275,7 +278,7 @@ class _Reader(HTMLParser):
                 self._table_stack[-1].rows.append([])
             self._cell = _Cell()
             self._table_stack[-1].rows[-1].append(self._cell)
-        if hidden_ref and self._cell is not None:
+        if hidden_ref and self._cell is not None and not nested_ref:
             # The cell prints a fact kept in ix:hidden; that fact is the cell's figure.
             self._cell.tokens.append(("ref", hidden_ref.group(1)))
             self._ref_depth.append((tag, 1))

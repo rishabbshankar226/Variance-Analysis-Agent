@@ -437,6 +437,7 @@ Phase 7 (Decision 39, approved at the Draw B STOP-ASK):
 - `tests/test_reader_chat.py::test_owen_builds_ltm_from_two_uploads`, a Phase 6 test.
   - Old: `"Total Revenue:** $4,300,000,000.00 vs. $4,100,000,000.00"`.
   - New: `"**Net sales:** $4,300,000,000.00 vs. $4,100,000,000.00 ($200,000,000.00, 4.9%)"` (item 5: the headline is the filing's own totals).
+- `tests/test_filing_headlines.py`: two expectations written earlier in this phase (Decision 39), the W-B1 loss lines in the report and the chat, gain ", larger negative" (Decision 41, item 4).
 - `tests/test_frontend_contract.py::test_markdown_rendering_never_emits_markup_from_the_text`. The allowed generated tags gain `table|thead|tbody|tr|th|td` (the chat item: replies render Markdown tables). The invariant is unchanged: no markup comes from the text.
 
 ## STOP-ASK: E1, E2, E7 (written 2026-10-26, awaiting the owner)
