@@ -218,9 +218,14 @@ def test_a_balance_sheet_reads_every_line_and_subtotal_at_its_printed_value() ->
     assert result.detected_totals == []
     record = result.source_document()
     assert record is not None
-    assert (record["statement_kind"], record["identities"]) == ("balance_sheet", [{
-        "identity": "balance_sheet", "left": "Total assets", "right": "Total liabilities and stockholders' equity",
-        "columns": ["Sep 2025", "Sep 2024"], "holds": True}])
+    identity = record["identities"][0]  # type: ignore[index]
+    assert (record["statement_kind"], identity["identity"], identity["rule"], identity["left"], identity["right"],
+            identity["columns"], identity["holds"]) == (
+        "balance_sheet", "balance_sheet", "total assets = total liabilities and equity", "Total assets",
+        "Total liabilities and stockholders' equity", ["Sep 2025", "Sep 2024"], True)
+    assert {"subtotal": "Total liabilities and stockholders' equity", "terms": [
+        {"line_item": "Total liabilities", "weight": 1}, {"line_item": "Total stockholders' equity", "weight": 1}]} in (
+        identity["footing"])
 
 
 def test_a_cash_flow_statement_ends_at_ending_cash_and_lists_the_supplemental_lines() -> None:
@@ -233,6 +238,7 @@ def test_a_cash_flow_statement_ends_at_ending_cash_and_lists_the_supplemental_li
     record = result.source_document()
     assert record is not None
     assert [line["line_item"] for line in record["lines"] if line["left_out"]] == ["Cash paid for interest"]  # type: ignore[index, union-attr]
+    assert any("'Cash paid for interest'" in check for check in result.statement_checks)
 
 
 def test_statement_lines_are_never_revenue_or_expense_and_carry_no_judgement() -> None:

@@ -2439,10 +2439,16 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
     result.statement_kind = chosen.kind
-    result.statement_checks = [identity, _CHANGE_NOTE]
+    result.statement_checks = [identity, *left_out, *blanks, _CHANGE_NOTE]
     left, right = checked.sides
-    result.identities = [{"identity": chosen.kind, "left": names[left], "right": names[right],
-                          "columns": list(chosen.labels), "holds": True}]
+    rule = ("total assets = total liabilities and equity" if chosen.kind == "balance_sheet"
+            else "ending cash = beginning cash + the flows printed between them")
+    result.identities = [{"identity": chosen.kind, "rule": rule, "left": names[left], "right": names[right],
+                          "columns": list(chosen.labels), "holds": True,
+                          # R9: every subtotal footed, with its terms; each term's decimals are on its line's keys.
+                          "footing": [{"subtotal": names[total], "terms": [{"line_item": names[term], "weight": weight}
+                                                                           for term, weight in terms]}
+                                      for total, terms in checked.matches]}]
     result.reader_notes = [*chosen.notes, *left_out, identity, *blanks, _CHANGE_NOTE]
     result.xbrl_lines = [
         {"line_item": names[i], "concept": line.concept, "measure": line.measure,

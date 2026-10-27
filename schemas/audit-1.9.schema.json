@@ -599,7 +599,9 @@
                           "left",
                           "right",
                           "columns",
-                          "holds"
+                          "holds",
+                          "rule",
+                          "footing"
                         ],
                         "properties": {
                           "identity": {
@@ -622,6 +624,47 @@
                           },
                           "holds": {
                             "const": true
+                          },
+                          "rule": {
+                            "type": "string"
+                          },
+                          "footing": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "subtotal",
+                                "terms"
+                              ],
+                              "properties": {
+                                "subtotal": {
+                                  "type": "string"
+                                },
+                                "terms": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                      "line_item",
+                                      "weight"
+                                    ],
+                                    "properties": {
+                                      "line_item": {
+                                        "type": "string"
+                                      },
+                                      "weight": {
+                                        "enum": [
+                                          1,
+                                          -1
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
                           }
                         }
                       }

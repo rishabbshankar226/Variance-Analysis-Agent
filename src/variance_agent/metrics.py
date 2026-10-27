@@ -313,7 +313,6 @@ def compare_metrics(metrics_file: bytes, primary: bytes, primary_name: str, comp
     """Declared metrics from the filings, joined by exact metric name with a case or covenant schedule (R12, R17)."""
     from .intake import CanonicalRole
     from .join import join_results
-    from .report import _safe_inline
     half, left_out = build_metrics(load_metrics(metrics_file), primary, primary_name, annual, annual_name)
     suffix = "." + comparison_name.rsplit(".", 1)[-1].lower() if "." in comparison_name else ""
     other = read_input_assisted(comparison, suffix, filename=comparison_name, compare_to=compare_to,
