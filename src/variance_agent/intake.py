@@ -33,6 +33,9 @@ from .excel import (
     column_letters,
     cell_value,
     describe_cell,
+    hidden_data_rows,
+    hidden_rows_note,
+    hidden_rows_question,
     inspect_workbook,
     unsaved_formula_cells,
     unsaved_formulas_message,
@@ -209,6 +212,7 @@ class _ExcelSheet:
     # Numeric cells whose number format shows them scaled: cell_key -> (format, divisor, percent).
     # A divisor of None is a format this reader cannot interpret. Plain cells are not kept.
     display: dict[int, tuple[str, Decimal | None, bool]] = field(default_factory=dict)
+    hidden_rows: str | None = None  # the person's answer for rows hidden in Excel: include or exclude
 
 
 def _display_entry(code: object, value: object, cache: dict[tuple[str, int], tuple[Decimal | None, bool]],
@@ -310,6 +314,10 @@ class IntakeResult:
     # Currency amounts whose number format shows them scaled, and how many amounts were read (R2).
     display_scaled_cells: list[DisplayScaledCell] = field(default_factory=list)
     currency_amount_cells: int = 0
+    # Rows hidden in Excel with anything in them (row, label, collapsed by an outline group), R3.
+    hidden_data_rows: list[tuple[int, str, bool]] = field(default_factory=list)
+    needs_hidden_rows_choice: bool = False  # stopped to ask whether to count them
+    hidden_rows_choice: str | None = None  # the answer applied, when there were such rows
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF statement was read, for the audit record; None for other files."""
@@ -1321,8 +1329,13 @@ def read_input_assisted(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
     per_share_lines: bool = False,
+    hidden_rows: str | None = None,
 ) -> IntakeResult:
-    """Read any supported file format with assisted header, sheet, dash, and problem handling."""
+    """Read any supported file format with assisted header, sheet, dash, and problem handling.
+
+    ``hidden_rows`` ("include" or "exclude") answers the question a workbook with rows hidden in
+    Excel otherwise stops on; it does nothing for other files.
+    """
     if len(data) > MAX_INPUT_BYTES:
         return IntakeResult(
             has_fatal_errors=True,
@@ -1350,6 +1363,7 @@ def read_input_assisted(
             treat_blank_budgets_as_zero,
             selected_period,
             compare_to=compare_to,
+            hidden_rows=hidden_rows,
         )
     if norm_suffix == ".json":
         return _read_json_bytes(data, filename, compare_to=compare_to)
@@ -1526,6 +1540,7 @@ def _read_excel_bytes(
     treat_blank_budgets_as_zero: bool,
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
+    hidden_rows: str | None = None,
 ) -> IntakeResult:
     try:
         facts = inspect_workbook(data)
@@ -1614,6 +1629,7 @@ def _read_excel_bytes(
                 layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
                 recalculate_on_open=facts.recalculate_on_open,
                 display=display,
+                hidden_rows=hidden_rows,
             )
             result = _process_raw_table(
                 full_raw_rows,
@@ -1918,6 +1934,9 @@ def _process_raw_table(
         and normalize_key(str(header_row[idx])) not in _ROLE_ALIAS_KEYS
     ]
 
+    hidden_rows = (hidden_data_rows(excel.layout, raw_rows, header_row=header_row_number,
+                                    line_item_column=roles[CanonicalRole.LINE_ITEM]) if excel is not None else [])
+    excluded_rows = {number for number, _, _ in hidden_rows} if excel and excel.hidden_rows == "exclude" else set()
     if excel is not None:
         # Every column this read uses, named the way the amount messages name them.
         read_columns: dict[int, str] = {idx: header for idx, header in passthrough}
@@ -1933,10 +1952,16 @@ def _process_raw_table(
                                  field=read_columns[column - 1])
 
         stop = _unsaved_formulas_stop(
-            excel, filename, lambda r, c: header_row_number < r <= len(raw_rows) and c - 1 in read_columns,
+            excel, filename,
+            lambda r, c: header_row_number < r <= len(raw_rows) and c - 1 in read_columns and r not in excluded_rows,
             describe, sheet_name)
         if stop is not None:
             return stop
+    if hidden_rows and (excel is None or excel.hidden_rows is None):
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=hidden_rows_question(hidden_rows),
+                            sheet_name=sheet_name, header_row_number=header_row_number,
+                            column_mapping=column_mapping, hidden_data_rows=hidden_rows,
+                            needs_hidden_rows_choice=True)
 
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
@@ -1947,9 +1972,22 @@ def _process_raw_table(
     dash_count = 0
     minus_count = 0  # trailing / typographic minus signs read as negative
 
+    if hidden_rows and excel is not None and excel.hidden_rows is not None:
+        visible_transformations.append(hidden_rows_note(excel.hidden_rows, hidden_rows))
+    if excel is not None:
+        for role, idx in sorted(roles.items(), key=lambda item: item[1]):
+            if role in {CanonicalRole.LINE_ITEM, CanonicalRole.BUDGET, CanonicalRole.ACTUAL} \
+                    and idx + 1 in excel.layout.hidden_columns:
+                what = ("line items" if role is CanonicalRole.LINE_ITEM
+                        else comparison_field if role is CanonicalRole.BUDGET else "Actual")
+                visible_transformations.append(
+                    f"Read {what} from {_column_name(idx)} ('{column_mapping.get(role, '')}'), which is hidden in Excel.")
+
     data_rows = raw_rows[header_idx + 1:]
     for physical_idx, row in enumerate(data_rows, start=header_row_number + 1):
         if not row or all(c is None or str(c).strip() == "" for c in row):
+            continue
+        if physical_idx in excluded_rows:
             continue
 
         line_item_val = row[line_item_idx] if line_item_idx < len(row) else None
@@ -2183,6 +2221,8 @@ def _process_raw_table(
         comparison_candidates=list(detection.candidates),
         display_scaled_cells=display_cells,
         currency_amount_cells=len(currency_cells),
+        hidden_data_rows=hidden_rows,
+        hidden_rows_choice=excel.hidden_rows if hidden_rows and excel is not None else None,
     )
 
 

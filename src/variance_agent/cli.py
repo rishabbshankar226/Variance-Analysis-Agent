@@ -39,6 +39,7 @@ if TYPE_CHECKING:
 
 
 COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
+HIDDEN_ROWS_HINT = "Rerun with --hidden-rows include to count them or --hidden-rows exclude to leave them out."
 
 
 def _year_columns_hint(rows: list[dict[str, object]]) -> str | None:
@@ -56,6 +57,8 @@ def _intake_error(intake_res: IntakeResult) -> str:
     if intake_res.comparison_choices:
         # Chat offers chips for this choice; the CLI names the flag that makes it.
         message = f"{message} {COMPARE_TO_HINT}"
+    if intake_res.needs_hidden_rows_choice:
+        message = f"{message} {HIDDEN_ROWS_HINT}"
     return message
 
 
@@ -90,6 +93,7 @@ class Arguments(Protocol):
     commentary: bool
     assisted: bool
     mapping: str | None
+    hidden_rows: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -166,6 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--mapping",
         help="Path to saved layout mapping JSON file.",
     )
+    source.add_argument("--hidden-rows", choices=("include", "exclude"),
+                        help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
     source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
     source.add_argument("--currency", type=str.upper, choices=tuple(CURRENCY_SYMBOLS), default="USD",
                         help="Reporting currency (default USD); conflicting amounts are rejected.")
@@ -319,6 +325,11 @@ def _run(args: Arguments) -> int:
     is_pdf = input_path.suffix.lower() == ".pdf"
     if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
+    if getattr(args, "hidden_rows", None) is not None:
+        if input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+            raise ValueError("--hidden-rows requires XLSX or XLSM input.")
+        if not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+            raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
     validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)))
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
@@ -366,6 +377,7 @@ def _run(args: Arguments) -> int:
             selected_period=mapping_obj.period_column_selection,
             # An explicit --compare-to wins over the basis saved in the mapping.
             compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
+            hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
         )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
@@ -434,6 +446,7 @@ def _run(args: Arguments) -> int:
             sheet=args.sheet,
             treat_blank_budgets_as_zero=True,
             compare_to=compare_to_basis,
+            hidden_rows=getattr(args, "hidden_rows", None),
         )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
@@ -615,6 +628,7 @@ def _run_comparisons(
         column_mapping=columns or None,
         per_share_lines=args.per_share_lines if args.per_share_lines is not None else args.preset == "earnings",
         metadata=metadata,
+        hidden_rows=getattr(args, "hidden_rows", None) or (layout.hidden_rows if layout is not None else None),
     )
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None

@@ -394,16 +394,22 @@ _LINE_ITEM_HEADERS = frozenset({"line_item", "account", "account_name", "account
 def read_comparison_input(
     data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
     column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
-    metadata: dict[str, object] | None = None,
+    metadata: dict[str, object] | None = None, hidden_rows: str | None = None,
 ) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
     """Bounded captured-file intake for opt-in headers, retaining raw header identity."""
     import io
     from .parsing import load_input, load_json_value, _normalized_headers, _excel_loader
-    from .excel import WorkbookFacts, cell_value, inspect_workbook, table_formulas_message
+    from .excel import (HIDDEN_ROW_CHOICES, WorkbookFacts, cell_value, hidden_data_rows, hidden_rows_note,
+                        hidden_rows_question, inspect_workbook, table_formulas_message)
     from .intake import _decode_text, _sniff_delimiter, _delimited_rows
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
+    if hidden_rows is not None:
+        if hidden_rows not in HIDDEN_ROW_CHOICES:
+            raise ValueError("hidden_rows must be include or exclude.")
+        if suffix.lower() not in {".xlsx", ".xlsm"} or not (assisted or column_mapping):
+            raise ValueError("hidden_rows requires assisted or mapped Excel input; strict intake reads every row as given.")
     if metadata is not None and column_mapping:
         metadata["transformations"] = {"column_mapping": dict(column_mapping)}
     if suffix.lower() == ".pdf":
@@ -497,15 +503,28 @@ def read_comparison_input(
     if not raw:
         raise ValueError("Input contains no data.")
     headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
+    line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _LINE_ITEM_HEADERS]
+    excluded: set[int] = set()
+    hidden: list[tuple[int, str, bool]] = []
+    if workbook_facts is not None and worksheet_path in workbook_facts.layouts:
+        hidden = hidden_data_rows(workbook_facts.layouts[worksheet_path], raw, header_row=header_at + 1,
+                                  line_item_column=line_items[0] if line_items else None)
+        if hidden and hidden_rows == "exclude":
+            excluded = {number for number, _, _ in hidden}
     if workbook_facts is not None and workbook_facts.may_have_unsaved_formulas(worksheet_path):
         # A formula Excel never calculated reads as blank; name it instead (R4).
-        line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _LINE_ITEM_HEADERS]
         stop = table_formulas_message(
             workbook_facts, worksheet_path, filename, header_row=header_at + 1, headers=list(headers),
-            rows={i + 1: raw[i] for i in range(header_at + 1, len(raw))},
+            rows={i + 1: raw[i] for i in range(header_at + 1, len(raw)) if i + 1 not in excluded},
             line_item_column=line_items[0] if line_items else None)
         if stop is not None:
             raise ValueError(stop)
+    if hidden:
+        # A file API run never prompts, so rows hidden in Excel need a declared choice (R3).
+        if hidden_rows is None:
+            raise ValueError(f"{hidden_rows_question(hidden)}\nChoose whether to count them "
+                             "(hidden_rows='include' or 'exclude'; --hidden-rows on the command line).")
+        notes.append(hidden_rows_note(hidden_rows, hidden))
     if metadata is not None:
         metadata["transformations"] = {"header_row_number": header_at + 1, "column_mapping": dict(column_mapping or {})}
     mapped_headers, ignored = _mapped_headers(headers, column_mapping or {})
@@ -513,7 +532,7 @@ def read_comparison_input(
     _normalized_headers(mapped_headers)  # collision, column, and header-text limits
     output = []
     for index, record in enumerate(raw[header_at + 1:], header_at + 2):
-        if not record or all(v is None or v == "" for v in record):
+        if not record or all(v is None or v == "" for v in record) or index in excluded:
             continue
         if len(record) > len(headers) and any(v is not None and v != "" for v in record[len(headers):]):
             raise ValueError(f"Row {index}: populated cells appear beyond the header.")

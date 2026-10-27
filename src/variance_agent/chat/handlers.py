@@ -167,6 +167,9 @@ _UNBUDGETED_WORDING: dict[ComparisonBasis, _UnbudgetedWording] = {
 }
 
 
+HIDDEN_ROWS_CHIPS = ("Count the hidden rows", "Leave the hidden rows out")
+
+
 def _comparison_chips(choices: list[ComparisonBasis]) -> list[str]:
     """Offer one 'Compare to ...' chip per basis that resolves the stop, in header order."""
     return [f"Compare to {basis_noun(b)}" for b in choices]
@@ -225,6 +228,8 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
         return _handle_list_sheets(session)
     if intent.intent_id == "switch_sheet":
         return _handle_switch_sheet(session, intent)
+    if intent.intent_id == "set_hidden_rows":
+        return _handle_hidden_rows(session, intent)
     if intent.intent_id == "set_comparison":
         if intent.captures.get("basis") in {"consensus", "estimate", "guidance"}:
             from .earnings import explicit_comparison
@@ -414,6 +419,7 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
             sheet=session.worksheet,
             treat_blank_budgets_as_zero=True,
             compare_to=session.compare_to,
+            hidden_rows=session.hidden_rows,
         )
         session.parsed_rows = intake_res.rows
         session.worksheet = intake_res.sheet_name
@@ -480,6 +486,7 @@ def _handle_period_choice(session: Session, text: str) -> Response:
         treat_blank_budgets_as_zero=False,
         selected_period=chosen_period,
         compare_to=session.compare_to,
+        hidden_rows=session.hidden_rows,
     )
     session.parsed_rows = intake_res.rows
     session.worksheet = intake_res.sheet_name
@@ -564,7 +571,8 @@ def _load_file(
         compare_to=compare_to,
     )
     failed = intake_res.has_fatal_errors or not intake_res.rows
-    awaiting_answer = bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+    awaiting_answer = (bool(intake_res.comparison_choices) or len(intake_res.available_sheets) > 1
+                       or intake_res.needs_hidden_rows_choice)
     if failed and not awaiting_answer:
         from .earnings import offer_review
         proposal = offer_review(session, file_bytes, filename)
@@ -593,7 +601,8 @@ def _fatal_upload_response(
         f"Please upload a file with at least one row of {basis_noun(intake_res.comparison_basis)} and actual data."
     )
     session.last_technical_detail = technical
-    chips = _comparison_chips(intake_res.comparison_choices)
+    chips = list(HIDDEN_ROWS_CHIPS) if intake_res.needs_hidden_rows_choice else []
+    chips.extend(_comparison_chips(intake_res.comparison_choices))
     if intake_res.available_sheets and len(intake_res.available_sheets) > 1:
         for s in intake_res.available_sheets[:3]:
             chips.append(_sheet_chip(session, s))
@@ -1527,6 +1536,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
     header_row = 1
     unit_scale = None
     flip_signs = False
+    hidden_rows: str | None = None
     excluded_totals: list[str] = []
     fingerprint = ""
 
@@ -1537,6 +1547,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
             unit_scale = str(intake_res.detected_unit_multiplier)
         flip_signs = intake_res.detected_signed_ledger
         excluded_totals = list(intake_res.detected_totals)
+        hidden_rows = intake_res.hidden_rows_choice
         if intake_res.raw_headers:
             fingerprint = compute_layout_fingerprint(intake_res.raw_headers)
 
@@ -1564,6 +1575,7 @@ def _layout_mapping_for(session: Session) -> LayoutMapping:
                          if (value := getattr(session, key)) is not None} or None,
         better_directions={str(row.get("line_item", "")): str(row["better"])
                            for raw in session.parsed_rows or [] if (row := normalize_row(raw)).get("better")},
+        hidden_rows=hidden_rows,
     )
 
 
@@ -3509,6 +3521,7 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
         sheet=matched_sheet,
         treat_blank_budgets_as_zero=False,
         compare_to=session.compare_to,
+        hidden_rows=session.hidden_rows,
     )
     if intake_res.has_fatal_errors or not intake_res.rows:
         technical = intake_res.fatal_error_message or "No data rows found"
@@ -3570,6 +3583,26 @@ def _handle_switch_sheet(session: Session, intent: ParsedIntent) -> Response:
     )
 
 
+def _handle_hidden_rows(session: Session, intent: ParsedIntent) -> Response:
+    """Count or leave out the rows hidden in Excel, re-read the file and confirm it again (R3)."""
+    choice = "include" if intent.captures.get("count") else "exclude"
+    if session.source_bytes is None or session.source_suffix is None:
+        return Response(text="Upload a workbook first; I'll ask about hidden rows if it has any.",
+                        phase=session.phase)
+    filename = session.source_name or "input"
+    session.hidden_rows = choice
+    intake_res = read_input_assisted(
+        session.source_bytes,
+        session.source_suffix,
+        filename=filename,
+        sheet=session.worksheet,
+        treat_blank_budgets_as_zero=False,
+        compare_to=session.compare_to,
+        hidden_rows=choice,
+    )
+    return _intake_response(session, intake_res, filename)
+
+
 def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
     """Choose what Actual is compared against, re-read the file and re-run the analysis."""
     basis = _CHAT_BASES[" ".join(intent.captures.get("basis", "").lower().split())]
@@ -3590,6 +3623,7 @@ def _handle_set_comparison(session: Session, intent: ParsedIntent) -> Response:
         treat_blank_budgets_as_zero=False,
         selected_period=session.period if session.detected_period_pairs else None,
         compare_to=basis,
+        hidden_rows=session.hidden_rows,
     )
     if intake_res.has_fatal_errors or not intake_res.rows:
         technical = intake_res.fatal_error_message or "No data rows found"

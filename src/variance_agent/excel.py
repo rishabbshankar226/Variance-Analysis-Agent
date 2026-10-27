@@ -208,6 +208,49 @@ def table_formulas_message(
                                     recalculate_on_open=any(not layout.is_uncached(*cell) for cell in unsaved))
 
 
+HIDDEN_ROW_CHOICES = ("include", "exclude")
+_MAX_LISTED_ROWS = 10
+
+
+def hidden_data_rows(
+    layout: SheetLayout, rows: dict[int, list[object]] | list[list[object]], *, header_row: int,
+    line_item_column: int | None,
+) -> list[tuple[int, str, bool]]:
+    """Rows below the header that Excel hides and that hold anything: (row, label, collapsed).
+
+    `rows` maps physical row numbers to raw values, or is a list where index i is row i + 1.
+    """
+    found = []
+    for number, collapsed in sorted(layout.hidden_rows.items()):
+        values = rows.get(number) if isinstance(rows, dict) else (
+            rows[number - 1] if 0 < number <= len(rows) else None)
+        if number <= header_row or values is None or all(v is None or str(v).strip() == "" for v in values):
+            continue
+        label = values[line_item_column] if line_item_column is not None and line_item_column < len(values) else None
+        found.append((number, "" if label is None else str(label).strip(), collapsed))
+    return found
+
+
+def hidden_rows_question(rows: list[tuple[int, str, bool]]) -> str:
+    """Ask whether rows hidden in Excel are counted (R3); a person answers, never a default."""
+    lines = ["These rows are hidden in Excel but have amounts, so I need to know whether to count them:"]
+    for number, label, collapsed in rows[:_MAX_LISTED_ROWS]:
+        how = "in a collapsed outline group" if collapsed else "hidden"
+        lines.append(f"- Row {number}{f', {label}' if label else ''} ({how})")
+    if len(rows) > _MAX_LISTED_ROWS:
+        lines.append(f"- ...and {len(rows) - _MAX_LISTED_ROWS} more.")
+    return "\n".join(lines)
+
+
+def hidden_rows_note(choice: str, rows: list[tuple[int, str, bool]]) -> str:
+    """What was done with the rows hidden in Excel, for the read summary."""
+    named = [f"row {number}{f' ({label})' if label else ''}" for number, label, _ in rows[:_MAX_LISTED_ROWS]]
+    if len(rows) > _MAX_LISTED_ROWS:
+        named.append(f"and {len(rows) - _MAX_LISTED_ROWS} more")
+    verb = "Counted" if choice == "include" else "Left out"
+    return f"{verb} {len(rows)} row{'s' if len(rows) != 1 else ''} hidden in Excel: {', '.join(named)}."
+
+
 def _truthy(value: str | None) -> bool:
     return value is not None and value.strip().lower() in {"1", "true"}
 

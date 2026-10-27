@@ -155,6 +155,12 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "summary"),
 
     (re.compile(
+        r"^(?:(?P<count>count|include|keep)\s+(?:the\s+)?hidden\s+rows?"
+        r"|(?:leave|keep)\s+(?:the\s+)?hidden\s+rows?\s+out|(?:exclude|skip|drop)\s+(?:the\s+)?hidden\s+rows?)\.?$",
+        re.IGNORECASE,
+    ), "set_hidden_rows"),
+
+    (re.compile(
         r"^(?:(?:please\s+)?compare\s+to\s+(?:the\s+)?(?P<basis>budget|forecast|prior\s+year|last\s+year|prior\s+period|consensus|estimate|guidance))\??$",
         re.IGNORECASE,
     ), "set_comparison"),

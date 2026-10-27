@@ -61,6 +61,7 @@ class Session:
     type_map: dict[str, LineType] = field(default_factory=dict)
     sheet: str | None = None
     compare_to: ComparisonBasis | None = None
+    hidden_rows: str | None = None  # the answer for rows hidden in Excel: include or exclude
     per_share_threshold: Decimal | None = None
     count_threshold: Decimal | None = None
     bps_threshold: Decimal | None = None
@@ -113,6 +114,7 @@ class Session:
         self.type_map = {}
         self.sheet = None
         self.compare_to = None
+        self.hidden_rows = None
         self.per_share_threshold = None
         self.count_threshold = None
         self.bps_threshold = None

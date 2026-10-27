@@ -30,6 +30,7 @@ class AudienceOptions:
     per_share_lines: bool | None = None
     headline_items: tuple[str, ...] | None = None
     better_directions: dict[str, str] = field(default_factory=dict)
+    hidden_rows: str | None = None  # "include" or "exclude" rows hidden in an Excel sheet; refused when needed and unset
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -130,7 +131,8 @@ def analyze_file(path: str | Path, config: AnalysisConfig, *, options: AudienceO
     rows, headers, worksheet, notes = read_comparison_input(data, source.suffix, filename=source.name,
                                                            sheet=selected.sheet, assisted=selected.assisted,
                                                            column_mapping=selected.column_mapping or None,
-                                                           per_share_lines=effective_per_share_lines(cfg), metadata=metadata)
+                                                           per_share_lines=effective_per_share_lines(cfg), metadata=metadata,
+                                                           hidden_rows=selected.hidden_rows)
     if isinstance(metadata.get("comparison_label"), str):
         cfg = replace(cfg, comparison_label=str(metadata["comparison_label"]))
     if isinstance(metadata.get("actual_label"), str):
