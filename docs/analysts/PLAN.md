@@ -20,7 +20,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 1 | E4 period bands, E5 side-by-side tables | done | `7667b7c` |
 | 1 | Workbook examination summary + audit 1.9 | done | `20f3828` |
 | 1 | Earnings chat path asks about hidden rows (advisor check) | done | `fdc6508` |
-| 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | todo | |
+| 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | done | `be7d4dc`, `7c7d38e` |
 | 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; STOP 1 | todo | |
 | 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message`, the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help (still "legacy 1.7; explicit measures 1.8") | todo | |
 | 4 | Balance sheet / cash flow statements, identities, multi-document input, LTM, F4 (STOP-ASK) | todo | |
@@ -166,6 +166,13 @@ Phase 4: `test_realworld_intake_baseline.py:154`. Old: a budget-only upload fail
 
 - Read: README, the rules file, `input-contract.md` (amounts, assisted, comparison, PDF and filing EPS sections), `financial-rules.md`, `audit-contract.md` (intro and 1.8), `excel.py`, `models.py`, `measures.py`, `audience.py`, `statement_shape.py`, `numeric.py`, and `intake.py` around `_read_excel_bytes`, `_read_pdf_bytes`, `detect_header_row`, `detect_unit_scale`, `read_input_assisted` and `_process_raw_table`. Also `MULTI_AUDIENCE_2026-10.md`'s interpretation and boundary sections, and the strict and API Excel reads (`parsing.py`, `comparisons.py`).
 - Looked at: the E1 probe report states the overstated totals with a confident thousands note. Nothing in the read says the cells were already full-scale. Phase 0 changed no report, workbook or chat reply.
+
+### Phase 2 (2026-10-26)
+
+- Exit: `manifest.csv` holds 40 Draw A rows with per-file sizes and sha256s. The oracle indexes all 39 instances (the 40th filing, an asset-backed 10-K, has no XBRL) with no parse error, and finds all three face statements in 38 filings. The baseline aggregate is `docs/analysts/evidence/draw_A_baseline.json` (seed, tool commit, file checksums, no company or accession).
+- Baseline: 116 of 116 primary-document statement runs are refused plainly (the E8 web-page message). The Phase 1 EDGAR-sheet reader on the six 2018 `Financial_Report.xlsx` workbooks reads 5 income statements and refuses 12 balance-sheet, cash-flow and unreadable runs plainly, with 210 lines verified, 15 unverified and **39 wrong**. Those 39 are Phase 3's first work. One visible cause: the workbook stores binary floats, so 78.1 (millions) reads as 78,099,999.99999999.
+- Gates: `gates.sh` PASS on all six; `mypy --strict docs/analysts/evidence/` is clean.
+- Looked at: this phase changed no report, workbook or chat reply. The corpus run's reports confirm the `.htm` refusal text.
 
 ### Phase 1 (2026-10-26)
 
