@@ -315,6 +315,9 @@ button, input, textarea { font: inherit; color: inherit; }
 .figure-label { color: var(--text-secondary); font-weight: var(--weight-medium); }
 .figure-value { font-size: var(--text-figure); font-weight: var(--weight-strong); line-height: 1.15; letter-spacing: -0.02em; white-space: nowrap; }
 .figure-meta { font-size: var(--text-meta); color: var(--text-muted); }
+/* Four or more figures (a filing's own totals) share the row: their values take the title size so long
+   amounts stay inside their cards. */
+.headline:has(.figure:nth-child(4)) .figure-value { font-size: var(--text-title); }
 .figure .status { margin-top: var(--space-1); }
 
 .view-section h4, .table-title { font-size: var(--text-body); font-weight: var(--weight-strong); }
