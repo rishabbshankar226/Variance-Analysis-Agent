@@ -47,7 +47,9 @@ _BLOCKS = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
 # Subtotal labels filings print that the shared statement shaper does not name (it serves PDFs too).
 FILING_SUBTOTALS = re.compile(
     r"^(?:\((?:loss|income|earnings)\)\s+)?(?:net\s+)?(?:income|earnings|loss|profit)"
-    r"(?:\s*\((?:loss|income|earnings)\))?\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b"
+    # "(loss)", and the slash forms "/ (loss)" and "/ loss" (Decision 42)
+    r"(?:\s*(?:/\s*)?\((?:loss|income|earnings)\)|\s*/\s*(?:loss|income|earnings))?"
+    r"\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b"
     r"|^net\s+\((?:loss|income|earnings)\)\s+(?:income|earnings|loss|profit)\b",
     re.IGNORECASE,
 )

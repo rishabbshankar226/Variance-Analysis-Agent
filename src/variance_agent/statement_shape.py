@@ -133,7 +133,8 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
                            extra_subtotals: re.Pattern[str] | None = None,
                            subtotal_rows_hint: frozenset[int] = frozenset(),
                            section_total_rows_hint: frozenset[int] = frozenset(),
-                           zero_lines_signless: bool = False, openings_as_lines: bool = False) -> ShapedStatement:
+                           zero_lines_signless: bool = False, openings_as_lines: bool = False,
+                           keep_printed_signs: bool = False) -> ShapedStatement:
     """Label each line of an income statement by how the statement's subtotals add up.
 
     ``unit`` sets the rounding unit of the printed figures; by default it is the finest place any
@@ -238,6 +239,10 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
                 kind = "Revenue"
             elif all(e <= 0 for e in effects) and any(e < 0 for e in effects):
                 kind = "Expense"
+            elif keep_printed_signs and any(effects):
+                # Its effect changes sign between columns (a tax expense one year, a benefit the next): the type the
+                # statement's own arithmetic gives it, added or subtracted, keeps every figure as printed (Decision 42).
+                kind = "Revenue" if sign > 0 else "Expense"
             elif _REVENUE_WORDS.search(label):
                 kind = "Revenue"
             elif _EXPENSE_WORDS.search(label):

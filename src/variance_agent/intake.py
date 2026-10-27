@@ -2384,7 +2384,7 @@ def _read_ixbrl_bytes(
     while True:
         shaped = shape_income_statement(raw_rows, unit, FILING_SUBTOTALS, frozenset(hints),
                                         frozenset(i for i in hints if lines[i].section_total), zero_lines_signless=True,
-                                        openings_as_lines=True)
+                                        openings_as_lines=True, keep_printed_signs=True)
         matched = {row for row, _ in shaped.matches} | set(shaped.openings)
         # The bottom line is net income by its concept, whatever it is named (Decision 39): never demoted.
         demote = {i for i in hints if i not in matched and i != bottom and not names_subtotal(names_by_line[i])
@@ -2405,6 +2405,13 @@ def _read_ixbrl_bytes(
     blank_notes = [f"Read the blank {chosen.labels[column]} figure of '{names_by_line[at]}' as 0: the subtotal it sits "
                    "in adds up with it at 0" for at, column in blanks]
     credits = _revenue_block_credits(shaped, lines, names_by_line)
+    # A line the statement's arithmetic can't place is never typed by its label (Decision 42): it stays unclassified,
+    # shown as printed, and carries no F or U until the analyst labels it.
+    type_at = next(row for row in shaped.rows if row and row[0] == "Line Item").index("Type")
+    data_from = next(i for i, row in enumerate(shaped.rows) if row and row[0] == "Line Item") + 1
+    for row in shaped.rows[data_from:]:
+        if not str(row[type_at] or "").strip():
+            row[type_at] = "Unclassified"
     # Footing has already set the statement's subtotals aside, so every line kept is a detail line, whatever
     # its label says ("Total revenue, net" printed alone); the engine's own Total check never stops it (Decision 39).
     header_at = next(i for i, row in enumerate(shaped.rows) if row and row[0] == "Line Item")
@@ -2438,9 +2445,12 @@ def _read_ixbrl_bytes(
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
                         f"attributed): {', '.join(repr(all_names[i]) for i in below)}".replace('"', "'"))
     result.visible_transformations[:0] = credits
-    if credits:  # the report itself says why a line is read as it is (Decision 39)
+    # The report itself says why a line is read as it is: every sign it turns, and every credit among costs
+    # (Decisions 39, 42).
+    reading = [*(note for note in shaped.notes if " the statement prints it as " in note), *credits]
+    if reading:
         from .report import _safe_inline
-        result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in credits)]
+        result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in reading)]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
     unit_note = [f"Units: {unit_text}"] if (unit_text := _unit_sentence(lines)) else []

@@ -172,14 +172,22 @@ def _label_problems(lines: dict[str, dict[str, object]], statement: oracle.State
     return problems
 
 
-def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance) -> Score:
-    """Verify an Inline XBRL read by the XBRL key each line carries (concept, period, dimensions)."""
+def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance,
+                report: str | None = None) -> Score:
+    """Verify an Inline XBRL read by the XBRL key each line carries (concept, period, dimensions).
+
+    Given the report, a sign the tool turned counts only where the report itself states the turn (Decision 42).
+    """
     score = Score()
     document = _group(audit, "source").get("document")
     lines = {str(line.get("line_item")): line for line in _items(document, "lines") if isinstance(line, dict)}
     notes = [str(n) for n in _items(document, "reader_notes")]
     flipped = {m.group("label") for m in (_FLIP_NOTE.match(n) for n in notes) if m}
     credited = {m.group("label") for m in (_CREDIT_NOTE.match(n) for n in notes) if m}
+    unstated: list[str] = []
+    if report is not None:
+        stated = report.split("## How the filing was read", 1)[1] if "## How the filing was read" in report else ""
+        unstated = sorted(name for name in flipped | credited if f"'{name}'" not in stated)  # scored once, below
     comparison_label = _group(audit, "comparison").get("label")
     money = {line.concept for line in statement.monetary(instance)}
     score.monetary = len(money)
@@ -277,6 +285,10 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
         score.wrong += 1
         problems.append("headline lacks the filing's one revenue line")
     labelled = _label_problems(lines, statement)
+    # A row typed by its label (Decision 42) is a guess at its sign and status.
+    labelled += [f"'{row.get('line_item')}' is typed by its label" for row in _items(audit, "material_variances")
+                 if isinstance(row, dict) and row.get("classification_source") == "label_inference"]
+    labelled += [f"'{name}' is shown with its sign turned, and the report doesn't say so" for name in unstated]
     score.wrong += len(labelled)
     problems += labelled
     score.covered = len(covered)
@@ -284,10 +296,11 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
     return score
 
 
-def score_audit(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance) -> Score:
+def score_audit(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance,
+                report: str | None = None) -> Score:
     """Verify each read line of an audit against the oracle (keyless reads match by printed label)."""
     if _group(_group(audit, "source"), "document").get("kind") == "ixbrl":
-        return score_keyed(audit, statement, instance)
+        return score_keyed(audit, statement, instance, report)
     score = Score()
     notes = [str(note) for note in _items(_group(audit, "source").get("document"), "reader_notes")]
     columns = [m for m in (_COLUMN_NOTE.match(n) for n in notes) if m]
@@ -466,7 +479,9 @@ def sweep(draw: str, readers: list[str], tag: str) -> dict[str, object]:
                 code, message, seconds = _run(document, row["period"] or "latest", sheet, audit_path)
                 score = Score(monetary=len(statement.monetary(instance)))
                 if code == 0 and audit_path.exists():
-                    score = score_audit(json.loads(audit_path.read_text(encoding="utf-8")), statement, instance)
+                    report_path = audit_path.with_suffix(".md")
+                    score = score_audit(json.loads(audit_path.read_text(encoding="utf-8")), statement, instance,
+                                        report_path.read_text(encoding="utf-8") if report_path.exists() else None)
                 read = code == 0 and score.wrong == 0 and score.unverified == 0 and score.covered == score.monetary > 0
                 results.append({
                     "accession": row["accession"], "label": row["label"], "form": row["form"],

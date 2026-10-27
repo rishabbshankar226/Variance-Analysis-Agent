@@ -473,3 +473,65 @@ def test_a_footed_subtotal_closes_its_section_for_naming() -> None:
     assert not result.has_fatal_errors, result.fatal_error_message
     names = [str(r["line_item"]) for r in result.rows]
     assert not any(name.startswith("Property and equipment, at cost:") for name in names), names
+
+
+# Decision 42: how an income statement types and signs the lines its arithmetic places, or can't.
+
+def _income_with(extra_rows: list[str], net: tuple[str, str]) -> bytes:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, income_rows, row
+    rows = income_rows()[:4]  # net sales, cost of sales, gross margin, research and development
+    rows += [*extra_rows]
+    rows.append(row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", net[0]), fact("us-gaap:NetIncomeLoss", "FY24", net[1])))
+    return income_filing(rows)
+
+
+def test_a_tax_line_printed_positive_and_subtracted_is_an_expense_as_printed() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, row
+    # Draw E: a bank (no revenue concept, so no credit among costs); tax expense 43 this year and a benefit (2) a year
+    # earlier, both subtracted. The line keeps this year's printed sign: an expense of 43, not negative income.
+    pre = "us-gaap:IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+    rows = [row("Interest income", fact("us-gaap:InterestIncomeOperating", "FY25", "2,000"),
+                fact("us-gaap:InterestIncomeOperating", "FY24", "1,900")),
+            row("Noninterest expense", fact("us-gaap:OtherNoninterestExpense", "FY25", "500"),
+                fact("us-gaap:OtherNoninterestExpense", "FY24", "530")),
+            row("Income before income taxes", fact(pre, "FY25", "1,500"), fact(pre, "FY24", "1,370")),
+            row("Income tax expense (benefit)", fact("us-gaap:IncomeTaxExpenseBenefit", "FY25", "43"),
+                "(" + fact("us-gaap:IncomeTaxExpenseBenefit", "FY24", "2", sign="-") + ")"),
+            row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,457"), fact("us-gaap:NetIncomeLoss", "FY24", "1,372"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    tax = next(r for r in result.rows if r["line_item"] == "Income tax expense (benefit)")
+    assert (tax["type"], Decimal(str(tax["actual"])), Decimal(str(tax["budget"]))) == ("Expense", 43 * M, -2 * M)
+    assert not any(note.startswith("Read 'Income tax expense (benefit)' as income") for note in result.reader_notes)
+
+
+def test_a_line_the_arithmetic_cannot_place_is_never_typed_by_its_label() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, row
+    # No subtotal covers either line, so the arithmetic can't say what they do; their labels must not decide.
+    rows = [row("Net sales", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900")),
+            row("Cost of sales", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), fact("us-gaap:CostOfRevenue", "FY24", "2,250")),
+            row("Gross margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), fact("us-gaap:GrossProfit", "FY24", "1,650")),
+            row("Interest expense", "(" + fact("us-gaap:InterestExpense", "FY25", "116") + ")",
+                "(" + fact("us-gaap:InterestExpense", "FY24", "170") + ")"),
+            row("Income tax (expense) / benefit", "(" + fact("us-gaap:IncomeTaxExpenseBenefit", "FY25", "878") + ")",
+                "(" + fact("us-gaap:IncomeTaxExpenseBenefit", "FY24", "331") + ")")]
+    types = _engine(_read(income_filing(rows)))
+    assert (types["Interest expense"], types["Income tax (expense) / benefit"]) == ("Unclassified", "Unclassified")
+
+
+def test_the_report_explains_every_sign_it_turns() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import income_filing
+    report, audit = _report(income_filing())
+    turns = [n for n in audit["source"]["document"]["reader_notes"] if " the statement prints it as " in n]
+    assert turns, audit["source"]["document"]["reader_notes"]
+    section = report.split("## How the filing was read", 1)
+    assert len(section) == 2 and all(f"- {turn}" in section[1] for turn in turns), report[-800:]
+
+
+def test_slash_forms_are_subtotal_labels() -> None:
+    # Draw E: "Income / (loss) before income taxes" went unrecognized, was demoted, and was analysed as a line.
+    from variance_agent.ixbrl import FILING_SUBTOTALS
+    for label in ("Income / (loss) before income taxes", "Income/(loss) before income taxes", "Income / loss before taxes",
+                  "Net income / (loss) before income taxes", "Income (loss) before income taxes"):
+        assert FILING_SUBTOTALS.search(label), label
+    assert not FILING_SUBTOTALS.search("Income tax (expense) / benefit")
