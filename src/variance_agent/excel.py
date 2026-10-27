@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+import posixpath
 import re
 from collections.abc import Iterator
-from decimal import Decimal
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import IO, BinaryIO, Protocol
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
@@ -22,6 +24,14 @@ from .limits import (
 
 _CELL_REFERENCE = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})")
 _SHEET_NAMESPACE = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+_RELATIONSHIPS_NAMESPACE = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+# Merged ranges matter for reading headers, which sit near the top of a sheet; deeper merges
+# are counted, not kept, so a sheet of merged cells cannot grow this state.
+_MERGE_HEADER_ROWS = 30
+_MAX_KEPT_MERGES = 1000
+_MAX_LISTED_TABLES = 100
+_MAX_ERROR_TEXT = 16
+_OUTLINE_LEVELS = 7
 
 # Only worksheets can legitimately be large. Shared strings, styles and the rest are far smaller
 # in real workbooks, and openpyxl loads shared strings whole, so a bigger one is not a file this
@@ -78,7 +88,84 @@ class WorkbookLoader(Protocol):
     ) -> ExcelWorkbook: ...
 
 
-def _worksheet_numbers(xml: IO[bytes]) -> dict[str, str]:
+def cell_key(row: int, column: int) -> int:
+    """One integer per cell, so a set of formula cells costs one int each, not a tuple."""
+    return row * (MAX_COLUMNS + 1) + column
+
+
+@dataclass(frozen=True)
+class SheetLayout:
+    """What a worksheet hides or leaves uncalculated, read in the same bounded pass as its numbers.
+
+    Rows and columns are 1-based. Formula cells are kept as `cell_key` integers.
+    """
+
+    hidden_rows: dict[int, bool] = field(default_factory=dict)  # row -> collapsed in an outline group
+    hidden_columns: frozenset[int] = frozenset()
+    merged: tuple[tuple[int, int, int, int], ...] = ()  # (first row, first column, last row, last column)
+    merged_total: int = 0
+    formulas: frozenset[int] = frozenset()  # every formula cell
+    uncached: frozenset[int] = frozenset()  # formula cells with no saved result
+    errors: dict[int, str] = field(default_factory=dict)  # saved error results such as #REF!
+    outline_rows: int = 0  # deepest outline level on rows
+    outline_columns: int = 0
+
+    def is_formula(self, row: int, column: int) -> bool:
+        return cell_key(row, column) in self.formulas
+
+    def is_uncached(self, row: int, column: int) -> bool:
+        return cell_key(row, column) in self.uncached
+
+
+@dataclass(frozen=True)
+class WorkbookFacts:
+    """The preflight's stored decimals plus the layout facts intake reports on."""
+
+    numbers: dict[str, dict[str, str]]
+    layouts: dict[str, SheetLayout] = field(default_factory=dict)
+    # The producer asked Excel to recalculate every formula on open (`calcPr fullCalcOnLoad`), so
+    # saved results may be stale: XlsxWriter, for one, saves 0 for every formula and sets it.
+    recalculate_on_open: bool = False
+    external_links: int = 0
+    tables: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)  # sheet path -> (name, range)
+
+
+def _truthy(value: str | None) -> bool:
+    return value is not None and value.strip().lower() in {"1", "true"}
+
+
+def _is_zero(value: str | None) -> bool:
+    if value is None:
+        return False
+    try:
+        return Decimal(value.strip()) == 0
+    except (InvalidOperation, ValueError):
+        return False
+
+
+def _outline_level(value: str | None) -> int:
+    return int(value) if value is not None and value.isdigit() and int(value) <= _OUTLINE_LEVELS else 0
+
+
+def _column_number(letters: str) -> int:
+    number = 0
+    for letter in letters:
+        number = number * 26 + ord(letter) - ord("A") + 1
+    return number
+
+
+def _range_bounds(reference: str) -> tuple[int, int, int, int] | None:
+    parts = reference.split(":")
+    matches = [_CELL_REFERENCE.fullmatch(part) for part in parts]
+    if not 1 <= len(parts) <= 2 or any(match is None for match in matches):
+        return None
+    cells = [(int(m[2]), _column_number(m[1])) for m in matches if m is not None]
+    (first_row, first_column), (last_row, last_column) = cells[0], cells[-1]
+    return (min(first_row, last_row), min(first_column, last_column),
+            max(first_row, last_row), max(first_column, last_column))
+
+
+def _worksheet_scan(xml: IO[bytes]) -> tuple[dict[str, str], SheetLayout]:
     numbers: dict[str, str] = {}
     row_index = 0
     column_index = 0
@@ -86,6 +173,18 @@ def _worksheet_numbers(xml: IO[bytes]) -> dict[str, str]:
     numeric = False
     cells = 0
     depth = 0
+    zero_height = False
+    hidden_rows: dict[int, bool] = {}
+    hidden_columns: set[int] = set()
+    merged: list[tuple[int, int, int, int]] = []
+    merged_total = 0
+    formulas: set[int] = set()
+    uncached: set[int] = set()
+    errors: dict[int, str] = {}
+    outline_rows = outline_columns = 0
+    cell_type = "n"
+    has_formula = has_result = False
+    result_text: str | None = None
     for event, element in ElementTree.iterparse(xml, events=("start", "end")):
         if event == "start":
             depth += 1
@@ -97,6 +196,28 @@ def _worksheet_numbers(xml: IO[bytes]) -> dict[str, str]:
             if not previous < row_index <= MAX_ROWS:
                 raise ValueError(f"Excel physical rows must increase within 1..{MAX_ROWS}.")
             column_index = 0
+            level = _outline_level(element.get("outlineLevel"))
+            outline_rows = max(outline_rows, level)
+            height = element.get("ht")
+            if _truthy(element.get("hidden")) or _is_zero(height) or (zero_height and height is None):
+                hidden_rows[row_index] = level >= 1
+        elif event == "start" and element.tag == f"{_SHEET_NAMESPACE}sheetFormatPr":
+            zero_height = _truthy(element.get("zeroHeight"))
+        elif event == "start" and element.tag == f"{_SHEET_NAMESPACE}col":
+            outline_columns = max(outline_columns, _outline_level(element.get("outlineLevel")))
+            if _truthy(element.get("hidden")) or _is_zero(element.get("width")):
+                low, high = element.get("min", ""), element.get("max", "")
+                if low.isdigit() and high.isdigit() and int(low) >= 1:
+                    # Cells beyond the column limit are refused, so a range to column XFD stops there.
+                    hidden_columns.update(range(int(low), min(int(high), MAX_COLUMNS) + 1))
+        elif event == "start" and element.tag == f"{_SHEET_NAMESPACE}mergeCell":
+            bounds = _range_bounds(element.get("ref", ""))
+            if bounds is not None:
+                merged_total += 1
+                if bounds[0] <= _MERGE_HEADER_ROWS and len(merged) < _MAX_KEPT_MERGES:
+                    merged.append(bounds)
+        elif event == "start" and element.tag == f"{_SHEET_NAMESPACE}f":
+            has_formula = True
         elif event == "start" and element.tag == f"{_SHEET_NAMESPACE}c":
             previous_column = column_index
             cells += 1
@@ -124,18 +245,42 @@ def _worksheet_numbers(xml: IO[bytes]) -> dict[str, str]:
             if column_index <= previous_column:
                 raise ValueError("Excel physical cell columns must be strictly increasing.")
             # Rows and columns only ever increase above, so a coordinate cannot repeat.
-            numeric = element.get("t", "n") == "n"
-        elif event == "end" and element.tag == f"{_SHEET_NAMESPACE}v" and numeric:
-            if element.text is not None:
+            cell_type = element.get("t", "n")
+            numeric = cell_type == "n"
+            has_formula = has_result = False
+            result_text = None
+        elif event == "end" and element.tag == f"{_SHEET_NAMESPACE}v":
+            # A cached empty string (t="str", <v></v>) is a result; an empty <v/> elsewhere is not.
+            has_result = bool(element.text) or cell_type == "str"
+            result_text = element.text
+            if numeric and element.text is not None:
                 if len(element.text) > MAX_NUMBER_LENGTH:
                     raise ValueError("Excel numeric literal exceeds the supported length.")
                 numbers[coordinate] = element.text
         elif event == "end" and element.tag == f"{_SHEET_NAMESPACE}c":
-            numeric = False
+            key = cell_key(row_index, column_index)
+            if has_formula:
+                formulas.add(key)
+                if not has_result:
+                    uncached.add(key)
+            if cell_type == "e" and result_text:
+                errors[key] = result_text[:_MAX_ERROR_TEXT]
+            numeric = has_formula = has_result = False
         if event == "end":
             element.clear()
             depth -= 1
-    return numbers
+    layout = SheetLayout(
+        hidden_rows=hidden_rows,
+        hidden_columns=frozenset(hidden_columns),
+        merged=tuple(merged),
+        merged_total=merged_total,
+        formulas=frozenset(formulas),
+        uncached=frozenset(uncached),
+        errors=errors,
+        outline_rows=outline_rows,
+        outline_columns=outline_columns,
+    )
+    return numbers, layout
 
 
 def _drain(source: IO[bytes], *, check_declarations: bool) -> tuple[int, bool]:
@@ -156,6 +301,50 @@ def _drain(source: IO[bytes], *, check_declarations: bool) -> tuple[int, bool]:
 
 def inspect_archive(data: bytes) -> dict[str, dict[str, str]]:
     """Reject dangerous structures before openpyxl can expand physical cells."""
+    return inspect_workbook(data).numbers
+
+
+def _parse_part(archive: ZipFile, name: str) -> ElementTree.Element | None:
+    """Parse a small part the preflight already size-checked and found free of declarations."""
+    try:
+        return ElementTree.fromstring(archive.read(name))
+    except (KeyError, ElementTree.ParseError):
+        return None
+
+
+def _workbook_facts(archive: ZipFile, worksheets: list[str]) -> tuple[bool, int, dict[str, tuple[tuple[str, str], ...]]]:
+    names = set(archive.namelist())
+    recalculate = False
+    workbook = _parse_part(archive, "xl/workbook.xml") if "xl/workbook.xml" in names else None
+    if workbook is not None:
+        calc = workbook.find(f"{_SHEET_NAMESPACE}calcPr")
+        recalculate = calc is not None and _truthy(calc.get("fullCalcOnLoad"))
+    links = sum(1 for name in names if re.fullmatch(r"xl/externalLinks/externalLink\d+\.xml", name))
+    tables: dict[str, tuple[tuple[str, str], ...]] = {}
+    for sheet in worksheets:
+        folder, base = posixpath.split(sheet)
+        rels_name = posixpath.join(folder, "_rels", base + ".rels")
+        rels = _parse_part(archive, rels_name) if rels_name in names else None
+        if rels is None:
+            continue
+        found: list[tuple[str, str]] = []
+        for rel in rels.iter(f"{_RELATIONSHIPS_NAMESPACE}Relationship"):
+            if not str(rel.get("Type", "")).endswith("/table") or len(found) >= _MAX_LISTED_TABLES:
+                continue
+            reference = str(rel.get("Target", ""))
+            # Targets are relative to the sheet's folder, or package-absolute when they start with "/".
+            target = posixpath.normpath(reference[1:] if reference.startswith("/") else posixpath.join(folder, reference))
+            table = _parse_part(archive, target) if target in names else None
+            if table is not None:
+                name = str(table.get("displayName") or table.get("name") or "")
+                found.append((name, str(table.get("ref", ""))))
+        if found:
+            tables[sheet] = tuple(found)
+    return recalculate, links, tables
+
+
+def inspect_workbook(data: bytes) -> WorkbookFacts:
+    """`inspect_archive`, plus what each worksheet hides or leaves uncalculated."""
     try:
         with ZipFile(io.BytesIO(data)) as archive:
             members = archive.infolist()
@@ -166,6 +355,7 @@ def inspect_archive(data: bytes) -> dict[str, dict[str, str]]:
             if sum(member.file_size for member in members) > MAX_ARCHIVE_BYTES:
                 raise ValueError("Excel archive exceeds the 64 MiB expanded size limit.")
             worksheet_numbers: dict[str, dict[str, str]] = {}
+            layouts: dict[str, SheetLayout] = {}
             total_bytes = 0
             for member in members:
                 is_xml = member.filename.lower().endswith((".xml", ".rels"))
@@ -187,8 +377,9 @@ def inspect_archive(data: bytes) -> dict[str, dict[str, str]]:
                     raise ValueError("Excel XML DTD and entity declarations are forbidden.")
                 if is_worksheet:
                     with archive.open(member) as source:
-                        worksheet_numbers[member.filename] = _worksheet_numbers(source)
-            return worksheet_numbers
+                        worksheet_numbers[member.filename], layouts[member.filename] = _worksheet_scan(source)
+            recalculate, links, tables = _workbook_facts(archive, list(layouts))
+            return WorkbookFacts(worksheet_numbers, layouts, recalculate, links, tables)
     except (BadZipFile, KeyError, SyntaxError, NotImplementedError, RuntimeError) as exc:
         raise ValueError(f"Invalid Excel archive: {exc}") from exc
 
