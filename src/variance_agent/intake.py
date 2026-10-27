@@ -469,9 +469,14 @@ class IntakeResult:
     statement_kind: str = ""
     identities: list[dict[str, object]] = field(default_factory=list)
     statement_checks: list[str] = field(default_factory=list)
+    # An LTM build from a 10-K and a 10-Q (PLAN.md R11): its audit record and the report section citing it.
+    ltm: dict[str, object] | None = None
+    report_appendix: list[str] = field(default_factory=list)
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
+        if self.ltm is not None:
+            return dict(self.ltm)
         if self.source_kind == "ixbrl" and self.source_statement is not None:
             document: dict[str, object] = {"kind": "ixbrl", "statement": self.source_statement,
                                            "reader_notes": list(self.reader_notes), "lines": list(self.xbrl_lines)}

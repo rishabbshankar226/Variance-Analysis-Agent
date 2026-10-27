@@ -102,6 +102,7 @@ class Arguments(Protocol):
     assisted: bool
     mapping: str | None
     hidden_rows: str | None
+    ltm_from: str | None
     compare_to: str | None
     preset: str
     layout: str | None
@@ -179,6 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--mapping",
         help="Path to saved layout mapping JSON file.",
     )
+    source.add_argument("--ltm-from", metavar="PATH",
+                        help="The 10-K whose fiscal year the input 10-Q continues: read the 10-Q's income statement "
+                             "as LTM (fiscal year + year to date - prior year to date), compared with that fiscal year. "
+                             "Needs --assisted.")
     source.add_argument("--hidden-rows", choices=("include", "exclude"),
                         help="Count or leave out Excel rows hidden in the sheet; assisted intake asks when there are any.")
     source.add_argument("--type-map", help="Optional JSON mapping of line item to Revenue/Expense.")
@@ -340,6 +345,8 @@ def _run(args: Arguments) -> int:
             raise ValueError("--hidden-rows requires XLSX or XLSM input.")
         if not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
             raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
+    if args.ltm_from and (not getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError("--ltm-from needs --assisted (and no --mapping): LTM is built from the filings' own statements.")
     validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
@@ -450,15 +457,26 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
     elif getattr(args, "assisted", False):
         from .intake import read_input_assisted
-        intake_res = read_input_assisted(
-            source_bytes,
-            input_path.suffix,
-            filename=input_path.name,
-            sheet=args.sheet,
-            treat_blank_budgets_as_zero=True,
-            compare_to=compare_to_basis,
-            hidden_rows=getattr(args, "hidden_rows", None),
-        )
+        if args.ltm_from:
+            from .ltm import build_ltm
+            annual_path = Path(args.ltm_from)
+            if compare_to_basis is not None:
+                raise ValueError("--ltm-from compares LTM with the 10-K's fiscal year; leave out --compare-to.")
+            if input_path.suffix.lower() not in {".htm", ".html"} or annual_path.suffix.lower() not in {".htm", ".html"}:
+                raise ValueError("--ltm-from builds LTM from two Inline XBRL filings: give the 10-Q's and the 10-K's "
+                                 ".htm documents from EDGAR.")
+            intake_res = build_ltm(source_bytes, input_path.name, read_input_bytes(annual_path), annual_path.name,
+                                   sheet=args.sheet)
+        else:
+            intake_res = read_input_assisted(
+                source_bytes,
+                input_path.suffix,
+                filename=input_path.name,
+                sheet=args.sheet,
+                treat_blank_budgets_as_zero=True,
+                compare_to=compare_to_basis,
+                hidden_rows=getattr(args, "hidden_rows", None),
+            )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
         parsed_rows = intake_res.rows
@@ -550,7 +568,9 @@ def _run(args: Arguments) -> int:
     if statement_checks and args.xlsx:
         raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, "
                          "or choose the filing's income statement.")
-    report = render_markdown(result, statement_checks=statement_checks) if statement_checks else render_markdown(result)
+    appendix = intake_res.report_appendix if intake_res is not None else []
+    report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None)
+              if statement_checks or appendix else render_markdown(result))
     if args.commentary:
         from deterministic_conditioning.variance_bridge import generate_verified_commentary
         commentary_text, _ = generate_verified_commentary(result)

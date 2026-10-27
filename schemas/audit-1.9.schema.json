@@ -631,6 +631,134 @@
                     "lines"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "LTM built from a 10-K and a later 10-Q (fiscal year + year to date - prior year to date), every component cited.",
+                  "required": [
+                    "kind",
+                    "statement",
+                    "documents",
+                    "reader_notes",
+                    "lines"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "ltm"
+                    },
+                    "statement": {
+                      "type": "string"
+                    },
+                    "documents": {
+                      "type": "array",
+                      "minItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "sha256",
+                          "statement"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "sha256": {
+                            "$ref": "#/$defs/sha256"
+                          },
+                          "statement": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "line_item",
+                          "concept",
+                          "components",
+                          "ltm",
+                          "comparison"
+                        ],
+                        "properties": {
+                          "line_item": {
+                            "type": "string"
+                          },
+                          "concept": {
+                            "type": "string"
+                          },
+                          "components": {
+                            "type": "array",
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "document",
+                                "column",
+                                "context",
+                                "displayed",
+                                "weight",
+                                "used"
+                              ],
+                              "properties": {
+                                "document": {
+                                  "type": "string"
+                                },
+                                "column": {
+                                  "type": "string"
+                                },
+                                "context": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "displayed": {
+                                  "anyOf": [
+                                    {
+                                      "$ref": "#/$defs/decimal"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "weight": {
+                                  "enum": [
+                                    1,
+                                    -1
+                                  ]
+                                },
+                                "used": {
+                                  "$ref": "#/$defs/decimal"
+                                }
+                              }
+                            }
+                          },
+                          "ltm": {
+                            "$ref": "#/$defs/decimal"
+                          },
+                          "comparison": {
+                            "$ref": "#/$defs/decimal"
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               ]
             }

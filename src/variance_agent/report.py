@@ -287,7 +287,11 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
 
 
 @financial_context()
-def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None) -> str:
+def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None,
+                    appendix: list[str] | None = None) -> str:
+    if appendix:  # sections intake wrote that the analysis can't know of, such as an LTM build (PLAN.md R11)
+        body = render_markdown(result, top_root_causes=top_root_causes, statement_checks=statement_checks)
+        return body.rstrip("\n") + "\n\n" + "\n".join(appendix) + "\n"
     verify_result(result)
     if isinstance(top_root_causes, bool) or not isinstance(top_root_causes, int) or top_root_causes < 1:
         raise ValueError("top_root_causes must be a positive integer.")

@@ -182,3 +182,44 @@ def all_statements_filing() -> bytes:
             + statement("CONSOLIDATED BALANCE SHEETS", balance_rows())
             + statement("CONSOLIDATED STATEMENTS OF CASH FLOWS", cash_flow_rows()))
     return document(body).replace("</ix:resources>", POSITION_RESOURCES + "</ix:resources>").encode("utf-8")
+
+
+# A 10-Q for LTM (PLAN.md R11): the second quarter of fiscal 2026, after the 10-K's year ended
+# 2025-09-27. Year-to-date columns start the day after that year ends, and a year earlier.
+QUARTER_CONTEXTS = {
+    "YTD26": ("2025-09-28", "2026-03-28"), "YTD25": ("2024-09-29", "2025-03-29"),
+    "Q26": ("2025-12-28", "2026-03-28"), "Q25": ("2024-12-29", "2025-03-29"),
+}
+
+
+def _contexts(periods: dict[str, tuple[str, str]]) -> str:
+    return "".join(
+        f'<xbrli:context id="{cid}"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">0009999999'
+        f'</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>{start}</xbrli:startDate>'
+        f'<xbrli:endDate>{end}</xbrli:endDate></xbrli:period></xbrli:context>' for cid, (start, end) in periods.items())
+
+
+def quarter_rows(*, net_sales: str = "2,200", extra: list[str] | None = None) -> list[str]:
+    def line(label: str, concept: str, quarter: tuple[str, str], ytd: tuple[str, str], *, out: bool = False) -> str:
+        cells = [fact(concept, c, v) for c, v in zip(("Q26", "Q25", "YTD26", "YTD25"), (*quarter, *ytd), strict=True)]
+        return row(label, *(f"({cell})" if out else cell for cell in cells))
+
+    return [
+        line("Net sales", "us-gaap:Revenues", ("1,150", "1,020"), (net_sales, "2,000")),
+        line("Cost of sales", "us-gaap:CostOfRevenue", ("620", "560"), ("1,200", "1,100")),
+        line("Gross margin", "us-gaap:GrossProfit", ("530", "460"), ("1,000", "900")),
+        line("Research and development", "us-gaap:ResearchAndDevelopmentExpense", ("80", "75"), ("160", "150")),
+        line("Interest expense", "us-gaap:InterestExpense", ("13", "10"), ("25", "20"), out=True),
+        *(extra or []),
+        line("Net income", "us-gaap:NetIncomeLoss", ("437", "375"), ("815", "730")),
+        row("Basic (in dollars per share)",
+            *(fact("us-gaap:EarningsPerShareBasic", c, v, unit="usdPerShare", scale="0", decimals="2")
+              for c, v in zip(("Q26", "Q25", "YTD26", "YTD25"), ("1.80", "1.60", "3.40", "3.10"), strict=True))),
+    ]
+
+
+def quarter_filing(rows: list[str] | None = None, *, title: str = "CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS",
+                   periods: dict[str, tuple[str, str]] | None = None) -> bytes:
+    body = statement(title, rows or quarter_rows())
+    resources = _contexts(periods or QUARTER_CONTEXTS)
+    return document(body).replace("</ix:resources>", resources + "</ix:resources>").encode("utf-8")
