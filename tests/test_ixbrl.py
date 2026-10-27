@@ -415,3 +415,16 @@ def test_the_cli_chooses_a_statement_of_an_html_filing(tmp_path: Path, capsys: p
         cli.main([str(path), "--assisted", "--sheet", "Consolidated Balance Sheets", "--period", "FY2025",
                   "--dollar-threshold", "1", "--percent-threshold", "1"])
     assert "No statement called 'Consolidated Balance Sheets' was found" in capsys.readouterr().err
+
+
+def test_hidden_references_side_by_side_do_not_swallow_the_text_after_them() -> None:
+    hidden = (fact("us-gaap:Cash", "I25", "—", fmt="ixt:fixed-zero", fact_id="h1")
+              + fact("us-gaap:Cash", "I24", "—", fmt="ixt:fixed-zero", fact_id="h2"))
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        "<tr><td>Cash</td><td><span style=\"-sec-ix-hidden:h1\">—</span></td>"
+        "<td><span><span style=\"-sec-ix-hidden:h2\">—</span></span></td></tr>",
+        row("Inventory", fact("us-gaap:InventoryNet", "I25", "300"), fact("us-gaap:InventoryNet", "I24", "250")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "300"), fact("us-gaap:Assets", "I24", "250"))])
+    body = sheet + statement("CONSOLIDATED STATEMENTS OF OPERATIONS", income_rows())
+    names = [s.name for s in read_statements(document(body, hidden).encode("utf-8"), "hal.htm")]
+    assert names == ["Consolidated Balance Sheets", "Consolidated Statements of Operations"]

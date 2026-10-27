@@ -212,7 +212,8 @@ class _Reader(HTMLParser):
         if tag in {"script", "style"}:
             self._skip += 1
             return
-        if self._ref_depth and self._ref_depth[-1][0] == tag:
+        hidden_ref = re.search(r"-sec-ix-hidden\s*:\s*([^;\s]+)", values.get("style", ""))
+        if self._ref_depth and self._ref_depth[-1][0] == tag and not hidden_ref:
             self._ref_depth[-1] = (tag, self._ref_depth[-1][1] + 1)
         if tag == "ix:hidden":
             self._hidden += 1
@@ -258,8 +259,6 @@ class _Reader(HTMLParser):
                 self._table_stack[-1].rows.append([])
             self._cell = _Cell()
             self._table_stack[-1].rows[-1].append(self._cell)
-        style = values.get("style", "")
-        hidden_ref = re.search(r"-sec-ix-hidden\s*:\s*([^;\s]+)", style)
         if hidden_ref and self._cell is not None:
             # The cell prints a fact kept in ix:hidden; that fact is the cell's figure.
             self._cell.tokens.append(("ref", hidden_ref.group(1)))
@@ -301,6 +300,7 @@ class _Reader(HTMLParser):
             self._facts_open.pop()
         elif tag in {"td", "th"}:
             self._cell = None
+            self._ref_depth = []  # a hidden fact's printed text never runs past its cell
         elif tag == "table" and self._table_stack:
             table = self._table_stack.pop()
             self._cell = None
