@@ -19,8 +19,10 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 1 | E3 EDGAR statement sheets | done | `dd9bea3` |
 | 1 | E4 period bands, E5 side-by-side tables | done | `7667b7c` |
 | 1 | Workbook examination summary + audit 1.9 | done | `20f3828` |
+| 1 | Earnings chat path asks about hidden rows (advisor check) | done | `fdc6508` |
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | todo | |
 | 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; STOP 1 | todo | |
+| 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message`, the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help (still "legacy 1.7; explicit measures 1.8") | todo | |
 | 4 | Balance sheet / cash flow statements, identities, multi-document input, LTM, F4 (STOP-ASK) | todo | |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |
@@ -74,6 +76,13 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 20. **Comparison-set audits stay 1.8.** The structured `workbook` group is recorded on single-basis records (CLI default, assisted and mapping runs, chat export). Comparison sets carry the same notes as `inferences`, which 1.8 already copies into every child.
 21. **The 1.9 schema is generated from 1.8** by a one-off script (scratch, not committed). The script asserts that the 1.8 file round-trips byte for byte, so 1.8 is unchanged.
 22. **A finding makes the chat confirm the read.** `IntakeResult.has_transformations` is true when the examination has a finding, so the chat shows the summary before analysis instead of going straight to the period question. A clean workbook is unaffected.
+
+## Known limits left by Phase 1 (for REPORT.md)
+
+- Bare-year bands (`2025` / `2026` merged over Budget/Actual) do not take the E4 path. `_PERIOD_RE` has no bare-year form, and `detect_period_pairs` would not pair them. Such a sheet still stops with "more than one Actual column".
+- Strict intake refuses an uncached formula in any headed column, `Var %` included. Assisted intake exempts ignored computed columns. This is approved (R4 "every column the read uses", where strict reads every headed column), but the two paths are inconsistent, and the report says so.
+- The earnings/quant CLI and file-API paths (`read_comparison_input`) apply no unit caption at all. This was already so before this run. E1 has nothing to reconcile there.
+- E3 has only met synthetic shapes. Real `Financial_Report.xlsx` sheets (title merged A1:A2, footnote-mark columns, `(Parenthetical)` sheets, abstract rows) are tried on Draw A at the end of Phase 2, with hit and miss counts in the corpus folder.
 
 ## Rules written before code
 
