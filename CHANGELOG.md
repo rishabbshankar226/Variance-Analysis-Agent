@@ -2,6 +2,30 @@
 
 ## 0.3.0 — Unreleased
 
+### Analyst coverage (filings, Excel, five new readers) — behavior changes first
+
+Record in `docs/analysts/REPORT.md`; plan and every decision in `docs/analysts/PLAN.md`. The 19
+contract fixtures and audit schemas 1.0 to 1.8 are unchanged; new facts are in audit 1.9.
+
+- Excel workbooks read as they display. An "in thousands" caption over cells already formatted
+  in thousands is no longer scaled again. Hidden data rows are asked about (`--hidden-rows
+  include|exclude`, a chat reply, a mapping or an API option) instead of being counted silently.
+  A formula Excel never calculated refuses, naming the cell, in every column the read uses
+  (before, an uncalculated budget read as 0). EDGAR-style statement sheets, period bands,
+  side-by-side tables, date headers and `.xls` files now read.
+- SEC filings: a 10-K's or 10-Q's Inline XBRL `.htm` is read on `--assisted` and in the chat,
+  every figure from its fact, after every subtotal adds up within the facts' rounding. A filing's
+  income report is headed by the filing's own printed totals (revenue, total expenses, operating
+  income, net income); it shows no totals added up from its lines, its audit records `totals` as
+  null, and `--xlsx` refuses. Balance sheets and cash flow statements compare as Increase or
+  Decrease after the identity and the cash roll-forward hold.
+- Opt-in, for new readers: LTM from a 10-K and a 10-Q (`--ltm-from`); budget and actuals in two
+  files (`--compare-file`); `--compare-to limit|benchmark|target`; the `Multiple` measure
+  (`--multiple-threshold`); declared derived metrics (`--metrics`); a holdings scorecard
+  (`--panel`, `--join-key`, `--deciding-metric`). The chat routes each reader's first questions.
+- A budget-only upload now asks for its actuals instead of refusing the header row.
+- Chat replies render Markdown tables; the drop zone names `.htm` filings.
+
 ### Interface
 
 Presentation only: every figure, status, rule, contract fixture, default report and audit,
