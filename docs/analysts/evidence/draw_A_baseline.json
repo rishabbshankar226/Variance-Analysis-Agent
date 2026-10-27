@@ -50,5 +50,22 @@
       "lines_wrong": 0
     }
   },
-  "reading": "primary: every .htm/.html primary document is refused with the E8 message, which names the fix. financial_report: the Phase 1 EDGAR-sheet reader on the six 2018 workbooks reads 5 income statements and refuses balance sheets and cash flows plainly, but 39 line values disagree with the oracle. Phase 3 diagnoses each, reproduces it synthetically and fixes it before STOP 1."
+  "reading": "primary: every .htm/.html primary document is refused with the E8 message, which names the fix. financial_report: the Phase 1 EDGAR-sheet reader on the six 2018 workbooks reads 5 income statements and refuses balance sheets and cash flows plainly, but 39 line values disagree with the oracle. Phase 3 diagnoses each, reproduces it synthetically and fixes it before STOP 1.",
+  "rescored": {
+    "why": "The first Phase 3 re-sweep overwrote the baseline's per-filing file (sha256 above), so the baseline was re-run from tool commit a4791bb into its own file, scored with the sweep's positional keys for repeated labels (a repeated label is keyed by its place among the repeats, otherwise unverified).",
+    "results_sha256": "e41441874f5066c0cfda4a0e23ca7d0c63bba819646857aeff5a6605288def97",
+    "financial_report": {
+      "statement_runs": 17,
+      "statements_read": 1,
+      "refused_plainly": 12,
+      "lines_verified": 186,
+      "lines_unverified": 63,
+      "lines_wrong": 15
+    },
+    "primary": {
+      "statement_runs": 116,
+      "refused_plainly": 116,
+      "lines_wrong": 0
+    }
+  }
 }
