@@ -51,7 +51,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 6 | One guide per new reader (`docs/analysts/{owen,clara,marcus,ines,theo}.md`), written by `build_guides.py` from the commands it runs; inputs committed under `tests/fixtures/analysts/` | done | this commit |
 | 6 | Phase 6 exit: gates green (2,467), every guide command executed, each new reader reaches a first answer in the chat | done | `0ad4f64` |
 | 7 | Draw B drawn (seed 20261029) and swept once at `3f731a7`: **1 wrong** (derived revenue subtotal), 4,193 verified, all three read 12/28 (43%, 27-61%); fresh eyes (seed 20261030): 3 more wrong headline figures; dist gates PASS (2,467) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-b/` |
-| 7 | Fix, Draw C, `REPORT.md`, CHANGELOG | waiting for the owner | |
+| 7 | STOP-ASK answered (Decision 39): fixes, then Draw C (seed 20261031), `REPORT.md`, CHANGELOG | open | seeds committed |
 
 ## Baseline (measured 2026-10-26)
 
@@ -342,6 +342,27 @@ Marcus's holdings scorecard (Beat/Miss weight shares from a consensus panel join
       - Marcus's holdings scorecard (section 3; R18)
     - **Phase 6 drops** (c) workbook sheets and (d) Wei's batch run; both go in REPORT.md as not built.
     - **The six remaining income refusals** stay plain refusals and are listed as known limits.
+
+39. **Draw B STOP-ASK answered (owner, 2026-10-27: "do what you recommend and continue").** Draw B's numbers stay in REPORT.md exactly as swept (`B-3f731a7`). The fixes below are measured on a fresh Draw C. Each tool fix gets a fictional fixture that fails first.
+    1. **Net income by concept.** The bottom line (`NetIncomeLoss`, `ProfitLoss`) is net income whatever its name. A repeated label is never named by a section it doesn't belong to.
+    2. **Decision 28 on final types.** On a filing read whose statement prints its revenue, a line outside that revenue block is never counted as revenue, however it is typed later.
+    3. **Filing refusals name a filing fix.** The "ambiguous summary label" stop says which line it couldn't place. A filing refusal suggests a CSV or Excel copy before a PDF.
+    4. **52/53-week years.** Where annual columns' fiscal-year labels would skip or repeat a year although the periods are consecutive, every annual column of that table is named by its end month.
+    5. **A filing's income headline shows the filing's own totals:** its revenue, and whichever of total expenses, operating income and net income it prints, each from its fact. The revenue-less-expense Total Expenses and the "net operating variance" are not shown for a filing. The sweep checks every headline figure against its fact.
+    6. **The report carries the reading notes:** a Decision 28 credit is explained in the report itself.
+    7. **Small fixes:**
+       - no stray "$" in filing labels
+       - the R7 cue only where both figures are negative
+    - **Chat:**
+      - replies render Markdown tables
+      - limit, benchmark and target results get their own panel: outcome, headroom and utilization by severity, with no budget totals line and no Export Excel
+    - **Sweep:** the oracle takes an "income … and comprehensive income" title as the income statement.
+    - **The 90% target** is reported as not reached on Draw B, under Decision 35's strict definition.
+
+## Draw C settings (committed before the draw, Decision 39)
+
+- **Draw C seed: `20261031`.** 30 filings: 15 10-K and 15 10-Q, uniform over 2025Q4-2026Q3, one per filer, excluding every Draw A and Draw B accession and filer (`edgar_corpus.py draw C --seed 20261031`). It is swept once, on the fixed code, and never informs a code change.
+- **Final fresh-eyes seed: `20261101`.** Five Draw C Inline XBRL accessions, `random.Random(20261101).sample` of the sorted list.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
