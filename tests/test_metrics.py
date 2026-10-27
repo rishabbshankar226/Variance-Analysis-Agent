@@ -149,7 +149,8 @@ def test_a_cash_balance_is_not_an_ltm_term(tmp_path: Path, capsys: pytest.Captur
 def test_a_metric_means_the_same_however_the_filing_prints_a_line(tmp_path: Path) -> None:
     # The same interest fact printed in parentheses or plain: the stored XBRL value is used, so EBITDA is unchanged.
     plain = all_statements_filing().replace(
-        b'(<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"', b'<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"')
+        b'(<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"',
+        b'<ix:nonFraction name="us-gaap:InterestExpense" contextRef="FY25"')
     plain = plain.replace(b'>50</ix:nonFraction>)', b'>50</ix:nonFraction>', 1)
     assert plain != all_statements_filing()
     values = []
