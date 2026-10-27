@@ -155,7 +155,8 @@ def statement_kind(title: str) -> str | None:
         return None
     if re.search(r"cash\s+flows?", title, re.IGNORECASE):
         return "cash_flow"
-    if re.search(r"balance\s+sheets?|financial\s+(?:position|condition)|statements?\s+of\s+condition", title, re.IGNORECASE):
+    if re.search(r"balance\s+sheets?|financial\s+(?:position|condition)|statements?\s+of\s+condition"
+                 r"|statements?\s+of\s+assets\s+and\s+liabilities", title, re.IGNORECASE):
         return "balance_sheet"
     if _EQUITY.search(title) and not re.search(r"operations|earnings", title, re.IGNORECASE):
         return None
