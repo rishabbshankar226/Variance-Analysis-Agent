@@ -1147,7 +1147,7 @@ function boot() {
     zoneTitle.textContent = 'Drop a file here, or choose one';
     const zoneSubtitle = document.createElement('div');
     zoneSubtitle.className = 'drop-zone-subtitle';
-    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm) or a PDF 10-K or 10-Q, up to ' +
+    zoneSubtitle.textContent = 'CSV, JSON, Excel (.xlsx, .xlsm), or a 10-K or 10-Q as .htm or PDF, up to ' +
       `${MAX_UPLOAD_BYTES / 1048576} MB`;
     zone.append(zoneIcon, zoneTitle, zoneSubtitle);
 
