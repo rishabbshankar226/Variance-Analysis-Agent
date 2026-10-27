@@ -119,6 +119,22 @@ def display_divisor(code: str, value: Decimal) -> Decimal | None:
     return Decimal(1).scaleb(3 * commas - 2 * tokens.count("%"))
 
 
+def shown_places(code: str, value: Decimal) -> int | None:
+    """How many decimal places the section that displays `value` shows; None for General or unreadable."""
+    if code == "General":
+        return None
+    sections = _sections(code)
+    if any(_tokens(section) is None for section in sections):
+        return None
+    tokens = _tokens(_section_for(sections, value))
+    assert tokens is not None
+    if "0" not in tokens:
+        return None
+    if "." not in tokens:
+        return 0
+    return tokens[tokens.index(".") + 1:].count("0")
+
+
 def shows_percent(code: str, value: Decimal) -> bool:
     """Whether the section that displays `value` shows it as a percentage."""
     tokens = _tokens(_section_for(_sections(code), value))

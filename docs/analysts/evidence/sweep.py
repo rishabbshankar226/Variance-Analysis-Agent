@@ -13,7 +13,7 @@ when no key reaches a fact. Derived variances are recomputed with Fraction. Per-
 to <corpus>/sweep_<draw>.csv; the aggregate (no company, no accession) is printed as JSON for
 the repository.
 
-    python -I docs/analysts/evidence/sweep.py A [--readers primary,financial_report,pdf]
+    python -I docs/analysts/evidence/sweep.py A --tag <commit> [--readers primary,financial_report,pdf]
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -36,7 +37,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import oracle  # noqa: E402  (a sibling development module, not variance_agent)
 
 CORPUS = oracle.CORPUS
-TOOL = Path(sys.executable).with_name("variance-agent")
+# The tool under test: this venv's entry point, or the CLI's main() on another checkout's
+# src/ (VAA_TOOL_SRC), so an earlier commit can be swept without its own installation.
+TOOL_SRC = os.environ.get("VAA_TOOL_SRC")
+TOOL = ([sys.executable, "-c", "import sys; from variance_agent.cli import main; sys.exit(main())"] if TOOL_SRC
+        else [str(Path(sys.executable).with_name("variance-agent"))])
 _MONTHS = {m: i for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 _COLUMN_NOTE = re.compile(r"^Read column '(?P<header>.*)' as (?P<label>.+)$")
 _FLIP_NOTE = re.compile(r"^Read '(?P<label>.*)' as (?:income|an expense): the statement prints it as")
@@ -121,7 +126,9 @@ def score_audit(audit: dict[str, object], statement: oracle.Statement, instance:
     notes = [str(note) for note in _items(_group(audit, "source").get("document"), "reader_notes")]
     columns = [m for m in (_COLUMN_NOTE.match(n) for n in notes) if m]
     flipped = {m.group("label") for m in (_FLIP_NOTE.match(n) for n in notes) if m}
-    by_label = {_normal(line.label): line for line in statement.lines}
+    by_label: dict[str, list[oracle.Line]] = {}
+    for line in statement.lines:
+        by_label.setdefault(_normal(line.label), []).append(line)
     money = {line.concept for line in statement.monetary(instance)}
     score.monetary = len(money)
     labels = {m.group("label"): _periods(m.group("header")) for m in columns}
@@ -131,18 +138,26 @@ def score_audit(audit: dict[str, object], statement: oracle.Statement, instance:
     prior = labels.get(str(comparison_label)) or (list(labels.values())[1] if len(labels) > 1 else [])
     covered: set[str] = set()
     for name in _items(_group(audit, "transformations"), "excluded_totals"):
-        line = by_label.get(_normal(str(name)))
-        if line is not None:
+        for line in _candidates(by_label, str(name)):
             covered.add(line.concept)
     problems = []
-    for row in _items(audit, "measure_rows"):
-        if not isinstance(row, dict) or row.get("measure") != "Currency":
-            continue
+    rows = [row for row in _items(audit, "measure_rows") if isinstance(row, dict) and row.get("measure") == "Currency"]
+    totals: dict[str, int] = {}
+    for row in rows:
+        totals[_key(by_label, str(row.get("line_item", "")))] = totals.get(_key(by_label, str(row.get("line_item", ""))), 0) + 1
+    seen: dict[str, int] = {}
+    for row in rows:
         name = str(row.get("line_item", ""))
-        line = by_label.get(_normal(name))
-        if line is None:
+        key = _key(by_label, name)
+        candidates = by_label.get(key, [])
+        occurrence = seen.get(key, 0)
+        seen[key] = occurrence + 1
+        # A repeated label is keyed by its place among the repeats, and only when both sides repeat it
+        # equally often; otherwise the key is ambiguous and the read is unverified.
+        if not candidates or (len(candidates) > 1 and totals[key] != len(candidates)):
             score.unverified += 2
             continue
+        line = candidates[occurrence if len(candidates) > 1 else 0]
         covered.add(line.concept)
         negated = "negated" in line.preferred_label.lower()
         sign = -1 if name in flipped else 1
@@ -168,19 +183,32 @@ def score_audit(audit: dict[str, object], statement: oracle.Statement, instance:
     return score
 
 
+def _key(by_label: dict[str, list[oracle.Line]], name: str) -> str:
+    """The oracle label a tool line name stands for, undoing the tool's renaming of repeated lines."""
+    for candidate in (name, name.rpartition(": ")[2], re.sub(r"\s*\([^()]*\)$", "", name)):
+        if _normal(candidate) in by_label:
+            return _normal(candidate)
+    return _normal(name)
+
+
+def _candidates(by_label: dict[str, list[oracle.Line]], name: str) -> list[oracle.Line]:
+    return by_label.get(_key(by_label, name), [])
+
+
 def _plain(message: str) -> bool:
     return bool(message) and bool(_FIX_WORDS.search(message)) and not _JARGON.search(message)
 
 
 def _run(document: Path, period: str, sheet: str | None, out: Path) -> tuple[int, str, float]:
-    command = [str(TOOL), str(document), "--assisted", "--compare-to", "prior-period", "--period", period,
+    command = [*TOOL, str(document), "--assisted", "--compare-to", "prior-period", "--period", period,
                "--dollar-threshold", "1", "--percent-threshold", "1", "--audit-json", str(out),
                "--audit-schema-version", "1.9", "-o", str(out.with_suffix(".md"))]
     if sheet is not None:
         command += ["--sheet", sheet]
     started = time.monotonic()
     try:
-        done = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+        env = {**os.environ, "PYTHONPATH": TOOL_SRC} if TOOL_SRC else None
+        done = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False, env=env)
     except subprocess.TimeoutExpired:
         return -1, "timed out after 120 seconds", time.monotonic() - started
     message = done.stderr.strip().splitlines()[-1] if done.returncode and done.stderr.strip() else ""
@@ -222,9 +250,9 @@ def wilson(hits: int, total: int) -> tuple[float, float] | None:
     return round(max(0.0, centre - margin), 4), round(min(1.0, centre + margin), 4)
 
 
-def sweep(draw: str, readers: list[str]) -> dict[str, object]:
+def sweep(draw: str, readers: list[str], tag: str) -> dict[str, object]:
     manifest = [row for row in csv.DictReader((CORPUS / "manifest.csv").open(encoding="utf-8")) if row["draw"] == draw]
-    out_dir = CORPUS / f"sweep_{draw}"
+    out_dir = CORPUS / f"sweep_{draw}_{tag}"
     out_dir.mkdir(exist_ok=True)
     results = []
     for row in manifest:
@@ -255,7 +283,8 @@ def sweep(draw: str, readers: list[str]) -> dict[str, object]:
                 })
                 print(f"{row['label']:>18} {reader:>16} {statement.kind:>13} exit {code} "
                       f"v{score.verified} u{score.unverified} w{score.wrong}", flush=True)
-    results_path = CORPUS / f"sweep_{draw}.csv"
+    # One file per run, named by the tool commit swept, so no run overwrites another's evidence.
+    results_path = CORPUS / f"sweep_{draw}_{tag}.csv"
     with results_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0]) if results else ["accession"])
         writer.writeheader()
@@ -290,4 +319,5 @@ if __name__ == "__main__":
     chosen = ["primary", "financial_report", "pdf"]
     if "--readers" in args:
         chosen = args[args.index("--readers") + 1].split(",")
-    print(json.dumps(sweep(args[0], chosen), indent=2))
+    tag = args[args.index("--tag") + 1] if "--tag" in args else "run"
+    print(json.dumps(sweep(args[0], chosen, tag), indent=2))

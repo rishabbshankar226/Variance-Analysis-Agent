@@ -134,3 +134,67 @@ def test_hidden_statement_lines_are_asked_about_counted_whole_or_refused_when_le
     assert left_out.fatal_error_message == (
         "Sheet 'Consolidated Statements of Ope' has lines hidden in Excel, and leaving lines out would break the "
         "statement's subtotals. Count them, or unhide them, and upload the file again.")
+
+
+def _rewrite_values(data: bytes, edits: list[tuple[bytes, bytes]]) -> bytes:
+    from zipfile import ZIP_DEFLATED, ZipFile
+    with ZipFile(io.BytesIO(data)) as archive:
+        parts = {item.filename: archive.read(item) for item in archive.infolist()}
+    for old, new in edits:
+        assert old in parts["xl/worksheets/sheet1.xml"], old
+        parts["xl/worksheets/sheet1.xml"] = parts["xl/worksheets/sheet1.xml"].replace(old, new)
+    capture = io.BytesIO()
+    with ZipFile(capture, "w", ZIP_DEFLATED) as archive:
+        for name, body in parts.items():
+            archive.writestr(name, body)
+    return capture.getvalue()
+
+
+def _formatted(lines: list[tuple[object, ...]], code: str) -> bytes:
+    from openpyxl import load_workbook
+    workbook = load_workbook(io.BytesIO(_statement(lines=lines)))
+    sheet = workbook.active
+    for row in sheet.iter_rows(min_row=3, min_col=2):
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = code
+    capture = io.BytesIO()
+    workbook.save(capture)
+    return capture.getvalue()
+
+
+def test_amounts_stored_as_binary_floats_read_as_the_workbook_shows_them() -> None:
+    # The SEC writes 78.1 as the double 78.099999999999994; the cell's format shows one decimal.
+    lines = [("Net sales", 646.5, 602.3), ("Cost of sales", 568.4, 644.3), ("Gross margin", 78.1, -42.0)]
+    data = _rewrite_values(_formatted(lines, "#,##0.0_);(#,##0.0)"), [(b"<v>78.09999999999999</v>", b"<v>78.099999999999994</v>")])
+    result = _read(data)
+    assert not result.has_fatal_errors, result.fatal_error_message
+    million = Decimal(1_000_000)
+    assert [(row["line_item"], row["actual"]) for row in result.rows] == [
+        ("Net sales", Decimal("646.5") * million), ("Cost of sales", Decimal("568.4") * million)]
+    assert "Gross margin" in result.detected_totals
+    assert ("Read 1 amount as the workbook shows it (cell B5: stored 78.099999999999994, shown 78.1); the SEC "
+            "writes these workbooks with binary floating-point numbers") in result.visible_transformations
+
+
+def test_breakdown_sections_after_the_statement_are_left_out_and_named() -> None:
+    lines = [("Revenues:", None, None), ("Net sales", 4100, 3900), ("Cost of sales", 2300, 2250),
+             ("Gross margin", 1800, 1650), ("Discontinued Operations, Held-for-sale [Member]", None, None),
+             ("Revenues:", None, None), ("Net sales", 50, 40), ("Cost of sales", 30, 20), ("Gross margin", 20, 20)]
+    result = _read(_statement(lines=lines))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert [row["line_item"] for row in result.rows] == ["Net sales", "Cost of sales"]
+    assert ("Left out the breakdown that follows the statement from row 7: 'Discontinued Operations, "
+            "Held-for-sale [Member]'") in result.visible_transformations
+
+
+def test_a_statement_restarting_for_a_class_or_an_entity_is_a_breakdown_too() -> None:
+    lines = [("Revenues", None, None), ("Rental revenue", 1000, 900), ("Expenses", None, None),
+             ("Operating expenses", 400, 380), ("Net income", 600, 520), ("Operating Partnership", None, None),
+             ("Revenues", None, None), ("Rental revenue", 1001, 901), ("Expenses", None, None),
+             ("Operating expenses", 400, 380), ("Net income", 601, 521)]
+    result = _read(_statement(lines=lines))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert [row["line_item"] for row in result.rows] == ["Rental revenue", "Operating expenses"]
+    assert ("Left out the breakdown that follows the statement from row 8: 'Operating Partnership'"
+            in result.visible_transformations)

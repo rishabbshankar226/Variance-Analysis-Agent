@@ -20,7 +20,7 @@ import io
 import re
 import unicodedata
 from dataclasses import dataclass, field, replace
-from decimal import ROUND_FLOOR, Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, Decimal, Inexact, InvalidOperation
 from enum import StrEnum
 from typing import cast
 from collections.abc import Callable
@@ -56,7 +56,7 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
-from .number_formats import display_divisor, shows_percent
+from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import shape_income_statement
 from .measures import measure_kind
 from .models import MeasureKind
@@ -219,6 +219,9 @@ class _ExcelSheet:
     display: dict[int, tuple[str, Decimal | None, bool]] = field(default_factory=dict)
     hidden_rows: str | None = None  # the person's answer for rows hidden in Excel: include or exclude
     block: str | None = None  # "columns E-G": which of several side-by-side tables to read (E5)
+    # Decimal places each numeric cell's format shows (cell_key -> places), kept only on a sheet laid
+    # out like EDGAR's Financial_Report.xlsx, whose stored values are binary floats (E3).
+    shown_places: dict[int, int] = field(default_factory=dict)
 
 
 def _display_entry(code: object, value: object, cache: dict[tuple[str, int], tuple[Decimal | None, bool]],
@@ -1802,15 +1805,24 @@ def _read_excel_bytes(
             full_raw_rows: list[list[object]] = []
             display: dict[int, tuple[str, Decimal | None, bool]] = {}
             format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
+            places: dict[int, int] = {}
+            edgar_like = False
             for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
                 row_vals = [
                     cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
                     for c_idx, c in enumerate(cells, start=1)
                 ]
+                if r_idx == 1:
+                    edgar_like = bool(row_vals) and _looks_like_edgar_title(row_vals[0])
                 for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
-                    entry = _display_entry(getattr(c, "number_format", None), value, format_cache)
+                    code = getattr(c, "number_format", None)
+                    entry = _display_entry(code, value, format_cache)
                     if entry is not None:
                         display[cell_key(r_idx, c_idx)] = entry
+                    if edgar_like and isinstance(value, Decimal) and isinstance(code, str):
+                        shown = shown_places(code, value)
+                        if shown is not None:
+                            places[cell_key(r_idx, c_idx)] = shown
                 full_raw_rows.append(row_vals)
 
             excel = _ExcelSheet(
@@ -1818,15 +1830,18 @@ def _read_excel_bytes(
                 recalculate_on_open=facts.recalculate_on_open,
                 display=display,
                 hidden_rows=hidden_rows,
+                shown_places=places,
             )
+            statement_notes: list[str] = []
             statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
-                          else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines))
+                          else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines,
+                                                       shown_places=excel.shown_places, notes=statement_notes))
             if statements:
                 # Only a sheet today's read can't find a header on: files that read today read the same.
                 statement = _read_edgar_statement(
                     statements, duration, full_raw_rows, filename, chosen_sheet, excel,
                     treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
-                    compare_to=compare_to)
+                    compare_to=compare_to, sheet_notes=statement_notes)
                 statement.available_sheets = sheetnames
                 if not statement.has_fatal_errors:
                     statement.workbook_examination = _examine(
@@ -1961,8 +1976,67 @@ def _statement_cell(value: object) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _looks_like_edgar_title(cell: object) -> bool:
+    if not isinstance(cell, str):
+        return False
+    head, separator, _ = cell.strip().partition(" - ")
+    return bool(separator) and statement_title(head) is not None
+
+
+def _as_shown(value: Decimal, places: int | None) -> Decimal:
+    """The amount Excel displays: at the format's decimal places, or at 15 significant digits for
+    General (beyond them a binary float's decimal text is representation error, not the figure)."""
+    with financial_context() as context:
+        context.traps[Inexact] = False
+        if places is not None:
+            return value.quantize(Decimal(1).scaleb(-places))
+        if value == 0 or len(value.as_tuple().digits) <= 15:
+            return value
+        return value.quantize(Decimal(1).scaleb(value.adjusted() - 14)).normalize()
+
+
+def _breakdown_start(body: list[tuple[str, list[str]]]) -> int | None:
+    """Where breakdowns stacked under a statement begin (a member, a share class, a second entity).
+
+    The SEC repeats the statement for each member of a breakdown below the consolidated lines,
+    under the member's name: a "[Member]" row, or a heading after which the statement restarts
+    (its next heading repeats an earlier one).
+    """
+    headings: list[str] = []
+    for index, (label, values) in enumerate(body):
+        if any(values):
+            continue
+        if label.endswith("[Member]"):
+            return index
+        following = next(((text, row) for text, row in body[index + 1:] if text), None)
+        if (label and following is not None and not any(following[1]) and following[0] in headings
+                and label not in headings):
+            return index
+        headings.append(label)
+    return None
+
+
+def _breakdown_heads(body: list[tuple[str, list[str]]], cut: int) -> list[str]:
+    """The member names heading each repeated section from `cut` on."""
+    restart = next((text for text, _ in body[cut + 1:] if text), None)
+    heads = []
+    for index in range(cut, len(body)):
+        label, values = body[index]
+        if not label or any(values):
+            continue
+        following = next((text for text, _ in body[index + 1:] if text), None)
+        if label.endswith("[Member]") or (index == cut) or (following == restart and label != restart):
+            heads.append(label)
+    return list(dict.fromkeys(heads))
+
+
 def _edgar_statement_tables(
     raw_rows: list[list[object]], layout: SheetLayout, *, per_share_lines: bool,
+    shown_places: dict[int, int] | None = None, notes: list[str] | None = None,
 ) -> list[StatementTable]:
     """Statements on a sheet laid out like EDGAR's Financial_Report.xlsx (E3).
 
@@ -1992,8 +2066,32 @@ def _edgar_statement_tables(
     if sum(1 for header in headers if _STATEMENT_YEAR.search(header)) < 2:
         return []
     columns = [c for c in range(1, width) if headers[c - 1]]  # unheaded columns hold footnote marks
-    body = [(_statement_cell(row[0]) if row else "", [_statement_cell(row[c]) if c < len(row) else "" for c in columns])
-            for row in raw_rows[body_start:]]
+    shown = shown_places or {}
+    rounded: list[tuple[str, Decimal, Decimal]] = []
+    body: list[tuple[str, list[str]]] = []
+    for r_idx, row in enumerate(raw_rows[body_start:], start=body_start + 1):
+        values = []
+        for c in columns:
+            value = row[c] if c < len(row) else None
+            if isinstance(value, Decimal):
+                displayed = _as_shown(value, shown.get(cell_key(r_idx, c + 1)))
+                if displayed != value:
+                    rounded.append((f"{column_letters(c + 1)}{r_idx}", value, displayed))
+                value = displayed
+            values.append(_statement_cell(value))
+        body.append((_statement_cell(row[0]) if row else "", values))
+    cut = _breakdown_start(body)
+    if notes is not None:
+        if rounded:
+            cell, stored, displayed = rounded[0]
+            notes.append(f"Read {_plural(len(rounded), 'amount')} as the workbook shows {'it' if len(rounded) == 1 else 'them'} "
+                         f"(cell {cell}: stored {stored}, shown {displayed}); the SEC writes these workbooks with "
+                         "binary floating-point numbers")
+        if cut is not None:
+            notes.append(f"Left out the breakdown that follows the statement from row {body_start + cut + 1}: "
+                         + ", ".join(f"'{head}'" for head in _breakdown_heads(body, cut)))
+    if cut is not None:
+        body = body[:cut]
     return statement_tables_from_grid(title, caption.strip(), [headers[c - 1] for c in columns], body,
                                       per_share_lines=per_share_lines)
 
@@ -2001,7 +2099,7 @@ def _edgar_statement_tables(
 def _read_edgar_statement(
     tables: list[StatementTable], duration: str | None, raw_rows: list[list[object]], filename: str,
     sheet_name: str, excel: _ExcelSheet, *, treat_blank_budgets_as_zero: bool, selected_period: str | None,
-    compare_to: ComparisonBasis | None,
+    compare_to: ComparisonBasis | None, sheet_notes: list[str] | None = None,
 ) -> IntakeResult:
     """Read one statement of an EDGAR-style sheet as the PDF reader reads one (E3)."""
     def duration_of(table: StatementTable) -> str:
@@ -2043,8 +2141,9 @@ def _read_edgar_statement(
     others = [f"This sheet also has {t.name}; choose it as sheet '{sheet_name} ({duration_of(t)})'"
               for t in tables if t is not chosen and duration_of(t)]
     read_note = f"Read '{chosen.name}' from sheet '{sheet_name}', laid out as in an EDGAR Financial_Report.xlsx"
-    result.visible_transformations[:0] = [read_note, *chosen.notes, *shaped.notes, *others]
-    result.layout_notes[:0] = [read_note, *others]
+    result.visible_transformations[:0] = [read_note, *(sheet_notes or []), *chosen.notes, *shaped.notes, *others]
+    result.layout_notes[:0] = [read_note, *(sheet_notes or []), *others]
+    result.reader_notes[:0] = list(sheet_notes or [])
     result.layout_read = True
     return result
 
