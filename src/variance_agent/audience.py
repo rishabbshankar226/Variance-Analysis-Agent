@@ -64,12 +64,14 @@ def validate_audience_config(config: AnalysisConfig) -> None:
 
 
 def is_audience_result(result: AnalysisResult) -> bool:
-    return result.config.comparison_basis in NEW_BASES or isinstance(result.config, AudienceConfig) or any(
+    return result.config.comparison_basis in NEW_BASES | OPT_IN_BASES or isinstance(result.config, AudienceConfig) or any(
         row.measure_declared or row.better is not None for row in result.rows
     )
 
 
 NEW_BASES = frozenset({ComparisonBasis.CONSENSUS, ComparisonBasis.ESTIMATE, ComparisonBasis.GUIDANCE})
+# Opt-in bases read from one table with per-row declarations (PLAN.md R13-R15); not the multi-comparison path.
+OPT_IN_BASES = frozenset({ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET})
 
 
 def audience_config(config: AnalysisConfig, *, extended_headers: bool = True) -> AudienceConfig:

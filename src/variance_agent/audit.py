@@ -7,8 +7,9 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
-from .models import Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, ComparisonBasis, ComparisonDetails, LineType
-from .audience import AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
+from .models import (Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, BasisDetails, ComparisonBasis, ComparisonDetails,
+                     LineType)
+from .audience import OPT_IN_BASES, AudienceConfig, is_audience_result, effective_layout, effective_per_share_lines
 from .measures import currency_row, metric_inferences
 from .comparison import display_outcome, extended_heading
 from .output import write_text_outputs
@@ -256,12 +257,16 @@ def build_audit_record(
     extended = is_audience_result(result)
     # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
     workbook = transformations.get("workbook") if transformations is not None else None
-    needs_19 = workbook is not None or (
+    opt_in = result.config.comparison_basis in OPT_IN_BASES  # limit, benchmark, target (PLAN.md R13-R15)
+    needs_19 = workbook is not None or opt_in or (
         source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:
         raise ValueError("Audit schema 1.8 is required to record measure and direction choices.")
+    if opt_in and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record a limit, benchmark or target comparison; "
+                         "use --audit-schema-version 1.9.")
     if needs_19 and schema_version != "1.9":
         raise ValueError(f"Audit schema {schema_version} cannot record what the workbook examination found; "
                          "use --audit-schema-version 1.9.")
@@ -347,7 +352,7 @@ def build_audit_record(
         },
         "data_quality": data_quality,
         # A balance sheet or cash flow comparison has no totals: a zero would trace to no stored value.
-        "totals": None if any(row.statement_kind for row in result.rows) else {
+        "totals": None if opt_in or any(row.statement_kind for row in result.rows) else {
             "revenue": _aggregate_record(
                 result.revenue,
                 present=has_revenue,
@@ -436,6 +441,9 @@ def build_audit_record(
         }
     if schema_version == "1.9":
         record["workbook"] = _json_value(workbook) if isinstance(workbook, dict) else None
+        if opt_in:
+            record["basis_details"] = [basis_details_record(row.line_item, row.basis_details)
+                                       for row in result.rows if row.basis_details is not None]
     if schema_version in {"1.8", "1.9"}:
         record["audience"] = audience_configuration(result.config)
         record["segments"] = segment_records(result)
@@ -489,6 +497,15 @@ def _measure_record(row: AnalyzedRow) -> JSONObject:
 
 def _comparison_record(row: AnalyzedRow) -> JSONObject:
     return comparison_details_record(row.line_item, row.comparison_details)
+
+
+def basis_details_record(line_item: str, detail: BasisDetails) -> JSONObject:
+    from dataclasses import fields
+    record: JSONObject = {"line_item": line_item}
+    for item in fields(BasisDetails):
+        value = getattr(detail, item.name)
+        record[item.name] = _decimal(value) if isinstance(value, Decimal) else value
+    return record
 
 
 def comparison_details_record(line_item: str, detail: ComparisonDetails | None) -> JSONObject:

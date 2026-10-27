@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import BadZipFile
 
-from .audience import AudienceConfig, NEW_BASES, is_audience_result
+from .audience import AudienceConfig, NEW_BASES, OPT_IN_BASES, is_audience_result
 from .measures import metric_inferences
 from .analysis import analyze_rows
 from .classification import explicit_line_type
@@ -380,6 +380,9 @@ def _run(args: Arguments) -> int:
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
+    if compare_to_basis in OPT_IN_BASES and not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError(f"--compare-to {compare_to_basis.value} needs --assisted, which reads each row's declarations "
+                         "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
 
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
@@ -578,6 +581,9 @@ def _run(args: Arguments) -> int:
               f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
         return 0
     statement_checks = intake_res.statement_checks if intake_res is not None else []
+    if result.config.comparison_basis in OPT_IN_BASES and args.xlsx:
+        raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "
+                         "the report and the audit file hold every outcome.")
     if statement_checks and args.xlsx:
         raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx, "
                          "or choose the filing's income statement.")

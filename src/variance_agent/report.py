@@ -286,6 +286,66 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
     return "\n".join([*lines, ""])
 
 
+def _rate(value: Decimal) -> str:
+    """A ratio shown once as a percentage to one place (display only; the audit keeps the exact ratio)."""
+    with financial_context() as context:
+        context.traps[Inexact] = False
+        return f"{(value * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_EVEN)}%"
+
+
+_BASIS_NOTES = {
+    "limit": "Breach is strictly beyond a limit; a row equal to its limit is Within. Near appears only where a row "
+             "declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min; "
+             "utilization is actual over limit.",
+    "benchmark": "Active difference is actual minus benchmark (basis points for rates). In line needs a declared "
+                 "tolerance, or exact equality; F or U follows each row's declared Better direction.",
+    "target": "Difference is actual minus target (basis points for rates). On target needs a declared tolerance, or "
+              "exact equality. A target is neutral: no F or U.",
+}
+
+
+@financial_context()
+def render_basis_report(result: AnalysisResult) -> str:
+    """A limit, benchmark or target comparison (PLAN.md R13-R15): outcomes in their own words, limits by severity."""
+    cfg = result.config
+    basis = cfg.comparison_basis.value
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    rows = [row for row in result.rows if row.basis_details is not None]
+
+    def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
+        return format_measure(value, row.measure, cfg.currency, variance=variance)
+
+    lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
+             "- " + _BASIS_NOTES[basis], "- No revenue, expense or net totals apply to this comparison.", ""]
+    if basis == "limit":
+        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
+        lines += ["## Lines, by severity", "", "| Line Item | Kind | Limit | Actual | Headroom | Utilization | Buffer | Status |",
+                  "|---|---|---:|---:|---:|---:|---:|---|"]
+        for row in rows:
+            d = row.basis_details
+            assert d is not None and d.headroom is not None
+            utilization = "NM" if d.utilization is None else _rate(d.utilization)
+            lines.append("| " + " | ".join([
+                _safe_inline(row.line_item), str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
+                amount(d.headroom, row, variance=True), utilization,
+                "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome]) + " |")
+    else:
+        lines += ["## Lines", "", f"| Line Item | {heading} | Actual | Difference | Tolerance | Outcome | Status |",
+                  "|---|---:|---:|---:|---:|---|---|"]
+        for row in rows:
+            d = row.basis_details
+            assert d is not None
+            difference = (format_measure(d.difference_bps, MeasureKind.PERCENT, variance=True)
+                          if d.difference_bps is not None else amount(d.difference, row, variance=True))
+            lines.append("| " + " | ".join([
+                _safe_inline(row.line_item), amount(row.budget, row), amount(row.actual, row), difference,
+                "" if d.tolerance is None else amount(d.tolerance, row, variance=row.measure is not MeasureKind.PERCENT),
+                d.outcome, "" if basis == "target" else _status_text(row.status, True)]) + " |")
+    if result.warnings:
+        lines.extend(["", "## How the file was read", *["- " + _safe_inline(note) for note in result.warnings]])
+    return "\n".join([*lines, ""])
+
+
 @financial_context()
 def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, statement_checks: list[str] | None = None,
                     appendix: list[str] | None = None) -> str:
@@ -297,6 +357,8 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
         raise ValueError("top_root_causes must be a positive integer.")
     if any(row.statement_kind for row in result.rows):
         return render_statement_report(result, statement_checks or [])
+    if any(row.basis_details is not None for row in result.rows):
+        return render_basis_report(result)
     if effective_layout(result.config) == "earnings":
         from .comparisons import TableAnalysis, ComparisonAnalysis, _identity
         from .earnings import render_earnings

@@ -222,6 +222,8 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
     if basis_raw is not None:
         try:
             comparison_basis = ComparisonBasis(str(basis_raw))
+            if comparison_basis in {ComparisonBasis.LIMIT, ComparisonBasis.BENCHMARK, ComparisonBasis.TARGET}:
+                raise ValueError  # opt-in bases (PLAN.md R13-R15) take --compare-to, not a saved mapping
         except ValueError:
             raise ValueError(
                 "Mapping comparison_basis must be budget, forecast or prior_period."

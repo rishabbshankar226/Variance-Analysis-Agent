@@ -69,6 +69,7 @@ from .comparison import (
     _ACTUAL_SUFFIX,
     BUDGET_SYNONYMS,
     COMPARISON_WORDS,
+    OPT_IN_SYNONYMS,
     basis_for_header,
     bases_named_in,
     basis_noun,
@@ -564,7 +565,7 @@ def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
         return CanonicalRole.LINE_ITEM, None
     if norm in _ACCOUNT_ID_SYNONYMS:
         return CanonicalRole.ACCOUNT_ID, None
-    if basis_for_header(norm) is not None:
+    if basis_for_header(norm, opt_in=_OPT_IN_BASIS.get()) is not None:
         return CanonicalRole.BUDGET, None
     if norm in _ACTUAL_SYNONYMS:
         return CanonicalRole.ACTUAL, None
@@ -1376,7 +1377,7 @@ def detect_comparison_columns(
 
     named: list[tuple[int, str, ComparisonBasis]] = []
     for idx, s in headers:
-        b = basis_for_header(normalize_header(s))
+        b = basis_for_header(normalize_header(s), opt_in=_OPT_IN_BASIS.get())
         if b is not None:
             named.append((idx, s, b))
     periods = _period_columns(headers)
@@ -1514,6 +1515,19 @@ def _decode_text(data: bytes, filename: str) -> tuple[str, str | None]:
 # One half of a two-file pair (PLAN.md R12): the value column the file lacks, and whether a
 # placeholder for it was added. Set only for the length of one read_input_assisted call.
 _HALF: ContextVar[dict[str, object] | None] = ContextVar("variance_agent_half", default=None)
+# A limit, benchmark or target read (PLAN.md R13-R15): its headers count only while --compare-to names it.
+_OPT_IN_BASIS: ContextVar[ComparisonBasis | None] = ContextVar("variance_agent_opt_in_basis", default=None)
+
+
+def _opt_in_header(raw_rows: list[list[object]]) -> tuple[str, ComparisonBasis] | None:
+    """A limit, benchmark or target column in the first rows, named as printed."""
+    for row in raw_rows[:25]:
+        for cell in row:
+            text = str(cell).strip() if cell is not None else ""
+            for basis, synonyms in OPT_IN_SYNONYMS.items():
+                if text and normalize_header(text) in synonyms:
+                    return text, basis
+    return None
 
 
 def read_input_assisted(
@@ -1538,10 +1552,14 @@ def read_input_assisted(
     ``half_filled`` says so.
     """
     if missing_column is None:
-        return _read_input_assisted(data, suffix, filename=filename, sheet=sheet,
-                                    treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
-                                    selected_period=selected_period, compare_to=compare_to,
-                                    per_share_lines=per_share_lines, hidden_rows=hidden_rows)
+        opt_in = _OPT_IN_BASIS.set(compare_to if compare_to in OPT_IN_SYNONYMS else None)
+        try:
+            return _read_input_assisted(data, suffix, filename=filename, sheet=sheet,
+                                        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                        selected_period=selected_period, compare_to=compare_to,
+                                        per_share_lines=per_share_lines, hidden_rows=hidden_rows)
+        finally:
+            _OPT_IN_BASIS.reset(opt_in)
     holder: dict[str, object] = {"missing": missing_column, "filled": False}
     token = _HALF.set(holder)
     try:
@@ -1557,8 +1575,8 @@ def read_input_assisted(
 
 def _fill_half(raw_rows: list[list[object]], missing: CanonicalRole) -> tuple[list[list[object]], bool]:
     """Append a placeholder column for the value a half file lacks, if it lacks it (PLAN.md R12)."""
-    if detect_header_row(raw_rows)[0] is not None:
-        return raw_rows, False
+    if detect_header_row(raw_rows)[0] is not None or _opt_in_header(raw_rows) is not None:
+        return raw_rows, False  # a limit, benchmark or target file is whole, never half of a pair
     present = CanonicalRole.ACTUAL if missing is CanonicalRole.BUDGET else CanonicalRole.BUDGET
     for header_at, row in enumerate(raw_rows[:25]):
         roles = {match_column_synonym(str(cell).strip())[0] for cell in row if cell is not None and str(cell).strip()}
@@ -2711,10 +2729,13 @@ def _process_raw_table(
                                       sheet_name)
         if stop is not None:
             return stop
+        opt_in = _opt_in_header(raw_rows) if compare_to not in OPT_IN_SYNONYMS else None
+        hint = (f" This file has a '{opt_in[0]}' column: compare against it with --compare-to {opt_in[1].value}."
+                if opt_in is not None else "")
         if compare_to is None:
             message = (
                 f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
-                "(a Forecast or Prior Year column can stand in for Budget)."
+                f"(a Forecast or Prior Year column can stand in for Budget).{hint}"
             )
         else:
             message = (

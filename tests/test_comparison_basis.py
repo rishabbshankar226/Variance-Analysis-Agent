@@ -4,6 +4,8 @@ from decimal import Decimal
 
 import pytest
 
+from variance_agent.audience import OPT_IN_BASES
+
 from tests.comparison_helpers import ROWS, B, F, P, cfg
 from variance_agent.analysis import analyze_rows, verify_result
 from variance_agent.comparison import (
@@ -126,7 +128,8 @@ def test_numbers_identical_across_bases() -> None:
         ]
         return rows, aggregates, [x.line_item for x in r.material_rows]
 
-    results = [analyze_rows(ROWS, cfg(b)) for b in ComparisonBasis]
+    # Limit, benchmark and target need per-row declarations (R13-R15) and have their own oracles in test_bases.py.
+    results = [analyze_rows(ROWS, cfg(b)) for b in ComparisonBasis if b not in OPT_IN_BASES]
     # ROWS holds a zero-comparison row (New Revenue) and a material row (Rent Expense).
     assert results[0].rows[0].budget == 0 and results[0].material_rows
     assert key(results[0]) == key(results[1]) == key(results[2])

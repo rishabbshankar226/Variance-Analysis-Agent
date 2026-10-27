@@ -29,7 +29,8 @@
     "segments": {},
     "statistics": {},
     "statistics_configuration": {},
-    "workbook": {}
+    "workbook": {},
+    "basis_details": {}
   },
   "required": [
     "schema_version",
@@ -306,7 +307,8 @@
             "label_inference",
             "unclassified",
             "unavailable",
-            "statement"
+            "statement",
+            "basis"
           ]
         },
         "summary_source": {
@@ -1300,7 +1302,10 @@
                 "prior_period",
                 "consensus",
                 "estimate",
-                "guidance"
+                "guidance",
+                "limit",
+                "benchmark",
+                "target"
               ]
             },
             "label": {
@@ -2230,6 +2235,120 @@
               "additionalProperties": false
             }
           ]
+        },
+        "basis_details": {
+          "type": "array",
+          "description": "Each row's outcome against its limit, benchmark or target (opt-in bases), with the row's declarations.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "line_item",
+              "basis",
+              "outcome",
+              "difference",
+              "difference_bps",
+              "limit_kind",
+              "buffer",
+              "headroom",
+              "utilization",
+              "tolerance",
+              "severity"
+            ],
+            "properties": {
+              "line_item": {
+                "type": "string"
+              },
+              "basis": {
+                "enum": [
+                  "limit",
+                  "benchmark",
+                  "target"
+                ]
+              },
+              "outcome": {
+                "enum": [
+                  "Breach",
+                  "Near",
+                  "Within",
+                  "Above",
+                  "Below",
+                  "In line",
+                  "Over",
+                  "Under",
+                  "On target"
+                ]
+              },
+              "difference": {
+                "$ref": "#/$defs/decimal"
+              },
+              "difference_bps": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limit_kind": {
+                "enum": [
+                  null,
+                  "Max",
+                  "Min"
+                ]
+              },
+              "buffer": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "headroom": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "utilization": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tolerance": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/decimal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "severity": {
+                "enum": [
+                  null,
+                  0,
+                  1,
+                  2
+                ]
+              }
+            }
+          }
         }
       },
       "required": [
