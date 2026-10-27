@@ -23,7 +23,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 2 | Network check, sampler, oracle, sweep, Draw A, baseline sweep | done | `be7d4dc`, `7c7d38e` |
 | 3 | `ixbrl.py`, `Financial_Report.xlsx` reader, `.htm` routing; Draw A at zero wrong | done | `cd23bf0` … `13de5e8` |
 | 3 | Fresh-eyes fixes: Total Revenue is the filing's revenue; statements end at net income | done | `13a79e1` … `69d8366`, docs `6d7d40c` |
-| 3 | STOP 1 | open (awaiting the owner) | evidence `docs/analysts/evidence/stop-1/` |
+| 3 | STOP 1 | done (owner 2026-10-27: "do what you recommend and continue"; Decision 30) | evidence `docs/analysts/evidence/stop-1/` |
 | 3 | Flip the provisional "yet" wording when `.htm` reads: `parsing.web_page_message` (removed), the input-contract `.xls`/`.htm` bullet, and the `--audit-schema-version` help | done | this commit |
 | 3 | `ixbrl.py` reader, `.htm` routing (CLI, chat, file API), audit 1.9 `ixbrl` documents | done | `cd23bf0` |
 | 3 | `Financial_Report.xlsx` reader fixes from Draw A (breakdowns, binary floats) | done | `d7fd9a2` |
@@ -177,6 +177,13 @@ Boundary cases, one test each: `sign="-"` with parentheses (v<0, d<0); `sign="-"
 
 28. **Revenue on filing reads (from STOP 1's fresh-eyes review).** Where a statement prints its revenue (a revenue concept, or a total that sums such lines), only that block is revenue. Other lines that add to income (other income, equity earnings, gains printed as credits inside costs) are credits among costs, with their sign turned and a note, which leaves net income and the net variance unchanged. Without a printed revenue, the shaper's labels stand.
 29. **The bottom line.** An income statement ends at its first net-income line, found by concept (`NetIncomeLoss`, `ProfitLoss`) or by a bare "Net income" or "Net (loss) income" label. Lines below it attribute net income and are listed as left out, recorded in audit 1.9 as read but not analysed. A separate comprehensive-income statement is not cut.
+
+30. **STOP 1 answers (owner, 2026-10-27: "do what you recommend and continue").**
+    - **The 90% target stays** as section 5 sets it. Reading work on Draw A's income misses (subtotals the reader cannot trace, blank amounts, a missed income statement) continues inside Phase 4, where balance sheets and cash flows share the same assembly. It is measured on Draw A only. Draw B is reported as measured, with Wilson intervals, pass or fail.
+    - **The Phase 4 plan** is as listed at STOP 1: balance sheet and cash flow comparisons with their identities, opt-in multi-document input, LTM, then the F4 join behind its STOP-ASK.
+    - **Draw B is drawn exactly as section 5 says.** Cross-reader agreement cannot be measured on recent filings: EDGAR carries no PDFs for them, and the SEC no longer publishes `Financial_Report.xlsx`. It goes on REPORT.md's "Not verified" list. The `Financial_Report.xlsx` reader stays for older filings, unchanged.
+    - **R6 (amended), 23, 28 and 29 are confirmed.**
+    - A blank amount in a filing gets a refusal that names a fix for filings, and a line printed only as dashes, with no tag, is listed in the notes. Both are done in Phase 4.
 
 ## STOP 1 settings (committed before the sample is drawn)
 
