@@ -31,7 +31,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | R7 statement comparisons wired through intake, engine, report, audit 1.9, CLI and chat | done | `c75c364`, `ac34c70` |
 | 4 | Draw A re-sweep with balance sheets and cash flows: zero wrong; 5,506 verified; read income 26/33, balance sheet 32/33, cash flow 32/33; all three 24/33 (73%, 56-85%) | done | sweep `p4b-d5032a1`, sha256 `98eeafcb…` |
 | 4 | LTM (R11) and `--ltm-from` (R10, CLI) | done | this commit |
-| 4 | Chat: "Build LTM" with a second upload (R10) | todo | |
+| 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
 | 4 | F4 two-file join (STOP-ASK) | todo | |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |

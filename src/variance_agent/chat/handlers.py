@@ -247,6 +247,8 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=session.phase,
         )
 
+    if routing_key in {"build ltm", "build an ltm", "ltm"}:
+        return _handle_build_ltm(session)
     if routing_key in _UPLOAD_ANOTHER_FILE:
         # The page shows its drop zone for a reply in the awaiting_file phase. The session itself
         # is left alone: the new file replaces it only once it has been read successfully.
@@ -537,7 +539,41 @@ def handle_upload(
     *, first_visit: bool | None = None,
 ) -> Response:
     """Process a file upload with assisted reading and plain language."""
+    if session.awaiting_ltm_annual and session.source_bytes is not None and session.source_name is not None:
+        return _load_ltm_annual(session, file_bytes, filename)
     return _load_file(session, file_bytes, filename, sheet, first_visit)
+
+
+_LTM_ASK = ("Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year "
+            "to date less last year to date, line by line by XBRL concept, and compare it with the fiscal year.")
+
+
+def _offers_ltm(session: Session, intake_res: IntakeResult) -> bool:
+    """A 10-Q's income statement read from Inline XBRL, not yet built into LTM."""
+    months = re.search(r", (\d+) Months Ended$", intake_res.sheet_name or "")
+    return (intake_res.source_kind == "ixbrl" and not intake_res.statement_kind and intake_res.ltm is None
+            and months is not None and int(months.group(1)) < 12 and session.ltm_annual is None)
+
+
+def _handle_build_ltm(session: Session) -> Response:
+    if session.source_bytes is None or not str(session.source_name or "").lower().endswith((".htm", ".html")):
+        return Response(text="LTM is built from a 10-Q and a 10-K filed on EDGAR. Upload the 10-Q's .htm document first.",
+                        phase=session.phase)
+    session.awaiting_ltm_annual = True
+    return Response(text=_LTM_ASK, phase=session.phase)
+
+
+def _load_ltm_annual(session: Session, file_bytes: bytes, filename: str) -> Response:
+    """The second upload of an LTM build: the 10-K. The 10-Q stays the session's file (PLAN.md R10)."""
+    from ..ltm import build_ltm
+    assert session.source_bytes is not None and session.source_name is not None
+    session.awaiting_ltm_annual = False
+    intake_res = build_ltm(session.source_bytes, session.source_name, file_bytes, filename)
+    if intake_res.has_fatal_errors:
+        return Response(text=intake_res.fatal_error_message or "I couldn't build LTM from these two filings.",
+                        chips=["Build LTM"], phase=session.phase, level="error")
+    session.ltm_annual = (file_bytes, filename)
+    return _intake_response(session, intake_res, session.source_name)
 
 
 def _load_file(
@@ -735,6 +771,8 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
                         if s != intake_res.sheet_name]
         if other_sheets:
             chips.insert(1, _sheet_chip(session, other_sheets[0]))
+    if _offers_ltm(session, intake_res):
+        chips.insert(1, "Build LTM")
 
     return _intake_confirmation(intake_res, chips)
 
@@ -1421,7 +1459,10 @@ def _statement_checks(session: Session) -> list[str]:
 def _report_text(session: Session) -> str:
     assert session.result is not None
     checks = _statement_checks(session)
-    return render_markdown(session.result, statement_checks=checks) if checks else render_markdown(session.result)
+    appendix = list(session.intake_result.report_appendix) if session.intake_result is not None else []
+    if checks or appendix:
+        return render_markdown(session.result, statement_checks=checks or None, appendix=appendix or None)
+    return render_markdown(session.result)
 
 
 def _build_analysis_summary(session: Session) -> Response:
@@ -2315,7 +2356,7 @@ def _handle_full_report(session: Session) -> Response:
     result = session.result
     assert result is not None
 
-    report = render_markdown(result)
+    report = _report_text(session)
     return Response(
         text=report,
         chips=["Export report", "Export excel", "Export audit"],

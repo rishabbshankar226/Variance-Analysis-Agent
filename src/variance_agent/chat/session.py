@@ -69,6 +69,9 @@ class Session:
     measure_pending: tuple[str, int] | None = None
     earnings_mode: bool = False
     earnings_requested: bool = False
+    # LTM (PLAN.md R10, R11): waiting for the 10-K a 10-Q's year continues, and that 10-K once read.
+    awaiting_ltm_annual: bool = False
+    ltm_annual: tuple[bytes, str] | None = None
     earnings_headers: tuple[str, ...] = ()
     earnings_choices: tuple[ComparisonBasis, ...] = ()
     earnings_notes: tuple[str, ...] = ()
@@ -122,6 +125,8 @@ class Session:
         self.measure_pending = None
         self.earnings_mode = False
         self.earnings_requested = False
+        self.awaiting_ltm_annual = False
+        self.ltm_annual = None
         self.earnings_headers = ()
         self.earnings_choices = ()
         self.earnings_notes = ()

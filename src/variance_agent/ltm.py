@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
-from .intake import IntakeResult, _read_ixbrl_bytes, read_input_assisted
+from .intake import CanonicalRole, IntakeResult, _read_ixbrl_bytes, read_input_assisted
 from .ixbrl import IxbrlError, Statement, fact_values, read_statements
 from .models import ComparisonBasis
 from .numeric import financial_context
@@ -174,6 +174,10 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
     result = replace(q_read, rows=rows, comparison_basis=ComparisonBasis.PRIOR_PERIOD, comparison_label=fy_label,
                      visible_transformations=[*notes, *[t for t in q_read.visible_transformations
                                                         if not t.startswith("Comparing ")], comparing])
+    # The columns are built, not read: name what each one is (the summary shows them as "from ...").
+    result.column_mapping = {**q_read.column_mapping,
+                             CanonicalRole.BUDGET: f"{fy_label} in {annual_name}",
+                             CanonicalRole.ACTUAL: f"LTM = {fy_label} + {columns[0]} - {columns[1]}"}
     result.ltm = record
     result.report_appendix = [
         "## LTM build", "", *("- " + _safe_inline(note) for note in notes), "",

@@ -154,3 +154,33 @@ def test_a_10k_figure_for_the_prior_year_to_date_that_differs_is_flagged(tmp_pat
     notes = json.loads(audit.read_text(encoding="utf-8"))["source"]["document"]["reader_notes"]
     assert ("'Net sales': 'hal-20250927.htm' reports $1,990,000,000.00 for 6 months to Mar 2025, but 'hal-20260328.htm' "
             "prints $2,000,000,000.00; the 10-Q's figure is used") in notes
+
+
+def test_the_chat_builds_ltm_from_a_second_upload() -> None:
+    from variance_agent.chat.handlers import handle_message, handle_upload
+    from variance_agent.chat.session import Session
+
+    session = Session()
+    assert "Build LTM" in (handle_upload(session, quarter_filing(), "hal-20260328.htm").chips or [])
+    assert handle_message(session, "Build LTM").text.startswith("Upload the 10-K whose fiscal year this 10-Q continues.")
+    reply = handle_upload(session, income_filing(), "hal-20250927.htm")
+    assert ("Prior Period (FY2025) from 'FY2025 in hal-20250927.htm', Actual from 'LTM = FY2025 + 6 months to Mar 2026 - "
+            "6 months to Mar 2025'") in reply.text
+    for message in ["Looks right", "LTM Mar 2026", "$1 or 1%", "USD"]:
+        handle_message(session, message)
+    report = handle_message(session, "full report").text
+    assert "| Net sales | $4,100,000,000.00 | $2,200,000,000.00 | $2,000,000,000.00 | $4,300,000,000.00 |" in report
+
+
+def test_the_chat_says_why_two_filings_do_not_make_ltm() -> None:
+    from variance_agent.chat.handlers import handle_message, handle_upload
+    from variance_agent.chat.session import Session
+
+    session = Session()
+    handle_upload(session, quarter_filing(periods={**QUARTER_CONTEXTS, "YTD26": ("2025-09-29", "2026-03-28")}),
+                  "hal-20260328.htm")
+    handle_message(session, "Build LTM")
+    reply = handle_upload(session, income_filing(), "hal-20250927.htm")
+    assert (reply.level, reply.chips) == ("error", ["Build LTM"])
+    assert reply.text.startswith("The 10-Q's year to date starts 2025-09-29")
+    assert session.source_name == "hal-20260328.htm"
