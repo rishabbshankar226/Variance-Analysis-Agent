@@ -42,9 +42,13 @@ _BLOCKS = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6",
 # Subtotal labels filings print that the shared statement shaper does not name (it serves PDFs too).
 FILING_SUBTOTALS = re.compile(
     r"^(?:\((?:loss|income|earnings)\)\s+)?(?:net\s+)?(?:income|earnings|loss|profit)"
-    r"(?:\s*\((?:loss|income|earnings)\))?\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b",
+    r"(?:\s*\((?:loss|income|earnings)\))?\s+(?:from\s+(?:continuing\s+)?operations\s+)?before\b"
+    r"|^net\s+\((?:loss|income|earnings)\)\s+(?:income|earnings|loss|profit)\b",
     re.IGNORECASE,
 )
+# The bottom line: lines after the first of these only attribute net income (to noncontrolling
+# interests, preferred holders) or restate it, and are listed rather than analysed.
+BOTTOM_LINE = re.compile(r"^us-gaap:(?:NetIncomeLoss|ProfitLoss)$")
 # us-gaap concepts that are always a statement's own totals (never a detail line), as hints for the
 # shaper; noncontrolling-interest and per-share variants are details or not money, and excluded.
 _TOTAL_CONCEPT = re.compile(

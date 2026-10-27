@@ -56,7 +56,7 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
-from .ixbrl import FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
+from .ixbrl import BOTTOM_LINE, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
 from .ixbrl import Line as IxLine
@@ -2226,9 +2226,15 @@ def _read_ixbrl_bytes(
         return IntakeResult(has_fatal_errors=True, available_sheets=comparable, source_kind="ixbrl", fatal_error_message=(
             f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
             f"and expense yet.{instead}"))
-    lines = chosen.lines
+    all_lines = chosen.lines
+    all_names = _unique_names([(line.label, line.section) for line in all_lines])
+    # A comprehensive-income statement opens with net income, so only an income statement ends there.
+    bottom = next((i for i, line in enumerate(all_lines) if BOTTOM_LINE.match(line.concept)), None) \
+        if chosen.kind == "income" else None
+    below = [] if bottom is None else list(range(bottom + 1, len(all_lines)))
+    lines = all_lines[:bottom + 1] if bottom is not None else all_lines
+    names_by_line = all_names[:len(lines)]
     measures = any(line.measure != "Currency" for line in lines)
-    names_by_line = _unique_names([(line.label, line.section) for line in lines])
     header: list[object] = ["Line Item", *chosen.labels, *(["Measure", "Better"] if measures else [])]
     raw_rows: list[list[object]] = [header]
     for name, line in zip(names_by_line, lines, strict=True):
@@ -2263,15 +2269,18 @@ def _read_ixbrl_bytes(
         selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
     )
     left_out = [f"Left out {item}" for item in chosen.left_out]
+    if below and bottom is not None:
+        left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
+                        f"attributed): {', '.join(repr(all_names[i]) for i in below)}".replace('"', "'"))
     result.visible_transformations[:0] = credits
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
     result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes, *credits]
     result.xbrl_lines = [
-        {"line_item": names_by_line[i], "concept": lines[i].concept, "measure": lines[i].measure,
-         "subtotal": i not in shaped.kept,
-         "columns": [_key_record(label, key) for label, key in zip(chosen.labels, lines[i].keys, strict=True)]}
-        for i in range(len(lines))]
+        {"line_item": all_names[i], "concept": all_lines[i].concept, "measure": all_lines[i].measure,
+         "subtotal": i < len(lines) and i not in shaped.kept, "left_out": i >= len(lines),
+         "columns": [_key_record(label, key) for label, key in zip(chosen.labels, all_lines[i].keys, strict=True)]}
+        for i in range(len(all_lines))]
     result.candidate_sheets = ranked
     result.available_sheets = names
     result.comparable_sheets = comparable

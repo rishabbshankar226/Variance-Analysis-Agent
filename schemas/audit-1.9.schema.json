@@ -563,6 +563,9 @@
                                 }
                               ]
                             }
+                          },
+                          "left_out": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -570,7 +573,8 @@
                           "concept",
                           "measure",
                           "subtotal",
-                          "columns"
+                          "columns",
+                          "left_out"
                         ],
                         "additionalProperties": false
                       }

@@ -454,3 +454,26 @@ def test_a_flipped_line_outside_revenue_is_credited_too() -> None:
     result = _read(income_filing(rows))
     assert not result.has_fatal_errors, result.fatal_error_message
     assert sum(Decimal(str(r["actual"])) for r in result.rows if r["type"] == "Revenue") == 4100 * M
+
+
+def test_lines_below_net_income_are_listed_not_analysed() -> None:
+    rows = income_rows()
+    rows[5:6] = [row("Net (loss) income", fact("us-gaap:NetIncomeLoss", "FY25", "1,450"),
+                     fact("us-gaap:NetIncomeLoss", "FY24", "1,330")),
+                 row("Less - income attributable to non-controlling interests",
+                     fact("us-gaap:NetIncomeLossAttributableToNoncontrollingInterest", "FY25", "50"),
+                     fact("us-gaap:NetIncomeLossAttributableToNoncontrollingInterest", "FY24", "30")),
+                 row("Net income attributable to HALVORSEN.FAKE",
+                     fact("us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic", "FY25", "1,400"),
+                     fact("us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic", "FY24", "1,300"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert "Net (loss) income" in result.detected_totals
+    assert [r["line_item"] for r in result.rows] == ["Net sales", "Cost of sales", "Research and development", "Interest expense"]
+    assert ("Left out 2 lines below 'Net (loss) income' (how net income is attributed): "
+            "'Less - income attributable to non-controlling interests', 'Net income attributable to HALVORSEN.FAKE'"
+            ) in result.visible_transformations
+    record = result.source_document()
+    assert record is not None
+    assert [line["line_item"] for line in record["lines"] if line["left_out"]] == [  # type: ignore[index, union-attr]
+        "Less - income attributable to non-controlling interests", "Net income attributable to HALVORSEN.FAKE"]
