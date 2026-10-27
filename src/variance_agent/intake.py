@@ -3096,12 +3096,12 @@ def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
     """The same reading of the file as `format_intake_summary`, one fact per row."""
     rows: list[tuple[str, str]] = []
     if result.sheet_name:
-        rows.append(("Statement" if result.source_kind == "pdf" else "Worksheet", result.sheet_name))
+        rows.append(("Statement" if result.source_kind in {"pdf", "ixbrl"} else "Worksheet", result.sheet_name))
     for t in result.visible_transformations:
         if t.startswith("Analyzed period:"):
             rows.append(("Analyzed period", t.split(":")[1].split("(")[0].strip()))
             break
-    if result.source_kind != "pdf":
+    if result.source_kind not in {"pdf", "ixbrl"}:
         rows.append(("Header row", f"Row {result.header_row_number}"))
     if CanonicalRole.LINE_ITEM in result.column_mapping:
         rows.append(("Line items", f"from '{result.column_mapping[CanonicalRole.LINE_ITEM]}'"))

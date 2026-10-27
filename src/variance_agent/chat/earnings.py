@@ -119,11 +119,11 @@ def analyze_review(session: Session, config: AnalysisConfig) -> TableAnalysis:
     assert session.parsed_rows is not None
     config = replace(audience_config(config), preset="earnings")
     intake = session.intake_result
-    if intake is not None and intake.source_kind == "pdf":
+    if intake is not None and intake.source_kind in {"pdf", "ixbrl"}:
         config = replace(config, comparison_label=intake.comparison_label,
                          actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
     table = analyze_comparisons(session.parsed_rows, config, session.comparison_bases, raw_headers=session.earnings_headers)
-    if intake is not None and intake.source_kind == "pdf":
+    if intake is not None and intake.source_kind in {"pdf", "ixbrl"}:
         table = replace(table, source_document=intake.source_document(), source_transformations=audit_transformations(intake),
                         source_worksheet=intake.sheet_name)
     return table
