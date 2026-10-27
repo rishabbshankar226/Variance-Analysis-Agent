@@ -315,3 +315,18 @@ def test_beginning_cash_between_the_activities_and_the_net_change() -> None:
     assert [lines[t].name for t, _ in dict(checked.matches)[11]] == [
         "Net increase in cash, cash equivalents and restricted cash",
         "Cash, cash equivalents and restricted cash, beginning of year"]
+
+
+def test_a_discontinued_section_with_its_own_net_change_rolls_into_ending_cash() -> None:
+    lines = cash_flow()[:10]
+    lines += [line("Net cash used in discontinued operating activities", "-30", "-20"),
+              line("Net cash provided by discontinued financing activities", "50", "10"),
+              line("Net change in cash, discontinued operations", "20", "-10",
+                   concept="us-gaap:NetCashProvidedByUsedInDiscontinuedOperations"),
+              line("Cash, including discontinued operations, beginning of year", "2000", "1360", balance="beginning"),
+              line("Cash, including discontinued operations, end of year", "2620", "2000", balance="ending"),
+              line("Less: cash of discontinued operations, end of year", "20", "0", balance="ending")]
+    checked = check_cash_flow(lines, FLOWS, FLOW_COLUMNS)
+    assert (checked.problem, checked.closing) == ("", 14)
+    assert [lines[t].name for t, _ in dict(checked.matches)[12]] == [
+        "Net cash used in discontinued operating activities", "Net cash provided by discontinued financing activities"]

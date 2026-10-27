@@ -81,9 +81,8 @@ def _firm_total(line: CheckLine) -> bool:
 
 
 def _strong_total(line: CheckLine) -> bool:
-    if _firm_total(line):
-        return True
-    return not _DISCONTINUED.search(line.name) and bool(_TOTAL_LABEL.search(line.name))
+    """A total by concept, or by label; a label alone (discontinued operations' lines among them) may prove a line."""
+    return _firm_total(line) or bool(_TOTAL_LABEL.search(line.name))
 
 
 def _contra(line: CheckLine) -> bool:

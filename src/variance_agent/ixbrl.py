@@ -37,6 +37,11 @@ _STATEMENT_TITLE = re.compile(
     re.IGNORECASE,
 )
 _SMALL_WORDS = {"of", "and", "in", "to"}
+_SIGNATURE = {
+    "balance_sheet": re.compile(r"^us-gaap:(?:Assets|AssetsCurrent|Liabilities|LiabilitiesCurrent"
+                                r"|LiabilitiesAndStockholdersEquity|StockholdersEquity)$"),
+    "cash_flow": re.compile(r"^us-gaap:(?:NetCashProvidedByUsedIn\w+|\w*PeriodIncreaseDecrease\w*)$"),
+}
 # Elements that start a new line of printed text; inline elements (span, font, b) do not.
 _BLOCKS = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "td", "th", "table"})
 # Subtotal labels filings print that the shared statement shaper does not name (it serves PDFs too).
@@ -452,6 +457,11 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         # instants titled like the cash flow statement (a reconciliation) is not the statement.
         wanted = "instant" if kind == "balance_sheet" else "duration"
         titled = titled and any(reader.contexts[f.context].period[0] == wanted for f in money)
+        # A balance sheet or cash flow statement prints one of its own totals; a note table titled
+        # near a mention of the statement does not.
+        signature = _SIGNATURE.get(kind)
+        starts = pending is None or pending[0] != kind
+        titled = titled and (signature is None or not starts or any(signature.match(f.name) for f in money))
         if titled and len(money) >= 3 and match is not None:
             # The statement runs on in a table titled for it again ("... — Liabilities and Equity").
             if pending is not None and pending[0] == kind and (

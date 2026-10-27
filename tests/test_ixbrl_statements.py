@@ -152,3 +152,13 @@ def test_three_and_nine_month_columns_in_one_table_each_take_their_own_beginning
     assert _values(quarter, "Cash at beginning of period") == [1200 * M, 1000 * M]
     assert _values(year_to_date, "Cash at beginning of period") == [1000 * M, 820 * M]
     assert _values(year_to_date, "Cash at end of period") == [1300 * M, 1090 * M]
+
+
+def test_a_note_table_titled_near_a_mention_of_the_statement_is_not_the_statement() -> None:
+    segment = [row("Segment revenues", fact("us-gaap:Revenues", "FY25", "4,100"), fact("us-gaap:Revenues", "FY24", "3,900")),
+               row("Segment costs", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), fact("us-gaap:CostOfRevenue", "FY24", "2,250")),
+               row("Segment margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), fact("us-gaap:GrossProfit", "FY24", "1,650"))]
+    body = (statement("Depreciation by segment is shown in the consolidated statements of cash flows", segment)
+            + statement("CONSOLIDATED STATEMENTS OF CASH FLOWS", cash_flow_rows()))
+    flows = _statement(_filing(body), "cash_flow")
+    assert flows.lines[0].label == "Net income"
