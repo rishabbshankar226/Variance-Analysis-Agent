@@ -44,6 +44,10 @@ Thresholds: $1.00 or 1.0%
 - Optimization: Net sales is the largest material F variance, but the dataset does not support a causal corrective action; obtain the missing operating driver data before assigning a cause-specific intervention.
 - Data Request: Provide reconciled operating driver metrics for: Net sales, Cost of sales, Research and development, Interest expense.
 
+## How the filing was read
+
+- Read 'Interest expense' as an expense: the statement prints it as -25000000 and adds it
+
 ## LTM build
 
 - Built LTM as FY2025 from 'hal-20250927.htm' plus 6 months to Mar 2026 less 6 months to Mar 2025 from 'hal-20260328.htm', line by line by XBRL concept

@@ -104,6 +104,26 @@ Drawn as Draws B, C and D were, excluding every Draw A-D accession and filer. It
 
 One filing's income statement wasn't swept, because the oracle found two statements in it. The three 10-Ks without XBRL are outside the denominator; run by hand, each refuses plainly with what to upload.
 
+Draw E's final fresh eyes found wrong signs, types and F/U in two income statements (above). The owner chose the fix and a fresh draw (Decision 42). Draw E stays here as measured.
+
+### Draw F (seed `20261106`), after Decision 42, swept once at `3cf5714`
+
+Drawn as Draws B-E were, excluding every Draw A-E accession and filer. It was swept once and informed no code change. The sweep scored line values, every headline figure, label text, unstated sign turns and label-typed rows. Results file sha256 `a0a2c990b9834addf9f667fbc8fecb18646776fa86ce09a63d043c195522872a`.
+
+| Measure | Draw F (27 Inline XBRL filings) |
+|---|---|
+| Wrong values (lines and every headline figure) | **0** |
+| Wrong labels, unstated sign turns or label-typed rows, as scored | 1, **checked and found right**. "Changes in operating assets and liabilities: Other, net" is printed under that heading, and the presentation linkbase files the concept elsewhere, the same checker limit as on Draw E |
+| Values verified / unverified | 3,724 / 51 (every unverified one a printed dash or confirmed blank with no fact) |
+| All three statements read | **10 of 27 (37%, 22-56%)**: the 90% target is **not reached** |
+| All three read without a refusal | 15 of 27 (56%, 37-72%) |
+| Read without a refusal, by statement | income 18/26, balance sheet 24/27, cash flow 23/27 |
+| Fully read, by statement | income 16/26, balance sheet 20/27, cash flow 15/27 |
+| Of the 5 read without a refusal but not fully | 2 short only by printed dashes or confirmed blanks; 3 by an oracle line the reader doesn't cover |
+| Refusals | 15, **all plain** |
+
+One filing's income statement wasn't swept, because the oracle found two statements in it. The three 10-Ks without XBRL are outside the denominator; run by hand, each refuses plainly with what to upload.
+
 ### Draw A, the development set (seed `20261026`, 40 filings; 33 Inline XBRL)
 
 | When | Commit | Wrong | All three read (Inline XBRL) | Without a refusal |
@@ -114,6 +134,7 @@ One filing's income statement wasn't swept, because the oracle found two stateme
 | Phase 7, after Decision 39 | `1a585fe` | 0 | 14 of 33 (42%, 27-59%) | 25 of 33 (76%, 59-87%) |
 | Phase 7, after Decision 40 | `273fd98` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
 | Phase 7, after Decision 41, label text scored too | `1b10d97` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
+| Phase 7, after Decision 42, sign turns and label typing scored too | `3cf5714` | 0 | 14 of 33, every scored row unchanged | 25 of 33 |
 
 The drop from STOP 2 is an investment company's statement of operations. At STOP 2 it counted as fully read, but it read its subtotals as lines: net investment income was typed revenue, and the totals the report computed double-counted. Since Decision 39 its bottom line must add up, so it refuses plainly. The `Financial_Report.xlsx` reader on the six 2018 filings: 169 verified, 7 unverified, 0 wrong.
 
@@ -128,9 +149,10 @@ At each point, five filings were drawn with a seed committed first. A subagent w
 | Draw B, final | `20261030` | Draw B's wrong revenue subtotal, plus 3 more wrong headline figures; 10 balance sheet and cash flow reports clean | STOP-ASK, then Decision 39 |
 | Draw C, final | `20261101` | Every line, change, subtotal and headline matched. 7 wrong figures in one insurer's balance sheet: labels quote amounts in thousands beside whole-dollar columns, with no unit stated. One percent follows the documented half-even rule | STOP-ASK (`evidence/stop-ask-draw-c/`); the class runs through every draw (A 40 labels in 18 filings, B 23 in 8, C 21 in 10); Decision 40 |
 | Draw D, final | `20261103` | Every line, change, subtotal and headline matched. 3 wrong figures in one balance sheet's labels: "75,000,00075,000,000 shares authorized", where nested hidden-fact spans printed each figure twice. Also 2 cash rows named by a section they aren't in, and a credit note on a line of dashes | STOP-ASK (`evidence/stop-ask-draw-d/`); the doubled figures run through every draw (19 labels in 13 filings); Decision 41, and the sweep now scores label text |
-| Draw E, final | `20261105` | FRESH_E_FOUND | FRESH_E_DONE |
+| Draw E, final | `20261105` | Every balance sheet, cash flow and headline figure matched. In two income statements: lines the arithmetic couldn't place typed Expense by their labels (figures printed in parentheses shown as negative costs, F/U reversed); a tax expense typed Revenue with its sign turned and explained only in the audit; a "/ (loss)" pre-tax subtotal analysed as a line | STOP-ASK (`evidence/stop-ask-draw-e/`); Decision 42, and the sweep now scores unstated sign turns and label-typed rows |
+| Draw F, final | `20261107` | **No wrong figure.** Every value, change, period, headline, identity and section name matched. 2 labels carry "(1)"/"(2)" (the reader numbers a label printed twice by its place), and one credit note is worded for a gain where one year is a loss | None, as said at the Draw E stop: both are listed as known limits, and the naming is documented |
 
-The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found sat elsewhere. Most were headline figures added up from the lines; since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact. Then came label text: an amount quoted in the filing's unit beside figures shown in full (Decision 40: every filing report states that unit), and figures printed twice inside labels (Decision 41, after which the sweep scores label text too).
+The lesson from all of them: the sweep scored line values, and every wrong figure fresh eyes found sat elsewhere. Most were headline figures added up from the lines; since Decision 39 a filing's report shows no figure it added up itself, and the sweep scores every headline figure against its fact. Then came label text: an amount quoted in the filing's unit beside figures shown in full (Decision 40: every filing report states that unit), and figures printed twice inside labels (Decision 41, after which the sweep scores label text too). Last came how an income statement types and signs lines its arithmetic can't place (Decision 42: never by label, every turn stated, printed signs kept).
 
 ## E and F items, final state
 
@@ -227,6 +249,7 @@ The lesson from all of them: the sweep scored line values, and every wrong figur
 39. Draw B STOP-ASK answers: net income by concept; revenue on final types; filing refusals; 52/53-week labels; the headline from the filing's own totals; reading notes in the report; small fixes; chat panels and tables; the oracle title rule; Draw C.
 40. Draw C STOP-ASK answer: every filing report states the unit the filing prints in and that label amounts are quoted as printed; Draw D.
 41. Draw D STOP-ASK answer: a figure inside nested hidden spans is printed once; a section's own subtotal closes it for naming; no credit note on all-zero lines; the headline's negative cue; the sweep scores label text; Draw E.
+42. Draw E STOP-ASK answer: no label typing on filings; every sign turn stated in the report; a line whose effect changes sign keeps its printed figures; slash subtotal labels; the sweep scores unstated turns and label-typed rows; Draw F.
 
 ## Existing assertions edited, with reasons
 
@@ -241,15 +264,16 @@ The lesson from all of them: the sweep scored line values, and every wrong figur
     - the balance sheet workbook refusal, which no longer suggests the income statement, since that refuses too
   - `test_reader_chat.py`: Owen's LTM line, which is now the filing's own Net sales.
   - `test_frontend_contract.py`: the allowed generated tags gain the table tags.
+- **Phase 7, Decision 41:** `test_filing_headlines.py`, two expectations written earlier in this phase. The loss lines in the report and the chat gain ", larger negative".
 
 The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 
 ## Gates
 
-`sh docs/ui/evidence/gates.sh dist` on the final code (`src/` as at `1b10d97`), on macOS with Python 3.11.16. All PASS:
+`sh docs/ui/evidence/gates.sh dist` on the final code (`src/` as at `3cf5714`), on macOS with Python 3.11.16. All PASS:
 - ruff
 - mypy, strict, 71 files: `src/variance_agent`, `scripts` and `deterministic_conditioning` (the evidence tools pass `mypy --strict docs/analysts/evidence` separately)
-- pytest: **2,501 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
+- pytest: **2,505 passed**, up from 2,100 at `8a609c4`; this includes the Windows-path tests, which run on every platform
 - compileall
 - pip check
 - contracts: 19 fixtures unchanged
@@ -257,7 +281,7 @@ The 19 contract fixtures and schemas 1.0-1.8 are byte-identical to `8a609c4`.
 - both artifacts installed without the Excel and PDF extras, each passing `check_installation.py` and pip check
 - the wheel installed with the PDF extra alone
 
-The log is at `~/vaa-edgar-corpus/final-e/gates_dist.log`.
+The log is at `~/vaa-edgar-corpus/final-f/gates_dist.log`.
 
 ## Browser check
 
@@ -282,7 +306,7 @@ This check found two problems, both fixed:
 
   These are why the 90% target is not reached.
 - **PDF and `Financial_Report.xlsx` income reads** carry no facts. They keep the summary of totals added up from their lines, which Decision 39 removed for Inline XBRL.
-- **Unlabeled filing lines in the chat.** When the arithmetic can't place a filing line, the chat asks the analyst to label it. The answer is theirs, and it changes no headline figure.
+- **Unlabeled filing lines in the chat.** When the arithmetic can't place a filing line, it stays Unclassified, and the chat asks the analyst to label it. The answer is theirs, and it changes no headline figure. But it types the line as printed, so labeling a figure printed in parentheses as an expense reads it as a credit.
 - **Bare-year bands** (`2025` / `2026` over Budget/Actual) don't take the E4 path.
 - **Strict and assisted intake differ on uncached formulas** in computed columns.
 - **Captions on the earnings path.** The earnings and quant CLI and file-API paths apply no unit caption, as before this run.
@@ -290,6 +314,8 @@ This check found two problems, both fixed:
 - **A statement continued in an untitled table on the next page** with a different layout is not joined. Its refusal can misstate the cause (Draw C).
 - **Statements in a second document.** A filing whose statements sit in a second Inline XBRL document (a bank's annual report) refuses with "I could not find the financial statements", naming no fix. That message names no next step for any filing without statement tables (Draw C: 6 refusals in 2 filings).
 - **A pre-tax subtotal refused over a $1M gap** that should sit inside R5's rounding interval (Draw C fresh eyes). Not investigated: Draw C informs no change.
+- **A label printed twice, where neither occurrence can be named by an open section,** is numbered by its place ("Deferred income taxes (1)", "(2)"). The report doesn't say which is which (Draw F fresh eyes).
+- **A credit-among-costs note** says "credit" even where one compared year is a loss. The values and status are right (Draw F fresh eyes).
 - **A timing test flaked once.** `test_chat_hardening.py::test_unmatched_questions_on_a_big_file_stay_fast` failed twice in one gates run under load. It passed alone and on the rerun.
 
 ## Not built (Decision 38)
@@ -299,8 +325,8 @@ This check found two problems, both fixed:
 
 ## Not verified
 
-- **The 90% target.** It is not reached on Draw B, C, D or E under Decision 35's strict definition (above).
-- **Section names in labels, by the sweep.** The sweep checks a section name against the filing's presentation linkbase. That linkbase can lack sub-headings the filing prints (Draw E's 6 flags), and where it holds no heading above a line the name isn't checked at all. A check against the printed rows above each line would be exact.
+- **The 90% target.** It is not reached on Draw B, C, D, E or F under Decision 35's strict definition (above).
+- **Section names in labels, by the sweep.** The sweep checks a section name against the filing's presentation linkbase. That linkbase can lack sub-headings the filing prints (Draw E's 6 flags and Draw F's 1, all checked right), and where it holds no heading above a line the name isn't checked at all. A check against the printed rows above each line would be exact.
 - **Cross-reader agreement.** EDGAR carries no PDFs for recent filings, and the SEC no longer publishes `Financial_Report.xlsx` (F2), so the readers could not be compared on the same recent filing (Decision 30).
 - **The new comparisons on real filings.** The sweeps measure one statement per run. LTM, derived metrics and covenants, two-file joins, the limit, benchmark and target bases, and the holdings scorecard were exercised on fictional fixtures and in the guides, never on a drawn filing.
 - **Real analysts.** The per-reader reviews at STOP 2 were subagents given each seat's row of section 3, not people in those seats.
@@ -344,6 +370,7 @@ This check found two problems, both fixed:
   - Draw B: 1 wrong figure, plus 3 headline figures found by fresh eyes, all added up from the lines. Fixed under Decision 39.
   - Draw C: 0 wrong values, but its fresh eyes found label amounts quoted at the filing's unit with no unit stated. Fixed under Decision 40.
   - Draw D: 0 wrong values, but its fresh eyes found figures printed twice inside labels. Fixed under Decision 41, and the sweep now scores label text.
-  - Draw E, the last held-out draw: 0 wrong values. Its 6 scored label flags all name headings the filing prints, so they are a limit of the checker.
-  - All three statements read on 37% (22-56%) of Draw E, short of the 90% target.
+  - Draw E: 0 wrong values, but its fresh eyes found wrong signs, types and F/U in two income statements. Fixed under Decision 42, and the sweep now scores unstated sign turns and label-typed rows.
+  - Draw F, the last held-out draw: 0 wrong values.
+  - All three statements read on 37% (22-56%) of Draw F, short of the 90% target.
 - **Unchanged.** The 19 contract fixtures and schemas 1.0-1.8. No new dependency.

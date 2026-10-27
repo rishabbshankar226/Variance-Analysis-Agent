@@ -20,7 +20,9 @@ contract fixtures and audit schemas 1.0 to 1.8 are unchanged; new facts are in a
   null, and `--xlsx` refuses. Balance sheets and cash flow statements compare as Increase or
   Decrease after the identity and the cash roll-forward hold. Every filing report states the unit
   the filing prints in; amounts inside line labels are quoted as the filing prints them, each figure
-  once, and a repeated label is never named by a section whose subtotal it follows.
+  once, and a repeated label is never named by a section whose subtotal it follows. A line a
+  filing's arithmetic can't place stays unclassified, as printed, never typed by its label, and the
+  report states every sign it turns.
 - Opt-in, for new readers: LTM from a 10-K and a 10-Q (`--ltm-from`); budget and actuals in two
   files (`--compare-file`); `--compare-to limit|benchmark|target`; the `Multiple` measure
   (`--multiple-threshold`); declared derived metrics (`--metrics`); a holdings scorecard

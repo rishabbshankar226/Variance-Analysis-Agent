@@ -62,7 +62,9 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 7 | Decision 41 fixes 1-5 (`a12889c`); the label checks found one more section name on Draw A, fixed by closing a section at every footed subtotal (`1b10d97`); Draw A re-swept with label text scored: 0 wrong, every scored row unchanged | done | sweep `p10-1b10d97`, sha256 `7d379189…` |
 | 7 | Draw E (seed 20261104) swept once at `1b10d97`: **0 wrong values**, 6 label flags all checked right (a checker limit), 10/27 (37%, 22-56%), 12 refusals all plain; final dist gates PASS (2,501); screenshots retaken | done | sweep `E-1b10d97`, sha256 `2ce5dbda…` |
 | 7 | Draw E fresh eyes (seed 20261105): wrong signs, types and F/U in two income statements (label-typed lines; a tax line typed Revenue) | STOP-ASK | evidence `docs/analysts/evidence/stop-ask-draw-e/` |
-| 7 | STOP-ASK answered (Decision 42): fixes 1-5, Draw A re-sweep, Draw F (seed 20261106) | open | seeds committed |
+| 7 | Decision 42 fixes 1-5 (`3cf5714`); Draw A re-swept with unstated turns and label-typed rows scored: 0 wrong, every scored row unchanged | done | sweep `p11-3cf5714`, sha256 `e078e580…` |
+| 7 | Draw F (seed 20261106) swept once at `3cf5714`: **0 wrong values**, 1 label flag checked right (checker limit), 10/27 (37%, 22-56%), 15 refusals all plain; fresh eyes (20261107): **no wrong figure**, 2 place-numbered labels and 1 narrow credit note listed as known limits; final dist gates PASS (2,505); screenshots retaken (124) | done | sweep `F-3cf5714`, sha256 `a0a2c990…` |
+| 7 | `REPORT.md`, CHANGELOG, final commit | done | this commit |
 
 ## Baseline (measured 2026-10-26)
 
