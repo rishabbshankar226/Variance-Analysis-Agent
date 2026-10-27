@@ -54,7 +54,7 @@ from .limits import (
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
-from .pdf_tables import PdfReadError, extract_statement_tables
+from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
 from .number_formats import display_divisor, shows_percent
 from .statement_shape import shape_income_statement
 from .measures import measure_kind
@@ -1387,7 +1387,7 @@ def read_input_assisted(
         if kind != "ooxml":
             return IntakeResult(has_fatal_errors=True, fatal_error_message=legacy_workbook_message(filename, kind))
         result = _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero, selected_period,
-                                   compare_to=compare_to, hidden_rows=hidden_rows)
+                                   compare_to=compare_to, hidden_rows=hidden_rows, per_share_lines=per_share_lines)
         if not result.has_fatal_errors:
             result.visible_transformations.insert(0, renamed_workbook_note(filename))
         return result
@@ -1400,6 +1400,7 @@ def read_input_assisted(
             selected_period,
             compare_to=compare_to,
             hidden_rows=hidden_rows,
+            per_share_lines=per_share_lines,
         )
     if norm_suffix == ".json":
         return _read_json_bytes(data, filename, compare_to=compare_to)
@@ -1577,6 +1578,7 @@ def _read_excel_bytes(
     selected_period: str | None = None,
     compare_to: ComparisonBasis | None = None,
     hidden_rows: str | None = None,
+    per_share_lines: bool = False,
 ) -> IntakeResult:
     try:
         facts = inspect_workbook(data)
@@ -1631,6 +1633,11 @@ def _read_excel_bytes(
 
             # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
             chosen_sheet = sheet
+            duration = None
+            band = re.fullmatch(r"(?P<sheet>.+) \((?P<duration>[^()]+)\)", chosen_sheet or "")
+            if chosen_sheet not in sheetnames and band is not None and band["sheet"] in sheetnames:
+                # "Sheet (9 Months Ended)" names one duration of an EDGAR-style statement sheet.
+                chosen_sheet, duration = band["sheet"], band["duration"]
             if chosen_sheet is None:
                 chosen_sheet = ranked[0].name if ranked else sheetnames[0]
             elif chosen_sheet not in sheetnames:
@@ -1667,6 +1674,16 @@ def _read_excel_bytes(
                 display=display,
                 hidden_rows=hidden_rows,
             )
+            statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
+                          else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines))
+            if statements:
+                # Only a sheet today's read can't find a header on: files that read today read the same.
+                statement = _read_edgar_statement(
+                    statements, duration, full_raw_rows, filename, chosen_sheet, excel,
+                    treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
+                    compare_to=compare_to)
+                statement.available_sheets = sheetnames
+                return statement
             result = _process_raw_table(
                 full_raw_rows,
                 filename,
@@ -1702,6 +1719,104 @@ def _read_excel_bytes(
         finally:
             if wb is not None:
                 wb.close()
+
+
+_STATEMENT_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _statement_cell(value: object) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def _edgar_statement_tables(
+    raw_rows: list[list[object]], layout: SheetLayout, *, per_share_lines: bool,
+) -> list[StatementTable]:
+    """Statements on a sheet laid out like EDGAR's Financial_Report.xlsx (E3).
+
+    The SEC writes the statement title and its unit caption in one cell ("CONSOLIDATED
+    STATEMENTS OF OPERATIONS - USD ($) $ in Millions"), a duration band ("12 Months Ended",
+    merged over its columns) above the period dates, or the dates alone for a balance sheet,
+    then one row per line. Empty when the sheet is not in that shape.
+    """
+    if not raw_rows or not raw_rows[0] or not isinstance(raw_rows[0][0], str):
+        return []
+    head, separator, caption = raw_rows[0][0].strip().partition(" - ")
+    title = statement_title(head) if separator else None
+    if title is None:
+        return []
+    width = max(len(row) for row in raw_rows[:2])
+    band = [_statement_cell(raw_rows[0][c]) if c < len(raw_rows[0]) else "" for c in range(width)]
+    for first_row, first_column, _, last_column in layout.merged:
+        if first_row == 1 and first_column >= 2:
+            for column in range(first_column, min(last_column, width) + 1):
+                band[column - 1] = band[first_column - 1]
+    second = raw_rows[1] if len(raw_rows) > 1 else []
+    dates = [_statement_cell(second[c]) if c < len(second) else "" for c in range(width)]
+    if any(_STATEMENT_YEAR.search(text) for text in dates[1:]):
+        headers, body_start = [f"{band[c]} {dates[c]}".strip() for c in range(1, width)], 2
+    else:
+        headers, body_start = band[1:], 1
+    if sum(1 for header in headers if _STATEMENT_YEAR.search(header)) < 2:
+        return []
+    columns = [c for c in range(1, width) if headers[c - 1]]  # unheaded columns hold footnote marks
+    body = [(_statement_cell(row[0]) if row else "", [_statement_cell(row[c]) if c < len(row) else "" for c in columns])
+            for row in raw_rows[body_start:]]
+    return statement_tables_from_grid(title, caption.strip(), [headers[c - 1] for c in columns], body,
+                                      per_share_lines=per_share_lines)
+
+
+def _read_edgar_statement(
+    tables: list[StatementTable], duration: str | None, raw_rows: list[list[object]], filename: str,
+    sheet_name: str, excel: _ExcelSheet, *, treat_blank_budgets_as_zero: bool, selected_period: str | None,
+    compare_to: ComparisonBasis | None,
+) -> IntakeResult:
+    """Read one statement of an EDGAR-style sheet as the PDF reader reads one (E3)."""
+    def duration_of(table: StatementTable) -> str:
+        return table.name.rpartition(", ")[2] if ", " in table.name else ""
+
+    chosen = tables[0] if duration is None else next((t for t in tables if duration_of(t) == duration), None)
+    if chosen is None:
+        named = ", ".join(f"'{sheet_name} ({duration_of(t)})'" for t in tables if duration_of(t))
+        return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
+            f"Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named or repr(sheet_name)}."))
+    # A machine-written statement has no formulas, hidden lines or scaled formats; refuse any.
+    stop = _unsaved_formulas_stop(excel, filename, lambda r, c: True, describe_cell, sheet_name)
+    if stop is not None:
+        return stop
+    hidden = hidden_data_rows(excel.layout, raw_rows, header_row=1, line_item_column=0)
+    if hidden and excel.hidden_rows is None:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=hidden_rows_question(hidden),
+                            sheet_name=sheet_name, hidden_data_rows=hidden, needs_hidden_rows_choice=True)
+    if hidden and excel.hidden_rows == "exclude":
+        # A statement's subtotals foot over every line, so lines can't be dropped from it.
+        return _statement_refusal(sheet_name, "has lines hidden in Excel, and leaving lines out would break the "
+                                  "statement's subtotals. Count them, or unhide them")
+    if excel.display:
+        return _statement_refusal(sheet_name, "shows some amounts scaled by their number format, so their unit "
+                                  "can't be read from the caption. Give the amounts a plain number format")
+    if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
+        return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
+            f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
+            "and expense yet."))
+    shaped = shape_income_statement(chosen.raw_rows)
+    result = _process_raw_table(
+        shaped.rows, filename, sheet_name=sheet_name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
+    )
+    result.source_kind = "edgar_xlsx"
+    result.reader_notes = [*chosen.notes, *shaped.audit_notes]
+    result.detected_totals[:0] = shaped.subtotals
+    others = [f"This sheet also has {t.name}; choose it as sheet '{sheet_name} ({duration_of(t)})'"
+              for t in tables if t is not chosen and duration_of(t)]
+    result.visible_transformations[:0] = [
+        f"Read '{chosen.name}' from sheet '{sheet_name}', laid out as in an EDGAR Financial_Report.xlsx",
+        *chosen.notes, *shaped.notes, *others]
+    return result
+
+
+def _statement_refusal(sheet_name: str, problem: str) -> IntakeResult:
+    return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name,
+                        fatal_error_message=f"Sheet '{sheet_name}' {problem}, and upload the file again.")
 
 
 _STATEMENT_KINDS = (

@@ -502,7 +502,29 @@ def _period(header: str) -> tuple[str | None, str]:
     return None, group
 
 
-def _statement_tables(group: list[_PageTable], by_company: bool, *, per_share_lines: bool = False) -> list[StatementTable]:
+def statement_title(text: str) -> str | None:
+    """The statement a title cell names ("Consolidated Statements of Operations"), or None."""
+    match = _TITLE_RE.search(text)
+    return _pretty_title(match.group(0)) if match else None
+
+
+def statement_tables_from_grid(
+    title: str, caption: str, headers: list[str], body: list[tuple[str, list[str]]], *, per_share_lines: bool = False,
+) -> list[StatementTable]:
+    """Shape a statement already laid out in cells, as in EDGAR's Financial_Report.xlsx, as a PDF one is.
+
+    `headers` holds each amount column's period text ("12 Months Ended Sep. 27, 2025"), `body` each
+    printed line and its amounts by column; the same duration splits, period labels, left-out
+    per-share lines and repeated-name rules apply. Names carry no page reference.
+    """
+    table = _PageTable(title=title, page_number=0, caption=caption,
+                       columns=[_Column(0.0, 0.0, 0.0, header=header) for header in headers],
+                       body=[(label, {i: value for i, value in enumerate(values) if value}) for label, values in body])
+    return _statement_tables([table], False, per_share_lines=per_share_lines, where="")
+
+
+def _statement_tables(group: list[_PageTable], by_company: bool, *, per_share_lines: bool = False,
+                      where: str | None = None) -> list[StatementTable]:
     first = group[0]
     periods = [_period(c.header) for c in first.columns]
 
@@ -518,13 +540,14 @@ def _statement_tables(group: list[_PageTable], by_company: bool, *, per_share_li
         splits = [("", list(range(len(first.columns))))]
 
     pages = tuple(t.page_number for t in group)
-    where = f"(p. {pages[0]})" if len(pages) == 1 else f"(pp. {pages[0]}-{pages[-1]})"
+    if where is None:
+        where = f"(p. {pages[0]})" if len(pages) == 1 else f"(pp. {pages[0]}-{pages[-1]})"
     tables = []
     for duration, indexes in splits:
         # A statement compares periods; an index of note and page numbers names none.
         if sum(periods[i][0] is not None for i in indexes) < 2:
             continue
-        name = f"{first.title}, {duration} {where}" if duration else f"{first.title} {where}"
+        name = (f"{first.title}, {duration} {where}" if duration else f"{first.title} {where}").rstrip()
         if by_company and first.entity:
             name = f"{first.entity}: {name}"
         tables.append(_statement_table(group, name, pages, indexes, periods, per_share_lines=per_share_lines))
