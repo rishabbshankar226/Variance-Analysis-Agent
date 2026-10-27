@@ -14,6 +14,8 @@ Today a budget-only upload stops at "Could not find a header row with Line Item,
 - Old: `"Could not find a header row with Line Item, Budget, and Actual columns" in resp_upload.text`.
 - New: `"'fixture_f_budget_separate.csv' has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by 'GL Account'." in resp_upload.text`.
 
-Line 153's phase stays `AWAITING_FILE`, since the chat is waiting for the second file, and a new test pins the joined result of the pair. No other existing output changes: single-file reads, strict mode and the 19 contract fixtures are untouched.
+Line 153's phase stays `AWAITING_FILE`, since the chat is waiting for the second file, and a new test pins the joined result of the pair. A grep of `tests/` finds one other assertion of this message, `tests/test_intake_comparison.py:269`. It covers a `Name, Amount` file, which has neither a comparison nor an Actual column, so it keeps the header-row refusal unchanged.
+
+F4's second half, "a 10-K plus a 10-Q cannot be combined either", is already closed by `--ltm-from` (R11) and the chat's "Build LTM". No other existing output changes: single-file reads, strict mode and the 19 contract fixtures are untouched.
 
 The alternative is to leave F4 open and record it as a known limit. I don't recommend it, because the spec names closing this dead end as an intended change.

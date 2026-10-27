@@ -258,6 +258,20 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   analysed, such as the lines below net income), and one entry per column (or null) with the
   column `label` and the fact's `concept`, `context`, `period`, `dims` (axis and member),
   `stored` value (as the XBRL instance holds it), `displayed` value (as printed) and `decimals`.
+- A balance sheet or cash flow comparison read from Inline XBRL adds `statement_kind`
+  (`balance_sheet` or `cash_flow`) and `identities` to that document: each identity checked
+  (`identity`), its two lines (`left`, `right`: total assets against total liabilities and
+  equity, or ending cash against beginning cash), the `columns` it held in, and `holds: true`
+  (a failed identity refuses, so none is recorded). Its rows have `classification_source`
+  `statement`, never revenue or expense, and the record's `totals` is null, because no revenue,
+  expense or net total applies.
+- `source.document` may also be `{kind: "ltm", statement, documents, reader_notes, lines}`, an
+  LTM build from a 10-K and a later 10-Q (`--ltm-from`). `documents` names both filings with
+  their sha256 and statement. Each line carries its `line_item` and `concept`, the `ltm` value,
+  the `comparison` (the fiscal year), and three `components`: fiscal year (weight 1), year to
+  date (1) and prior year to date (-1). Each component gives its `document`, `column`,
+  `context`, printed `displayed` value and the value `used` after the statement's own sign
+  conventions.
 
 These facts are source-derived data and enter the payload digest and analysis fingerprint.
 Comparison-set records stay 1.8; their intake notes, these included, are in each child's

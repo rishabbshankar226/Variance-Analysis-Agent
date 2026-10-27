@@ -549,10 +549,17 @@ _LTM_ASK = ("Upload the 10-K whose fiscal year this 10-Q continues. I'll build L
 
 
 def _offers_ltm(session: Session, intake_res: IntakeResult) -> bool:
-    """A 10-Q's income statement read from Inline XBRL, not yet built into LTM."""
-    months = re.search(r", (\d+) Months Ended$", intake_res.sheet_name or "")
-    return (intake_res.source_kind == "ixbrl" and not intake_res.statement_kind and intake_res.ltm is None
-            and months is not None and int(months.group(1)) < 12 and session.ltm_annual is None)
+    """A 10-Q's income statement read from Inline XBRL (a duration shorter than a year), not yet built into LTM."""
+    if intake_res.source_kind != "ixbrl" or intake_res.statement_kind or intake_res.ltm is not None or session.ltm_annual:
+        return False
+    for line in intake_res.xbrl_lines:
+        for column in line.get("columns", []):  # type: ignore[attr-defined]
+            period = column.get("period") if isinstance(column, dict) else None
+            if isinstance(period, list) and len(period) == 3 and period[0] == "duration":
+                from datetime import date
+                days = (date.fromisoformat(str(period[2])) - date.fromisoformat(str(period[1]))).days
+                return days < 330  # under a fiscal year, 52/53-week years included
+    return False
 
 
 def _handle_build_ltm(session: Session) -> Response:

@@ -33,7 +33,7 @@ Branch `analysts/filings-and-excel`, cut from `main` at `8a609c4`. Corpus and pe
 | 4 | LTM (R11) and `--ltm-from` (R10, CLI) | done | this commit |
 | 4 | Chat: "Build LTM" with a second upload (R10) | done | this commit |
 | 4 | Blank income figures confirmed by footing; all-dash rows listed (Decision 30) | done | `9d3b176` |
-| 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified; read income 28/33 (85%, 69-93%), balance sheet 32/33 (97%, 85-99%), cash flow 32/33; all three read 26/33 (79%, 62-89%), all three fully verified 15/39 primaries | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` |
+| 4 | Draw A at `9d3b176`: zero wrong, 5,596 verified, 80 unverified (every one a dash or confirmed blank, with no fact behind it). All three statements read by section 5's definition on 15 of 33 Inline XBRL filings (45%, 30-62%); read without a refusal on 26/33 (79%, 62-89%). By statement, without a refusal: income 28/33, balance sheet 32/33, cash flow 32/33 | done | sweep `p4c-9d3b176`, sha256 `7b2e5502…` (aggregate recomputed from the CSV with the Inline XBRL denominator) |
 | 4 | F4 two-file join | open (STOP-ASK written, awaiting the owner) | `docs/analysts/evidence/stop-ask-f4/` |
 | 5 | `limit`, `benchmark`, `target`, `Multiple`, derived metrics; STOP 2 | todo | |
 | 6 | Reader surfaces kept at STOP 2 | todo | |

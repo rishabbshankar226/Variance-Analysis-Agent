@@ -403,12 +403,16 @@ def aggregate(results: list[dict[str, object]], results_path: Path) -> dict[str,
     for reader in sorted({str(r["reader"]) for r in results}):
         rows = [r for r in results if r["reader"] == reader]
         filings = {str(r["accession"]) for r in rows}
-        all_three = sum(1 for a in filings if sum(1 for r in rows if r["accession"] == a and r["statement_read"]) == 3)
+        # Section 5's target: Inline XBRL filings that contain statements (a filing without any has no rows).
+        inline = {str(r["accession"]) for r in rows if str(r["inline_xbrl"]) == "1"}
+        all_three = sum(1 for a in inline if sum(1 for r in rows if r["accession"] == a and r["statement_read"]) == 3)
+        unrefused = sum(1 for a in inline if sum(1 for r in rows if r["accession"] == a and r["exit"] == 0) == 3)
         refused = [r for r in rows if r["exit"] == 2]
         summary[reader] = {
-            "filings": len(filings), "statement_runs": len(rows),
+            "filings": len(filings), "inline_xbrl_filings": len(inline), "statement_runs": len(rows),
             "statements_read": sum(1 for r in rows if r["statement_read"]),
-            "filings_with_all_three_read": all_three, "all_three_rate_95ci": wilson(all_three, len(filings)),
+            "filings_with_all_three_read": all_three, "all_three_rate_95ci": wilson(all_three, len(inline)),
+            "filings_with_all_three_unrefused": unrefused, "all_three_unrefused_95ci": wilson(unrefused, len(inline)),
             "refused": len(refused), "refused_plainly": sum(1 for r in refused if r["plain_refusal"]),
             "other_failures": sum(1 for r in rows if r["exit"] not in (0, 2)),
             "lines_verified": sum(int(str(r["verified"])) for r in rows),
@@ -418,8 +422,20 @@ def aggregate(results: list[dict[str, object]], results_path: Path) -> dict[str,
     return summary
 
 
+def aggregate_csv(path: Path) -> dict[str, object]:
+    """Recompute the aggregate from a sweep's per-filing CSV, without re-running the tool."""
+    rows: list[dict[str, object]] = []
+    for row in csv.DictReader(path.open(encoding="utf-8")):
+        rows.append({**row, "exit": int(row["exit"]), "statement_read": row["statement_read"] == "True",
+                     "plain_refusal": row["plain_refusal"] == "True"})
+    return aggregate(rows, path)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if args[:1] == ["--aggregate"]:
+        print(json.dumps(aggregate_csv(Path(args[1])), indent=2))
+        raise SystemExit(0)
     if not args:
         raise SystemExit("usage: sweep.py <draw> [--readers primary,financial_report,pdf]")
     chosen = ["primary", "financial_report", "pdf"]

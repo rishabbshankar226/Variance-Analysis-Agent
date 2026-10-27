@@ -184,3 +184,16 @@ def test_the_chat_says_why_two_filings_do_not_make_ltm() -> None:
     assert (reply.level, reply.chips) == ("error", ["Build LTM"])
     assert reply.text.startswith("The 10-Q's year to date starts 2025-09-29")
     assert session.source_name == "hal-20260328.htm"
+
+
+def test_the_chat_offers_ltm_on_a_first_quarter_10q() -> None:
+    from variance_agent.chat.handlers import handle_upload
+    from variance_agent.chat.session import Session
+
+    periods = {"YTD26": ("2025-09-28", "2025-12-27"), "YTD25": ("2024-09-29", "2024-12-28")}
+    rows = [row("Net sales", fact("us-gaap:Revenues", "YTD26", "1,050"), fact("us-gaap:Revenues", "YTD25", "980")),
+            row("Cost of sales", fact("us-gaap:CostOfRevenue", "YTD26", "580"), fact("us-gaap:CostOfRevenue", "YTD25", "540")),
+            row("Gross margin", fact("us-gaap:GrossProfit", "YTD26", "470"), fact("us-gaap:GrossProfit", "YTD25", "440"))]
+    session = Session()
+    assert "Build LTM" in (handle_upload(session, quarter_filing(rows, periods=periods), "hal-20251227.htm").chips or [])
+    assert "Build LTM" not in (handle_upload(Session(), income_filing(), "hal-20250927.htm").chips or [])
