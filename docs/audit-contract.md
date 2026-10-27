@@ -227,3 +227,30 @@ panel audit root: group keys and captured source identity are in long output.
 The long-format number contract uses strings even for counts; audit metadata
 counts remain JSON integers as the schema specifies. Missing comparisons never
 occupy an analyzed row's numeric comparison field with a fabricated zero.
+
+## Unreleased 1.9: workbook examination and EDGAR statement sheets
+
+Schema 1.9 is selectable and unreleased. It is audit 1.8 plus two closed additions, and every
+1.0 to 1.8 schema keeps its bytes. A run selects 1.9 automatically only when it has something
+1.8 cannot hold: a workbook examination finding, or a statement read from a sheet laid out like
+EDGAR's `Financial_Report.xlsx`. A clean workbook keeps its 1.7 record. Choosing 1.0 to 1.8
+explicitly for such a run is refused before any output is written: "Audit schema {version}
+cannot record what the workbook examination found; use --audit-schema-version 1.9."
+
+- `workbook` is null, or the examination of the sheet that was read: `sheet`; every sheet's
+  `name` and `visibility`; the Excel `tables` on the sheet; `merged_header_ranges`;
+  `hidden_rows` (row, line item, whether an outline group collapsed it) and the person's
+  `hidden_rows_choice` (`include`, `exclude` or null); `hidden_columns` that hold data;
+  `error_cells` with their saved error; `unsaved_formulas` outside the read (inside it they stop
+  intake); `external_links`; `outline_levels`; `recalculate_on_open` (the flag, on a sheet with
+  formulas); `display_scaled_cells` (cell, format, how it is shown); `reading_notes`, the
+  sentences intake wrote for these reads; and the `findings` that selected 1.9 (`hidden_rows`,
+  `hidden_columns`, `error_cells`, `unsaved_formulas`, `display_scaling`, `layout`,
+  `external_links`, `recalculate_on_open`). Each list keeps at most 100 entries.
+- `source.document` may also be `{kind: "edgar_xlsx", statement, sheet, reader_notes}`, the
+  statement a `Financial_Report.xlsx`-style sheet held and every adjustment the reader made, as
+  for a PDF.
+
+These facts are source-derived data and enter the payload digest and analysis fingerprint.
+Comparison-set records stay 1.8; their intake notes, these included, are in each child's
+`inferences`.

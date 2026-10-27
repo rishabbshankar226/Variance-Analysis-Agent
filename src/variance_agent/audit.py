@@ -19,7 +19,7 @@ from .limits import validate_text
 from .version import __version__
 
 CURRENT_SCHEMA_VERSION = "1.7"
-SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8")
+SUPPORTED_SCHEMA_VERSIONS = ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9")
 
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -167,11 +167,22 @@ def write_audit_json(path: str | Path, record: Mapping[str, object]) -> None:
 
 @financial_context()
 def _document_record(document: Mapping[str, object] | None) -> JSONObject | None:
-    """Validate how a PDF statement was read: its name, pages and the reader's notes."""
+    """Validate how a PDF statement was read: its name, pages and the reader's notes.
+
+    Audit 1.9 also records an EDGAR-style statement sheet: its statement, sheet and notes.
+    """
     if document is None:
         return None
     kind, statement = document.get("kind"), document.get("statement")
     pages, notes = document.get("pages"), document.get("reader_notes")
+    if kind == "edgar_xlsx":
+        validate_text(statement, field="source_document statement", nonblank=True)
+        sheet = document.get("sheet")
+        validate_text(sheet, field="source_document sheet", nonblank=True)
+        if not isinstance(notes, (list, tuple)):
+            raise ValueError("source_document reader_notes must be a list of text.")
+        return {"kind": "edgar_xlsx", "statement": str(statement), "sheet": str(sheet),
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes]}
     if kind != "pdf":
         raise ValueError("source_document kind must be 'pdf'.")
     validate_text(statement, field="source_document statement", nonblank=True)
@@ -207,19 +218,26 @@ def build_audit_record(
     """
     verify_result(result)
     extended = is_audience_result(result)
-    schema_version = ("1.8" if extended else CURRENT_SCHEMA_VERSION) if schema_version is None else schema_version
-    if extended and schema_version != "1.8":
+    # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
+    workbook = transformations.get("workbook") if transformations is not None else None
+    needs_19 = workbook is not None or (source_document is not None and source_document.get("kind") == "edgar_xlsx")
+    if schema_version is None:
+        schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
+    if extended and schema_version not in {"1.8", "1.9"}:
         raise ValueError("Audit schema 1.8 is required to record measure and direction choices.")
+    if needs_19 and schema_version != "1.9":
+        raise ValueError(f"Audit schema {schema_version} cannot record what the workbook examination found; "
+                         "use --audit-schema-version 1.9.")
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":
         raise ValueError("Audit schema 1.0 supports USD only; select a newer audit schema.")
-    if source_document is not None and schema_version not in {"1.7", "1.8"}:
+    if source_document is not None and schema_version not in {"1.7", "1.8", "1.9"}:
         raise ValueError(
             f"Audit schema {schema_version} cannot record how a PDF statement was read; "
             "use --audit-schema-version 1.7 for PDF input."
         )
-    if schema_version not in {"1.6", "1.7", "1.8"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
+    if schema_version not in {"1.6", "1.7", "1.8", "1.9"} and result.config.comparison_basis != ComparisonBasis.BUDGET:
         raise ValueError(
             f"Audit schema {schema_version} records the comparison amount as a budget; "
             "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
@@ -236,7 +254,7 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}
 
     quality_rows = tuple(row for row in result.rows if currency_row(row))
     row_count = len(quality_rows)
@@ -320,15 +338,15 @@ def build_audit_record(
         "basis": str(result.config.comparison_basis),
         "label": result.config.comparison_label,
     }
-    if schema_version in {"1.6", "1.7", "1.8"}:
+    if schema_version in {"1.6", "1.7", "1.8", "1.9"}:
         record["comparison"] = comparison
     if schema_version != "1.0":
         record["currency"] = result.config.currency
-    if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         source["worksheet"] = source_worksheet
-    if schema_version in {"1.7", "1.8"}:
+    if schema_version in {"1.7", "1.8", "1.9"}:
         source["document"] = _document_record(source_document)
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         config_identity: JSONObject = {
             "period": result.config.period,
             "dollar_threshold": _decimal(result.config.dollar_threshold),
@@ -336,11 +354,11 @@ def build_audit_record(
             "currency": result.config.currency,
             "type_map": {key:str(value) for key,value in result.config.type_map.items()},
         }
-        if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8"}:
+        if schema_version in {"1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
             config_identity["worksheet"] = source_worksheet
-        if schema_version in {"1.6", "1.7", "1.8"}:
+        if schema_version in {"1.6", "1.7", "1.8", "1.9"}:
             config_identity["comparison"] = comparison
-        if schema_version == "1.8":
+        if schema_version in {"1.8", "1.9"}:
             config_identity["audience"] = audience_configuration(result.config)
         record["provenance"] = {
             "tool_version": __version__,
@@ -357,7 +375,7 @@ def build_audit_record(
         data_quality["summary_verifications"] = [
             _summary_record(row) for row in result.rows if row.summary_verification is not None
         ]
-    if schema_version in {"1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.5", "1.6", "1.7", "1.8", "1.9"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
         zero_reads_map = zero_reads_raw if isinstance(zero_reads_raw, dict) else {}
@@ -378,7 +396,9 @@ def build_audit_record(
             "classification_rules": _json_value(t_raw.get("classification_rules")),
             "mapping_file_sha256": _json_value(t_raw.get("mapping_file_sha256")),
         }
-    if schema_version == "1.8":
+    if schema_version == "1.9":
+        record["workbook"] = _json_value(workbook) if isinstance(workbook, dict) else None
+    if schema_version in {"1.8", "1.9"}:
         record["audience"] = audience_configuration(result.config)
         record["segments"] = segment_records(result)
         record["inferences"] = list(metric_inferences(result.rows, result.config))
@@ -389,11 +409,11 @@ def build_audit_record(
         record["comparison_details"] = [_comparison_record(row) for row in result.rows]
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
-            (_measure_record(row) if schema_version == "1.8" else
+            (_measure_record(row) if schema_version in {"1.8", "1.9"} else
              _row_record(row, include_diagnostics=include_diagnostics)) for row in result.rows
         ]}
     ))
-    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}:
+    if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         record["payload_sha256"] = payload_sha256(record)
     return record
 

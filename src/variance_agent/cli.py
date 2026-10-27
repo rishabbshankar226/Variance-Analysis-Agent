@@ -62,6 +62,14 @@ def _intake_error(intake_res: IntakeResult) -> str:
     return message
 
 
+def _print_examination(intake_res: IntakeResult) -> None:
+    """The workbook examination on stderr, only when it found something (stdout stays the report)."""
+    exam = intake_res.workbook_examination
+    if exam is not None and exam.findings:
+        for line in exam.lines():
+            print(f"[workbook] {line}", file=sys.stderr)
+
+
 def _count(number: int, noun: str) -> str:
     return f"{number} {noun}{'' if number == 1 else 's'}"
 
@@ -433,6 +441,7 @@ def _run(args: Arguments) -> int:
             items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
             type_map = apply_classification_rules(items, gl_rules, keywords=keywords, bulk_default=bulk_def)
 
+        _print_examination(intake_res)
         parsed_rows = rows
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
@@ -456,6 +465,7 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
+        _print_examination(intake_res)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
         parsed_rows = parsed.rows

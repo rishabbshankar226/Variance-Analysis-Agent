@@ -29,6 +29,7 @@ from .classification import infer_line_type
 from .currencies import SYMBOL_CURRENCIES
 from .excel import (
     SheetLayout,
+    WorkbookFacts,
     WorkbookLoader,
     cell_key,
     column_letters,
@@ -267,6 +268,130 @@ def _unsaved_formulas_stop(
     )
 
 
+_MAX_EXAMINED = 100  # entries kept per examination list, so a hostile sheet cannot grow the audit
+
+
+@dataclass(frozen=True)
+class WorkbookExamination:
+    """What the workbook holds beyond the table read; shown and recorded only with a finding.
+
+    A finding is a fact that changes or could change the read of the chosen sheet (Decision 14):
+    hidden data rows or read columns, error results, formulas without a saved result, amounts
+    shown scaled, a layout read differently (bands, side-by-side tables, date headers, an EDGAR
+    statement, a renamed .xls), links to other workbooks, or a request to recalculate on open on
+    a sheet with formulas.
+    """
+
+    sheet: str
+    sheets: tuple[tuple[str, str], ...]  # (name, visibility)
+    tables: tuple[tuple[str, str], ...]  # (name, range) on the chosen sheet
+    merged_header_ranges: tuple[str, ...]
+    hidden_rows: tuple[tuple[int, str, bool], ...]
+    hidden_rows_choice: str | None
+    hidden_columns: tuple[str, ...]
+    error_cells: tuple[tuple[str, str], ...]
+    unsaved_formulas: tuple[str, ...]  # cells outside the read; inside it they stop intake
+    external_links: int
+    outline_rows: int
+    outline_columns: int
+    recalculate_on_open: bool
+    display_scaled_cells: tuple[tuple[str, str, str], ...]  # (cell, format, how it is shown)
+    reading_notes: tuple[str, ...]
+    findings: tuple[str, ...]
+
+    def lines(self) -> list[str]:
+        """Plain sentences for the read summary and stderr."""
+        out = [f"Sheets: {', '.join(f'{name} ({state})' for name, state in self.sheets)}."]
+        if self.tables:
+            out.append(f"Excel tables on this sheet: {', '.join(f'{name} ({where})' for name, where in self.tables)}.")
+        if self.merged_header_ranges:
+            out.append(f"Merged header cells: {', '.join(self.merged_header_ranges)}.")
+        if self.hidden_rows:
+            answer = {"include": "counted", "exclude": "left out"}.get(self.hidden_rows_choice or "", "not decided")
+            listed = ", ".join(f"row {row}{f' ({label})' if label else ''}" for row, label, _ in self.hidden_rows)
+            out.append(f"Hidden rows: {listed}, {answer}.")
+        if self.hidden_columns:
+            out.append(f"Hidden columns: {', '.join(self.hidden_columns)}.")
+        if self.error_cells:
+            out.append(f"Error results: {', '.join(f'{cell} ({error})' for cell, error in self.error_cells)}.")
+        if self.unsaved_formulas:
+            out.append(f"Formulas without a saved result, not read: {', '.join(self.unsaved_formulas)}.")
+        if self.external_links:
+            out.append(f"Links to other workbooks: {self.external_links}; the values saved in this file were read.")
+        if self.outline_rows or self.outline_columns:
+            out.append(f"Outline groups: {self.outline_rows} row level(s), {self.outline_columns} column level(s).")
+        if self.recalculate_on_open:
+            out.append("The workbook asks Excel to recalculate its formulas when it opens.")
+        if self.display_scaled_cells:
+            shown = ", ".join(f"{cell} ('{code}' shows it {how})" for cell, code, how in self.display_scaled_cells)
+            out.append(f"Amounts shown scaled by their number format: {shown}.")
+        return out
+
+    def record(self) -> dict[str, object]:
+        """The audit 1.9 `workbook` group."""
+        return {
+            "sheet": self.sheet,
+            "sheets": [{"name": name, "visibility": state} for name, state in self.sheets],
+            "tables": [{"name": name, "range": where} for name, where in self.tables],
+            "merged_header_ranges": list(self.merged_header_ranges),
+            "hidden_rows": [{"row": row, "line_item": label, "collapsed": collapsed}
+                            for row, label, collapsed in self.hidden_rows],
+            "hidden_rows_choice": self.hidden_rows_choice,
+            "hidden_columns": list(self.hidden_columns),
+            "error_cells": [{"cell": cell, "error": error} for cell, error in self.error_cells],
+            "unsaved_formulas": list(self.unsaved_formulas),
+            "external_links": self.external_links,
+            "outline_levels": {"rows": self.outline_rows, "columns": self.outline_columns},
+            "recalculate_on_open": self.recalculate_on_open,
+            "display_scaled_cells": [{"cell": cell, "format": code, "shown": how}
+                                     for cell, code, how in self.display_scaled_cells],
+            "reading_notes": list(self.reading_notes),
+            "findings": list(self.findings),
+        }
+
+
+def _examine(result: IntakeResult, facts: WorkbookFacts, sheet_path: str, sheet_name: str,
+             sheets: list[tuple[str, str]], raw_rows: list[list[object]]) -> WorkbookExamination:
+    """The examination of the sheet a read used, beside what the read itself recorded."""
+    layout = facts.layouts.get(sheet_path, SheetLayout())
+
+    def address(key: int) -> str:
+        row, column = divmod(key, MAX_COLUMNS + 1)
+        return f"{column_letters(column)}{row}"
+
+    def has_data(column: int) -> bool:
+        return any(column <= len(row) and row[column - 1] not in (None, "") for row in raw_rows)
+
+    errors = tuple((address(key), text) for key, text in sorted(layout.errors.items()))
+    unsaved = tuple(address(key) for key in sorted(layout.uncached))
+    scaled = tuple((c.address, c.code[:40], _shown_as(c.divisor, c.percent)) for c in result.display_scaled_cells)
+    recalculate = facts.recalculate_on_open and bool(layout.formulas)
+    found = tuple(name for name, present in (
+        ("hidden_rows", bool(result.hidden_data_rows)), ("hidden_columns", bool(result.hidden_read_columns)),
+        ("error_cells", bool(errors)), ("unsaved_formulas", bool(unsaved)), ("display_scaling", bool(scaled)),
+        ("layout", result.layout_read), ("external_links", facts.external_links > 0),
+        ("recalculate_on_open", recalculate)) if present)
+    return WorkbookExamination(
+        sheet=sheet_name,
+        sheets=tuple(sheets[:_MAX_EXAMINED]),
+        tables=facts.tables.get(sheet_path, ())[:_MAX_EXAMINED],
+        merged_header_ranges=tuple(f"{column_letters(c1)}{r1}:{column_letters(c2)}{r2}" for r1, c1, r2, c2
+                                   in layout.merged if r1 <= result.header_row_number)[:_MAX_EXAMINED],
+        hidden_rows=tuple(result.hidden_data_rows[:_MAX_EXAMINED]),
+        hidden_rows_choice=result.hidden_rows_choice,
+        hidden_columns=tuple(column_letters(c) for c in sorted(layout.hidden_columns) if has_data(c))[:_MAX_EXAMINED],
+        error_cells=errors[:_MAX_EXAMINED],
+        unsaved_formulas=unsaved[:_MAX_EXAMINED],
+        external_links=facts.external_links,
+        outline_rows=layout.outline_rows,
+        outline_columns=layout.outline_columns,
+        recalculate_on_open=recalculate,
+        display_scaled_cells=scaled[:_MAX_EXAMINED],
+        reading_notes=tuple(result.layout_notes),
+        findings=found,
+    )
+
+
 @dataclass(frozen=True)
 class DisplayScaledCell:
     """A Currency amount whose number format shows it scaled (R2): what the reader is told."""
@@ -323,9 +448,19 @@ class IntakeResult:
     hidden_data_rows: list[tuple[int, str, bool]] = field(default_factory=list)
     needs_hidden_rows_choice: bool = False  # stopped to ask whether to count them
     hidden_rows_choice: str | None = None  # the answer applied, when there were such rows
+    hidden_read_columns: list[str] = field(default_factory=list)  # read columns Excel hides
+    # Notes from the Phase 1 workbook reads (E1-E8), in order, and whether the layout itself was
+    # read differently (bands, side-by-side tables, date headers, an EDGAR statement, a renamed .xls).
+    layout_notes: list[str] = field(default_factory=list)
+    layout_read: bool = False
+    workbook_examination: WorkbookExamination | None = None
+    source_statement: str | None = None  # the statement an EDGAR-style sheet held
 
     def source_document(self) -> dict[str, object] | None:
-        """How a PDF statement was read, for the audit record; None for other files."""
+        """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
+        if self.source_kind == "edgar_xlsx" and self.sheet_name is not None and self.source_statement is not None:
+            return {"kind": "edgar_xlsx", "statement": self.source_statement, "sheet": self.sheet_name,
+                    "reader_notes": list(self.reader_notes)}
         if self.source_kind != "pdf" or self.sheet_name is None:
             return None
         return {"kind": "pdf", "statement": self.sheet_name, "pages": list(self.source_pages),
@@ -336,6 +471,8 @@ class IntakeResult:
         """Return True if any heuristic adjustment or transformation was made that warrants confirmation."""
         if self.comparison_basis != ComparisonBasis.BUDGET:
             return True
+        if self.workbook_examination is not None and self.workbook_examination.findings:
+            return True  # the analyst sees what the workbook holds before analysis
         if self.header_row_number > 1:
             return True
         if self.rows_skipped_count > 0:
@@ -1391,6 +1528,12 @@ def read_input_assisted(
                                    compare_to=compare_to, hidden_rows=hidden_rows, per_share_lines=per_share_lines)
         if not result.has_fatal_errors:
             result.visible_transformations.insert(0, renamed_workbook_note(filename))
+            result.layout_notes.insert(0, renamed_workbook_note(filename))
+            result.layout_read = True
+            if result.workbook_examination is not None:
+                result.workbook_examination = replace(
+                    result.workbook_examination, reading_notes=tuple(result.layout_notes),
+                    findings=tuple(dict.fromkeys([*result.workbook_examination.findings, "layout"])))
         return result
     if norm_suffix in {".xlsx", ".xlsm"}:
         return _read_excel_bytes(
@@ -1628,7 +1771,8 @@ def _read_excel_bytes(
                 all_sheets_raw.append((name, sheet_rows))
 
             ranked = rank_workbook_sheets(all_sheets_raw)
-            hidden = {n for n in sheetnames if getattr(wb[n], "sheet_state", "visible") != "visible"}
+            sheet_states = [(n, str(getattr(wb[n], "sheet_state", "visible"))) for n in sheetnames]
+            hidden = {n for n, state in sheet_states if state != "visible"}
             if hidden:
                 ranked = _hidden_sheets_last(ranked, hidden)
 
@@ -1684,6 +1828,9 @@ def _read_excel_bytes(
                     treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
                     compare_to=compare_to)
                 statement.available_sheets = sheetnames
+                if not statement.has_fatal_errors:
+                    statement.workbook_examination = _examine(
+                        statement, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
                 return statement
             if duration is not None:
                 excel = replace(excel, block=duration)
@@ -1705,6 +1852,9 @@ def _read_excel_bytes(
                     ranked = _hidden_sheets_last(ranked, hidden)
             result.candidate_sheets = ranked
             result.available_sheets = sheetnames
+            if not result.has_fatal_errors:
+                result.workbook_examination = _examine(
+                    result, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
             if chosen_sheet != sheetnames[0] and ranked:
                 rationale = (
                     ranked[0].rationale if ranked[0].name == chosen_sheet
@@ -1887,13 +2037,15 @@ def _read_edgar_statement(
         selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
     )
     result.source_kind = "edgar_xlsx"
+    result.source_statement = chosen.name
     result.reader_notes = [*chosen.notes, *shaped.audit_notes]
     result.detected_totals[:0] = shaped.subtotals
     others = [f"This sheet also has {t.name}; choose it as sheet '{sheet_name} ({duration_of(t)})'"
               for t in tables if t is not chosen and duration_of(t)]
-    result.visible_transformations[:0] = [
-        f"Read '{chosen.name}' from sheet '{sheet_name}', laid out as in an EDGAR Financial_Report.xlsx",
-        *chosen.notes, *shaped.notes, *others]
+    read_note = f"Read '{chosen.name}' from sheet '{sheet_name}', laid out as in an EDGAR Financial_Report.xlsx"
+    result.visible_transformations[:0] = [read_note, *chosen.notes, *shaped.notes, *others]
+    result.layout_notes[:0] = [read_note, *others]
+    result.layout_read = True
     return result
 
 
@@ -2103,6 +2255,8 @@ def _process_raw_table(
                                     layout_retry=False)
         if not result.has_fatal_errors:
             result.visible_transformations.insert(0, note)
+            result.layout_notes.insert(0, note)
+            result.layout_read = True
         return result
 
     if excel is not None and excel.block is not None and layout_retry:
@@ -2250,16 +2404,21 @@ def _process_raw_table(
     dash_count = 0
     minus_count = 0  # trailing / typographic minus signs read as negative
 
+    layout_notes: list[str] = [date_note] if date_note is not None else []
+    hidden_read_columns: list[str] = []
     if hidden_rows and excel is not None and excel.hidden_rows is not None:
-        visible_transformations.append(hidden_rows_note(excel.hidden_rows, hidden_rows))
+        layout_notes.append(hidden_rows_note(excel.hidden_rows, hidden_rows))
+        visible_transformations.append(layout_notes[-1])
     if excel is not None:
         for role, idx in sorted(roles.items(), key=lambda item: item[1]):
             if role in {CanonicalRole.LINE_ITEM, CanonicalRole.BUDGET, CanonicalRole.ACTUAL} \
                     and idx + 1 in excel.layout.hidden_columns:
                 what = ("line items" if role is CanonicalRole.LINE_ITEM
                         else comparison_field if role is CanonicalRole.BUDGET else "Actual")
-                visible_transformations.append(
+                hidden_read_columns.append(column_letters(idx + 1))
+                layout_notes.append(
                     f"Read {what} from {_column_name(idx)} ('{column_mapping.get(role, '')}'), which is hidden in Excel.")
+                visible_transformations.append(layout_notes[-1])
 
     data_rows = raw_rows[header_idx + 1:]
     for physical_idx, row in enumerate(data_rows, start=header_row_number + 1):
@@ -2432,6 +2591,7 @@ def _process_raw_table(
         if detected_mult != Decimal("1"):
             detected_mult = Decimal("1")  # the cells already hold full amounts
         visible_transformations.append(display_note)
+        layout_notes.append(display_note)
     if detected_mult != Decimal("1"):
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
         unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
@@ -2501,6 +2661,9 @@ def _process_raw_table(
         currency_amount_cells=len(currency_cells),
         hidden_data_rows=hidden_rows,
         hidden_rows_choice=excel.hidden_rows if hidden_rows and excel is not None else None,
+        hidden_read_columns=hidden_read_columns,
+        layout_notes=layout_notes,
+        layout_read=date_note is not None,
     )
 
 
@@ -2600,6 +2763,9 @@ def audit_transformations(
         "period_selection": mapping.period_column_selection if mapping is not None else None,
         "classification_rules": mapping.classification_rules if mapping is not None else None,
         "mapping_file_sha256": mapping_sha256(mapping) if mapping is not None else None,
+        # Present only with a finding; audit 1.9 records it, older versions refuse it.
+        **({"workbook": intake_res.workbook_examination.record()}
+           if intake_res.workbook_examination is not None and intake_res.workbook_examination.findings else {}),
     }
 
 
@@ -2649,6 +2815,11 @@ def format_intake_summary(result: IntakeResult) -> str:
         for transform in result.visible_transformations:
             if not transform.startswith("Analyzed period:"):
                 lines.append(f"- {transform}")
+
+    exam = result.workbook_examination
+    if exam is not None and exam.findings:
+        lines.append("\n**What I noticed in the workbook:**")
+        lines.extend(f"- {line}" for line in exam.lines())
 
     if result.problems:
         lines.append("\n⚠️ **Items needing attention:**")
