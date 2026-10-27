@@ -35,6 +35,9 @@ from .excel import (
     describe_cell,
     hidden_data_rows,
     hidden_rows_note,
+    legacy_workbook_message,
+    renamed_workbook_note,
+    workbook_kind,
     hidden_rows_question,
     inspect_workbook,
     unsaved_formula_cells,
@@ -69,7 +72,7 @@ from .comparison import (
     select_strict_comparison,
     zero_comparison_phrase,
 )
-from .parsing import normalize_key
+from .parsing import normalize_key, web_page_message
 
 
 class CanonicalRole(StrEnum):
@@ -1354,6 +1357,17 @@ def read_input_assisted(
         )
         if encoding_note and not result.has_fatal_errors:
             result.visible_transformations.insert(0, encoding_note)
+        return result
+    if norm_suffix in {".htm", ".html"}:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=web_page_message(filename))
+    if norm_suffix == ".xls":
+        kind = workbook_kind(data)
+        if kind != "ooxml":
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=legacy_workbook_message(filename, kind))
+        result = _read_excel_bytes(data, filename, sheet, treat_blank_budgets_as_zero, selected_period,
+                                   compare_to=compare_to, hidden_rows=hidden_rows)
+        if not result.has_fatal_errors:
+            result.visible_transformations.insert(0, renamed_workbook_note(filename))
         return result
     if norm_suffix in {".xlsx", ".xlsm"}:
         return _read_excel_bytes(

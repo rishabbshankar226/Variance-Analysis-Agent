@@ -405,6 +405,11 @@ def read_comparison_input(
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
+    if suffix.lower() == ".xls":
+        from .excel import legacy_workbook_message, workbook_kind
+        if workbook_kind(data) != "ooxml":
+            raise ValueError(legacy_workbook_message(filename, workbook_kind(data)))
+        suffix = ".xlsx"
     if hidden_rows is not None:
         if hidden_rows not in HIDDEN_ROW_CHOICES:
             raise ValueError("hidden_rows must be include or exclude.")

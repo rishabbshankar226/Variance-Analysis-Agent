@@ -35,7 +35,7 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 const MESSAGE_TIMEOUT_MS = 60_000; // the server is single-threaded; a PDF read can take ~20 s
 const UPLOAD_TIMEOUT_MS = 120_000;
 const STATUS_TIMEOUT_MS = 10_000;
-const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.pdf'];
+const VALID_EXTENSIONS = ['.csv', '.json', '.xlsx', '.xlsm', '.xls', '.pdf', '.htm', '.html'];
 
 // ── Phases (one label for every chat.session.Phase; a test keeps them complete) ──
 /** @type {Record<string, string>} */
@@ -1290,7 +1290,7 @@ function boot() {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     if (!VALID_EXTENSIONS.includes(ext)) {
       addAgentMessage(
-        'Unsupported file format. Please upload a CSV, JSON, XLSX, XLSM, or PDF file.',
+        'Unsupported file format. Please upload a CSV, JSON, Excel (.xlsx, .xlsm, .xls), PDF or HTML file.',
         null, null, true, 'error'
       );
       return;

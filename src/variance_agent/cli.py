@@ -323,14 +323,14 @@ def _run(args: Arguments) -> int:
     _validate_output_paths(args)
     input_path = Path(args.input)
     is_pdf = input_path.suffix.lower() == ".pdf"
-    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm"} and not is_pdf:
+    if args.sheet is not None and input_path.suffix.lower() not in {".xlsx", ".xlsm", ".xls"} and not is_pdf:
         raise ValueError("--sheet requires XLSX or XLSM input.")
     if getattr(args, "hidden_rows", None) is not None:
-        if input_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+        if input_path.suffix.lower() not in {".xlsx", ".xlsm", ".xls"}:
             raise ValueError("--hidden-rows requires XLSX or XLSM input.")
         if not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
             raise ValueError("--hidden-rows requires --assisted or --mapping; strict intake reads every row as given.")
-    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)))
+    validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None

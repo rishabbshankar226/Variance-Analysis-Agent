@@ -251,6 +251,37 @@ def hidden_rows_note(choice: str, rows: list[tuple[int, str, bool]]) -> str:
     return f"{verb} {len(rows)} row{'s' if len(rows) != 1 else ''} hidden in Excel: {', '.join(named)}."
 
 
+_OLE2_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_SAVE_AS = "Open it in Excel, choose File > Save As, pick Excel Workbook (.xlsx), and upload that copy"
+
+
+def workbook_kind(data: bytes) -> str:
+    """What a file named .xls holds: "ooxml" (an .xlsx), "biff" (Excel 97-2003), "html" or "other"."""
+    if data.startswith(b"PK\x03\x04"):
+        return "ooxml"
+    if data.startswith(_OLE2_SIGNATURE):
+        return "biff"
+    head = data[:1024].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith((b"<!doctype html", b"<html")) or (head.startswith(b"<?xml") and b"<html" in head):
+        return "html"
+    return "other"
+
+
+def legacy_workbook_message(filename: str, kind: str) -> str:
+    """The refusal for an .xls that is not an .xlsx inside, with the fix."""
+    if kind == "biff":
+        return f"'{filename}' is in the Excel 97-2003 format (.xls), which I can't read. {_SAVE_AS}."
+    if kind == "html":
+        return (f"'{filename}' is a web page saved with an .xls name, not an Excel workbook. "
+                f"{_SAVE_AS}, or export it as CSV.")
+    return (f"'{filename}' isn't an Excel workbook I can read. Save it from Excel as an Excel Workbook "
+            "(.xlsx) or as CSV, and upload that copy.")
+
+
+def renamed_workbook_note(filename: str) -> str:
+    return f"Read '{filename}' as an Excel workbook: it is an .xlsx file with an .xls name."
+
+
 def _truthy(value: str | None) -> bool:
     return value is not None and value.strip().lower() in {"1", "true"}
 

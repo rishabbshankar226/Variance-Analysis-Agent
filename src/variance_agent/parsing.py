@@ -12,7 +12,8 @@ from typing import Iterable, cast
 from zipfile import BadZipFile
 
 from .currencies import SYMBOL_CURRENCIES
-from .excel import WorkbookLoader, cell_value, inspect_workbook, table_formulas_message
+from .excel import (WorkbookLoader, cell_value, inspect_workbook, legacy_workbook_message, table_formulas_message,
+                    workbook_kind)
 from .limits import (
     MAX_CELLS, MAX_COLUMNS, MAX_INPUT_BYTES, MAX_JSON_DEPTH, MAX_NUMBER_LENGTH,
     MAX_ROWS, validate_text,
@@ -251,8 +252,17 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))  # noqa: B009 (dynamic optional import)
 
 
-def validate_input_format(suffix: str, *, assisted: bool = False) -> None:
+def web_page_message(filename: str) -> str:
+    """The refusal for an HTML file, naming what to upload instead."""
+    return (f"'{filename}' is a web page. If it's a 10-K or 10-Q from SEC EDGAR, upload the filing's PDF, or "
+            "download Financial_Report.xlsx from the filing's EDGAR folder and upload that; I can't read the "
+            "HTML filing itself yet.")
+
+
+def validate_input_format(suffix: str, *, assisted: bool = False, filename: str | None = None) -> None:
     suffix = suffix.lower()
+    if suffix in {".htm", ".html"}:
+        raise ValueError(web_page_message(filename or f"input{suffix}"))
     if suffix == ".pdf":
         if not assisted:
             raise ValueError(
@@ -260,9 +270,9 @@ def validate_input_format(suffix: str, *, assisted: bool = False) -> None:
                 "filing and lists every adjustment it makes."
             )
         return
-    if suffix not in {".csv", ".json", ".xlsx", ".xlsm"}:
+    if suffix not in {".csv", ".json", ".xlsx", ".xlsm", ".xls"}:
         raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
-    if suffix in {".xlsx", ".xlsm"}:
+    if suffix in {".xlsx", ".xlsm", ".xls"}:
         _excel_loader()
 
 
@@ -294,6 +304,12 @@ def load_input(
     data: bytes, suffix: str, *, source_name: str = "input", sheet: str | None = None
 ) -> ParsedInput:
     """Parse the same captured bytes whose digest identifies the analysis input."""
+    if suffix.lower() == ".xls":
+        # Read by content: an .xlsx renamed .xls is read as one; anything else is refused with the fix.
+        kind = workbook_kind(data)
+        if kind != "ooxml":
+            raise ValueError(legacy_workbook_message(source_name, kind))
+        suffix = ".xlsx"
     _validate_capture(data)
     suffix = suffix.lower()
     if sheet is not None and suffix not in {".xlsx", ".xlsm"}:
