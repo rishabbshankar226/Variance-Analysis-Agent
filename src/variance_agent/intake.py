@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import codecs
 import csv
+import datetime as dt
 import io
 import re
 import unicodedata
@@ -1022,6 +1023,27 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))  # noqa: B009 (dynamic optional import)
 
 
+_MONTH_ABBREVIATIONS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _date_period(value: object) -> str | None:
+    """A month period label ("Sep 2026") for a date-typed cell, as the PDF reader labels a dated column."""
+    if not isinstance(value, dt.date):
+        return None
+    return f"{_MONTH_ABBREVIATIONS[value.month - 1]} {value.year}"
+
+
+def _dated_header_rows(raw_rows: list[list[object]], max_scan: int = 25) -> tuple[list[list[object]], bool]:
+    """The rows header detection scans, with date-typed cells read as period labels (E6)."""
+    converted = False
+    scan: list[list[object]] = []
+    for row in raw_rows[:max_scan]:
+        labels = [_date_period(cell) for cell in row]
+        converted = converted or any(label is not None for label in labels)
+        scan.append([cell if label is None else label for cell, label in zip(row, labels, strict=True)])
+    return ([*scan, *raw_rows[max_scan:]], True) if converted else (raw_rows, False)
+
+
 def _header_cell_str(cell: object) -> str:
     if cell is None:
         return ""
@@ -1847,7 +1869,16 @@ def _process_raw_table(
             sheet_name=sheet_name,
         )
 
-    header_idx, roles, ignored_col_indices = detect_header_row(raw_rows, selected_period=selected_period)
+    dated_rows, has_dates = _dated_header_rows(raw_rows)
+    header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)
+    date_note = None
+    if header_idx is not None and has_dates and dated_rows[header_idx] != raw_rows[header_idx]:
+        # Only the header row takes the labels; a date in a data cell keeps its value.
+        original = raw_rows[header_idx]
+        dated = [f"{cell.isoformat()[:10]} as {_date_period(cell)} ({_column_name(idx)})"
+                 for idx, cell in enumerate(original) if isinstance(cell, dt.date)]
+        date_note = f"Read the dates in the header row as periods: {', '.join(dated)}."
+        raw_rows = [*raw_rows[:header_idx], dated_rows[header_idx], *raw_rows[header_idx + 1:]]
     if header_idx is None:
         # A header cell that is a formula Excel never calculated reads as blank; say so instead.
         stop = _unsaved_formulas_stop(excel, filename, lambda r, c: r <= min(len(raw_rows), 25), describe_cell,
@@ -1904,7 +1935,7 @@ def _process_raw_table(
         if idx < len(header_row) and str(header_row[idx]).strip()
     ]
 
-    visible_transformations: list[str] = []
+    visible_transformations: list[str] = [date_note] if date_note is not None else []
 
     if detection.basis != ComparisonBasis.BUDGET and detection.message:
         visible_transformations.append(detection.message)
