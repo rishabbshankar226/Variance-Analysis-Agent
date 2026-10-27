@@ -507,11 +507,12 @@ def _file_is_gone(session: Session) -> Response:
     )
 
 
-_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf"}
+_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf", ".htm", ".html"}
 
 
 def _is_pdf(session: Session) -> bool:
-    return (session.source_suffix or "").lower() == ".pdf"
+    """Whether the session's file is a filing, whose tables are statements rather than sheets."""
+    return (session.source_suffix or "").lower() in {".pdf", ".htm", ".html"}
 
 
 def _sheet_word(session: Session) -> str:

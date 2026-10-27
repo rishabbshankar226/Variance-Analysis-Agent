@@ -175,6 +175,14 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
         return None
     kind, statement = document.get("kind"), document.get("statement")
     pages, notes = document.get("pages"), document.get("reader_notes")
+    if kind == "ixbrl":
+        validate_text(statement, field="source_document statement", nonblank=True)
+        lines = document.get("lines")
+        if not isinstance(notes, (list, tuple)) or not isinstance(lines, (list, tuple)):
+            raise ValueError("source_document reader_notes and lines must be lists.")
+        return {"kind": "ixbrl", "statement": str(statement),
+                "reader_notes": [validate_text(note, field="source_document reader note") for note in notes],
+                "lines": [_json_value(line) for line in lines]}
     if kind == "edgar_xlsx":
         validate_text(statement, field="source_document statement", nonblank=True)
         sheet = document.get("sheet")
@@ -220,7 +228,7 @@ def build_audit_record(
     extended = is_audience_result(result)
     # A workbook examination finding or an EDGAR-style statement sheet is recorded only by 1.9.
     workbook = transformations.get("workbook") if transformations is not None else None
-    needs_19 = workbook is not None or (source_document is not None and source_document.get("kind") == "edgar_xlsx")
+    needs_19 = workbook is not None or (source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl"})
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:

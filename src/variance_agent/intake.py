@@ -56,8 +56,10 @@ from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context
 from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
+from .ixbrl import IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
-from .statement_shape import shape_income_statement
+from .statement_shape import ShapedStatement, shape_income_statement
+from .ixbrl import Line as IxLine
 from .measures import measure_kind
 from .models import MeasureKind
 from .comparison import (
@@ -74,7 +76,7 @@ from .comparison import (
     select_strict_comparison,
     zero_comparison_phrase,
 )
-from .parsing import normalize_key, web_page_message
+from .parsing import normalize_key
 
 
 class CanonicalRole(StrEnum):
@@ -458,9 +460,14 @@ class IntakeResult:
     layout_read: bool = False
     workbook_examination: WorkbookExamination | None = None
     source_statement: str | None = None  # the statement an EDGAR-style sheet held
+    # An Inline XBRL read: each line's XBRL key per column, for audit 1.9 (PLAN.md R1).
+    xbrl_lines: list[dict[str, object]] = field(default_factory=list)
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
+        if self.source_kind == "ixbrl" and self.source_statement is not None:
+            return {"kind": "ixbrl", "statement": self.source_statement, "reader_notes": list(self.reader_notes),
+                    "lines": list(self.xbrl_lines)}
         if self.source_kind == "edgar_xlsx" and self.sheet_name is not None and self.source_statement is not None:
             return {"kind": "edgar_xlsx", "statement": self.source_statement, "sheet": self.sheet_name,
                     "reader_notes": list(self.reader_notes)}
@@ -1522,7 +1529,8 @@ def read_input_assisted(
             result.visible_transformations.insert(0, encoding_note)
         return result
     if norm_suffix in {".htm", ".html"}:
-        return IntakeResult(has_fatal_errors=True, fatal_error_message=web_page_message(filename))
+        return _read_ixbrl_bytes(data, filename, sheet, treat_blank_budgets_as_zero, selected_period,
+                                 compare_to=compare_to, per_share_lines=per_share_lines)
     if norm_suffix == ".xls":
         kind = workbook_kind(data)
         if kind != "ooxml":
@@ -2151,6 +2159,123 @@ def _read_edgar_statement(
 def _statement_refusal(sheet_name: str, problem: str) -> IntakeResult:
     return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name,
                         fatal_error_message=f"Sheet '{sheet_name}' {problem}, and upload the file again.")
+
+
+def _half_width(decimals: str) -> Decimal:
+    """Half the rounding interval a fact's `decimals` states (XBRL Calculations 1.1, 5.2.3)."""
+    if decimals.strip().upper() == "INF" or not re.fullmatch(r"-?\d+", decimals.strip()):
+        return Decimal(0)
+    return Decimal("0.5").scaleb(-int(decimals))
+
+
+def _foots(terms: list[tuple[Decimal, str, int]], total: tuple[Decimal, str]) -> bool:
+    """R5: the weighted terms' rounding intervals, summed, overlap the total's (closed intervals)."""
+    with financial_context():
+        centre = sum((value * weight for value, _, weight in terms), Decimal(0))
+        spread = sum((_half_width(decimals) for _, decimals, _ in terms), Decimal(0)) + _half_width(total[1])
+        return abs(centre - total[0]) <= spread
+
+
+def _unique_names(lines: list[tuple[str, str]]) -> list[str]:
+    """Tell repeated labels apart by section, else by their place; keys stay with the line by position."""
+    labels = [label for label, _ in lines]
+    names = list(labels)
+    for label in {label for label in labels if labels.count(label) > 1}:
+        at = [i for i, name in enumerate(labels) if name == label]
+        sections = [lines[i][1] for i in at]
+        for n, i in enumerate(at, start=1):
+            names[i] = f"{sections[n - 1]}: {label}" if all(sections) and len(set(sections)) == len(at) else f"{label} ({n})"
+    return names
+
+
+def _key_record(label: str, key: LineKey | None) -> dict[str, object] | None:
+    if key is None:
+        return None
+    return {"label": label, "concept": key.concept, "context": key.context, "period": list(key.period),
+            "dims": [{"axis": axis, "member": member} for axis, member in key.dims],
+            "stored": format(key.stored, "f"), "displayed": format(key.displayed, "f"), "decimals": key.decimals}
+
+
+def _read_ixbrl_bytes(
+    data: bytes,
+    filename: str,
+    sheet: str | None,
+    treat_blank_budgets_as_zero: bool,
+    selected_period: str | None = None,
+    compare_to: ComparisonBasis | None = None,
+    per_share_lines: bool = False,
+) -> IntakeResult:
+    """Read one face statement from an Inline XBRL 10-K or 10-Q; each statement acts like a worksheet."""
+    try:
+        statements = read_statements(data, filename, per_share_lines=per_share_lines)
+    except IxbrlError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc), source_kind="ixbrl")
+    names = [s.name for s in statements]
+    comparable = [s.name for s in statements if s.kind not in _NOT_REVENUE_AND_EXPENSE]
+    ranked = rank_statements(names)
+    chosen = next((s for s in statements if s.name == (ranked[0].name if sheet is None else sheet)), None)
+    if chosen is None:
+        return IntakeResult(has_fatal_errors=True, available_sheets=names, source_kind="ixbrl", fatal_error_message=(
+            f"No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}."))
+    if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
+        instead = f" Choose an income statement instead: {', '.join(comparable)}." if comparable else ""
+        return IntakeResult(has_fatal_errors=True, available_sheets=comparable, source_kind="ixbrl", fatal_error_message=(
+            f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue "
+            f"and expense yet.{instead}"))
+    lines = chosen.lines
+    measures = any(line.measure != "Currency" for line in lines)
+    names_by_line = _unique_names([(line.label, line.section) for line in lines])
+    header: list[object] = ["Line Item", *chosen.labels, *(["Measure", "Better"] if measures else [])]
+    raw_rows: list[list[object]] = [header]
+    for name, line in zip(names_by_line, lines, strict=True):
+        cells: list[object] = [format(key.displayed, "f") if key is not None else "" for key in line.keys]
+        if measures:
+            cells += [line.measure, "Higher" if line.measure == "Per Share" else ""]
+        raw_rows.append([name, *cells])
+    precisions = [int(key.decimals) for line in lines if line.measure == "Currency" for key in line.keys
+                  if key is not None and re.fullmatch(r"-?\d+", key.decimals)]
+    unit = Decimal(1).scaleb(-min(precisions)) if precisions else None
+    shaped = shape_income_statement(raw_rows, unit)
+    fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
+    if fail is not None:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
+    result = _process_raw_table(
+        shaped.rows, filename, sheet_name=chosen.name, treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period, compare_to=compare_to, signs_resolved=shaped.shaped,
+    )
+    left_out = [f"Left out {item}" for item in chosen.left_out]
+    result.source_kind = "ixbrl"
+    result.source_statement = chosen.name
+    result.reader_notes = [*chosen.notes, *left_out, *shaped.audit_notes]
+    result.xbrl_lines = [
+        {"line_item": names_by_line[i], "concept": lines[i].concept, "measure": lines[i].measure,
+         "subtotal": i not in shaped.kept,
+         "columns": [_key_record(label, key) for label, key in zip(chosen.labels, lines[i].keys, strict=True)]}
+        for i in range(len(lines))]
+    result.candidate_sheets = ranked
+    result.available_sheets = names
+    result.comparable_sheets = comparable
+    result.detected_totals[:0] = shaped.subtotals
+    result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes]
+    return result
+
+
+def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
+    """R5's refusal, or None when every subtotal foots within its facts' rounding."""
+    fix = "Upload the filing's PDF, or a CSV or Excel copy of the statement."
+    if shaped.unmatched:
+        return (f"I couldn't tell which lines '{shaped.unmatched[0]}' adds up in the {statement}, so I can't check it "
+                f"and stopped instead of guessing. {fix}")
+    for total_row, terms in shaped.matches:
+        for column, total_key in enumerate(lines[total_row].keys):
+            if total_key is None:
+                continue
+            parts = [(key.displayed, key.decimals, weight) for row, weight in terms
+                     for key in [lines[row].keys[column]] if key is not None]
+            if not _foots(parts, (total_key.displayed, total_key.decimals)):
+                return (f"'{names[total_row]}' in the {statement} doesn't add up from the lines above it within the "
+                        f"filing's rounding, so I stopped instead of guessing. {fix}")
+    return None
 
 
 _STATEMENT_KINDS = (
@@ -2873,7 +2998,7 @@ def format_intake_summary(result: IntakeResult) -> str:
     lines: list[str] = ["Here's how I read your file:\n"]
 
     if result.sheet_name:
-        source = "Statement" if result.source_kind == "pdf" else "Worksheet"
+        source = "Statement" if result.source_kind in {"pdf", "ixbrl"} else "Worksheet"
         lines.append(f"- **{source}:** {result.sheet_name}")
 
     for t in result.visible_transformations:
@@ -2882,7 +3007,7 @@ def format_intake_summary(result: IntakeResult) -> str:
             lines.append(f"- **Analyzed period:** {period_name}")
             break
 
-    if result.source_kind != "pdf":  # a PDF has no rows to count; its page is in the name
+    if result.source_kind not in {"pdf", "ixbrl"}:  # a filing has no header row to name; its statement is named
         lines.append(f"- **Header row:** Row {result.header_row_number}")
 
     col_details = []

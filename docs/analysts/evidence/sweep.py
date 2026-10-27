@@ -120,8 +120,56 @@ def _items(record: object, key: str) -> list[object]:
     return value if isinstance(value, list) else []
 
 
+def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance) -> Score:
+    """Verify an Inline XBRL read by the XBRL key each line carries (concept, period, dimensions)."""
+    score = Score()
+    document = _group(audit, "source").get("document")
+    lines = {str(line.get("line_item")): line for line in _items(document, "lines") if isinstance(line, dict)}
+    flipped = {m.group("label") for m in (_FLIP_NOTE.match(str(n)) for n in _items(document, "reader_notes")) if m}
+    comparison_label = _group(audit, "comparison").get("label")
+    money = {line.concept for line in statement.monetary(instance)}
+    score.monetary = len(money)
+    covered = {str(line.get("concept")) for line in lines.values()} & money
+    problems = []
+    for row in _items(audit, "measure_rows"):
+        if not isinstance(row, dict) or row.get("measure") != "Currency":
+            continue
+        name = str(row.get("line_item", ""))
+        columns = [c for c in _items(lines.get(name), "columns")]
+        prior = next((c for c in columns if isinstance(c, dict) and c.get("label") == comparison_label), None)
+        current = next((c for c in columns if isinstance(c, dict) and c.get("label") != comparison_label), None)
+        for field, key in (("actual", current), ("comparison", prior)):
+            value = row.get(field)
+            if not isinstance(key, dict) or value is None:
+                score.unverified += 1
+                continue
+            period = tuple(str(part) for part in _items(key, "period"))
+            dims = tuple(sorted((str(d.get("axis")), str(d.get("member"))) for d in _items(key, "dims") if isinstance(d, dict)))
+            facts = [f for f in instance.lookup(str(key.get("concept")), period, dims)
+                     if f.value is not None and f.unit.startswith("iso4217:") and "/" not in f.unit]
+            sign = -1 if name in flipped else 1
+            shown_ok = Fraction(str(value)) == sign * Fraction(str(key.get("displayed")))
+            if not facts:
+                score.unverified += 1
+            elif any(Fraction(str(f.value)) == Fraction(str(key.get("stored"))) for f in facts) and shown_ok:
+                score.verified += 1
+            else:
+                score.wrong += 1
+                problems.append(f"{name} {field}: tool stored {key.get('stored')} shown {value}, filing {facts[0].value}")
+        variance = row.get("variance")
+        if variance is not None and row.get("actual") is not None and row.get("comparison") is not None:
+            if Fraction(str(variance)) != Fraction(str(row["actual"])) - Fraction(str(row["comparison"])):
+                score.wrong += 1
+                problems.append(f"{name} variance does not recompute")
+    score.covered = len(covered)
+    score.details = "; ".join(problems)[:500]
+    return score
+
+
 def score_audit(audit: dict[str, object], statement: oracle.Statement, instance: oracle.Instance) -> Score:
     """Verify each read line of an audit against the oracle (keyless reads match by printed label)."""
+    if _group(_group(audit, "source"), "document").get("kind") == "ixbrl":
+        return score_keyed(audit, statement, instance)
     score = Score()
     notes = [str(note) for note in _items(_group(audit, "source").get("document"), "reader_notes")]
     columns = [m for m in (_COLUMN_NOTE.match(n) for n in notes) if m]
@@ -215,6 +263,29 @@ def _run(document: Path, period: str, sheet: str | None, out: Path) -> tuple[int
     return done.returncode, message.removeprefix("variance-agent: error: "), time.monotonic() - started
 
 
+_LISTED = re.compile(r"Statements found: (.*)\.$")
+
+
+_LISTINGS: dict[Path, list[str]] = {}
+
+
+def _statement_name(document: Path, kind: str) -> str | None:
+    """The tool's own name for the statement of `kind`, from the listing it prints for an unknown name."""
+    if not document.name.lower().endswith((".htm", ".html", ".pdf")):
+        return None
+    if document not in _LISTINGS:
+        code, message, _ = _run(document, "listing", "?", CORPUS / "listing.json")
+        found = _LISTED.search(message) if code == 2 else None
+        names: list[str] = []
+        for part in (found.group(1).split(", ") if found else []):
+            if names and re.match(r"\d+ Months Ended\b", part):
+                names[-1] += ", " + part  # a duration names one statement of several
+            else:
+                names.append(part)
+        _LISTINGS[document] = names
+    return next((name for name in _LISTINGS[document] if oracle.statement_kind(name) == kind), None)
+
+
 def _xlsx_sheets(path: Path) -> list[str]:
     import zipfile
     with zipfile.ZipFile(path) as archive:
@@ -227,7 +298,7 @@ def _xlsx_sheets(path: Path) -> list[str]:
 
 def _targets(reader: str, folder: Path, row: dict[str, str], statement: oracle.Statement, page: str) -> tuple[Path, str | None] | None:
     if reader == "primary":
-        return folder / row["primary"], None
+        return folder / row["primary"], _statement_name(folder / row["primary"], statement.kind)
     if reader == "financial_report":
         path = folder / "Financial_Report.xlsx"
         number = re.fullmatch(r"R(\d+)\.htm", page)

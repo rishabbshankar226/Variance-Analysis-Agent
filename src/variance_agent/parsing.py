@@ -252,17 +252,15 @@ def _excel_loader() -> WorkbookLoader:
     return cast(WorkbookLoader, getattr(module, "load_workbook"))  # noqa: B009 (dynamic optional import)
 
 
-def web_page_message(filename: str) -> str:
-    """The refusal for an HTML file, naming what to upload instead."""
-    return (f"'{filename}' is a web page. If it's a 10-K or 10-Q from SEC EDGAR, upload the filing's PDF, or "
-            "download Financial_Report.xlsx from the filing's EDGAR folder and upload that; I can't read the "
-            "HTML filing itself yet.")
-
-
 def validate_input_format(suffix: str, *, assisted: bool = False, filename: str | None = None) -> None:
     suffix = suffix.lower()
     if suffix in {".htm", ".html"}:
-        raise ValueError(web_page_message(filename or f"input{suffix}"))
+        if not assisted:
+            raise ValueError(
+                "HTML filings are read with --assisted, which finds the financial statements in the "
+                "filing and lists every adjustment it makes."
+            )
+        return
     if suffix == ".pdf":
         if not assisted:
             raise ValueError(

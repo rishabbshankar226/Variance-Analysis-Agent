@@ -453,6 +453,136 @@
                     "reader_notes"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "ixbrl"
+                    },
+                    "statement": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "reader_notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "line_item": {
+                            "type": "string"
+                          },
+                          "concept": {
+                            "type": "string"
+                          },
+                          "measure": {
+                            "enum": [
+                              "Currency",
+                              "Per Share",
+                              "Count"
+                            ]
+                          },
+                          "subtotal": {
+                            "type": "boolean"
+                          },
+                          "columns": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "null"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "label": {
+                                      "type": "string"
+                                    },
+                                    "concept": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "context": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "period": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "minItems": 2,
+                                      "maxItems": 3
+                                    },
+                                    "dims": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "axis": {
+                                            "type": "string"
+                                          },
+                                          "member": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "axis",
+                                          "member"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "stored": {
+                                      "$ref": "#/$defs/decimal"
+                                    },
+                                    "displayed": {
+                                      "$ref": "#/$defs/decimal"
+                                    },
+                                    "decimals": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "label",
+                                    "concept",
+                                    "context",
+                                    "period",
+                                    "dims",
+                                    "stored",
+                                    "displayed",
+                                    "decimals"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "line_item",
+                          "concept",
+                          "measure",
+                          "subtotal",
+                          "columns"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "statement",
+                    "reader_notes",
+                    "lines"
+                  ],
+                  "additionalProperties": false
                 }
               ]
             }

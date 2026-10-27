@@ -22,9 +22,10 @@ WEB_XLS = ("'old.xls' is a web page saved with an .xls name, not an Excel workbo
            "choose File > Save As, pick Excel Workbook (.xlsx), and upload that copy, or export it as CSV.")
 OTHER_XLS = ("'old.xls' isn't an Excel workbook I can read. Save it from Excel as an Excel Workbook (.xlsx) "
              "or as CSV, and upload that copy.")
-HTM = ("'filing.htm' is a web page. If it's a 10-K or 10-Q from SEC EDGAR, upload the filing's PDF, or "
-       "download Financial_Report.xlsx from the filing's EDGAR folder and upload that; I can't read the "
-       "HTML filing itself yet.")
+HTM = ("'filing.htm' is a web page without Inline XBRL figures, so it has no statements I can find. Upload the "
+       "filing's 10-K or 10-Q document from its EDGAR folder, its PDF, or a CSV or Excel table.")
+STRICT_HTM = ("HTML filings are read with --assisted, which finds the financial statements in the filing and lists every "
+              "adjustment it makes.")
 RENAMED = "Read 'old.xls' as an Excel workbook: it is an .xlsx file with an .xls name."
 OLE2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 504
 
@@ -89,15 +90,15 @@ def test_the_cli_refuses_a_legacy_workbook_with_the_save_as_fix(tmp_path: Path, 
     assert capsys.readouterr().err == f"variance-agent: error: {BIFF}\n"
 
 
-@pytest.mark.parametrize("assisted", [(), ("--assisted",)])
-def test_the_cli_refuses_a_web_filing_with_what_to_upload(tmp_path: Path, capsys: pytest.CaptureFixture[str],
-                                                          assisted: tuple[str, ...]) -> None:
+@pytest.mark.parametrize(("assisted", "message"), [((), STRICT_HTM), (("--assisted",), HTM)])
+def test_the_cli_refuses_a_web_page_that_is_not_a_filing(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                         assisted: tuple[str, ...], message: str) -> None:
     path = tmp_path / "filing.htm"
     path.write_bytes(b"<html></html>")
     with pytest.raises(SystemExit) as stopped:
         cli.main(_run(path, *assisted))
     assert stopped.value.code == 2
-    assert capsys.readouterr().err == f"variance-agent: error: {HTM}\n"
+    assert capsys.readouterr().err == f"variance-agent: error: {message}\n"
 
 
 def test_the_chat_explains_a_legacy_workbook() -> None:
