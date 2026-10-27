@@ -293,3 +293,35 @@ def operations_and_comprehensive_loss_rows() -> list[str]:
 def operations_and_comprehensive_loss_filing() -> bytes:
     body = statement("CONSOLIDATED STATEMENTS OF OPERATIONS AND COMPREHENSIVE LOSS", operations_and_comprehensive_loss_rows())
     return document(body).encode("utf-8")
+
+
+def investment_company_rows() -> list[str]:
+    """A business development company's statement of operations: net expenses and net investment income subtract a
+    subtotal, which the shaper can't place, so it refuses plainly (Decision 39)."""
+    def money(label: str, concept: str, now: str, before: str) -> str:
+        cells = [fact(concept, c, v.strip("()"), sign="-" if v.startswith("(") else None) for c, v in (("FY25", now), ("FY24", before))]
+        return row(label, *(f"({cell})" if v.startswith("(") else cell for cell, v in zip(cells, (now, before), strict=True)))
+    gain = "us-gaap:RealizedAndUnrealizedGainLossInvestmentDerivativeAndForeignCurrencyTransactionPriceChangeOperatingAfterTax"
+    return [
+        row("Investment income:", "", ""),
+        money("Interest income", "us-gaap:InterestIncomeOperating", "300", "280"),
+        money("PIK interest income", "us-gaap:InterestIncomeOperatingPaidInKind", "20", "15"),
+        money("Other income", "us-gaap:OtherIncome", "10", "5"),
+        money("Total investment income", "us-gaap:GrossInvestmentIncomeOperating", "330", "300"),
+        row("Expenses:", "", ""),
+        money("Interest and financing expenses", "us-gaap:InterestAndDebtExpense", "90", "80"),
+        money("Management fee", "us-gaap:ManagementFeeExpense", "25", "20"),
+        money("Total expenses", "us-gaap:OperatingExpenses", "115", "100"),
+        money("Management fee waiver", "hal:ManagementFeeWaiver", "(5)", "(4)"),
+        money("Net expenses", "us-gaap:InvestmentCompanyExpenseAfterReductionOfFeeWaiverAndReimbursement", "110", "96"),
+        money("Net investment income", "us-gaap:NetInvestmentIncome", "220", "204"),
+        row("Net realized and unrealized gain (loss):", "", ""),
+        money("Net realized gain (loss)", "us-gaap:RealizedInvestmentGainsLosses", "(40)", "10"),
+        money("Net change in unrealized appreciation (depreciation)", "us-gaap:UnrealizedGainLossOnInvestments", "(20)", "30"),
+        money("Net gain (loss)", gain, "(60)", "40"),
+        money("Net increase (decrease) in net assets resulting from operations", "us-gaap:NetIncomeLoss", "160", "244"),
+    ]
+
+
+def investment_company_filing() -> bytes:
+    return document(statement("CONSOLIDATED STATEMENTS OF OPERATIONS", investment_company_rows())).encode("utf-8")

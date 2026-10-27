@@ -347,52 +347,67 @@ _BASIS_NOTES = {
 
 
 @financial_context()
+def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str | None]:
+    """A limit, benchmark or target comparison's table (PLAN.md R13-R15): its columns, its rows as plain text (limits
+    by severity), and a limit run's count sentence. The report and the chat's results panel both show it."""
+    cfg = result.config
+    basis = cfg.comparison_basis.value
+    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_label)
+    rows = [row for row in result.rows if row.basis_details is not None]
+
+    def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
+        return format_measure(value, row.measure, cfg.currency, variance=variance)
+
+    table: list[list[str]] = []
+    if basis == "limit":
+        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
+        counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
+                  for word in ("Breach", "At limit", "Near", "Within")]
+        for row in rows:
+            d = row.basis_details
+            assert d is not None and d.headroom is not None
+            table.append([row.line_item, str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
+                          amount(d.headroom, row, variance=True),
+                          "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
+                          "NM" if d.utilization is None else _rate(d.utilization),
+                          "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome])
+        columns = ["Line Item", "Kind", "Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer",
+                   "Status"]
+        return columns, table, f"{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within."
+    status = basis != "target"  # a target is neutral: no Status column
+    for row in rows:
+        d = row.basis_details
+        assert d is not None
+        difference = (format_measure(d.difference_bps, MeasureKind.PERCENT, variance=True)
+                      if d.difference_bps is not None else amount(d.difference, row, variance=True))
+        # A rate's tolerance is in percentage points; it is shown in basis points, the difference's unit.
+        tolerance = ("none (exact)" if d.tolerance is None
+                     else format_measure(d.tolerance * 100, MeasureKind.PERCENT, variance=True)
+                     if row.measure is MeasureKind.PERCENT else amount(d.tolerance, row, variance=True))
+        table.append([row.line_item, amount(row.budget, row), amount(row.actual, row), difference, tolerance, d.outcome,
+                      *([_status_text(row.status, True)] if status else [])])
+    return (["Line Item", heading, "Actual", "Difference", "Tolerance", "Outcome", *(["Status"] if status else [])],
+            table, None)
+
+
+@financial_context()
 def render_basis_report(result: AnalysisResult) -> str:
     """A limit, benchmark or target comparison (PLAN.md R13-R15): outcomes in their own words, limits by severity."""
     cfg = result.config
     basis = cfg.comparison_basis.value
     heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
     rows = [row for row in result.rows if row.basis_details is not None]
-
-    def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
-        return format_measure(value, row.measure, cfg.currency, variance=variance)
-
     currency = [f"Reporting currency: {cfg.currency}", ""] if any(currency_row(r) for r in rows) else []
     lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", *currency, "- " + _BASIS_NOTES[basis], ""]
-    if basis == "limit":
-        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
-        counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
-                  for word in ("Breach", "At limit", "Near", "Within")]
-        lines[lines.index("- " + _BASIS_NOTES[basis]) + 1:0] = [
-            "", f"**{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within.**"]
-        lines += ["## Lines, by severity", "",
-                  "| Line Item | Kind | Limit | Actual | Headroom | Headroom (% of limit) | Utilization | Buffer | Status |",
-                  "|---|---|---:|---:|---:|---:|---:|---:|---|"]
-        for row in rows:
-            d = row.basis_details
-            assert d is not None and d.headroom is not None
-            utilization = "NM" if d.utilization is None else _rate(d.utilization)
-            lines.append("| " + " | ".join([
-                _safe_inline(row.line_item), str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
-                amount(d.headroom, row, variance=True), "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
-                utilization,
-                "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome]) + " |")
-    else:
-        status = basis != "target"  # a target is neutral: no Status column
-        lines += ["## Lines", "", f"| Line Item | {heading} | Actual | Difference | Tolerance | Outcome |"
-                  + (" Status |" if status else ""), "|---|---:|---:|---:|---:|---|" + ("---|" if status else "")]
-        for row in rows:
-            d = row.basis_details
-            assert d is not None
-            difference = (format_measure(d.difference_bps, MeasureKind.PERCENT, variance=True)
-                          if d.difference_bps is not None else amount(d.difference, row, variance=True))
-            # A rate's tolerance is in percentage points; it is shown in basis points, the difference's unit.
-            tolerance = ("none (exact)" if d.tolerance is None
-                         else format_measure(d.tolerance * 100, MeasureKind.PERCENT, variance=True)
-                         if row.measure is MeasureKind.PERCENT else amount(d.tolerance, row, variance=True))
-            cells = [_safe_inline(row.line_item), amount(row.budget, row), amount(row.actual, row), difference, tolerance,
-                     d.outcome, *([_status_text(row.status, True)] if status else [])]
-            lines.append("| " + " | ".join(cells) + " |")
+    columns, table, counts = basis_table(result)
+    if counts is not None:
+        lines[lines.index("- " + _BASIS_NOTES[basis]) + 1:0] = ["", f"**{counts}**"]
+    columns[1] = _safe_inline(columns[1])
+    right = {"Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer", columns[1], "Difference",
+             "Tolerance"} - {"Kind"}
+    lines += ["## Lines, by severity" if basis == "limit" else "## Lines", "", "| " + " | ".join(columns) + " |",
+              "|" + "|".join("---:" if column in right and column != "Line Item" else "---" for column in columns) + "|"]
+    lines += ["| " + " | ".join([_safe_inline(cells[0]), *cells[1:]]) + " |" for cells in table]
     _read_notes(lines, result)
     return "\n".join([*lines, ""])
 

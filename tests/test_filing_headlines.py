@@ -251,3 +251,32 @@ def test_an_ltm_report_keeps_the_reading_notes_beside_its_build() -> None:
     text = "\n".join(result.report_appendix)
     assert text.index("## How the filing was read") < text.index("## LTM build")
     assert "- Read 'Other income, net' as a credit among costs" in text
+
+
+def test_an_investment_companys_statement_refuses_plainly_rather_than_reading_subtotals_as_lines() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import investment_company_filing
+    # Net expenses and net investment income subtract a subtotal, which the shaper can't place. Before Decision 39
+    # the bottom line was demoted to a detail line and every subtotal was analysed as a line; now it must add up.
+    result = _read(investment_company_filing())
+    assert result.has_fatal_errors
+    assert result.fatal_error_message == (
+        "I couldn't tell which lines 'Net increase (decrease) in net assets resulting from operations' adds up in the "
+        "Consolidated Statements of Operations, so I can't check it and stopped instead of guessing. Upload a CSV or "
+        "Excel copy of the statement, or the filing's PDF.")
+
+
+def test_a_total_without_a_fact_in_one_column_is_left_out_of_the_headline_by_name() -> None:
+    from tests.fixtures.ixbrl.build_ixbrl import fact, income_filing, income_rows, row
+    rows = income_rows()
+    rows[0] = row("Net sales", "$" + fact("us-gaap:Revenues", "FY25", "4,100"), "—")
+    rows[1] = row("Cost of sales", fact("us-gaap:CostOfRevenue", "FY25", "2,300"), "—")
+    rows[2] = row("Gross margin", fact("us-gaap:GrossProfit", "FY25", "1,800"), "—")
+    rows[3] = row("Research and development", fact("us-gaap:ResearchAndDevelopmentExpense", "FY25", "300"),
+                  fact("us-gaap:ResearchAndDevelopmentExpense", "FY24", "1,370"))
+    # The year before revenue: gross margin a dash, so net income is -(1,370 + 40) = (1,410).
+    rows[5] = row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,450"),
+                  "(" + fact("us-gaap:NetIncomeLoss", "FY24", "1,410", sign="-") + ")")
+    report, audit = _report(income_filing(rows))
+    notes = audit["source"]["document"]["headline"]["notes"]
+    assert "'Net sales' prints no tagged figure for FY2024, so it isn't in the headline." in notes
+    assert "- 'Net sales' prints no tagged figure for FY2024, so it isn't in the headline." in report

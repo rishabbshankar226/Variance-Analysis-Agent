@@ -219,7 +219,10 @@ def score_keyed(audit: dict[str, object], statement: oracle.Statement, instance:
                 Fraction(str(keys[0]["displayed"])) - Fraction(str(keys[1]["displayed"]))):  # type: ignore[index]
             score.wrong += 1
             problems.append(f"headline {item.get('line_item')} change does not recompute")
-    if headline and len(revenue_lines) == 1 and not any(
+    # A revenue line without a fact in a compared column is left out by name, which is right (Decision 39).
+    named_out = any(isinstance(note, str) and note.startswith(f"'{revenue_lines[0].get('line_item')}' prints no tagged")
+                    for note in _items(headline, "notes")) if len(revenue_lines) == 1 else False
+    if headline and len(revenue_lines) == 1 and not named_out and not any(
             isinstance(item, dict) and item.get("concept") == revenue_lines[0].get("concept")
             and item.get("role") == "revenue" for item in _items(headline, "items")):
         score.wrong += 1

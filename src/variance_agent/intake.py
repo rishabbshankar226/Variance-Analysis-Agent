@@ -2557,8 +2557,9 @@ def _filing_headline(shaped: ShapedStatement, lines: list[IxLine], names: list[s
     items: list[dict[str, object]] = []
     for i in sorted(roles):
         now, before = (lines[i].keys[c] for c in columns)
-        if now is None or before is None or now.dims or before.dims:
-            notes.append(f"'{names[i]}' has no fact for both columns, so it is not in the headline.")
+        missing = [label for key, label in zip((now, before), labels, strict=True) if key is None or key.dims]
+        if now is None or before is None or missing:
+            notes.append(f"'{names[i]}' prints no tagged figure for {' or '.join(missing)}, so it isn't in the headline.")
             continue
         with financial_context():
             change = now.displayed - before.displayed
