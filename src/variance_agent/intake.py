@@ -2310,8 +2310,10 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
     header = next(row for row in shaped.rows if row and row[0] == "Line Item")
     at = shaped.rows.index(header)
     type_at = header.index("Type")
-    revenue = next(names[i] for i in sorted(block) if i in shaped.kept or i in terms)
-    concept = lines[next(i for i in sorted(block) if names[i] == revenue)].concept
+    # Name the revenue by its total when the statement prints one, else by its first line.
+    totals = [i for i in sorted(block) if i in terms]
+    named = totals[-1] if totals else min(block)
+    revenue, concept = names[named], lines[named].concept
     notes = []
     for data_index, row in zip(shaped.kept, shaped.rows[at + 1:], strict=True):
         if row[type_at] != "Revenue" or data_index in block:
@@ -2321,7 +2323,8 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
             if header[column] in {"Measure", "Better"} or row[column] in ("", "—"):
                 continue
             with financial_context():
-                row[column] = format(-Decimal(str(row[column])), "f")
+                # The shaper writes the cells it flips with thousands separators.
+                row[column] = format(-Decimal(str(row[column]).replace(",", "")), "f")
         notes.append(f"Read '{row[0]}' as a credit among costs: the filing's revenue is '{revenue}' ({concept}), "
                      "and this line is not part of it")
     return notes

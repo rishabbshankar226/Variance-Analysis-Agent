@@ -444,3 +444,13 @@ def test_other_income_below_the_revenue_total_is_a_credit_on_the_cost_side() -> 
     assert [r["line_item"] for r in revenue] == ["Net sales"]
     assert ("Read 'Other income, net' as a credit among costs: the filing's revenue is 'Net sales' "
             "(us-gaap:Revenues), and this line is not part of it") in result.visible_transformations
+
+
+def test_a_flipped_line_outside_revenue_is_credited_too() -> None:
+    rows = income_rows()
+    rows[4:6] = [row("Other (income) expense", "(" + fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "1,050") + ")",
+                     "(" + fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "1,040") + ")"),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "2,550"), fact("us-gaap:NetIncomeLoss", "FY24", "2,410"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert sum(Decimal(str(r["actual"])) for r in result.rows if r["type"] == "Revenue") == 4100 * M
