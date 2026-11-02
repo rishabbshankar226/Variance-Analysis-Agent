@@ -2073,6 +2073,37 @@ def _read_excel_bytes(
                 wb.close()
 
 
+def _two_row_header(rows: list[list[object]], max_scan: int = 25) -> tuple[int, list[object], str] | None:
+    """A header split over two rows: names on the upper row stand for blank cells of the lower one (X24).
+
+    Returns the lower row's index, the combined header and the note that says so, when the combined
+    row is a header and no single row was.
+    """
+    def blank(cell: object) -> bool:
+        return cell is None or str(cell).strip() == ""
+
+    for upper_at in range(min(len(rows), max_scan) - 1):
+        upper, lower = rows[upper_at], rows[upper_at + 1]
+        if all(blank(cell) for cell in lower):
+            continue
+        width = max(len(upper), len(lower))
+        combined: list[object] = []
+        taken: list[str] = []
+        for column in range(width):
+            below = lower[column] if column < len(lower) else None
+            above = upper[column] if column < len(upper) else None
+            if blank(below) and not blank(above):
+                combined.append(above)
+                taken.append(str(above).strip())
+            else:
+                combined.append(below)
+        if taken and detect_header_row([combined])[0] is not None:
+            names = ", ".join(f"'{name}'" for name in taken)
+            return upper_at + 1, combined, (f"Read the column names from rows {upper_at + 1} and {upper_at + 2} together: "
+                                            f"{names} (row {upper_at + 1}) above blank cells of row {upper_at + 2}.")
+    return None
+
+
 def _period_bands(
     raw_rows: list[list[object]], header_idx: int, layout: SheetLayout,
 ) -> tuple[list[list[object]], list[str]] | None:
@@ -2964,6 +2995,10 @@ def _process_raw_table(
     dated_rows, has_dates = _dated_header_rows(raw_rows)
     header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)
     date_note = None
+    if header_idx is None and (split := _two_row_header(dated_rows)) is not None:
+        lower, split_header, date_note = split  # a header split over two rows, read together (X24)
+        raw_rows = dated_rows = [*dated_rows[:lower], split_header, *dated_rows[lower + 1:]]
+        header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)
     if header_idx is not None and has_dates and dated_rows[header_idx] != raw_rows[header_idx]:
         # Only the header row takes the labels; a date in a data cell keeps its value.
         original = raw_rows[header_idx]

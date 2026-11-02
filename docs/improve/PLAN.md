@@ -39,7 +39,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X21 | 3 | done | see `fix(X21)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_two_files.py` (new) |
 | X22 | 3 | done | see `fix(X22)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `chat/session.py`, `tests/test_chat_unreconciled_total.py` (new) |
 | X23 | 3 | done | see `fix(X23)` | `src/variance_agent/intake.py`, `tests/test_header_units.py` (new) |
-| X24 | 3 | todo | | |
+| X24 | 3 | done (date band open) | see `fix(X24)` | `src/variance_agent/intake.py`, `tests/test_two_row_headers.py` (new) |
 | M1 | 3 | todo | | name the second document only (Decision 12) |
 | M2 | 3 | todo | | |
 | M3 | 3 | done | see `fix(M3)` | `src/variance_agent/intake.py`, `tests/test_excel_bands_and_blocks.py` |
@@ -434,6 +434,15 @@ Boundary cases:
 - Unmerged bands that run right across blanks read the same.
 - A band of one year alone is not a period band (E4 needs two), as before.
 
+**X24, a header split over two rows.** When no single row is a header, two adjacent rows are read together: a name on the upper row stands for the blank cell below it. That covers "Account Description" in A1 merged down to A2, or "Type" in B1 over a blank B2. The pair is the header when the combined row is. The data starts below the lower row, and the note names what came from where: "Read the column names from rows 1 and 2 together: 'Account Description', 'Type' (row 1) above blank cells of row 2." A band over the amounts ("Year to Date" over Budget and Actual) stays above the header, as any title row does. A file that has a single-row header reads as before.
+
+Boundary cases:
+- A1:A2 merged with a band over C1:D1 reads.
+- Unmerged names on row 1 over a blank row-2 cell read.
+- A file whose lower row has no Budget or Actual still refuses, as today.
+
+Not covered: a date band merged over Budget and Actual ("Could not determine period order for Sep 2026, Sep 2026", Maya's f17) fails inside the single-row period path, before any header is tried. It stays `open` under X24 with this note.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -548,6 +557,7 @@ Items:
 | X23 | `_HEADER_QUALIFIER`, the qualifier retry in `match_column_synonym` and the heading currency mark removed (`git apply -R`), tests kept | `pytest tests/test_header_units.py` | 10 failed, 1 passed: every qualified heading is unknown, and the file has no Budget column. The "(Q3)" control passes either way. |
 | C3m | `ShapedStatement.ambiguous` and the named-line refusal removed (`git apply -R`), test kept | `pytest tests/test_statement_sign_ambiguity.py` | 1 failed, 3 passed: the shaper has no `ambiguous` record, and the refusal says "couldn't tell which lines ... adds up". The C3 pins pass either way. |
 | M3 | `_BARE_YEAR_RE` and its two uses removed (`git apply -R`), tests kept | `pytest tests/test_excel_bands_and_blocks.py -k bare_year` | 3 failed: "Found more than one Actual column (Actual (column D), Actual (column F))" for both band shapes and the chosen year |
+| X24 | `_two_row_header` and its use in header detection removed (`git apply -R`), tests kept | `pytest tests/test_two_row_headers.py` | 2 failed, 1 passed: "Could not find a header row with Line Item, Budget, and Actual" for the merged and unmerged two-row headers. The no-amounts control refuses either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
