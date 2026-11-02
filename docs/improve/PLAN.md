@@ -42,7 +42,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X24 | 3 | todo | | |
 | M1 | 3 | todo | | name the second document only (Decision 12) |
 | M2 | 3 | todo | | |
-| M3 | 3 | todo | | |
+| M3 | 3 | done | see `fix(M3)` | `src/variance_agent/intake.py`, `tests/test_excel_bands_and_blocks.py` |
 | X25 | 3 | done | see `fix(X25)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_export_paths.py` (new) |
 | X26 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X27 | 3 | done | see `fix(X27)` | `src/variance_agent/chat/responses.py`, `chat/handlers.py`, `chat/intent.py`, `tests/test_chat_not_yet_labeled.py` (new) |
@@ -427,6 +427,13 @@ Boundary cases:
 - C3's synthetic shape names "Other expense, net".
 - The 5-unit case still matches, so there is no refusal.
 
+**M3, bare-year bands.** A band of bare years above Budget and Actual (2025, 2026, merged or running right across blanks) is a period band, like "Sep-26" or "FY2025" (E4). The years join the columns below ("2026 Budget"), the newest is read unless the reader chooses, and the usual note names the headings. Period-pair detection takes a bare year (19xx or 20xx) when no other period form is in the heading, so "2026 Budget" pairs with "2026 Actual".
+
+Boundary cases:
+- Merged 2025 | 2026 bands read 2026 by default and 2025 when chosen.
+- Unmerged bands that run right across blanks read the same.
+- A band of one year alone is not a period band (E4 needs two), as before.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -540,6 +547,7 @@ Items:
 | X22 | the refusal response, the leave-out handler and route, the session field and the rule 6 pattern removed (`git apply -R`), tests kept | `pytest tests/test_chat_unreconciled_total.py` | 3 failed, 1 passed: "...Expense detail rows detail rows", the chat drops to "upload a file", and "Leave Total Opex out" does not route. The matching-total control passes either way. |
 | X23 | `_HEADER_QUALIFIER`, the qualifier retry in `match_column_synonym` and the heading currency mark removed (`git apply -R`), tests kept | `pytest tests/test_header_units.py` | 10 failed, 1 passed: every qualified heading is unknown, and the file has no Budget column. The "(Q3)" control passes either way. |
 | C3m | `ShapedStatement.ambiguous` and the named-line refusal removed (`git apply -R`), test kept | `pytest tests/test_statement_sign_ambiguity.py` | 1 failed, 3 passed: the shaper has no `ambiguous` record, and the refusal says "couldn't tell which lines ... adds up". The C3 pins pass either way. |
+| M3 | `_BARE_YEAR_RE` and its two uses removed (`git apply -R`), tests kept | `pytest tests/test_excel_bands_and_blocks.py -k bare_year` | 3 failed: "Found more than one Actual column (Actual (column D), Actual (column F))" for both band shapes and the chosen year |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

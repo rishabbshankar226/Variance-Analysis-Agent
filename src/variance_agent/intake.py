@@ -714,6 +714,7 @@ def parse_assisted_decimal(
     return number, None
 
 
+_BARE_YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 _PERIOD_RE = re.compile(
     r"\b((?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-_ ]?\d{2,4})|"
     r"(?:Q[1-4](?:[-_ ]?\d{2,4})?)|"
@@ -758,7 +759,7 @@ def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
     period_order: list[str] = []
 
     for h in headers:
-        m = _PERIOD_RE.search(h)
+        m = _PERIOD_RE.search(h) or _BARE_YEAR_RE.search(h)  # "2026 Budget", from a bare-year band (M3)
         if not m:
             continue
         p = m.group(1).strip()
@@ -2095,7 +2096,8 @@ def _period_bands(
         else:
             bands[column] = carried
     labels = list(dict.fromkeys(band for band in bands if band))
-    if len(labels) < 2 or not all(_PERIOD_RE.fullmatch(label) for label in labels):
+    # A band is a period heading, or a bare year: 2025 | 2026 over Budget/Actual (M3).
+    if len(labels) < 2 or not all(_PERIOD_RE.fullmatch(label) or _BARE_YEAR_RE.fullmatch(label) for label in labels):
         return None
     combined: list[object] = []
     for column, cell in enumerate(header):
