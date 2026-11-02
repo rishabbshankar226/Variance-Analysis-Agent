@@ -601,3 +601,39 @@ def test_downloads_are_not_cacheable_and_not_sniffed(httpd: HTTPServer) -> None:
     assert response.status == 200 and body == b"# private"
     assert response.getheader("Cache-Control") == "no-store"
     assert response.getheader("X-Content-Type-Options") == "nosniff"
+
+
+# ---- X12: a body that arrives too slowly is cut off, not waited for ----------------------------
+
+
+def test_a_dripped_body_is_cut_off_at_its_deadline(httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+    import time
+
+    monkeypatch.setattr(server_module, "_BODY_GRACE_SECONDS", 0.3)
+    monkeypatch.setattr(server_module, "_BODY_SECONDS_PER_MIB", 0.0)
+    with socket.create_connection(("127.0.0.1", httpd.server_address[1]), timeout=10) as conn:
+        conn.sendall(f"POST /message HTTP/1.1\r\nHost: {_host(httpd)}\r\nContent-Type: application/json\r\n"
+                     "Content-Length: 40\r\n\r\n".encode())
+        started = time.monotonic()
+        reply = b""
+        for _ in range(40):  # one byte every 0.1 s: the whole body would take 4 s
+            try:
+                conn.sendall(b" ")
+            except OSError:
+                break
+            conn.settimeout(0.1)
+            try:
+                reply = conn.recv(4096)
+            except TimeoutError:
+                continue
+            if reply:
+                break
+        assert reply.startswith(b"HTTP/1.0 408"), reply[:80]
+        assert b"The upload arrived too slowly. Please try again." in reply
+        assert time.monotonic() - started < 2.5
+
+
+def test_a_body_sent_whole_still_reads(httpd: HTTPServer) -> None:
+    status, data = _post_message(httpd, {"Host": _host(httpd)})
+    assert status == 200 and data["text"]

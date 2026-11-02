@@ -27,7 +27,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | done | see `fix(X10)` | `src/variance_agent/cli.py`, `README.md`, `tests/test_cli_hosted_detection.py` |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
-| X12 | 3 | todo | | |
+| X12 | 3 | done | see `fix(X12)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X13 | 3 | todo | | |
 | X14 | 3 | todo | | |
 | X15 | 3 | todo | | |
@@ -290,6 +290,14 @@ Boundary cases:
 - With `RENDER`, `--chat` and `--no-browser`: local.
 - Without `RENDER`: local (unchanged).
 
+**X12, a body dripped slowly.** A request body is read in chunks against one deadline: 20 seconds plus 1 second for each MiB declared, so even the 32 MiB cap gets about 52 seconds. Past the deadline the server answers 408 with "The upload arrived too slowly. Please try again." and closes the connection, so a client sending a byte every few seconds no longer holds the single worker indefinitely. The per-read 15 second timeout stays. A body that ends early is returned short, as before.
+
+Boundary cases, with the deadline narrowed in the test:
+- A whole body sent at once reads.
+- A body dripped past the deadline gets 408 and does not wait for the rest.
+
+A slow drip of the header lines is left as suspected and not fixed: the standard library reads headers itself, and the audit did not reproduce it.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -385,6 +393,7 @@ Items:
 | X8 | `_refuse_main_path_inputs`, the comparison path's multiple threshold, `_refuse_filing_workbook` there, and the filing headline in `render_measure_report` removed (`git apply -R`), tests kept | `pytest tests/test_comparison_path_guards.py` | 7 failed, 1 passed: LTM plus `--layout` or `--long-output` exits 0 with quarter figures, the limit run gives "No Limit column found", `--multiple-threshold` is ignored, the 10-K report sums Total Revenue, and the filing workbook is written. The plain LTM control passes either way. |
 | C1 | the computed-column skip in strict's formula check removed (`git apply -R`), tests kept | `pytest tests/test_excel_unsaved_formulas_strict.py` | 1 failed, 4 passed: strict stops on "Var $" formulas that assisted reads. The amount-column and "Notes" stops hold either way. |
 | X10 | the `not args.no_browser` condition removed (`git apply -R`), test kept | `pytest tests/test_cli_hosted_detection.py` | 1 failed, 5 passed: with RENDER set, `--chat --no-browser` binds 0.0.0.0 |
+| X12 | the body deadline and chunked read removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "dripped or sent_whole"` | 1 failed, 1 passed: the deadline settings don't exist, and the server waits out the drip |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
