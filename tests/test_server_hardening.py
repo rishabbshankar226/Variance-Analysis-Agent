@@ -637,3 +637,51 @@ def test_a_dripped_body_is_cut_off_at_its_deadline(httpd: HTTPServer, monkeypatc
 def test_a_body_sent_whole_still_reads(httpd: HTTPServer) -> None:
     status, data = _post_message(httpd, {"Host": _host(httpd)})
     assert status == 200 and data["text"]
+
+
+# ---- X19, X26: only an upload that replaces the file discards what belonged to the old one -----
+
+
+def _loaded(httpd: HTTPServer) -> None:
+    status, _ = _upload(httpd, b'filename="first.csv"')
+    assert status == 200 and _ChatHandler.session.source_bytes is not None
+
+
+def _refused_upload(httpd: HTTPServer) -> None:
+    body, headers = _multipart(b'filename="broken.xlsx"', b"not a workbook")
+    response, data = _request(httpd, "POST", "/upload", body, headers)
+    assert response.status == 200 and json.loads(data)["level"] == "error"
+
+
+def test_a_refused_upload_keeps_the_current_file_s_downloads(httpd: HTTPServer) -> None:
+    _loaded(httpd)
+    server_module._downloads["variance_report_q3_2026.md"] = "current report"
+    _refused_upload(httpd)
+    response, content = _request(httpd, "GET", "/download/variance_report_q3_2026.md")
+    assert response.status == 200 and content == b"current report"
+
+
+def _status(httpd: HTTPServer) -> dict[str, Any]:
+    response, data = _request(httpd, "GET", "/status", headers={"Host": _host(httpd)})
+    return json.loads(data)
+
+
+def test_the_start_up_reply_goes_when_its_file_is_replaced(httpd: HTTPServer) -> None:
+    from variance_agent.chat.responses import Response
+
+    _loaded(httpd)
+    _ChatHandler.initial_response = Response(text="Loaded 'first.csv' (2 data rows).", phase=Phase.AWAITING_PERIOD)
+    _refused_upload(httpd)
+    assert "initial_response" in _status(httpd)  # its file is still the current one
+    status, _ = _upload(httpd, b'filename="second.csv"')
+    assert status == 200 and "initial_response" not in _status(httpd)
+
+
+def test_the_start_up_reply_goes_on_reset(httpd: HTTPServer) -> None:
+    from variance_agent.chat.responses import Response
+
+    _loaded(httpd)
+    _ChatHandler.session.phase = Phase.EXPLORING
+    _ChatHandler.initial_response = Response(text="Loaded 'first.csv'.", phase=Phase.AWAITING_PERIOD)
+    _post_message(httpd, {}, b'{"text": "reset"}')
+    assert "initial_response" not in _status(httpd)

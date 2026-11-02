@@ -34,7 +34,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X16 | 3 | done | see `fix(X16)` | `src/variance_agent/intake.py`, `tests/test_section_headings.py` (new) |
 | X17 | 3 | done | see `fix(X17)` | `src/variance_agent/chat/handlers.py`, `parsing.py`, `tests/test_xls_sheets.py` (new) |
 | X18 | 3 | done | see `fix(X18)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_headers.py` (new) |
-| X19 | 3 | todo | | |
+| X19 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X20 | 3 | done | see `fix(X20)` | `src/variance_agent/intake.py`, `tests/test_excel_zero_section.py` (new) |
 | X21 | 3 | todo | | |
 | X22 | 3 | todo | | |
@@ -44,7 +44,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M2 | 3 | todo | | |
 | M3 | 3 | todo | | |
 | X25 | 3 | todo | | |
-| X26 | 3 | todo | | |
+| X26 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X27 | 3 | todo | | |
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
@@ -358,6 +358,15 @@ Boundary cases, under a "($ in thousands)" caption and the format `_(* #,##0,_);
 - With one zero Actual, the book reads as stored ("not scaled again"), and the zero reads 0.
 - A nonzero cell in General beside the scaled ones still refuses, as before.
 
+**X19 and X26, what an upload replaces.** An upload replaces the session's file only when it reads. A refused one keeps the earlier file and its analysis, which `handle_upload` already does. The server now follows the same fact, whether `session.source_bytes` changed:
+- **X19.** Staged downloads are discarded only when the file was replaced, so a Download link already in the conversation still works after a refused upload.
+- **X26.** The start-up file's first reply (`initial_response`, served by `/status` for a page reload) is dropped when the file is replaced or the session is reset, so a reload never shows it as current. A refused upload keeps it, since its file is still the current one.
+
+Boundary cases:
+- A refused upload keeps both the downloads and the start-up reply.
+- A successful upload drops both.
+- A reset drops both.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -463,6 +472,7 @@ Items:
 | X17 | `.xls` removed from the chat's multi-table suffixes and from `get_workbook_sheets` (`git apply -R`), tests kept | `pytest tests/test_xls_sheets.py` | 1 failed, 2 passed: `book.xls` answers "contains a single dataset". The `.xlsx` and `.csv` controls pass either way. |
 | X18 | the fallback name lists and their uses removed (`git apply -R`), tests kept | `pytest tests/test_comparison_headers.py` | 3 failed, 1 passed: "Could not find a Line Item and Actual header" for Description and YTD Actual, and the drift guard finds no lists. The Account precedence control passes either way. |
 | X20 | the zero exclusion removed from the currency-cell count (`git apply -R`), tests kept | `pytest tests/test_excel_zero_section.py` | 1 failed, 1 passed: one zero Actual gives "number formats don't agree". The General control refuses either way. |
+| X19, X26 | the replaced-file condition and both `initial_response` clears removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "refused_upload or start_up_reply"` | 3 failed: a refused upload gives the download a 404, and `/status` still serves the start-up reply after a new upload and after a reset |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

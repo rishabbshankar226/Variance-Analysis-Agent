@@ -359,8 +359,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
             )
             return
 
-        _downloads.clear()  # exports of the previous file must not outlive it
+        previous = self.session.source_bytes
         response = handle_upload(self.session, file_bytes, filename, sheet, first_visit=first_visit)
+        if self.session.source_bytes is not previous:  # a refused upload keeps the current file (X19)
+            _downloads.clear()  # exports of the previous file must not outlive it
+            type(self).initial_response = None  # nor its start-up reply, replayed on a reload (X26)
         self._send_response(response)
 
     def _handle_message(self) -> None:
@@ -395,6 +398,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
         response = handle_message(self.session, text, first_visit=first_visit)
         if phase_before is not Phase.AWAITING_FILE and self.session.phase is Phase.AWAITING_FILE:
             _downloads.clear()  # the session was reset; its exports go with it
+            type(self).initial_response = None  # and the start-up file's first reply (X26)
         self._send_response(response)
 
     # ------------------------------------------------------------------
