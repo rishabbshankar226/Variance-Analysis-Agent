@@ -233,6 +233,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
     if session.pending_total_exclusion is not None and routing_key == (
             f"leave {normalize_for_routing(session.pending_total_exclusion).lower()} out"):
         return _leave_total_out(session)
+    if session.pending_unbudgeted is not None and routing_key == (
+            normalize_for_routing(session.pending_unbudgeted[4]).lower()):
+        return _join_unbudgeted(session, first_visit)
     if intent.intent_id == "reset":
         return _handle_reset(session)
     if intent.intent_id == "greeting":
@@ -672,6 +675,7 @@ def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_v
     """The second file of a pair: join the two, with the actuals file's rows (PLAN.md R12)."""
     from ..join import half_role, join_files
     assert session.pending_half is not None
+    session.pending_unbudgeted = None  # a new file answers the offer to read missing lines as 0 (X36)
     held, held_name, missing = session.pending_half
     found = half_role(file_bytes, filename)
     if found is None:
@@ -698,13 +702,55 @@ def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_v
     intake_res = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False)
     if intake_res.has_fatal_errors:
         session.pending_half = (held, held_name, missing)
+        offer = _unbudgeted_offer(session, intake_res, actual, actual_name, comparison, comparison_name)
+        if offer is not None:
+            return offer
         return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
                         phase=session.phase, level="error", ask_upload=True)
+    return _joined(session, intake_res, actual, actual_name, first_visit)
+
+
+def _joined(session: Session, intake_res: IntakeResult, actual: bytes, actual_name: str,
+            first_visit: bool | None) -> Response:
     session.reset()
     session.source_bytes, session.source_name = actual, actual_name
     session.source_suffix = Path(actual_name).suffix.lower()
     return _with_first_upload_intro(session, _intake_response(session, intake_res, actual_name),
                                     intake_res.comparison_basis, first_visit)
+
+
+def _unbudgeted_offer(session: Session, refused: IntakeResult, actual: bytes, actual_name: str, comparison: bytes,
+                      comparison_name: str) -> Response | None:
+    """A join refused only for lines the comparison file lacks: offer to read them as 0, as a blank budget is (X36)."""
+    from ..join import JOIN_FIX, join_files
+    message = refused.fatal_error_message or ""
+    if not (message.startswith(f"In '{actual_name}' but not in '{comparison_name}': ") and message.endswith(JOIN_FIX)):
+        return None
+    joined = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False,
+                        unbudgeted_as_zero=True)
+    if joined.has_fatal_errors:
+        return None  # lines missing the other way too, or a basis where 0 would invent a figure
+    basis = joined.comparison_basis or ComparisonBasis.BUDGET
+    chip = f"Treat them as 0 ({zero_comparison_phrase(basis)})"
+    session.pending_unbudgeted = (actual, actual_name, comparison, comparison_name, chip)
+    return Response(
+        text=f"{message.removesuffix(JOIN_FIX)}Choose **{chip}** to read them with a {basis_noun(basis)} of 0, "
+             "or upload a corrected file.",
+        chips=[chip, "Upload a different file"], phase=session.phase, level="error", ask_upload=True)
+
+
+def _join_unbudgeted(session: Session, first_visit: bool | None) -> Response:
+    """The analyst chose to read the lines the comparison file lacks as 0 (X36)."""
+    from ..join import join_files
+    assert session.pending_unbudgeted is not None
+    actual, actual_name, comparison, comparison_name, _ = session.pending_unbudgeted
+    session.pending_unbudgeted = None
+    intake_res = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False,
+                            unbudgeted_as_zero=True)
+    if intake_res.has_fatal_errors:
+        return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
+                        phase=session.phase, level="error", ask_upload=True)
+    return _joined(session, intake_res, actual, actual_name, first_visit)
 
 
 _LTM_ASK = ("Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year "

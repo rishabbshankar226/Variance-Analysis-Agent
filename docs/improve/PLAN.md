@@ -54,7 +54,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | M6 | 3 | todo | | |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
-| X36 | 3 | todo | | |
+| X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
@@ -491,6 +491,17 @@ Boundary cases:
 - "Q3 FY2026" is one chip, not "Q3 FY2026" and "FY2026".
 - Clicking "Period ended September 30, 2026" sets that whole period. The typed-period cleaner used to drop a leading "period" there, leaving "ended September 30, 2026", so it now keeps "period" when "ended" or "ending" follows. "period is Q3 2026" still reads as "Q3 2026".
 
+**X36, lines the comparison file lacks, offered as 0.** The chat refuses a two-file join with a line in the actuals file that the comparison file lacks. That refusal now offers the reading the single-file path offers for a blank budget: a chip "Treat them as 0 (unbudgeted)" ("not in forecast", "new this period" for those bases). The refusal text keeps its list of lines, and its last sentence becomes "Choose **Treat them as 0 (unbudgeted)** to read them with a budget of 0, or upload a corrected file." Nothing is read as 0 until the analyst chooses it.
+
+Once chosen, each such line joins with a comparison figure of 0, and the reader notes say: "Read 1 line in 'act.csv' but not in 'bud.csv' as 0 (unbudgeted): 5040 (Travel)". In the join record, that line's `comparison_line_item` is `""`, since there is no line in the other file. The schema is unchanged (a string), and `docs/audit-contract.md` gains one sentence saying so.
+
+Boundary cases:
+- A line in the comparison file but not in the actuals still refuses with no chip, because reading an actual as 0 is not offered on either path.
+- When lines are missing both ways, the refusal is as before, with no chip.
+- Limit, benchmark, target, consensus, estimate and guidance get no chip, since a zero limit or consensus would invent a figure. Today a half can carry only a budget, forecast or prior period, so the guard in `join_results` is tested directly.
+- Uploading a corrected file instead clears the offer and joins as usual.
+- The CLI's `--compare-file` refusal is unchanged.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -612,6 +623,7 @@ Items:
 | C4 | `_credits_by_year` and its call removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl.py -k "loss_in_one_year or only_in_a_year_not_compared or credit_on_the_cost_side"` | 2 failed, 1 passed: both new cases still say "as a credit among costs"; the same-sign credit test passes either way |
 | X31 | `percent_shown`, its use in `_process_raw_table` and `_percent_as_shown` removed (`git apply -R`), tests kept | `pytest tests/test_percent_formats.py` | 14 failed: `points` reads 0.4% and 0.425%, no flag stops with "bare rate in Budget needs --percent-values", and the cells stay Decimal 0.4 |
 | X35 | `title_periods`, `_ask_period` and the cleaner's look-ahead removed (`git apply -R`), tests kept | `pytest tests/test_chat_period_chips.py` | 16 failed, 3 passed: no chips, no "title says" line; the 3 that pass are the no-period and lead-in guards |
+| X36 | `unbudgeted_as_zero`, `ZERO_OFFERED`, the session field and the chat offer removed (`git apply -R`), tests kept | `pytest tests/test_join_unbudgeted.py` | 6 failed, 2 passed: `join_files` takes no such option, and the chat refuses with "run again" and no chip; the 2 that pass are the unchanged-refusal guards |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

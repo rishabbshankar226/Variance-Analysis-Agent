@@ -75,6 +75,9 @@ class Session:
     ltm_annual: tuple[bytes, str] | None = None
     # F4 (PLAN.md R12): one half of a budget/actuals pair, waiting for the other: bytes, name, the column it lacks.
     pending_half: tuple[bytes, str, str] | None = None
+    # A join refused only for lines the comparison file lacks, offered to be read as 0 (X36): the actuals' bytes
+    # and name, the comparison's bytes and name, and the chip that accepts.
+    pending_unbudgeted: tuple[bytes, str, bytes, str, str] | None = None
     # Covenant headroom from the chat (PLAN.md R17): waiting for the metrics file, then the covenant schedule.
     covenant_step: str | None = None
     covenant_metrics: bytes | None = None
@@ -138,6 +141,7 @@ class Session:
         self.awaiting_ltm_annual = False
         self.ltm_annual = None
         self.pending_half = None
+        self.pending_unbudgeted = None
         self.covenant_step = None
         self.covenant_metrics = None
         self.earnings_headers = ()
