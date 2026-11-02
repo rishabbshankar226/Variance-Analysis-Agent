@@ -52,7 +52,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
-| M6 | 3 | todo | | |
+| M6 | 3 | in progress | `test(M6)`: script and before-inventory | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py` |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
@@ -280,6 +280,13 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
 
 13. **Phase 2's chat screens are captured in Phase 3's screenshot run.** Phase 2 changed three chat screens: C5's Neutral tables and "in line" text, X5's currency question, and X6's summary. They are shot together with Phase 3's screens into `docs/improve/evidence/phase-3/` before STOP 2, with a scenario added for any screen no scenario reaches.
 14. **Revert proofs reverse a saved diff** (`git diff -- <files> > patch; git apply -R patch; test; git apply patch`), never a checkout of the tree. The auto-mode classifier rightly blocked a `git checkout -- .` typed in error, and the X1 work was not lost.
+15. **M6 counts the intake messages a chat reader can see.** The rules file defines jargon and fixes for "a message Maya sees". So `scripts/message_inventory.py` lists every intake-workflow message: the old inventory's modules plus the readers added since (`intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`). It counts only those the chat can show.
+    - Listed with their reason but not counted: the command line's own messages, the strict reader (`parsing.load_input` and its helpers, which the chat never calls), the server's protocol replies, internal checks, the engine's checks of API arguments, a raise caught where it is raised, and clauses another message completes.
+    - A message shown inside another (an Excel or JSON read error after "Could not read ...", a cell under "Fix these cells ...") is checked for jargon, and its wrapper is scored for the fix.
+    - Only errors and refusals are scored for a fix; a confirmation or a question is not.
+    - Engine errors are checked as `plain_analysis_error` shows them.
+    - The scanner was frozen before any message changed. **Before, at `ff8abcb`:** 228 messages seen, 17 with jargon, 35 of 82 errors with no fix, 49 failing either check. The hand-written count at `a3ce6bb` (113 messages, 32 jargon, 70 no fix) used other scope and rules, so it is not comparable.
+    - Limits stay (constraint 10). Only the words change.
 
 ## Phase 3 rules
 
