@@ -30,7 +30,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X12 | 3 | done | see `fix(X12)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X13 | 3 | done | see `fix(X13)` | `src/variance_agent/cli.py`, `tests/test_cli_output_paths.py` (new) |
 | X14 | 3 | done | see `fix(X14)` | `src/variance_agent/audit.py`, `comparisons.py`, `tests/test_comparison_audit_versions.py` (new) |
-| X15 | 3 | todo | | |
+| X15 | 3 | done | see `fix(X15)` | `src/variance_agent/parsing.py`, `comparisons.py`, `tests/test_tsv_input.py` (new) |
 | X16 | 3 | todo | | |
 | X17 | 3 | todo | | |
 | X18 | 3 | todo | | |
@@ -313,6 +313,13 @@ Boundary cases:
 - The same with `--audit-schema-version 1.8`: "Audit schema 1.8 cannot record how the filing was read; use --audit-schema-version 1.9."
 - A CSV earnings run: 1.8, as today.
 
+**X15, tab-separated files.** With `--assisted`, a `.tsv` or `.txt` file is read by assisted intake's own delimited reader, the one the chat's paste path uses, on the FP&A and the comparison path alike. Without `--assisted` it refuses: "Tab-separated files are read with --assisted, which detects the delimiter and lists every adjustment it makes." That matches the PDF and HTML wording. An unknown format names everything that works: "Unsupported input format '.docx'. Use CSV, JSON, XLSX, XLSM or XLS; with --assisted, also TSV, PDF or an EDGAR .htm filing."
+
+Boundary cases:
+- The fictional pasted TSV fixture reads with `--assisted`, and with `--preset earnings --assisted` on a consensus copy.
+- It refuses without `--assisted`.
+- `.docx` refuses with the full list.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -411,6 +418,7 @@ Items:
 | X12 | the body deadline and chunked read removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "dripped or sent_whole"` | 1 failed, 1 passed: the deadline settings don't exist, and the server waits out the drip |
 | X13 | the four second files removed from `_validate_output_paths` (`git apply -R`), tests kept | `pytest tests/test_cli_output_paths.py` | 4 failed, 1 passed: `-o bud.csv` overwrites the compare file, and the other three reach later checks instead of the path refusal |
 | X14 | `needs_schema_19`, its use in `build_comparison_audit` and the worded refusal removed (`git apply -R`), tests kept | `pytest tests/test_comparison_audit_versions.py` | 2 failed, 1 passed: the 10-K earnings audit refuses (1.8 says use 1.9), and the 1.8 refusal still blames a workbook examination. The CSV 1.8 control passes either way. |
+| X15 | the `.tsv`/`.txt` branch and the fuller list removed from `validate_input_format`, and the comparison reader's TSV case (`git apply -R`), tests kept | `pytest tests/test_tsv_input.py` | 4 failed: every case gets "Unsupported input format '.tsv'. Use CSV, JSON, XLSX, or XLSM." |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

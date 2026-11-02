@@ -529,7 +529,7 @@ def read_comparison_input(
     if suffix.lower() == ".csv" and not assisted and not column_mapping:
         parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
         return parsed.rows, parsed.raw_headers, parsed.worksheet, ()
-    if suffix.lower() == ".csv":
+    if suffix.lower() == ".csv" or (assisted and suffix.lower() in {".tsv", ".txt"}):
         if sheet is not None:
             raise ValueError("Worksheet selection requires Excel input.")
         text, encoding_note = _decode_text(data, filename) if assisted else (data.decode("utf-8-sig"), None)

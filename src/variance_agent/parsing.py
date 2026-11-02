@@ -268,8 +268,16 @@ def validate_input_format(suffix: str, *, assisted: bool = False, filename: str 
                 "filing and lists every adjustment it makes."
             )
         return
+    if suffix in {".tsv", ".txt"}:  # assisted intake's delimited reader, as for a pasted table (X15)
+        if not assisted:
+            raise ValueError(
+                "Tab-separated files are read with --assisted, which detects the delimiter and lists "
+                "every adjustment it makes."
+            )
+        return
     if suffix not in {".csv", ".json", ".xlsx", ".xlsm", ".xls"}:
-        raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
+        raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, XLSM or XLS; "
+                         "with --assisted, also TSV, PDF or an EDGAR .htm filing.")
     if suffix in {".xlsx", ".xlsm", ".xls"}:
         _excel_loader()
 
