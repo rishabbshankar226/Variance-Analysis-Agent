@@ -588,6 +588,15 @@ def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
     return CanonicalRole.UNKNOWN, None
 
 
+def _footnote_marks(text: str) -> str:
+    """Characters that are not digits but that NFKC folds into digits: superscripts, circled numbers."""
+    return "".join(dict.fromkeys(
+        ch for ch in text
+        if not ch.isascii() and unicodedata.category(ch) != "Nd"
+        and any(c in "0123456789" for c in unicodedata.normalize("NFKC", ch))
+    ))
+
+
 def parse_assisted_decimal(
     value: object,
     *,
@@ -619,6 +628,11 @@ def parse_assisted_decimal(
     if not isinstance(value, str):
         raise ValueError(f"{line_item}: field '{field}' must be a numeric scalar.")
 
+    # NFKC would also turn a footnote mark into digits ("950\u00b9" -> "9501", "\u2460" -> "1"): refuse it.
+    if marks := _footnote_marks(value):
+        raise ValueError(
+            f"{line_item}: field '{field}' has a footnote mark or small digit ({marks}) in: {value}."
+        )
     # NFKC folds full-width digits/signs and non-breaking spaces; U+2212 is the typographic minus.
     text = unicodedata.normalize("NFKC", value).strip().replace("\u2212", "-")
     if text in _ACCOUNTING_DASHES:
@@ -2810,6 +2824,9 @@ def _plain_cell_detail(detail: str, field_label: str) -> str:
     """Say what is wrong with a cell the way a person would, not in parser terms."""
     if match := re.search(r"has an unrecognized number format: (.*)\.$", detail):
         return f"'{match.group(1)}' is not an amount I can read."
+    if match := re.search(r"has a footnote mark or small digit \((.+?)\) in: (.*)\.$", detail):
+        return (f"'{match.group(2)}' has a footnote mark ({match.group(1)}) next to the amount. "
+                "Remove the mark so the cell holds only the amount.")
     if match := re.search(r"is missing \(marked (.+)\)\.$", detail):
         return f"the amount is marked {match.group(1)}."
     if detail.startswith("required value in") and "is missing" in detail:

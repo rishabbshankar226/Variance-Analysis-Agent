@@ -9,7 +9,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | ID | Phase | State | Commit | Files to touch (filled before editing) |
 |---|---|---|---|---|
 | T1 | 0 (Phase 6 item) | done | `63162aa` | `tests/test_chat_hardening.py` |
-| X1 | 2 | todo | | |
+| X1 | 2 | done | see `fix(X1)` | `src/variance_agent/intake.py`, `tests/test_amount_forms.py` |
 | X2 | 2 | todo | | |
 | X3 | 2 | todo | | |
 | C2 | 2 | todo | | |
@@ -22,9 +22,9 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C1 | 2 | todo | | |
 | C3 | 2 | todo | | |
 | X30 | 2 | todo | | |
-| X9 | ask | asked | | (open branch `claude/per-visitor-sessions-d54fc9`) |
+| X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | todo | | |
-| X11 | 3 | asked | | |
+| X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
 | X12 | 3 | todo | | |
 | X13 | 3 | todo | | |
 | X14 | 3 | todo | | |
@@ -38,7 +38,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X22 | 3 | todo | | |
 | X23 | 3 | todo | | |
 | X24 | 3 | todo | | |
-| M1 | 3 | asked | | |
+| M1 | 3 | todo | | name the second document only (Decision 12) |
 | M2 | 3 | todo | | |
 | M3 | 3 | todo | | |
 | X25 | 3 | todo | | |
@@ -53,13 +53,13 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M6 | 3 | todo | | |
 | X35 | 3 | todo | | |
 | X36 | 3 | todo | | |
-| X32 | 5 | asked | | |
+| X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
 | X34 | 7 | todo | | |
-| X38 | open (proposed) | todo | | |
-| X39 | open (proposed) | todo | | |
-| X40 | open (proposed) | asked | | |
+| X38 | — | open | | cost; not this run except where X17 or X18 touch it |
+| X39 | — | open | | memory on the hosted free plan; not this run |
+| X40 | — | open | | left to the owner: the deploy pins (Decision 12) |
 | S1 | 4 | todo | | |
 | S2 | 4 | todo | | |
 | S3 | 4 | todo | | |
@@ -86,6 +86,24 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 9. **The shared hosted session (X9, and with it X11).** Open branches already target this: `claude/per-visitor-sessions-d54fc9` and `feat/chat-intro-per-visitor`. Two writers on one design is the collision the comparison-basis run hit, so both items are `asked` at STOP 1 and not started here.
 10. **The mutation sample.** One (path, line) pair per branch node. The list is sorted and drawn with `random.Random(20261102).sample(pairs, 25)` (659 branches). The probe worktree was cut at `15100c8`, and its `src/` matches `63162aa`. That worktree and its branch were removed after its files were copied to `.scratch/mutants/`.
 11. **Every Phase 1 finding was re-run by the main session**, and every one reproduced. The minor findings listed under the table in BACKLOG.md do not enter the backlog.
+12. **STOP 1 (2026-11-02): the owner approved the backlog as recommended.**
+    - Phase 2 takes ranks 1-12 plus X30. Phase 3 takes ranks 14-43, except X32 and the doc items.
+    - M1 names the second document in its refusal and does not read it.
+    - X9 and X11 are left to the open per-visitor-sessions work: `open`, owned elsewhere.
+    - C5 covers all 8 chat handlers. At zero, the table says "Neutral" and the text says "in line with budget" (memo, run-rate, compare, utilization, profitability, greeting) or "no change" (what-if, sensitivity).
+    - X32 states the rounding on the sheet and changes no cell value.
+    - X40 is left to the owner (`open`). X38 and X39 are `open` as proposed.
+    - Draw G waits on the owner setting `EDGAR_USER_AGENT`.
+
+## Phase 2 rules (written before each item's test)
+
+**X1, footnote marks beside an amount.** Assisted reading applies NFKC to an amount only to fold full-width forms and odd spaces. A character that is not itself a decimal digit (Unicode category Nd) but folds under NFKC into ASCII digits is a mark beside the number, never part of it. That covers superscripts `¹²³`, subscripts `₁`, circled `①` and `⑩`, parenthesised `⑴`, and digit-with-stop `⒈`. A cell holding one is refused. The refusal names the row, the line, the column and the mark, so the reader can remove the mark. This keeps strict mode's answer, which already refuses such a cell. Silently reading the figure without the mark would be a transformation nobody approved, so the cell is refused instead.
+
+Boundary cases:
+- `９５０` (full-width digits, category Nd) still reads 950.
+- `950` reads 950.
+- `950¹`, `¹950`, `9²50`, `950₁`, `①`, `⑩` (no digit value, but NFKC gives "10"), `950⑴` and `950⒈` are refused.
+- NBSP and other spaces fold as before.
 
 ## Existing assertions to edit
 
@@ -147,6 +165,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 |---|---|---|---|
 | T1 | The test checks `1fc32b8`'s fix, so the proof re-introduces that fix's two costs one at a time. (a) `_SUGGEST_MAX_ITEMS = 10**9`: the suggestion cap removed. | `pytest tests/test_chat_hardening.py -k stay_fast` | 3 failed, 4 passed: `assert 120000 == 30000`, difflib comparisons growing with the file |
 | T1 | (b) `_item_in_sentence` ignores the caller's `named` and recomputes the scan: an extra pass over the names. | same | 1 failed, 6 passed: `assert (80009 - 20009) <= (3 * (20000 - 5000))` |
+| X1 | `_footnote_marks` and its check in `parse_assisted_decimal` removed (git checkout of `intake.py`), tests kept | `pytest tests/test_amount_forms.py` | 9 failed: `Failed: DID NOT RAISE ValueError` for each mark, and the intake test's message assertion fails |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
