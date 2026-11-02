@@ -55,6 +55,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M6 | 3 | done | `test(M6)` x2, `fix(M6)` | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py`, ten modules' messages |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
+| X42 | 3 | asked (STOP 2) | | `measures.py` or the measure path's notes, `tests/` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
@@ -592,6 +593,26 @@ Items:
 - Report: a "($ in thousands)" earnings workbook now reports Revenue $1,234,000.00 against $1,200,000.00, Beat, the same as the FP&A path.
 - Workbook: the comparison workbook for the same file shows $1,234,000.00 on both its Earnings and Measures sheets. Its cells hold formatted text, not numbers, which is existing behaviour and something for N1 to keep in mind.
 - Chat reply: an on-budget file's board memo reads "Operating Profit finished at **$75,000.00**, **in line with** the planned budget of **$75,000.00**. Operating margin **held** at **50.0%** (+0.0 pts)."
+
+## Phase 3 figures (end of phase, `5bd1a9a`)
+
+Gates:
+- `ruff check .`: All checks passed!
+- `mypy --strict src/variance_agent scripts deterministic_conditioning`: Success: no issues found in 72 source files.
+- compileall: exit 0.
+- `pytest -q`: 2751 passed in 58.63s, up from 2630 at the end of Phase 2.
+- `pip check`: No broken requirements found.
+- build (sdist and wheel), twine (2 PASSED) and `check_distribution.py`: "Wheel/sdist contents, license, Python support, and entry point verified".
+- Minimal install, the new wheel reinstalled offline into `.scratch/minimal-env`: "Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified"; `pip check` clean.
+- Contracts and schemas: `git diff main -- tests/fixtures/contracts schemas` is empty; `pytest -k contract` gives 181 passed. That selection is wider than Phase 2's count of 104, which named the contract files alone.
+- Windows output-contract job: covered by CI only.
+
+Size table, by the same `ast` walk: 768 functions in `src/`, 37 over 80 lines and 10 over 150, against Phase 0's 732, 36 and 9. `_process_raw_table` grew from 477 to 534 lines across Phases 2 and 3. `_handle_executive_memo` (152) is the new function over 150. `chat/handlers.py` has 5,260 lines and `intake.py` 3,939.
+
+Items:
+- Done in Phase 3: X10, X12 to X29 (X24 with its merged date band left open), M1, M2, M3, M5, M6, C3m, C4, X31, X35, X36.
+- Asked: M4 (STOP-ASK). New at STOP 2: X42.
+- Screenshots: 91, in `docs/improve/evidence/phase-3/`, 26 scenarios, light theme, desktop and mobile. The harness `shots_phase3.py` dry-runs each scenario through the handlers first (`--check`). The chat servers it started were stopped.
 
 ## Looking at the outputs, Phase 3
 
