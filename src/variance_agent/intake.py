@@ -2418,6 +2418,22 @@ def _unique_names(lines: list[tuple[str, str]], keep: int | None = None, closers
     return names
 
 
+_COUNT_WORDS = {2: "twice", 3: "three times", 4: "four times"}
+
+
+def _numbered_notes(labels: list[str], names: list[str]) -> list[str]:
+    """Which numbered copy of a repeated label is which, by the printed line each follows (M5)."""
+    notes: list[str] = []
+    for label in dict.fromkeys(label for label, name in zip(labels, names, strict=True) if name == f"{label} (1)"):
+        at = [i for i, name in enumerate(names) if re.fullmatch(rf"{re.escape(label)} \(\d+\)", name)]
+        places = [f"({n}) is " + ("the first line" if i == 0 else f"the one after '{labels[i - 1]}'")
+                  for n, i in enumerate(at, start=1)]
+        times = _COUNT_WORDS.get(len(at), f"{len(at)} times")
+        notes.append(f"'{label}' is printed {times} with no section to tell the copies apart: "
+                     + ", ".join([places[0], *(place.replace(" is ", " ", 1) for place in places[1:])]) + ".")
+    return notes
+
+
 def _key_record(label: str, key: LineKey | None) -> dict[str, object] | None:
     if key is None:
         return None
@@ -2560,7 +2576,8 @@ def _read_ixbrl_bytes(
     result.source_statement = chosen.name
     result.document_currency = chosen.currency
     unit_note = [f"Units: {unit_text}"] if (unit_text := _unit_sentence(lines)) else []
-    result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes]
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes,
+                           *_numbered_notes([line.label for line in all_lines], all_names)]
     result.xbrl_lines = [
         {"line_item": all_names[i], "concept": all_lines[i].concept, "measure": all_lines[i].measure,
          "subtotal": i < len(lines) and i not in shaped.kept, "left_out": i >= len(lines),
@@ -2634,7 +2651,8 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
                           "footing": [{"subtotal": names[total], "terms": [{"line_item": names[term], "weight": weight}
                                                                            for term, weight in terms]}
                                       for total, terms in checked.matches]}]
-    result.reader_notes = [*chosen.notes, *unit_note, *left_out, identity, *blanks, _CHANGE_NOTE]
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, identity, *blanks, _CHANGE_NOTE,
+                           *_numbered_notes([line.label for line in money], names)]
     result.xbrl_lines = [
         {"line_item": names[i], "concept": line.concept, "measure": line.measure,
          "subtotal": i in totals, "left_out": i > closing,

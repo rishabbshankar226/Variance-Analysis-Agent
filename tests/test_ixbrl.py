@@ -575,3 +575,20 @@ def test_a_statement_that_runs_on_into_other_periods_says_so() -> None:
     assert (result.fatal_error_message or "").startswith(
         "The Consolidated Balance Sheets seems to run on into the next table, which shows other periods, so I couldn't "
         "read it whole and stopped instead of guessing.")
+
+
+def test_numbered_copies_of_a_label_say_which_is_which() -> None:
+    """M5: two 'Deferred income taxes' lines with no section to name them: a note places each copy."""
+    rows = [row("Net sales", fact("us-gaap:Revenues", "FY25", "1,000"), fact("us-gaap:Revenues", "FY24", "900")),
+            row("Depreciation", fact("us-gaap:Depreciation", "FY25", "100"), fact("us-gaap:Depreciation", "FY24", "90")),
+            row("Deferred income taxes", fact("us-gaap:DeferredIncomeTaxExpenseBenefit", "FY25", "20"),
+                fact("us-gaap:DeferredIncomeTaxExpenseBenefit", "FY24", "10")),
+            row("Other costs", fact("us-gaap:OtherCostAndExpenseOperating", "FY25", "30"),
+                fact("us-gaap:OtherCostAndExpenseOperating", "FY24", "25")),
+            row("Deferred income taxes", fact("us-gaap:DeferredIncomeTaxesAndTaxCredits", "FY25", "5"),
+                fact("us-gaap:DeferredIncomeTaxesAndTaxCredits", "FY24", "4")),
+            row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "845"), fact("us-gaap:NetIncomeLoss", "FY24", "771"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert ("'Deferred income taxes' is printed twice with no section to tell the copies apart: (1) is the one after "
+            "'Depreciation', (2) the one after 'Other costs'.") in result.reader_notes

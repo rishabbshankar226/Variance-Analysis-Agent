@@ -50,7 +50,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
 | X31 | 3 | todo | | |
 | M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
-| M5 | 3 | todo | | |
+| M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | todo | | |
 | M6 | 3 | todo | | |
 | X35 | 3 | todo | | |
@@ -457,6 +457,12 @@ Boundary cases:
 - A balance sheet whose liabilities sit in an untitled table of other periods gets the runs-on refusal.
 - A complete balance sheet followed by such a table reads, as in the existing test.
 
+**M5, which numbered line is which.** A label printed more than once, where no open section names the copies, is still numbered by its place ("Deferred income taxes (1)", "(2)"). The keys stay with the line by position. A reading note now says which is which by the printed line each follows: "'Deferred income taxes' is printed twice with no section to tell the copies apart: (1) is the one after 'Depreciation', (2) the one after 'Other liabilities'." It sits in the report's "How the filing was read" and the audit's reader notes. A copy at the top of the statement is "the first line". Names given by section are unchanged.
+
+Boundary cases:
+- Two unnamed copies get the note.
+- Copies each in their own section keep their section names, with no note.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -574,6 +580,7 @@ Items:
 | X24 | `_two_row_header` and its use in header detection removed (`git apply -R`), tests kept | `pytest tests/test_two_row_headers.py` | 2 failed, 1 passed: "Could not find a header row with Line Item, Budget, and Actual" for the merged and unmerged two-row headers. The no-amounts control refuses either way. |
 | M1 | `_statements_elsewhere` and both new refusal wordings removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl_statements_elsewhere.py` | 3 failed, 1 passed: the refusal names no document and no next step. The path-characters guard passes either way. |
 | M2 | `Statement.runs_on`, its marking and `_runs_on_refusal` removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k runs_on` | 1 failed: the statement has no `runs_on`, and the refusal is the balance-sheet check's own message |
+| M5 | `_numbered_notes` and its two uses removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k which_is_which` | 1 failed: the reader notes don't say which numbered copy is which |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
