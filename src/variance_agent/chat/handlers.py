@@ -51,6 +51,7 @@ from variance_agent.intake import (
     infer_gl_range_rules,
     plain_analysis_error,
     read_input_assisted,
+    title_periods,
 )
 from variance_agent.mapping import (
     LayoutMapping,
@@ -368,11 +369,7 @@ def _handle_intake_confirmation(session: Session, text: str) -> Response:
                 chips=["$5,000 or 3%", "$10,000 or 5%", "$25,000 or 10%", "$50,000 or 15%"],
                 phase=Phase.AWAITING_THRESHOLDS,
             )
-        session.phase = Phase.AWAITING_PERIOD
-        return Response(
-            text="What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
-            phase=Phase.AWAITING_PERIOD,
-        )
+        return _ask_period(session)
 
     if lower in ("change something", "no", "edit", "change", "2"):
         chips = []
@@ -476,11 +473,8 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
                 if len(session.available_sheets) > 1:
                     worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
 
-            return Response(
-                text=f"Loaded '{safe_inline(session.source_name or 'file')}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
-                     "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
-                phase=Phase.AWAITING_PERIOD,
-            )
+            return _ask_period(session, f"Loaded '{safe_inline(session.source_name or 'file')}' ({row_count} data "
+                                        f"row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n")
 
         session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
         return _intake_confirmation(intake_res, ["Looks right", "Change something"])
@@ -489,6 +483,22 @@ def _handle_blank_budget_confirmation(session: Session, text: str) -> Response:
         text="Please upload a file using the drop zone above.",
         chips=["Upload a different file"],
         phase=Phase.AWAITING_FILE,
+    )
+
+
+def _ask_period(session: Session, lead: str = "") -> Response:
+    """Ask for the reporting period, offering as chips any the file's title names (X35)."""
+    session.phase = Phase.AWAITING_PERIOD
+    named = title_periods(session.intake_result.raw_title_text) if session.intake_result is not None else []
+    text = lead + "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)"
+    if not named:
+        return Response(text=text, phase=Phase.AWAITING_PERIOD)
+    periods = " and ".join(f"**{safe_inline(period)}**" for period in named)
+    return Response(
+        text=f"{text}\n\nYour file's title says {periods}: choose {'it' if len(named) == 1 else 'one'} below, "
+             "or type a different period.",
+        chips=named,
+        phase=Phase.AWAITING_PERIOD,
     )
 
 
@@ -935,11 +945,8 @@ def _intake_response(session: Session, intake_res: IntakeResult, filename: str) 
             if len(session.available_sheets) > 1:
                 worksheet_note += f" ({len(session.available_sheets)} sheets available; switch with `sheet <name>`)"
 
-        return Response(
-            text=f"Loaded '{safe_inline(filename)}' ({row_count} data row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n"
-                 "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
-            phase=Phase.AWAITING_PERIOD,
-        )
+        return _ask_period(session, f"Loaded '{safe_inline(filename)}' ({row_count} data "
+                                    f"row{'s' if row_count != 1 else ''}){worksheet_note}.\n\n")
 
     session.phase = Phase.AWAITING_INTAKE_CONFIRMATION
 
@@ -964,7 +971,8 @@ def _clean_period_input(text: str) -> str:
     """Extract clean reporting period from conversational user input."""
     cleaned = text.strip()
     prefix_pattern = re.compile(
-        r"^(?:(?:this\s+is|it\s+is|it\'s|the\s+period\s+is|period\s*(?:is|:)?|covers?|for)\s+)+",
+        # "Period ended September 30, 2026" is itself a period, not a lead-in to one (X35).
+        r"^(?:(?:this\s+is|it\s+is|it\'s|the\s+period\s+is|period(?!\s+end(?:ed|ing)\b)\s*(?:is|:)?|covers?|for)\s+)+",
         re.IGNORECASE,
     )
     cleaned = prefix_pattern.sub("", cleaned).strip()
@@ -1387,11 +1395,7 @@ def _run_analysis(session: Session) -> Response:
     if session.parsed_rows is None:
         return _file_is_gone(session)
     if session.period is None:
-        session.phase = Phase.AWAITING_PERIOD
-        return Response(
-            text="What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
-            phase=Phase.AWAITING_PERIOD,
-        )
+        return _ask_period(session)
     if session.dollar_threshold is None or session.percent_threshold is None:
         session.phase = Phase.AWAITING_THRESHOLDS
         return Response(

@@ -53,7 +53,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | M6 | 3 | todo | | |
-| X35 | 3 | todo | | |
+| X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | todo | | |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
@@ -477,6 +477,20 @@ Boundary cases:
 - A cell in General beside a `0.0%` cell stays a bare rate, so the flag decides it.
 - 0 reads as 0%, and a negative stored rate keeps its sign.
 
+**X35, the period a title names, offered as a chip.** When the chat asks for the reporting period and the file's title rows name one, the question offers it as a chip and says where it came from: "Your file's title says **Q3 2026**: choose it below, or type a different period." The question itself is unchanged, and nothing is chosen for the analyst; a chip is sent as if typed. Up to three distinct periods are offered, in the order the title prints them. The forms read are:
+- a duration ended on a date: "Nine months ended September 30, 2026"; "For the period ended September 30, 2026" offers "Period ended September 30, 2026";
+- a quarter: "Q3 2026", "Q3 FY2026" or "FY2026 Q3";
+- a half: "H1 2026";
+- a fiscal year: "FY2026";
+- a month and year: "October 2026".
+
+All four places that ask for the period use this. The CLI still requires `--period`, because changing a CLI default is a STOP-ASK.
+
+Boundary cases:
+- A title naming no period offers no chips, and the question reads exactly as before.
+- "Q3 FY2026" is one chip, not "Q3 FY2026" and "FY2026".
+- Clicking "Period ended September 30, 2026" sets that whole period. The typed-period cleaner used to drop a leading "period" there, leaving "ended September 30, 2026", so it now keeps "period" when "ended" or "ending" follows. "period is Q3 2026" still reads as "Q3 2026".
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -597,6 +611,7 @@ Items:
 | M5 | `_numbered_notes` and its two uses removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k which_is_which` | 1 failed: the reader notes don't say which numbered copy is which |
 | C4 | `_credits_by_year` and its call removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl.py -k "loss_in_one_year or only_in_a_year_not_compared or credit_on_the_cost_side"` | 2 failed, 1 passed: both new cases still say "as a credit among costs"; the same-sign credit test passes either way |
 | X31 | `percent_shown`, its use in `_process_raw_table` and `_percent_as_shown` removed (`git apply -R`), tests kept | `pytest tests/test_percent_formats.py` | 14 failed: `points` reads 0.4% and 0.425%, no flag stops with "bare rate in Budget needs --percent-values", and the cells stay Decimal 0.4 |
+| X35 | `title_periods`, `_ask_period` and the cleaner's look-ahead removed (`git apply -R`), tests kept | `pytest tests/test_chat_period_chips.py` | 16 failed, 3 passed: no chips, no "title says" line; the 3 that pass are the no-period and lead-in guards |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

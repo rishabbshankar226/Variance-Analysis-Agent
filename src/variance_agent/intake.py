@@ -766,6 +766,35 @@ _TOTAL_KEYWORD_RE = re.compile(
 _ACCOUNT_NUM_RE = re.compile(r"\b([1-9]\d{3,4})\b")
 
 
+_TITLE_MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+                r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")
+# The ways a title names a reporting period, most specific first: a span one form takes is not read again by
+# a later one, so "Q3 FY2026" is one period, not two (X35).
+_TITLE_PERIODS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    rf"\b(?:(?:three|six|nine|twelve|\d{{1,2}})\s+months|(?:13|26|39|52)\s+weeks|(?:fiscal\s+)?(?:year|quarter|period))"
+    rf"\s+end(?:ed|ing)\s+{_TITLE_MONTH}\.?\s+\d{{1,2}},?\s+\d{{4}}\b",
+    r"\bQ[1-4]\s*(?:FY\s*)?['’]?\d{2,4}\b|\bFY\s*\d{2,4}\s*Q[1-4]\b",
+    r"\bH[12]\s*(?:FY\s*)?\d{4}\b",
+    r"\bFY\s*\d{2,4}\b",
+    rf"\b{_TITLE_MONTH}\.?\s+\d{{4}}\b",
+))
+
+
+def title_periods(text: str, limit: int = 3) -> list[str]:
+    """The reporting periods a title names, as it prints them and in its order: at most `limit`, distinct (X35)."""
+    taken: list[tuple[int, int, str]] = []
+    for pattern in _TITLE_PERIODS:
+        for match in pattern.finditer(text):
+            if not any(start < match.end() and match.start() < end for start, end, _ in taken):
+                taken.append((match.start(), match.end(), " ".join(match.group().split())))
+    found: list[str] = []
+    for _, _, period in sorted(taken):
+        period = period[0].upper() + period[1:]
+        if period.lower() not in {named.lower() for named in found}:
+            found.append(period)
+    return found[:limit]
+
+
 def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
     """Scan column headers to detect paired Budget and Actual columns by period."""
     budget_cols: dict[str, str] = {}
