@@ -48,7 +48,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X27 | 3 | done | see `fix(X27)` | `src/variance_agent/chat/responses.py`, `chat/handlers.py`, `chat/intent.py`, `tests/test_chat_not_yet_labeled.py` (new) |
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
-| X31 | 3 | todo | | |
+| X31 | 3 | done | see `fix(X31)` | `src/variance_agent/intake.py`, `comparisons.py`, `tests/test_percent_formats.py` |
 | M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
@@ -470,6 +470,13 @@ Boundary cases:
 - +50 and -40 take the new wording.
 - A line that reduces income in both compared years says "it reduces income in FY2025 and FY2024".
 
+**X31, a Percent cell Excel shows as a percentage.** Excel stores 40% as 0.4 and shows it as 40% under a format such as `0.0%`. On a Percent row, a cell whose number format shows a percentage is read as the percentage Excel shows, so 0.4 becomes "40%". The value is the stored value times 100, exactly, with a Fraction oracle. It then reads like a typed "40%", whatever `--percent-values` says. That flag goes on governing bare rates in General or number formats, as before. Both readers do this: FP&A intake (`_process_raw_table`, which the chat also uses) and the measure path (`read_comparison_input`). Each cell read so gets a note: "Gross margin: read Budget and Actual as the percentages Excel shows (number format '0.0%')." The rules are unchanged, since this is how a row reaches them (rules file 7). A Currency row under a percent format still stops as before (R2), and the path did not exist in 0.2.0.
+
+Boundary cases:
+- `0.0%` cells read as 40% and 42.5% under `points`, `fractions` and no flag; before the fix, `points` gave 0.4%.
+- A cell in General beside a `0.0%` cell stays a bare rate, so the flag decides it.
+- 0 reads as 0%, and a negative stored rate keeps its sign.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -589,6 +596,7 @@ Items:
 | M2 | `Statement.runs_on`, its marking and `_runs_on_refusal` removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k runs_on` | 1 failed: the statement has no `runs_on`, and the refusal is the balance-sheet check's own message |
 | M5 | `_numbered_notes` and its two uses removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k which_is_which` | 1 failed: the reader notes don't say which numbered copy is which |
 | C4 | `_credits_by_year` and its call removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl.py -k "loss_in_one_year or only_in_a_year_not_compared or credit_on_the_cost_side"` | 2 failed, 1 passed: both new cases still say "as a credit among costs"; the same-sign credit test passes either way |
+| X31 | `percent_shown`, its use in `_process_raw_table` and `_percent_as_shown` removed (`git apply -R`), tests kept | `pytest tests/test_percent_formats.py` | 14 failed: `points` reads 0.4% and 0.425%, no flag stops with "bare rate in Budget needs --percent-values", and the cells stay Decimal 0.4 |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

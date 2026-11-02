@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Mapping
+from typing import Mapping, cast
 
 from .analysis import analyze_rows, verify_result
 from .audience import AudienceConfig, audience_config, validate_audience_config, effective_layout
@@ -436,6 +436,29 @@ def _scaled_cell(value: object, multiplier: Decimal, *, field: str, line_item: s
     return f"{'-' if scaled < 0 else ''}{symbol}{abs(scaled):f}"
 
 
+def _percent_as_shown(
+    rows: list[dict[str, object]], positions: list[int], headers: tuple[str, ...],
+    display: dict[tuple[int, int], tuple[str, Decimal | None, bool]], notes: list[str],
+) -> None:
+    """Read a Percent row's cell that Excel shows as a percentage as that percentage, as FP&A intake does (X31)."""
+    from .intake import percent_shown, percent_shown_note
+    measure = next((h for h in headers if normalize_key(h) == "measure"), None)
+    line = next((h for h in headers if normalize_key(h) in _ALL_LINE_ITEM_KEYS), None)
+    for row, number in zip(rows, positions, strict=True):
+        name = str(row.get(line, "") if line else "")
+        try:
+            if measure_kind(row.get(measure) if measure else None, name) is not MeasureKind.PERCENT:
+                continue
+        except ValueError:
+            continue  # the analysis names the unknown measure
+        shown = [(headers[index], display[number, index + 1][0]) for index in _amount_columns(headers)
+                 if isinstance(row.get(headers[index]), Decimal) and display.get((number, index + 1), ("", None, False))[2]]
+        for header, _ in shown:
+            row[header] = percent_shown(cast(Decimal, row[header]))
+        if shown:
+            notes.append(percent_shown_note(name, [header for header, _ in shown], shown[0][1]))
+
+
 def _apply_unit_caption(
     rows: list[dict[str, object]], positions: list[int], headers: tuple[str, ...], text: str,
     display: dict[tuple[int, int], tuple[str, Decimal | None, bool]], filename: str, notes: list[str],
@@ -648,6 +671,7 @@ def read_comparison_input(
     title = " ".join(str(v).strip() for r in raw[:header_at] for v in r if v is not None and str(v).strip())
     scale = _apply_unit_caption(output, positions, mapped_headers, f"{title} {' '.join(headers)}", display, filename,
                                 notes)
+    _percent_as_shown(output, positions, mapped_headers, display, notes)
     if scale is not None and metadata is not None and isinstance(metadata.get("transformations"), dict):
         metadata["transformations"]["unit_scale"] = str(scale)  # type: ignore[index]
     if header_at:

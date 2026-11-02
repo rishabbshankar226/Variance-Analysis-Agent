@@ -257,6 +257,20 @@ def _quoted_format(code: str) -> str:
     return f"'{code[:40]}{'...' if len(code) > 40 else ''}'"
 
 
+def percent_shown(value: Decimal) -> str:
+    """The percentage Excel shows for a rate stored under a percent number format: 0.4 reads "40%" (X31)."""
+    if value == 0:
+        return "0%"
+    with financial_context():
+        return f"{format((value * 100).normalize(), 'f')}%"
+
+
+def percent_shown_note(line_item: str, fields: list[str], code: str) -> str:
+    named = fields[0] if len(fields) == 1 else f"{', '.join(fields[:-1])} and {fields[-1]}"
+    return (f"{line_item}: read {named} as the percentage{'s' if len(fields) > 1 else ''} Excel shows "
+            f"(number format {_quoted_format(code)}).")
+
+
 def _unsaved_formulas_stop(
     excel: _ExcelSheet | None, filename: str, include: Callable[[int, int], bool],
     describe: Callable[[int, int], str], sheet_name: str | None,
@@ -3392,6 +3406,20 @@ def _process_raw_table(
                 # A zero shows the same in any unit, so it can't disagree with a caption (X20).
                 if isinstance(raw_value, Decimal) and raw_value != 0:
                     currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
+        if kind is MeasureKind.PERCENT and excel is not None:
+            # A cell Excel shows as a percentage is that percentage, not a bare rate for the flag to scale (X31).
+            shown = [(column_idx, field_name, entry[0]) for column_idx, raw_value, field_name in
+                     ((budget_idx, raw_budget, comparison_field), (actual_idx, raw_actual, "Actual"))
+                     if isinstance(raw_value, Decimal)
+                     and (entry := excel.display.get(cell_key(physical_idx, column_idx + 1))) is not None and entry[2]]
+            for column_idx, _, _ in shown:
+                if column_idx == budget_idx:
+                    raw_budget = percent_shown(cast(Decimal, raw_budget))
+                else:
+                    raw_actual = percent_shown(cast(Decimal, raw_actual))
+            if shown:
+                visible_transformations.append(
+                    percent_shown_note(line_item_str, [field_name for _, field_name, _ in shown], shown[0][2]))
         if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
             # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
             # a multiple keeps its x, which the analysis reads as turns.
