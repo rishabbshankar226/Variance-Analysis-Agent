@@ -43,7 +43,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M1 | 3 | todo | | name the second document only (Decision 12) |
 | M2 | 3 | todo | | |
 | M3 | 3 | todo | | |
-| X25 | 3 | todo | | |
+| X25 | 3 | done | see `fix(X25)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_export_paths.py` (new) |
 | X26 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X27 | 3 | todo | | |
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
@@ -381,6 +381,12 @@ Boundary cases:
 - budget, then actuals (the join, unchanged);
 - budget, then a broken file (refused, budget kept).
 
+**X25, `~` in a local export path.** In local mode, a path that starts with `~` means the home folder, as in a shell. It is expanded before writing (`Path.expanduser`), and the reply names where the file landed. So `export report ~/r.md` writes `<home>/r.md` and never creates a folder named `~` in the working folder. A relative path writes where it did, and hosted mode still refuses every path. A home folder that cannot be found refuses through the existing "Could not write to ..." reply.
+
+Boundary cases:
+- `~/r.md` lands in home.
+- `out/r.md` lands under the working folder, as before.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -488,6 +494,7 @@ Items:
 | X20 | the zero exclusion removed from the currency-cell count (`git apply -R`), tests kept | `pytest tests/test_excel_zero_section.py` | 1 failed, 1 passed: one zero Actual gives "number formats don't agree". The General control refuses either way. |
 | X19, X26 | the replaced-file condition and both `initial_response` clears removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "refused_upload or start_up_reply"` | 3 failed: a refused upload gives the download a 404, and `/status` still serves the start-up reply after a new upload and after a reset |
 | X21 | the whole-file and same-half branches and `_half_wording` removed from `_load_other_half` (`git apply -R`), tests kept | `pytest tests/test_chat_two_files.py` | 3 failed, 2 passed: a whole file gets "...isn't the actuals half of a pair. Run it on its own, without --compare-file.", and the same budget again gets "Could not find a header row". The join and broken-file controls pass either way. |
+| X25 | the `expanduser` and the named landing path removed (`git apply -R`), tests kept | `pytest tests/test_chat_export_paths.py` | 1 failed, 1 passed: `~/r.md` creates `work/~/r.md`, and home stays empty. The relative-path control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

@@ -2655,13 +2655,14 @@ def _export_response(
         return _path_export_disabled(path, intent)
     if path:
         try:
-            write_text_outputs({Path(path): content})
+            target = Path(path).expanduser()  # "~" is the home folder, as in a shell (X25)
+            write_text_outputs({target: content})
             return Response(
-                text=f"{written} written to `{safe_inline(path)}`.",
+                text=f"{written} written to `{safe_inline(str(target) if path.startswith('~') else path)}`.",
                 chips=written_chips,
                 phase=Phase.EXPLORING,
             )
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:  # RuntimeError: no home folder to expand "~" to
             return Response(
                 text=f"Could not write to '{safe_inline(path)}': {display_text(str(exc))}",
                 chips=[retry_chip],
