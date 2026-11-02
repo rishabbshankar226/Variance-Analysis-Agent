@@ -1487,6 +1487,7 @@ def _run_analysis(session: Session) -> Response:
             per_share_threshold=session.per_share_threshold, count_threshold=session.count_threshold,
             bps_threshold=session.bps_threshold, percent_values=session.percent_values,
             multiple_threshold=session.multiple_threshold,
+            source_notes=tuple(intake.visible_transformations) if intake is not None else (),
         )
     try:
         with financial_context():

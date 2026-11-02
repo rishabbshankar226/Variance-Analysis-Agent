@@ -417,6 +417,7 @@ def _run(args: Arguments) -> int:
         raise ValueError(f"--compare-to {compare_to_basis.value} needs --assisted, which reads each row's declarations "
                          "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
 
+    source_notes: tuple[str, ...] = ()  # assisted intake's notes, for a measure report and audit (X42)
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         from .intake import (
@@ -497,6 +498,7 @@ def _run(args: Arguments) -> int:
 
         _print_examination(intake_res)
         parsed_rows = rows
+        source_notes = tuple(intake_res.visible_transformations)
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
         comparison_label = intake_res.comparison_label
@@ -550,6 +552,7 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
+        source_notes = tuple(intake_res.visible_transformations)
         _print_examination(intake_res)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
@@ -609,7 +612,7 @@ def _run(args: Arguments) -> int:
             count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
             bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
             multiple_threshold=cast(Decimal | None, audience_args["multiple_threshold"]),
-            percent_values=cast(str | None, audience_args["percent_values"]),
+            percent_values=cast(str | None, audience_args["percent_values"]), source_notes=source_notes,
         )
     try:
         result = analyze_rows(parsed_rows, config)

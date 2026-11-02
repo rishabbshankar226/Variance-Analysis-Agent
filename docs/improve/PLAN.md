@@ -55,7 +55,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M6 | 3 | done | `test(M6)` x2, `fix(M6)` | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py`, ten modules' messages |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
-| X42 | 3 | todo (approved at STOP 2) | | `measures.py` or the measure path's notes, `tests/` |
+| X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
@@ -519,6 +519,17 @@ Boundary cases:
 - Uploading a corrected file instead clears the offer and joins as usual.
 - The CLI's `--compare-file` refusal is unchanged.
 
+**X42, intake's notes in the measure report and audit.** On the measure path (an `AudienceConfig` run, which a Measure column, a non-FP&A preset or a Percent row selects), the notes on how the file was read come from one function, `measures.metric_inferences`. It feeds the report's "How the file was read", the audit's `inferences` and the CLI's `[measure intake]` lines.
+- Assisted intake's notes (its visible transformations) now reach that function through a new `AudienceConfig.source_notes`, set by the CLI's assisted path and by the chat. They come first, in intake's order.
+- An intake note that only restates a row note the function writes itself is dropped, so nothing is said twice: "read Measure as", "read Better as/to" and "read % values as percentage points".
+- "Read bare Percent values as points." (or fractions) now appears only when a Percent row holds a bare rate: a value in its Actual or comparison column without a % sign.
+- No figure, status or contract changes, and the audit schema is unchanged, because `inferences` is a list of strings. The audit's `audience` object names its fields one by one, so the new field doesn't appear in it.
+
+Boundary cases:
+- X31's file (both cells formatted `0.0%`) under `--percent-values points` lists "Gross margin: read Budget and Actual as the percentages Excel shows (number format '0.0%')." in the report and the audit, and no bare-rate line.
+- The same file with Budget left in General keeps the bare-rate line, since that one cell is bare.
+- A run with no assisted intake (strict input) adds nothing.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -671,6 +682,7 @@ Items:
 | X35 | `title_periods`, `_ask_period` and the cleaner's look-ahead removed (`git apply -R`), tests kept | `pytest tests/test_chat_period_chips.py` | 16 failed, 3 passed: no chips, no "title says" line; the 3 that pass are the no-period and lead-in guards |
 | X36 | `unbudgeted_as_zero`, `ZERO_OFFERED`, the session field and the chat offer removed (`git apply -R`), tests kept | `pytest tests/test_join_unbudgeted.py` | 6 failed, 2 passed: `join_files` takes no such option, and the chat refuses with "run again" and no chip; the 2 that pass are the unchanged-refusal guards |
 | M6 | every source rewording removed (`git apply -R` of the `src` diff), tests and script kept | `pytest tests/test_message_inventory.py`; `python scripts/message_inventory.py` | 1 failed, 5 passed: the gate lists 44 messages; the script prints 235 seen, 10 with jargon, 37 errors with no fix, 44 failing, matching the worktree's before |
+| X42 | `source_notes`, `_bare_rate` and their wiring removed (`git apply -R`), tests kept | `pytest tests/test_measure_source_notes.py` | 4 failed, 1 passed: the report and audit lack the format note and keep "Read bare Percent values as points."; the strict-run guard passes either way |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

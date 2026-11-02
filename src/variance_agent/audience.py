@@ -23,6 +23,7 @@ class AudienceConfig(AnalysisConfig):
     layout: str | None = None
     per_share_lines: bool | None = None
     headline_items: tuple[str, ...] = ()
+    source_notes: tuple[str, ...] = ()  # assisted intake's notes on how the file was read (X42)
 
 
 def validate_audience_config(config: AnalysisConfig) -> None:
@@ -40,6 +41,8 @@ def validate_audience_config(config: AnalysisConfig) -> None:
         raise ValueError("Headline items must be distinct line-item names.")
     if config.percent_values not in {None, "points", "fractions"}:
         raise ValueError("--percent-values must be points or fractions.")
+    if not isinstance(config.source_notes, tuple) or not all(isinstance(note, str) for note in config.source_notes):
+        raise ValueError("Intake notes must be a tuple of text.")
     for name in ("dollar_threshold", "percent_threshold", "per_share_threshold", "count_threshold", "bps_threshold",
                  "multiple_threshold"):
         value = getattr(config, name)
