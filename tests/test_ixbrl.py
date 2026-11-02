@@ -558,3 +558,20 @@ def test_revenue_breakdown_lines_on_one_axis_are_not_the_filing_s_revenue() -> N
     assert not result.has_fatal_errors, result.fatal_error_message
     notes = [*result.visible_transformations, *result.reader_notes]
     assert not any("credit among costs" in note or "the filing's revenue is" in note for note in notes)
+
+
+def test_a_statement_that_runs_on_into_other_periods_says_so() -> None:
+    """M2: assets here, liabilities in an untitled table of other periods: the refusal names that cause."""
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        row("Cash", fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "500"), fact("us-gaap:Assets", "I24", "400")),
+        row("Accounts payable", fact("us-gaap:AccountsPayableCurrent", "I25", "200"),
+            fact("us-gaap:AccountsPayableCurrent", "I24", "150"))])
+    untitled = "<table>" + "".join(income_rows()) + "</table>"
+    marked = read_statements(document(sheet + untitled).encode("utf-8"), "hal.htm")[0]
+    assert marked.runs_on
+    result = _read(document(sheet + untitled).encode("utf-8"), sheet="Consolidated Balance Sheets")
+    assert result.has_fatal_errors
+    assert (result.fatal_error_message or "").startswith(
+        "The Consolidated Balance Sheets seems to run on into the next table, which shows other periods, so I couldn't "
+        "read it whole and stopped instead of guessing.")

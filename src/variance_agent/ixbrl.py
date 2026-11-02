@@ -169,6 +169,7 @@ class Statement:
     problem: str = ""  # why this statement cannot be read; other statements of the filing still can
     heading: str = ""  # the text printed before and atop the statement's table (titles, "As Restated")
     currency: str = ""  # the ISO code of its monetary facts ("EUR"), comma-joined if they disagree (X30)
+    runs_on: bool = False  # an untitled table of other periods follows it, not joined (M2)
 
 
 def _transform(fmt: str, text: str) -> Decimal:
@@ -510,7 +511,10 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         elif pending is not None and money and not table.title.strip() and _same_periods(pending[2][0], table, reader):
             pending[2].append(table)  # the statement runs on in the next table, untitled, over the same periods
         elif pending is not None and money:
-            statements.extend(_build(pending, reader, by_id, per_share_lines))
+            built = _build(pending, reader, by_id, per_share_lines)
+            for one in built if not table.title.strip() else ():
+                one.runs_on = True  # it may run on into this table, which shows other periods (M2)
+            statements.extend(built)
             pending = None
     if pending is not None:
         statements.extend(_build(pending, reader, by_id, per_share_lines))

@@ -2496,6 +2496,8 @@ def _read_ixbrl_bytes(
             break
         hints -= demote
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
+    if fail is not None and chosen.runs_on:
+        fail = _runs_on_refusal(chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
     confirmed = {total for total, _ in shaped.matches} | {term for _, terms in shaped.matches for term, _ in terms}
@@ -2591,8 +2593,9 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
         for key in line.keys), line.balance) for i, line in enumerate(money)]
     checked = (check_balance_sheet if chosen.kind == "balance_sheet" else check_cash_flow)(figures, chosen.name, chosen.labels)
     if checked.problem or checked.closing is None or checked.sides is None:
+        problem = _runs_on_refusal(chosen.name) if chosen.runs_on else checked.problem
         return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl",
-                            fatal_error_message=checked.problem or f"I couldn't check the {chosen.name}.")
+                            fatal_error_message=problem or f"I couldn't check the {chosen.name}.")
     closing, totals = checked.closing, {row for row, _ in checked.matches}
     # Every subtotal the check footed closes its section too ("Property and equipment, net"), so a repeated label
     # after it is never named by that section (Decision 41).
@@ -2787,6 +2790,12 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
 
 
 _LABEL_COUNT = re.compile(r"^Labeled (?P<revenue>\d+) lines? revenue and (?P<expense>\d+) lines? expense(?P<rest> .*)$")
+
+
+def _runs_on_refusal(statement: str) -> str:
+    """A statement that failed its checks and is followed by an untitled table of other periods (M2)."""
+    return (f"The {statement} seems to run on into the next table, which shows other periods, so I couldn't read it "
+            "whole and stopped instead of guessing. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
 
 
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:

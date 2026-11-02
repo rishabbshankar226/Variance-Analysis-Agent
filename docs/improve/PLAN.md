@@ -41,7 +41,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X23 | 3 | done | see `fix(X23)` | `src/variance_agent/intake.py`, `tests/test_header_units.py` (new) |
 | X24 | 3 | done (date band open) | see `fix(X24)` | `src/variance_agent/intake.py`, `tests/test_two_row_headers.py` (new) |
 | M1 | 3 | done | see `fix(M1)` | `src/variance_agent/ixbrl.py`, `tests/test_ixbrl_statements_elsewhere.py` (new) |
-| M2 | 3 | todo | | |
+| M2 | 3 | done | see `fix(M2)` | `src/variance_agent/ixbrl.py`, `intake.py`, `tests/test_ixbrl.py` |
 | M3 | 3 | done | see `fix(M3)` | `src/variance_agent/intake.py`, `tests/test_excel_bands_and_blocks.py` |
 | X25 | 3 | done | see `fix(X25)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_export_paths.py` (new) |
 | X26 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
@@ -451,6 +451,12 @@ Boundary cases:
 - Neither gives the generic next step.
 - A link with path characters is not quoted.
 
+**M2, a statement that runs on into an untitled table of other periods.** Such a table is still not joined, as the existing test pins. The statement it follows is marked (`Statement.runs_on`). When that statement then fails its checks (income footing, or the balance sheet and cash flow checks), the refusal states the likely cause instead of a footing message that misstates it: "The Consolidated Balance Sheets seems to run on into the next table, which shows other periods, so I couldn't read it whole and stopped instead of guessing. Upload a CSV or Excel copy of the statement, or the filing's PDF." A marked statement that reads keeps reading.
+
+Boundary cases:
+- A balance sheet whose liabilities sit in an untitled table of other periods gets the runs-on refusal.
+- A complete balance sheet followed by such a table reads, as in the existing test.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -567,6 +573,7 @@ Items:
 | M3 | `_BARE_YEAR_RE` and its two uses removed (`git apply -R`), tests kept | `pytest tests/test_excel_bands_and_blocks.py -k bare_year` | 3 failed: "Found more than one Actual column (Actual (column D), Actual (column F))" for both band shapes and the chosen year |
 | X24 | `_two_row_header` and its use in header detection removed (`git apply -R`), tests kept | `pytest tests/test_two_row_headers.py` | 2 failed, 1 passed: "Could not find a header row with Line Item, Budget, and Actual" for the merged and unmerged two-row headers. The no-amounts control refuses either way. |
 | M1 | `_statements_elsewhere` and both new refusal wordings removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl_statements_elsewhere.py` | 3 failed, 1 passed: the refusal names no document and no next step. The path-characters guard passes either way. |
+| M2 | `Statement.runs_on`, its marking and `_runs_on_refusal` removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k runs_on` | 1 failed: the statement has no `runs_on`, and the refusal is the balance-sheet check's own message |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
