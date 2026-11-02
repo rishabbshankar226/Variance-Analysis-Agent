@@ -21,7 +21,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X8 | 2 | done | see `fix(X8)` | `src/variance_agent/cli.py`, `comparisons.py`, `report.py`, `tests/test_comparison_path_guards.py` (new) |
 | C1 | 2 | done | see `fix(C1)` | `src/variance_agent/parsing.py`, `tests/test_excel_unsaved_formulas_strict.py` (new) |
 | C3 | 2 | done | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m |
-| C3m | 3 | todo | | the refusal names the line whose sign the printed figures can't tell |
+| C3m | 3 | done | see `fix(C3m)` | `src/variance_agent/statement_shape.py`, `intake.py`, `tests/test_statement_sign_ambiguity.py` |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
@@ -421,6 +421,12 @@ Boundary cases:
 - "Budget (USD)" reads unscaled under USD and refuses under EUR.
 - "Budget (Q3)" stays unrecognised.
 
+**C3m, naming the line whose sign can't be told.** When two or more sign readings of the lines under a subtotal fit within the printed figures' rounding, the shaper records the lines the readings disagree on (`ShapedStatement.ambiguous`). The filing refusal then names them: "I couldn't tell whether 'Other expense, net' adds to or takes away from 'Income before income taxes' in the Consolidated Statements of Operations: within the rounding of the printed figures, both readings add up, so I stopped instead of guessing. Upload a CSV or Excel copy ..." A subtotal that nothing above it adds up to keeps today's sentence. The reading itself is unchanged (C3's decision).
+
+Boundary cases:
+- C3's synthetic shape names "Other expense, net".
+- The 5-unit case still matches, so there is no refusal.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -533,6 +539,7 @@ Items:
 | X27 | the display words, the chip's intent words and the page's word removed across four files (`git apply -R`), tests kept | `pytest tests/test_chat_not_yet_labeled.py tests/test_interface_design.py` | 3 failed, 62 passed: "Unclassified" shows in the material table and the warnings, the "Not yet labeled" chip doesn't route, and the page's word map no longer mirrors the edited assertion |
 | X22 | the refusal response, the leave-out handler and route, the session field and the rule 6 pattern removed (`git apply -R`), tests kept | `pytest tests/test_chat_unreconciled_total.py` | 3 failed, 1 passed: "...Expense detail rows detail rows", the chat drops to "upload a file", and "Leave Total Opex out" does not route. The matching-total control passes either way. |
 | X23 | `_HEADER_QUALIFIER`, the qualifier retry in `match_column_synonym` and the heading currency mark removed (`git apply -R`), tests kept | `pytest tests/test_header_units.py` | 10 failed, 1 passed: every qualified heading is unknown, and the file has no Budget column. The "(Q3)" control passes either way. |
+| C3m | `ShapedStatement.ambiguous` and the named-line refusal removed (`git apply -R`), test kept | `pytest tests/test_statement_sign_ambiguity.py` | 1 failed, 3 passed: the shaper has no `ambiguous` record, and the refusal says "couldn't tell which lines ... adds up". The C3 pins pass either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

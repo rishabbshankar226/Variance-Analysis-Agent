@@ -64,6 +64,8 @@ class ShapedStatement:
     matches: list[tuple[int, list[tuple[int, int]]]] = field(default_factory=list)
     unmatched: list[str] = field(default_factory=list)
     openings: list[int] = field(default_factory=list)  # a statement's first figure, carried in (OCI's net income)
+    # Subtotals two sign readings fit within rounding: each one's data row -> the lines the readings disagree on (C3m).
+    ambiguous: dict[int, list[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -166,6 +168,7 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
     matches: list[tuple[int, list[tuple[int, int]]]] = []
     unmatched: list[str] = []
     openings: list[int] = []
+    ambiguous: dict[int, list[int]] = {}
     previous_total: int | None = None
 
     signs: dict[int, int] = {}
@@ -210,6 +213,9 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
                     matches.append((i, [*base_terms, *((_term(item), s) for s, item in zip(fits[0], pending, strict=True))]))
                 elif not fits:
                     unmatched.append(str(row[0]).strip())
+                else:  # several readings fit: name the lines whose sign they disagree on (C3m)
+                    ambiguous[i] = sorted(r for k, item in enumerate(pending)
+                                          if len({combo[k] for combo in fits}) > 1 for r in item.rows)
             elif not pending and running is None:
                 openings.append(i)
             elif not pending and running is not None and previous_total is not None:
@@ -222,7 +228,7 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
             running, pending, previous_total = values, [], i
 
     shaped = ShapedStatement(rows=[*raw_rows[:header_at], [*header, "Type"]], matches=matches, unmatched=unmatched,
-                             openings=openings)
+                             openings=openings, ambiguous=ambiguous)
     labels: list[tuple[str, str]] = []
     flips: list[str] = []
     for i, row in enumerate(data):

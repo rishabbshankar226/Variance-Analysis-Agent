@@ -2765,6 +2765,12 @@ def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[s
     unchecked = [names[i] for i in range(len(lines)) if i not in shaped.kept and i not in matched]
     if unchecked:
         missing = unchecked[0]
+        row = next(i for i in range(len(lines)) if names[i] == missing)
+        if unsure := shaped.ambiguous.get(row):  # two sign readings fit within rounding (C3m)
+            which = " and ".join(f"'{names[r]}'" for r in unsure)
+            return (f"I couldn't tell whether {which} adds to or takes away from '{missing}' in the {statement}: "
+                    "within the rounding of the printed figures, both readings add up, so I stopped instead of "
+                    f"guessing. {fix}")
         return (f"I couldn't tell which lines '{missing}' adds up in the {statement}, so I can't check it "
                 f"and stopped instead of guessing. {fix}")
     for total_row, terms in shaped.matches:
