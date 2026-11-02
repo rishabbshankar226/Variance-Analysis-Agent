@@ -20,7 +20,8 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X7 | 2 | done | see `fix(X7)` | `src/variance_agent/intake.py`, `tests/test_signed_profit_lines.py` (new) |
 | X8 | 2 | done | see `fix(X8)` | `src/variance_agent/cli.py`, `comparisons.py`, `report.py`, `tests/test_comparison_path_guards.py` (new) |
 | C1 | 2 | done | see `fix(C1)` | `src/variance_agent/parsing.py`, `tests/test_excel_unsaved_formulas_strict.py` (new) |
-| C3 | 2 | todo | | |
+| C3 | 2 | done | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m |
+| C3m | 3 | todo | | the refusal names the line whose sign the printed figures can't tell |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
@@ -266,6 +267,16 @@ Boundary cases:
 - Uncached formulas only in "Var $": strict and assisted both read, with the same figures.
 - An uncached formula in Actual: both refuse.
 - An uncached formula in an unrecognised column ("Notes"): strict still refuses, as today.
+
+**C3, the pre-tax refusal: the arithmetic and the decision.** Investigated on Draw C's filing `0001193125-26-344691` in `~/vaa-edgar-corpus/` (probe output in `improve-c3/`, not committed). Every fact carries `decimals` -6. Prior year, $M: Operating income 188, Other expense net (1), Interest expense (15), Interest income 5, against a printed pre-tax income of 178. As printed they sum to 177, $1M under 178. The current year foots exactly: -86 + 0 - 60 + 5 = -141.
+
+*R5 is right.* Each term is +/-0.5, so the sum is 177 +/- 2.0 = [175, 179]. That overlaps 178 +/- 0.5, so R5 calls the subtotal consistent.
+
+*The refusal is the structure search, and it is correct.* `statement_shape` tries both signs for each line between the last subtotal and this one, with tolerance unit x terms / 2 = 2.5. In the prior year, "Other expense, net" (1) fits added (177) or subtracted (179), each 1 from 178. In the current year it is 0, so nothing decides between them. Two readings disagree on a nonzero line, and the shaper refuses rather than guess. That is constraint 2's acceptable outcome, not a wrong number.
+
+The $1M gap is not even the cause. On a synthetic statement of the same shape, the refusal holds with no gap at all (233 against 233), because adding or subtracting a 1-unit line lands within the tolerance either way. It goes away when the line is 5 units.
+
+*Decision.* No change to R5's interval, which would be a STOP-ASK in any case, and none to the reading. What misleads is the message, "I couldn't tell which lines ... adds up": the lines are known, and only one line's sign is not. That wording is C3m in Phase 3. `tests/test_statement_sign_ambiguity.py` pins the behaviour on the synthetic statement.
 
 ## Existing assertions to edit
 
