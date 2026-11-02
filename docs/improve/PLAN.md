@@ -4,22 +4,62 @@ Branch `improve/depth-pass`, cut from `main` at `15100c8` on 2026-11-02. The con
 
 ## Status
 
-States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The X items join at STOP 1.
+States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog, with each item's severity, cost and contract impact, is in [evidence/stop-1/BACKLOG.md](evidence/stop-1/BACKLOG.md). Each item's reproduction is in [evidence/stop-1/audit-findings.md](evidence/stop-1/audit-findings.md). Until STOP 1 answers, every proposed item is `todo`.
 
 | ID | Phase | State | Commit | Files to touch (filled before editing) |
 |---|---|---|---|---|
-| T1 | 0 (Phase 6 item) | done | see `fix(T1)` | `tests/test_chat_hardening.py` |
-| C1 | 2 | todo | | |
+| T1 | 0 (Phase 6 item) | done | `63162aa` | `tests/test_chat_hardening.py` |
+| X1 | 2 | todo | | |
+| X2 | 2 | todo | | |
+| X3 | 2 | todo | | |
 | C2 | 2 | todo | | |
-| C3 | 2 | todo | | |
 | C5 | 2 | todo | | |
-| M1 | 3 | todo | | |
+| X4 | 2 | todo | | |
+| X5 | 2 | todo | | |
+| X6 | 2 | todo | | |
+| X7 | 2 | todo | | |
+| X8 | 2 | todo | | |
+| C1 | 2 | todo | | |
+| C3 | 2 | todo | | |
+| X30 | 2 | todo | | |
+| X9 | ask | asked | | (open branch `claude/per-visitor-sessions-d54fc9`) |
+| X10 | 3 | todo | | |
+| X11 | 3 | asked | | |
+| X12 | 3 | todo | | |
+| X13 | 3 | todo | | |
+| X14 | 3 | todo | | |
+| X15 | 3 | todo | | |
+| X16 | 3 | todo | | |
+| X17 | 3 | todo | | |
+| X18 | 3 | todo | | |
+| X19 | 3 | todo | | |
+| X20 | 3 | todo | | |
+| X21 | 3 | todo | | |
+| X22 | 3 | todo | | |
+| X23 | 3 | todo | | |
+| X24 | 3 | todo | | |
+| M1 | 3 | asked | | |
 | M2 | 3 | todo | | |
 | M3 | 3 | todo | | |
+| X25 | 3 | todo | | |
+| X26 | 3 | todo | | |
+| X27 | 3 | todo | | |
+| X28 | 3 | todo | | |
+| X29 | 3 | todo | | |
+| X31 | 3 | todo | | |
 | M4 | 3 | todo | | |
 | M5 | 3 | todo | | |
-| M6 | 3 | todo | | |
 | C4 | 3 | todo | | |
+| M6 | 3 | todo | | |
+| X35 | 3 | todo | | |
+| X36 | 3 | todo | | |
+| X32 | 5 | asked | | |
+| X37 | 4 | todo | | |
+| X33 | 7 | todo | | |
+| X34 | 7 | todo | | |
+| X38 | open (proposed) | todo | | |
+| X39 | open (proposed) | todo | | |
+| X40 | open (proposed) | asked | | |
 | S1 | 4 | todo | | |
 | S2 | 4 | todo | | |
 | S3 | 4 | todo | | |
@@ -41,6 +81,11 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The X items join at
 5. **Draw G.** `EDGAR_USER_AGENT` was unset at Phase 0, though `~/vaa-edgar-corpus` exists. The owner sets it; it is raised again at STOP 1 and STOP 2. If it is still unset at Phase 8, Draw G is recorded as not measured. The owner's email goes into no SEC request without their explicit yes.
 6. **T1's scope.** Only the test named in section 1 flakes. The subprocess-timed hostile-message tests in the same file (`_assert_quick`, 0.5 s inside a child process) were run under the same load (64 CPU-bound processes on 10 cores): 31 passed. They are left as they are.
 7. **T1's method: count the work, not the clock.** Commit `1fc32b8` fixed a 1 to 3 s answer on 20,000 lines. Its cost came from two things: a difflib comparison for every name, and several passes over the names. The test now counts both, at 5,000 and at 20,000 lines. Difflib comparisons must be equal at the two sizes, because the suggestion cap holds whatever the file size. Routing folds may grow by at most three per added name. Three is the current shape, measured by caller: one fold per name in each of `intent._match_key`, `handlers._items_named_in` and the sentence match's word scan. Counting only `handlers` would have shown two. A sanity check confirms the counter is live: at least one fold per name. The counter patches every loaded `variance_agent` module that holds `normalize_for_routing`, so S1's move of the handlers into a package keeps it counting. A wide wall-clock bound was rejected because it would not catch the original regression. That regression took 1 to 3 s, inside any bound wide enough to survive load.
+
+8. **Ranking.** The backlog is ordered by severity: wrong number, exposure, dead end, misleading, unpinned, cost. Within a severity it is ordered by cost (S, M, L). Exposure ranks second because it is a security gap. A finding that is both a wrong number and an exposure (X9) ranks with the wrong numbers.
+9. **The shared hosted session (X9, and with it X11).** Open branches already target this: `claude/per-visitor-sessions-d54fc9` and `feat/chat-intro-per-visitor`. Two writers on one design is the collision the comparison-basis run hit, so both items are `asked` at STOP 1 and not started here.
+10. **The mutation sample.** One (path, line) pair per branch node. The list is sorted and drawn with `random.Random(20261102).sample(pairs, 25)` (659 branches). The probe worktree was cut at `15100c8`, and its `src/` matches `63162aa`. That worktree and its branch were removed after its files were copied to `.scratch/mutants/`.
+11. **Every Phase 1 finding was re-run by the main session**, and every one reproduced. The minor findings listed under the table in BACKLOG.md do not enter the backlog.
 
 ## Existing assertions to edit
 
@@ -81,6 +126,21 @@ Contracts: 19 files in `tests/fixtures/contracts/`. Schemas: `audit-1.0` to `aud
 
 T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on_a_big_file_stay_fast` beside 64 runs of `.scratch/burn.py`, a 150 s busy loop. Both runs printed "5 failed, 2 passed" with, for example, `assert (1110104.490578166 - 1110103.815566125) < 0.5`. Beside 16 such processes, three runs passed. Unloaded, each question takes 0.04 to 0.09 s.
 
+## Phase 1 figures
+
+- Six auditors. Findings returned, then kept after the main session's re-run: wrong numbers 8, then 8; Maya 10, then 10; contract drift 10 plus 4 small, then 10 plus 1; code health 10, then 4 kept (6 cost items merged as X37 and X38, and F10 is no defect); exposure 8, then 8. That makes 40 X items.
+- Test strength: 3 of 25 mutants survived; the baseline for T2.
+- Maya's scorecard over 25 fictional files:
+  - 6 dead ends.
+  - 3 runs reach an analysis with a wrong figure (f14, f19, f23).
+  - One manual step (typing the period) in 16 of the 18 runs that reach an analysis.
+
+## Looking at the outputs, Phase 0 and 1
+
+- Report: no output changed. The re-run LTM report with `--layout` (`.scratch/rerun-contract/ltm_layout.md`) puts quarter figures under an "LTM Mar 2026" title.
+- Workbook: unchanged. A filing's `--layout --xlsx` workbook carries totals the filing does not print.
+- Chat reply: unchanged. The Sep-26 reply for f23 names Sep-26 and maps the YTD columns in the same summary.
+
 ## Revert proofs
 
 | ID | Fix reverted | Test run | Result with the fix reverted |
@@ -91,7 +151,13 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 
 ## Path existed in 0.2.0
 
-Recorded for C2 and C3 in Phase 2.
+The repository has no release tag. Released 0.2.0 is taken as `5e288bb` (2026-10-02), the last commit whose `version.py` reads `0.2.0`; the next commit, `ebda726`, sets `0.3.0`. Its `src/variance_agent/` holds only `__init__`, `analysis`, `audit`, `cli`, `currencies`, `models`, `numeric`, `output`, `parsing`, `report` and `version` (`git ls-tree --name-only 5e288bb src/variance_agent/`). There is no `comparisons.py`, `intake.py`, `excel.py`, chat or filing reader.
+
+- **C2**: not in 0.2.0. `comparisons.read_comparison_input`, the earnings preset and `api.analyze_file` came later.
+- **C3**: not in 0.2.0. There was no filing reader.
+- A finding counts as on a 0.2.0 path only when the cause sits in one of the eleven modules above, on a CLI path that 0.2.0 already offered.
+
+Post-T1 suite: 2505 passed in 47.31s (count unchanged).
 
 ## Looking at the outputs
 
