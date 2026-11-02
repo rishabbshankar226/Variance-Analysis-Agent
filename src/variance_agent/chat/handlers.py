@@ -639,20 +639,40 @@ def _half_request(session: Session, file_bytes: bytes, filename: str) -> Respons
         return None
     missing, key = found
     session.pending_half = (file_bytes, filename, missing.value)
+    return Response(text=f"'{safe_inline(filename)}' {_half_wording(missing, key)}", phase=session.phase,
+                    ask_upload=True)
+
+
+def _half_wording(missing: CanonicalRole, key: str) -> str:
+    """What one half of a pair holds and what to upload next, after its file name."""
     if missing is CanonicalRole.ACTUAL:
-        text = (f"'{safe_inline(filename)}' has Budget figures but no Actual column. Upload the file with the actuals, "
-                f"and I'll join the two by {key}.")
-    else:
-        text = (f"'{safe_inline(filename)}' has Actual figures but no Budget column. Upload the file with the budget, "
-                f"forecast or prior period, and I'll join the two by {key}.")
-    return Response(text=text, phase=session.phase, ask_upload=True)
+        return f"has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by {key}."
+    return (f"has Actual figures but no Budget column. Upload the file with the budget, forecast or prior period, "
+            f"and I'll join the two by {key}.")
 
 
 def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_visit: bool | None) -> Response:
     """The second file of a pair: join the two, with the actuals file's rows (PLAN.md R12)."""
-    from ..join import join_files
+    from ..join import half_role, join_files
     assert session.pending_half is not None
     held, held_name, missing = session.pending_half
+    found = half_role(file_bytes, filename)
+    if found is None:
+        # A whole file, not the other half: read it on its own; a refused one keeps the pair waiting (X21).
+        session.pending_half = None
+        response = _load_file(session, file_bytes, filename, None, first_visit)
+        if response.level == "error":
+            session.pending_half = (held, held_name, missing)
+            return response
+        return replace(response, text=f"'{safe_inline(filename)}' has both Budget and Actual, so I read it on its own "
+                                      f"and set '{safe_inline(held_name)}' aside.\n\n{response.text}")
+    if found[0].value == missing:
+        # Another file holding the same half replaces the one held (X21).
+        session.pending_half = (file_bytes, filename, missing)
+        wording = _half_wording(found[0], found[1])
+        text = (f"That's '{safe_inline(held_name)}' again. It {wording}" if file_bytes == held
+                else f"'{safe_inline(filename)}' replaces '{safe_inline(held_name)}': it {wording}")
+        return Response(text=text, phase=session.phase, ask_upload=True)
     session.pending_half = None
     if missing == CanonicalRole.ACTUAL.value:
         actual, actual_name, comparison, comparison_name = file_bytes, filename, held, held_name

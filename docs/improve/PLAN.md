@@ -36,7 +36,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X18 | 3 | done | see `fix(X18)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_headers.py` (new) |
 | X19 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X20 | 3 | done | see `fix(X20)` | `src/variance_agent/intake.py`, `tests/test_excel_zero_section.py` (new) |
-| X21 | 3 | todo | | |
+| X21 | 3 | done | see `fix(X21)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_two_files.py` (new) |
 | X22 | 3 | todo | | |
 | X23 | 3 | todo | | |
 | X24 | 3 | todo | | |
@@ -367,6 +367,20 @@ Boundary cases:
 - A successful upload drops both.
 - A reset drops both.
 
+**X21, the next upload after one half of a pair.** While one half is waiting:
+- **A whole file** (both Budget and Actual) is read on its own: "'f.xlsx' has both Budget and Actual, so I read it on its own and set 'bud.xlsx' aside." If that file is refused, the half keeps waiting.
+- **Another file of the same half** replaces the one held, and the request is repeated: "'bud2.csv' replaces 'bud.csv': it has Budget figures but no Actual column. Upload the file with the actuals, ...". The same file again is named as such: "That's 'bud.csv' again. ...".
+- **The missing half** is joined, as before.
+
+So the chat never shows the join's command-line wording ("without --compare-file"), and nothing traps Maya.
+
+Boundary cases:
+- budget, then a whole file;
+- budget, then the same budget;
+- budget, then another budget;
+- budget, then actuals (the join, unchanged);
+- budget, then a broken file (refused, budget kept).
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -473,6 +487,7 @@ Items:
 | X18 | the fallback name lists and their uses removed (`git apply -R`), tests kept | `pytest tests/test_comparison_headers.py` | 3 failed, 1 passed: "Could not find a Line Item and Actual header" for Description and YTD Actual, and the drift guard finds no lists. The Account precedence control passes either way. |
 | X20 | the zero exclusion removed from the currency-cell count (`git apply -R`), tests kept | `pytest tests/test_excel_zero_section.py` | 1 failed, 1 passed: one zero Actual gives "number formats don't agree". The General control refuses either way. |
 | X19, X26 | the replaced-file condition and both `initial_response` clears removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "refused_upload or start_up_reply"` | 3 failed: a refused upload gives the download a 404, and `/status` still serves the start-up reply after a new upload and after a reset |
+| X21 | the whole-file and same-half branches and `_half_wording` removed from `_load_other_half` (`git apply -R`), tests kept | `pytest tests/test_chat_two_files.py` | 3 failed, 2 passed: a whole file gets "...isn't the actuals half of a pair. Run it on its own, without --compare-file.", and the same budget again gets "Could not find a header row". The join and broken-file controls pass either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
