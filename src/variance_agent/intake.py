@@ -3127,6 +3127,7 @@ def _process_raw_table(
     problems: list[IntakeProblem] = []
     unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
     symbol_cells: list[tuple[str, str, str]] = []  # amounts whose text marks a currency (X5)
+    section_rows: list[str] = []  # labels with nothing beside them: section headings (X16)
     blank_budget_items: list[str] = []
     # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
     currency_cells: list[tuple[int, int, str, str]] = []
@@ -3167,6 +3168,10 @@ def _process_raw_table(
                     message=f"Row {physical_idx}: Line item description is blank.",
                 )
             )
+            continue
+        # A label with nothing in any other column is a section heading, not an amount to fill in (X16).
+        if all(c is None or str(c).strip() == "" for j, c in enumerate(row) if j not in (line_item_idx, acct_id_idx)):
+            section_rows.append(f"Row {physical_idx} ({line_item_str})")
             continue
 
         measure_column = next((i for i, h in enumerate(header_row) if h is not None and normalize_key(str(h)) == "measure"), None)
@@ -3279,6 +3284,10 @@ def _process_raw_table(
                 visible_transformations.append(f"{line_item_str}: read Better as {better_value}.")
         output_rows.append(row_dict)
 
+    if section_rows:
+        visible_transformations.append(
+            f"Left out {len(section_rows)} section heading row{'s' if len(section_rows) != 1 else ''} with no "
+            f"amounts in any column: {', '.join(section_rows)}.")
     if unreadable_cells:
         return IntakeResult(
             has_fatal_errors=True,

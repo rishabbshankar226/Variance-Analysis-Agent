@@ -31,7 +31,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X13 | 3 | done | see `fix(X13)` | `src/variance_agent/cli.py`, `tests/test_cli_output_paths.py` (new) |
 | X14 | 3 | done | see `fix(X14)` | `src/variance_agent/audit.py`, `comparisons.py`, `tests/test_comparison_audit_versions.py` (new) |
 | X15 | 3 | done | see `fix(X15)` | `src/variance_agent/parsing.py`, `comparisons.py`, `tests/test_tsv_input.py` (new) |
-| X16 | 3 | todo | | |
+| X16 | 3 | done | see `fix(X16)` | `src/variance_agent/intake.py`, `tests/test_section_headings.py` (new) |
 | X17 | 3 | todo | | |
 | X18 | 3 | todo | | |
 | X19 | 3 | todo | | |
@@ -333,6 +333,12 @@ Boundary cases:
 - `--check-only` alone validates.
 - `--check-only --long-output x.csv` refuses and writes no file.
 
+**X16, section heading rows.** A row whose line item stands alone, with no value in any other column except an account ID, is a section heading (REVENUE, OPERATING EXPENSES). It is left out of the line items with a visible note: "Left out 2 section heading rows with no amounts in any column: Row 2 (REVENUE), Row 4 (OPERATING EXPENSES)." It is not reported as an amount to fill in. A row with a label and any amount keeps today's handling, so a blank Actual beside a Budget still stops, naming the cell.
+
+Boundary cases:
+- Headings with every other cell blank are left out with the note.
+- The same label with a Budget and a blank Actual still refuses "Row 5, Rent, Actual column: the amount is blank."
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -434,6 +440,7 @@ Items:
 | X15 | the `.tsv`/`.txt` branch and the fuller list removed from `validate_input_format`, and the comparison reader's TSV case (`git apply -R`), tests kept | `pytest tests/test_tsv_input.py` | 4 failed: every case gets "Unsupported input format '.tsv'. Use CSV, JSON, XLSX, or XLSM." |
 | X28 | the decode and JSON-error wrapping in `load_mapping` removed (`git apply -R`), tests kept | `pytest tests/test_cli_small_refusals.py -k mapping` | 2 failed, 1 passed: `{oops` gives "Expecting property name enclosed in double quotes...", and non-UTF-8 bytes give a decode error. The `[]` control passes either way. |
 | X29 | the long outputs removed from the `--check-only` refusal (`git apply -R`), tests kept | `pytest tests/test_cli_small_refusals.py -k check_only` | 2 failed, 1 passed: `--check-only --long-output x.csv` exits 0 with "Validation passed" and writes nothing |
+| X16 | the section-heading skip and its note removed (`git apply -R`), tests kept | `pytest tests/test_section_headings.py` | 1 failed, 1 passed: "Row 2, REVENUE, Actual column: the amount is blank" stops intake. The blank-cell control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
