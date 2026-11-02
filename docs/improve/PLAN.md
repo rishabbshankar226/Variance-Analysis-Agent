@@ -14,7 +14,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X3 | 2 | done | see `fix(X3)` | `src/variance_agent/pdf_tables.py`, `tests/test_pdf_intake.py` |
 | C2 | 2 | done | see `fix(C2)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_captions.py` (new) |
 | C5 | 2 | done | see `fix(C5)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_zero_variance.py` (new) |
-| X4 | 2 | todo | | |
+| X4 | 2 | done | see `fix(X4)` | `src/variance_agent/intake.py`, `tests/test_unit_scaling.py` |
 | X5 | 2 | todo | | |
 | X6 | 2 | todo | | |
 | X7 | 2 | todo | | |
@@ -175,6 +175,25 @@ Two zero cases came out in testing:
 
 Boundary cases: a fictional file whose every line has Actual = Budget gives zero totals and zero for every projection; the same file with one revenue line one cent up gives F and the old words. Both the table cells and the sentences are tested.
 
+**X4, which captions name a unit.** `detect_unit_scale` reads the title rows and the header row. It names a unit only in a caption form, never on a bare letter that happens to follow "in".
+
+Caption forms, case-insensitive, where U is the unit word (thousands, millions, billions):
+- "in U", allowing a currency between: "in $ thousands", "in USD millions".
+- "(U" and "(in U", allowing a currency before: "($ in thousands)", "(USD thousands)".
+- A currency word or code before U: "Dollars in Thousands", "EUR millions", "USD thousands".
+- "U of dollars, euros or pounds": "(thousands of dollars)", "Millions of dollars".
+
+The short forms:
+- Thousands: a currency symbol or code then `000` with an optional apostrophe or `s`, as in `$000`, `£000`, `€000`, `£'000`, `$'000`, `USD '000`, `$000's`; `(000)`, `(000s)`, `(000's)`; `$K` and `(K)`.
+- Millions: `$m`, `£m`, `€m`, `$MM`, `($MM)`, `(m)`, `(MM)`; "in m" or "in MM" only when no `&`, apostrophe, letter or full stop follows. So "Costs incurred in M&A review" names no unit.
+- Billions: "in billions" and the other word forms; `$bn`, `£bn`, `€bn`, `(bn)`, "in bn".
+
+Millions is checked before billions, and billions before thousands. That keeps today's millions-over-thousands order ("In millions, except shares in thousands").
+
+The FP&A note now names billions too ("Amounts scaled from billions (x1,000,000,000)"). Thousands and millions keep their exact wording.
+
+Boundary cases: every one of the 32 variants in `.scratch/audit-numbers/captions.py`, plus "Costs incurred in M&A review", which is 1, against "(in M)", which is a million. Each existing test case keeps its result.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -240,6 +259,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | X3 | `_UNIT_CAPTION_RE`, `_TITLE_UNIT_RE` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_pdf_intake.py -k unit_caption` | 3 failed, 3 passed: on-title and unparenthesised read `1250.4`; the long title caption gives "We couldn't find an income statement" |
 | C2 | `_apply_unit_caption` and the display capture removed from `comparisons.py` (`git apply -R`), tests kept | `pytest tests/test_comparison_captions.py` | 6 failed, 4 passed: caption-alone earnings reads `$1,234.00`, no scale note or audit `unit_scale`, no "not scaled again" note, the mixed-format earnings run does not refuse, and CSV cells stay unscaled. The passing four are the format-alone and both cases and the FP&A refusal, which held before. |
 | C5 | `_fu`, `_fu_between`, `_in_line`, the zero branches and the run-rate identities removed (`git apply -R`), tests kept | `pytest tests/test_chat_zero_variance.py` | 11 failed, 5 passed: zero totals show F in the compare, run-rate and what-if tables, the sensitivity baseline is F, and every "in line" sentence is missing. The one-cent controls and the run-rate oracle pass either way, as designed. |
+| X4 | `_unit_caption_re`, `_BILLIONS_RE` and the billions label removed; the old two patterns restored (`git apply -R`), tests kept | `pytest tests/test_unit_scaling.py` | 23 failed, 20 passed: the 20 missed forms read 1, "in M&A" and "in M." read 1,000,000, and the billions file is unscaled |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

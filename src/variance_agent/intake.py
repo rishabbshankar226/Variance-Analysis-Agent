@@ -704,8 +704,27 @@ _PERIOD_RE = re.compile(
     re.IGNORECASE,
 )
 
-_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\(\s*thousands\b|\$000s?|\b000s\b)", re.IGNORECASE)
-_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\(\s*millions\b|\$m\b|in\s+m\b)", re.IGNORECASE)
+_CURRENCY_LEAD = r"(?:[$€£]\s*|(?:usd|eur|gbp|us\s*dollars?|dollars|euros|pounds)\s+)"
+_LETTER_UNIT_END = r"\b(?![&'\w.])"  # "in M" names millions, "in M&A" and "in M." do not
+
+
+def _unit_caption_re(word: str, short_forms: str) -> re.Pattern[str]:
+    """A unit caption naming `word` ("thousands") in a title or header, or one of its short forms (X4)."""
+    return re.compile(
+        rf"\bin\s+{_CURRENCY_LEAD}?{word}\b"  # in thousands, in $ thousands, in USD thousands
+        rf"|\(\s*{_CURRENCY_LEAD}?(?:in\s+)?{word}\b"  # (thousands, ($ in thousands), (USD thousands)
+        rf"|\b(?:usd|eur|gbp|dollars|euros|pounds)\s+(?:in\s+)?{word}\b"  # Dollars in Thousands, EUR millions
+        rf"|\b{word}\s+of\s+(?:u\.?s\.?\s+)?(?:dollars|euros|pounds)\b"  # (thousands of dollars)
+        rf"|{short_forms}",
+        re.IGNORECASE,
+    )
+
+
+_THOUSANDS_RE = _unit_caption_re(
+    "thousands", r"(?:[$€£]|\b(?:usd|eur|gbp)\b)\s*'?\s*000(?:'?s)?\b|\(\s*'?000(?:'?s)?\s*\)|\b000s\b"
+                 r"|[$€£]\s*k\b|\(\s*k\s*\)")
+_MILLIONS_RE = _unit_caption_re("millions", rf"[$€£]\s*mm?\b|\(\s*mm?\s*\)|\bin\s+mm?{_LETTER_UNIT_END}")
+_BILLIONS_RE = _unit_caption_re("billions", rf"[$€£]\s*bn\b|\(\s*bn\s*\)|\bin\s+bn{_LETTER_UNIT_END}")
 _TOTAL_KEYWORD_RE = re.compile(
     r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
     re.IGNORECASE,
@@ -761,6 +780,8 @@ def detect_unit_scale(text: str) -> Decimal:
     """Detect whether numbers are in thousands, millions, or base dollars."""
     if _MILLIONS_RE.search(text):
         return Decimal("1000000")
+    if _BILLIONS_RE.search(text):
+        return Decimal("1000000000")
     if _THOUSANDS_RE.search(text):
         return Decimal("1000")
     return Decimal("1")
@@ -3273,7 +3294,7 @@ def _process_raw_table(
         layout_notes.append(display_note)
     if detected_mult != Decimal("1"):
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
-        unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
+        unit_label = f"{_UNIT_WORDS[detected_mult]} (x{detected_mult:,})"
         visible_transformations.append(
             f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit "
             "(full currency units, not thousands)."
