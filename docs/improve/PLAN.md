@@ -278,6 +278,9 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
 
 *Decision.* No change to R5's interval, which would be a STOP-ASK in any case, and none to the reading. What misleads is the message, "I couldn't tell which lines ... adds up": the lines are known, and only one line's sign is not. That wording is C3m in Phase 3. `tests/test_statement_sign_ambiguity.py` pins the behaviour on the synthetic statement.
 
+13. **Phase 2's chat screens are captured in Phase 3's screenshot run.** Phase 2 changed three chat screens: C5's Neutral tables and "in line" text, X5's currency question, and X6's summary. They are shot together with Phase 3's screens into `docs/improve/evidence/phase-3/` before STOP 2, with a scenario added for any screen no scenario reaches.
+14. **Revert proofs reverse a saved diff** (`git diff -- <files> > patch; git apply -R patch; test; git apply patch`), never a checkout of the tree. The auto-mode classifier rightly blocked a `git checkout -- .` typed in error, and the X1 work was not lost.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -331,6 +334,29 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 - Report: no output changed. The re-run LTM report with `--layout` (`.scratch/rerun-contract/ltm_layout.md`) puts quarter figures under an "LTM Mar 2026" title.
 - Workbook: unchanged. A filing's `--layout --xlsx` workbook carries totals the filing does not print.
 - Chat reply: unchanged. The Sep-26 reply for f23 names Sep-26 and maps the YTD columns in the same summary.
+
+## Phase 2 figures (end of phase, `6851252`)
+
+Gates:
+- `ruff check .`: All checks passed!
+- `mypy --strict`: Success: no issues found in 71 source files.
+- compileall: exit 0.
+- `pytest -q`: 2630 passed in 52.12s, up from 2505.
+- `pip check`: No broken requirements found.
+- build, twine (2 PASSED) and `check_distribution.py`: verified.
+- Minimal install: "Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified"; `pip check` clean.
+- Contracts and schemas: `git diff main -- tests/fixtures/contracts schemas` is empty, and the contract tests pass (104 passed).
+
+Items:
+- Done: X1, X2, X3, C2, C5, X4, X5 and X30, X6, X7, X8, C1.
+- C3: investigated, no code change; its message moves to Phase 3 as C3m.
+- Asked: X41 (STOP-ASK).
+
+## Looking at the outputs, Phase 2
+
+- Report: a "($ in thousands)" earnings workbook now reports Revenue $1,234,000.00 against $1,200,000.00, Beat, the same as the FP&A path.
+- Workbook: the comparison workbook for the same file shows $1,234,000.00 on both its Earnings and Measures sheets. Its cells hold formatted text, not numbers, which is existing behaviour and something for N1 to keep in mind.
+- Chat reply: an on-budget file's board memo reads "Operating Profit finished at **$75,000.00**, **in line with** the planned budget of **$75,000.00**. Operating margin **held** at **50.0%** (+0.0 pts)."
 
 ## Revert proofs
 
