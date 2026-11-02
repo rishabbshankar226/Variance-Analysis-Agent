@@ -277,7 +277,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--hosted",
         action="store_true",
         help="With --chat: serve on 0.0.0.0:$PORT for a hosting platform, without "
-             "opening a browser or writing exports to server paths.",
+             "opening a browser or writing exports to server paths. A RENDER environment "
+             "variable implies it, unless --no-browser is given.",
     )
     chat.add_argument(
         "--no-browser",
@@ -329,7 +330,8 @@ def _run(args: Arguments) -> int:
         from .chat.server import run_chat_server
         # Hosting is asked for (--hosted) or announced by the platform (Render sets RENDER). A
         # stray PORT variable alone must not expose a local chat on every network interface.
-        if args.hosted or "RENDER" in os.environ:
+        # A hosting platform announces itself with RENDER; an explicit --no-browser still means local (X10).
+        if args.hosted or ("RENDER" in os.environ and not args.no_browser):
             port_text = os.environ.get("PORT", "10000")
             if not (port_text.isascii() and port_text.isdigit() and 0 < int(port_text) < 65536):
                 raise ValueError(f"PORT must be a port number between 1 and 65535, not {port_text!r}.")

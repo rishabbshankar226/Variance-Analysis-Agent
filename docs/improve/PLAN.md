@@ -25,7 +25,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
-| X10 | 3 | todo | | |
+| X10 | 3 | done | see `fix(X10)` | `src/variance_agent/cli.py`, `README.md`, `tests/test_cli_hosted_detection.py` |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
 | X12 | 3 | todo | | |
 | X13 | 3 | todo | | |
@@ -281,6 +281,15 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
 13. **Phase 2's chat screens are captured in Phase 3's screenshot run.** Phase 2 changed three chat screens: C5's Neutral tables and "in line" text, X5's currency question, and X6's summary. They are shot together with Phase 3's screens into `docs/improve/evidence/phase-3/` before STOP 2, with a scenario added for any screen no scenario reaches.
 14. **Revert proofs reverse a saved diff** (`git diff -- <files> > patch; git apply -R patch; test; git apply patch`), never a checkout of the tree. The auto-mode classifier rightly blocked a `git checkout -- .` typed in error, and the X1 work was not lost.
 
+## Phase 3 rules
+
+**X10, the `RENDER` variable.** `RENDER` in the environment still implies hosted mode for a bare `--chat`. The Render platform sets it, and `test_render_environment_implies_hosted` pins that design. An explicit `--no-browser`, though, asks for a local URL, so it now wins: `RENDER=1 variance-agent --chat --no-browser` serves on 127.0.0.1. The `--hosted` help and the README name the variable.
+
+Boundary cases:
+- With `RENDER` and `--chat`: hosted (unchanged).
+- With `RENDER`, `--chat` and `--no-browser`: local.
+- Without `RENDER`: local (unchanged).
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -375,6 +384,7 @@ Items:
 | X7 | `_signed_profit_lines` and its use in the flip removed (`git apply -R`), tests kept | `pytest tests/test_signed_profit_lines.py` | 4 failed, 1 passed: Gross Profit and Net Income stay among the lines with their credit sign, the chat totals are wrong, and the off-by-one line keeps -480,001. The presentation-signed control passes either way. |
 | X8 | `_refuse_main_path_inputs`, the comparison path's multiple threshold, `_refuse_filing_workbook` there, and the filing headline in `render_measure_report` removed (`git apply -R`), tests kept | `pytest tests/test_comparison_path_guards.py` | 7 failed, 1 passed: LTM plus `--layout` or `--long-output` exits 0 with quarter figures, the limit run gives "No Limit column found", `--multiple-threshold` is ignored, the 10-K report sums Total Revenue, and the filing workbook is written. The plain LTM control passes either way. |
 | C1 | the computed-column skip in strict's formula check removed (`git apply -R`), tests kept | `pytest tests/test_excel_unsaved_formulas_strict.py` | 1 failed, 4 passed: strict stops on "Var $" formulas that assisted reads. The amount-column and "Notes" stops hold either way. |
+| X10 | the `not args.no_browser` condition removed (`git apply -R`), test kept | `pytest tests/test_cli_hosted_detection.py` | 1 failed, 5 passed: with RENDER set, `--chat --no-browser` binds 0.0.0.0 |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
