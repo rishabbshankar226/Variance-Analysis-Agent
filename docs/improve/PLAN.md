@@ -64,7 +64,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X38 | — | open | | cost; not this run except where X17 or X18 touch it |
 | X39 | — | open | | memory on the hosted free plan; not this run |
 | X40 | — | open | | left to the owner: the deploy pins (Decision 12) |
-| S1 | 4 | done (reviewer pending) | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
+| S1 | 4 | done | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
 | S2 | 4 | todo | | |
 | S3 | 4 | todo | | |
 | S4 | 4 | todo | | |
@@ -690,6 +690,17 @@ Items:
 - Done in Phase 3: X10, X12 to X29 (X24 with its merged date band left open), M1, M2, M3, M5, M6, C3m, C4, X31, X35, X36.
 - Asked: M4 (STOP-ASK). New at STOP 2: X42.
 - Screenshots: 91, in `docs/improve/evidence/phase-3/`, 26 scenarios, light theme, desktop and mobile. The harness `shots_phase3.py` dry-runs each scenario through the handlers first (`--check`). The chat servers it started were stopped.
+
+## Phase 4 reviews
+
+- **S1** (`d59c8fa`, wrapped in `ef868ae`). The fresh-eyes reviewer found no behaviour change.
+  - It recorded every `handle_message` and `handle_upload` call the full suite makes, before and after, with PYTHONHASHSEED=0: 2,854 calls, and 0 differ in text, table, chips, view, phase, level, upload request or download bytes (xlsx included).
+  - Session hashes differ only where a test builds its upload with openpyxl, which stamps the time, so the uploaded bytes themselves differ.
+  - Every LOAD_GLOBAL in all 363 code objects resolves to the same object.
+  - The 23 lazy imports resolve to the same modules.
+  - Every module imports first in a fresh interpreter (48 of 48 before, 65 of 65 after).
+  - The `normalize_for_routing` and `server_module.handle_*` patches still reach the code that runs.
+  - Noted, not a behaviour change: 251 names of the old module's namespace are no longer importable from `variance_agent.chat.handlers`, among them the public `HIDDEN_ROWS_CHIPS`. Nothing in `src`, tests, scripts or `deterministic_conditioning` imports them, and the eight names the repository imports are re-exported as the same objects (constraint 8). Moved functions report their submodule as `__module__`, which nothing reads.
 
 ## Looking at the outputs, Phase 3
 
