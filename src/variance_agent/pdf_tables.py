@@ -98,6 +98,11 @@ _DASHES = {"-", "–", "—"}
 _DASH_AMOUNT_RE = re.compile(r"^(?:\$[-–—]|\([-–—]\)|\$\([-–—]\))$")  # $—  (—)  $(—)
 _YEAR_ONLY_RE = re.compile(r"^(?:19|20)\d{2}$")
 _PARENTHETICAL_RE = re.compile(r"^\(.*\)$")
+# A unit caption printed without parentheses, e.g. "In millions, except per share amounts".
+_UNIT_CAPTION_RE = re.compile(
+    r"^(?:(?:amounts|dollars|u\.?s\.?\s+dollars)\s+)?(?:\$\s*)?in\s+(?:thousands|millions|billions)\b", re.IGNORECASE)
+# A unit caption inside parentheses on the title line, e.g. "... OF OPERATIONS (In millions)".
+_TITLE_UNIT_RE = re.compile(r"\([^()]*\b(?:thousands|millions|billions)\b[^()]*\)", re.IGNORECASE)
 
 _DURATION_RE = re.compile(
     r"\b(?P<count>three|six|nine|twelve|3|6|9|12)\s+months?\s+ended\b"
@@ -336,8 +341,9 @@ def _is_amount(text: str) -> bool:
 
 def _title(lines: list[str]) -> tuple[int, str] | None:
     for index, line in enumerate(lines[:_TITLE_SEARCH_LINES]):
-        match = _TITLE_RE.search(line)
-        if match and len(line) <= len(match.group(0)) + _TITLE_SLACK:
+        bare = _TITLE_UNIT_RE.sub("", line).strip()  # a unit caption on the title line is not slack
+        match = _TITLE_RE.search(bare)
+        if match and len(bare) <= len(match.group(0)) + _TITLE_SLACK:
             return index, _pretty_title(match.group(0))
     return None
 
@@ -410,15 +416,15 @@ def _page_table(lines: list[_Line], page_number: int) -> _PageTable | None:
     if data_start is None:
         return None
 
-    caption_parts: list[str] = []
+    caption_parts = [m.group(0) for m in _TITLE_UNIT_RE.finditer(lines[title_index].text)]
     for line in body_lines[:data_start]:
-        if _PARENTHETICAL_RE.match(line.text):
+        if _PARENTHETICAL_RE.match(line.text) or _UNIT_CAPTION_RE.match(line.text):
             caption_parts.append(line.text)
             continue
         # A unit caption can share the year header line, left of the amount columns.
         left_edge = _left_edge(columns)
-        caption_parts.extend(p.text for p in _phrases(line)
-                             if p.x1 < left_edge and _PARENTHETICAL_RE.match(p.text))
+        caption_parts.extend(p.text for p in _phrases(line) if p.x1 < left_edge
+                             and (_PARENTHETICAL_RE.match(p.text) or _UNIT_CAPTION_RE.match(p.text)))
         _attach_header(line, columns)
 
     body = assigned[data_start:]

@@ -11,7 +11,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | T1 | 0 (Phase 6 item) | done | `63162aa` | `tests/test_chat_hardening.py` |
 | X1 | 2 | done | see `fix(X1)` | `src/variance_agent/intake.py`, `tests/test_amount_forms.py` |
 | X2 | 2 | done | see `fix(X2)` | `src/variance_agent/scorecard.py`, `tests/test_scorecard.py` |
-| X3 | 2 | todo | | |
+| X3 | 2 | done | see `fix(X3)` | `src/variance_agent/pdf_tables.py`, `tests/test_pdf_intake.py` |
 | C2 | 2 | todo | | |
 | C5 | 2 | todo | | |
 | X4 | 2 | todo | | |
@@ -119,6 +119,20 @@ Boundary cases:
 - A sheet mixing percent and General weights is refused.
 - Fraction oracle: weight = Fraction(stored text) x 100.
 
+**X3, a PDF statement's unit caption.** A statement's unit caption names thousands, millions or billions. It is read wherever the statement prints it:
+- On its own line between the title and the figures, parenthesised ("(In millions)") or not ("In millions, except per share amounts").
+- Left of the amount columns on the year header line (today: parenthesised only).
+- Inside parentheses on the title line itself ("CONSOLIDATED STATEMENTS OF OPERATIONS (In millions)").
+
+A caption line is never glued onto the column names. A unit parenthetical on the title line does not count against the title's 25-character slack, so a long caption does not cost the title.
+
+Boundary cases:
+- Own-line parenthesised, as today: scaled.
+- On the title line, short or long: scaled.
+- Unparenthesised own line: scaled, and the column reads as FY2025, not "In millions ... FY2025".
+- A title line with "(Unaudited)" and no unit is not a caption.
+- A non-unit line such as "Year Ended December 31," is not a caption.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -181,6 +195,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | T1 | (b) `_item_in_sentence` ignores the caller's `named` and recomputes the scan: an extra pass over the names. | same | 1 failed, 6 passed: `assert (80009 - 20009) <= (3 * (20000 - 5000))` |
 | X1 | `_footnote_marks` and its check in `parse_assisted_decimal` removed (git checkout of `intake.py`), tests kept | `pytest tests/test_amount_forms.py` | 9 failed: `Failed: DID NOT RAISE ValueError` for each mark, and the intake test's message assertion fails |
 | X2 | `_printed` and `_workbook_cells` removed (`git apply -R` of the scorecard diff), tests kept | `pytest tests/test_scorecard.py` | 3 failed: the report reads `In line \| 0.079%` instead of `12.4%`, and both refusals give `DID NOT RAISE SystemExit` |
+| X3 | `_UNIT_CAPTION_RE`, `_TITLE_UNIT_RE` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_pdf_intake.py -k unit_caption` | 3 failed, 3 passed: on-title and unparenthesised read `1250.4`; the long title caption gives "We couldn't find an income statement" |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

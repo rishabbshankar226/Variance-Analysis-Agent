@@ -330,3 +330,52 @@ def test_shaped_lines_are_not_mistaken_for_sums(tmp_path: Path) -> None:
     assert [r["line_item"] for r in result.rows] == [
         "Net sales", "Rent expense", "Freight expense", "Insurance expense"]
     assert result.detected_totals == ["Operating income"]
+
+
+# --- X3: the unit caption is read wherever the statement prints it (fictional statements) ---
+
+
+def _captioned_statement(path: Path, title: str, caption: str | None) -> Path:
+    from tests.fixtures.realworld.minipdf import Page, write_pdf
+
+    page = Page()
+    page.center(306, 40, "FICTIONAL SYNTHETIC DATA - NOT A REAL COMPANY OR FILING", size=7)
+    page.center(306, 60, "OSPREYMARK FICTIONAL HOLDINGS, INC.", size=10)
+    page.center(306, 74, title, size=10)
+    if caption:
+        page.center(306, 88, caption)
+    page.center(420, 112, "Year Ended December 31,")
+    page.right(380, 125, "2025")
+    page.right(460, 125, "2024")
+    for i, (label, now, before) in enumerate([("Revenue", "1,250.4", "1,100.2"), ("Cost of revenue", "702.3", "640.0"),
+                                              ("Operating expenses", "305.2", "290.0")]):
+        page.text(72, 145 + i * 13, label)
+        page.right(380, 145 + i * 13, now)
+        page.right(460, 145 + i * 13, before)
+    write_pdf(path, [page])
+    return path
+
+
+@pytest.mark.parametrize(("title", "caption"), [
+    ("CONSOLIDATED STATEMENTS OF OPERATIONS", "(In millions)"),
+    ("CONSOLIDATED STATEMENTS OF OPERATIONS (In millions)", None),
+    ("CONSOLIDATED STATEMENTS OF OPERATIONS (In millions, except per share amounts)", None),
+    ("CONSOLIDATED STATEMENTS OF OPERATIONS", "In millions, except per share amounts"),
+], ids=["own-line", "on-title", "long-on-title", "unparenthesised"])
+def test_a_unit_caption_scales_wherever_the_statement_prints_it(tmp_path: Path, title: str, caption: str | None) -> None:
+    result = _read(_captioned_statement(tmp_path / "s.pdf", title, caption))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    revenue = next(r for r in result.rows if r["line_item"] == "Revenue")
+    assert revenue["actual"] == Decimal("1250400000.0")
+    assert any("scaled from millions" in note for note in result.visible_transformations)
+    assert not any("In millions" in note for note in result.visible_transformations if note.startswith("Read column"))
+
+
+@pytest.mark.parametrize("title", ["CONSOLIDATED STATEMENTS OF OPERATIONS (Unaudited)",
+                                   "CONSOLIDATED STATEMENTS OF OPERATIONS"])
+def test_a_statement_with_no_unit_caption_is_not_scaled(tmp_path: Path, title: str) -> None:
+    result = _read(_captioned_statement(tmp_path / "s.pdf", title, None))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    revenue = next(r for r in result.rows if r["line_item"] == "Revenue")
+    assert revenue["actual"] == Decimal("1250.4")
+    assert not any("scaled from" in note for note in result.visible_transformations)
