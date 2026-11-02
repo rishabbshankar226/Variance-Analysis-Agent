@@ -35,7 +35,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X17 | 3 | done | see `fix(X17)` | `src/variance_agent/chat/handlers.py`, `parsing.py`, `tests/test_xls_sheets.py` (new) |
 | X18 | 3 | done | see `fix(X18)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_headers.py` (new) |
 | X19 | 3 | todo | | |
-| X20 | 3 | todo | | |
+| X20 | 3 | done | see `fix(X20)` | `src/variance_agent/intake.py`, `tests/test_excel_zero_section.py` (new) |
 | X21 | 3 | todo | | |
 | X22 | 3 | todo | | |
 | X23 | 3 | todo | | |
@@ -352,6 +352,12 @@ Boundary cases:
 - `Line Item,Budget,Forecast,YTD Actual` reads.
 - `Account,Description,...` still takes Account.
 
+**X20, a zero under a scaled Accounting format.** A zero amount shows the same in any unit, and an Accounting format shows it through its `"-"` section, which has no digits. So a zero cell neither agrees nor disagrees with a unit caption, and it is left out of the caption-against-format reconciliation (E1). The other cells decide, as before.
+
+Boundary cases, under a "($ in thousands)" caption and the format `_(* #,##0,_);_(* (#,##0,);_(* "-"_);_(@_)`:
+- With one zero Actual, the book reads as stored ("not scaled again"), and the zero reads 0.
+- A nonzero cell in General beside the scaled ones still refuses, as before.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -456,6 +462,7 @@ Items:
 | X16 | the section-heading skip and its note removed (`git apply -R`), tests kept | `pytest tests/test_section_headings.py` | 1 failed, 1 passed: "Row 2, REVENUE, Actual column: the amount is blank" stops intake. The blank-cell control passes either way. |
 | X17 | `.xls` removed from the chat's multi-table suffixes and from `get_workbook_sheets` (`git apply -R`), tests kept | `pytest tests/test_xls_sheets.py` | 1 failed, 2 passed: `book.xls` answers "contains a single dataset". The `.xlsx` and `.csv` controls pass either way. |
 | X18 | the fallback name lists and their uses removed (`git apply -R`), tests kept | `pytest tests/test_comparison_headers.py` | 3 failed, 1 passed: "Could not find a Line Item and Actual header" for Description and YTD Actual, and the drift guard finds no lists. The Account precedence control passes either way. |
+| X20 | the zero exclusion removed from the currency-cell count (`git apply -R`), tests kept | `pytest tests/test_excel_zero_section.py` | 1 failed, 1 passed: one zero Actual gives "number formats don't agree". The General control refuses either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

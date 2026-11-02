@@ -3265,7 +3265,8 @@ def _process_raw_table(
         if kind is MeasureKind.CURRENCY:
             for column_idx, raw_value, field_name in ((budget_idx, raw_budget, comparison_field),
                                                       (actual_idx, raw_actual, "Actual")):
-                if isinstance(raw_value, Decimal):
+                # A zero shows the same in any unit, so it can't disagree with a caption (X20).
+                if isinstance(raw_value, Decimal) and raw_value != 0:
                     currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
         if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
             # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
