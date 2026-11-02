@@ -453,8 +453,8 @@ def _statements_elsewhere(data: bytes) -> str | None:
 def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False) -> list[Statement]:
     """Every face statement the filing prints, first copy of each kind, in document order."""
     if _DECLARATION.search(data):
-        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses. "
-                         "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
+        raise IxbrlError(f"'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader "
+                         "refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -642,7 +642,8 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
 def fact_values(data: bytes, filename: str) -> dict[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]], Decimal]:
     """Every readable money fact's stored value, by concept, period and dimensions (for LTM's recast check)."""
     if _DECLARATION.search(data):
-        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses.")
+        raise IxbrlError(f"'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader "
+                         "refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
     reader = _Reader()
     reader.feed(data.decode("utf-8", "replace"))
     reader.close()

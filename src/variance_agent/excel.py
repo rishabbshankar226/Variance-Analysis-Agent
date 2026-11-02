@@ -342,7 +342,7 @@ def _worksheet_scan(xml: IO[bytes]) -> tuple[dict[str, str], SheetLayout]:
         if event == "start":
             depth += 1
             if depth > MAX_XML_DEPTH:
-                raise ValueError(f"Excel XML exceeds the supported depth ({MAX_XML_DEPTH}).")
+                raise ValueError(f"A sheet in the workbook is nested more than {MAX_XML_DEPTH} levels deep, more than I can read.")
         if event == "start" and element.tag == f"{_SHEET_NAMESPACE}row":
             previous = row_index
             row_index = int(element.get("r", str(row_index + 1)))
@@ -502,11 +502,11 @@ def inspect_workbook(data: bytes) -> WorkbookFacts:
         with ZipFile(io.BytesIO(data)) as archive:
             members = archive.infolist()
             if len(members) > MAX_ARCHIVE_MEMBERS:
-                raise ValueError(f"Excel archive exceeds {MAX_ARCHIVE_MEMBERS} members.")
+                raise ValueError(f"The workbook holds more than {MAX_ARCHIVE_MEMBERS} parts, more than I can read.")
             if len({member.filename for member in members}) != len(members):
-                raise ValueError("Excel archive contains duplicate member paths.")
+                raise ValueError("The workbook holds two parts with the same name, so it is damaged.")
             if sum(member.file_size for member in members) > MAX_ARCHIVE_BYTES:
-                raise ValueError("Excel archive exceeds the 64 MiB expanded size limit.")
+                raise ValueError("The workbook is larger than 64 MiB once unpacked, more than I can read.")
             worksheet_numbers: dict[str, dict[str, str]] = {}
             layouts: dict[str, SheetLayout] = {}
             total_bytes = 0
@@ -525,16 +525,17 @@ def inspect_workbook(data: bytes) -> WorkbookFacts:
                     size, declares = _drain(source, check_declarations=is_xml)
                 total_bytes += size
                 if total_bytes > MAX_ARCHIVE_BYTES:
-                    raise ValueError("Excel archive exceeds the 64 MiB expanded size limit.")
+                    raise ValueError("The workbook is larger than 64 MiB once unpacked, more than I can read.")
                 if declares:
-                    raise ValueError("Excel XML DTD and entity declarations are forbidden.")
+                    raise ValueError("The workbook declares entities of its own, which workbooks saved by Excel don't, so this "
+                                     "reader refuses it.")
                 if is_worksheet:
                     with archive.open(member) as source:
                         worksheet_numbers[member.filename], layouts[member.filename] = _worksheet_scan(source)
             recalculate, links, tables = _workbook_facts(archive, list(layouts))
             return WorkbookFacts(worksheet_numbers, layouts, recalculate, links, tables)
     except (BadZipFile, KeyError, SyntaxError, NotImplementedError, RuntimeError) as exc:
-        raise ValueError(f"Invalid Excel archive: {exc}") from exc
+        raise ValueError(f"The workbook is damaged and can't be opened ({exc}).") from exc
 
 
 def cell_value(cell: ExcelCell, *, numbers: dict[str, str], row: int, column: int) -> object:

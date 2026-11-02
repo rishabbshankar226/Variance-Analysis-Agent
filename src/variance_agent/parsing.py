@@ -179,7 +179,7 @@ def _json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     output: dict[str, object] = {}
     for key, value in pairs:
         if key in output:
-            raise ValueError(f"Duplicate JSON key: {key!r}.")
+            raise ValueError(f"Duplicate JSON key: '{key}'.")
         output[key] = value
     return output
 
@@ -212,7 +212,7 @@ def _validate_json_depth(payload: object) -> None:
 
 
 def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"JSON constant {value!r} is not a finite number.")
+    raise ValueError(f"JSON constant '{value}' is not a finite number.")
 
 
 def load_json_value(text: str) -> object:

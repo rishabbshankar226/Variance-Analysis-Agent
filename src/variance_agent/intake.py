@@ -1731,7 +1731,8 @@ def _read_input_assisted(
     if len(data) > MAX_INPUT_BYTES:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"The file '{filename}' exceeds the supported file size limit of 32 MiB.",
+            fatal_error_message=(f"The file '{filename}' exceeds the supported file size limit of 32 MiB. Save just the "
+                                 "sheet with the statement as a new file and upload that."),
         )
 
     norm_suffix = suffix.lower()
@@ -1836,17 +1837,20 @@ def _delimited_rows(text: str, delimiter: str, filename: str) -> list[list[objec
         for record in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter):
             if len(record) > MAX_COLUMNS:
                 raise ValueError(
-                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read."
+                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read. Delete the "
+                    "columns the analysis doesn't need and upload the file again."
                 )
             cells += len(record)
             if len(rows) >= MAX_ROWS or cells > MAX_CELLS:
                 raise ValueError(
                     f"'{filename}' has more rows or cells than I can read "
-                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells)."
+                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells). Save just the rows the analysis needs "
+                    "as a new file and upload that."
                 )
             rows.append(cast(list[object], record))
     except csv.Error as exc:
-        raise ValueError(f"I could not split '{filename}' into columns: {exc}.") from exc
+        raise ValueError(f"I could not split '{filename}' into columns: {str(exc).rstrip('.')}. Save it from "
+                         "Excel as CSV and upload that.") from exc
     return rows
 
 
@@ -1932,7 +1936,8 @@ def _read_json_bytes(
     except Exception as exc:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"Could not read JSON data from '{filename}': {exc}",
+            fatal_error_message=(f"Could not read JSON data from '{filename}': {str(exc).rstrip('.')}. Save the "
+                                 "table as CSV or Excel and upload that instead."),
         )
 
 
@@ -1967,7 +1972,8 @@ def _read_excel_bytes(
                 "Export the sheet you need to CSV, or save a copy without the large sheet."
             )
         else:
-            message = f"The Excel file '{filename}' could not be opened safely."
+            message = (f"The Excel file '{filename}' could not be opened safely. Open it in Excel, save it again "
+                       "as .xlsx, and upload that.")
         return IntakeResult(has_fatal_errors=True, fatal_error_message=message)
 
     loader = _excel_loader()
@@ -1979,7 +1985,8 @@ def _read_excel_bytes(
             if not sheetnames:
                 return IntakeResult(
                     has_fatal_errors=True,
-                    fatal_error_message=f"The Excel workbook '{filename}' contains no worksheets.",
+                    fatal_error_message=(f"The Excel workbook '{filename}' contains no worksheets. Open it in "
+                                         "Excel, check that it holds the statement, then save it and upload it again."),
                 )
 
             # Pre-extract rows for ranking if multiple sheets
@@ -2020,7 +2027,7 @@ def _read_excel_bytes(
                     has_fatal_errors=True,
                     fatal_error_message=(
                         f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
-                        f"Available sheets: {', '.join(sheetnames)}."
+                        f"Available sheets: {', '.join(sheetnames)}. Choose one of those sheets."
                     ),
                     available_sheets=sheetnames,
                 )
@@ -2109,7 +2116,8 @@ def _read_excel_bytes(
         except Exception as exc:
             return IntakeResult(
                 has_fatal_errors=True,
-                fatal_error_message=f"Could not read Excel file '{filename}': {exc}",
+                fatal_error_message=(f"Could not read Excel file '{filename}': {str(exc).rstrip('.')}. Open it in "
+                                     "Excel, save the sheet with the statement as a new workbook, and upload that."),
             )
         finally:
             if wb is not None:
@@ -2366,9 +2374,9 @@ def _read_edgar_statement(
 
     chosen = tables[0] if duration is None else next((t for t in tables if duration_of(t) == duration), None)
     if chosen is None:
-        named = ", ".join(f"'{sheet_name} ({duration_of(t)})'" for t in tables if duration_of(t))
+        named = ", ".join(f"'{sheet_name} ({duration_of(t)})'" for t in tables if duration_of(t)) or f"'{sheet_name}'"
         return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
-            f"Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named or repr(sheet_name)}."))
+            f"Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named}."))
     # A machine-written statement has no formulas, hidden lines or scaled formats; refuse any.
     stop = _unsaved_formulas_stop(excel, filename, lambda r, c: True, describe_cell, sheet_name)
     if stop is not None:
@@ -2656,7 +2664,8 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
     if checked.problem or checked.closing is None or checked.sides is None:
         problem = _runs_on_refusal(chosen.name) if chosen.runs_on else checked.problem
         return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl",
-                            fatal_error_message=problem or f"I couldn't check the {chosen.name}.")
+                            fatal_error_message=problem or f"I couldn't check the {chosen.name}. Upload a CSV or "
+                                                                   "Excel copy of the statement instead.")
     closing, totals = checked.closing, {row for row, _ in checked.matches}
     # Every subtotal the check footed closes its section too ("Property and equipment, net"), so a repeated label
     # after it is never named by that section (Decision 41).
@@ -2976,19 +2985,20 @@ def _read_pdf_bytes(
             has_fatal_errors=True,
             fatal_error_message=(
                 f"No statement called '{sheet}' was found in '{filename}'. "
-                f"Statements found: {', '.join(names)}."
+                f"Statements found: {', '.join(names)}. Choose one of those statements."
             ),
             available_sheets=names,
             source_kind="pdf",
         )
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
         income = [t.name for t in tables if t.kind not in _NOT_REVENUE_AND_EXPENSE]
-        instead = f" Choose an income statement instead: {', '.join(income)}." if income else ""
         return IntakeResult(
             has_fatal_errors=True,
             fatal_error_message=(
                 f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be "
-                f"compared as revenue and expense yet.{instead}"
+                "compared as revenue and expense yet. "
+                + (f"Choose an income statement instead: {', '.join(income)}." if income
+                   else "Upload the income statement instead, or a CSV or Excel copy of it.")
             ),
             available_sheets=income,  # the statements that can be chosen instead
             source_kind="pdf",
@@ -3088,7 +3098,8 @@ def _process_raw_table(
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"The file '{filename}' contains no data.",
+            fatal_error_message=(f"The file '{filename}' contains no data. Upload a file with a header row (such "
+                                 "as Line Item, Budget, Actual) and at least one line."),
             sheet_name=sheet_name,
         )
     half = _HALF.get()
@@ -3122,12 +3133,14 @@ def _process_raw_table(
         if compare_to is None:
             message = (
                 f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
-                f"(a Forecast or Prior Year column can stand in for Budget).{hint}"
+                f"(a Forecast or Prior Year column can stand in for Budget). Add a header row that names those "
+                f"columns, and upload the file again.{hint}"
             )
         else:
             message = (
                 f"Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, "
-                f"and Actual columns in '{filename}'."
+                f"and Actual columns in '{filename}'. Add a header row that names those columns, and upload the "
+                "file again."
             )
         return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name,
                             opt_in_hint=opt_in)
@@ -3146,8 +3159,10 @@ def _process_raw_table(
         blocks = _table_blocks(raw_rows, header_idx)
         chosen_block = next((b for b in blocks if _block_name(b) == excel.block), None)
         if chosen_block is None:
+            tables_named = ", ".join(_block_name(b) for b in blocks)
             return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
-                f"Sheet '{sheet_name}' has no separate table in {excel.block}."))
+                f"Sheet '{sheet_name}' has no separate table in {excel.block}. "
+                + (f"Choose one of its tables: {tables_named}." if tables_named else "Choose the whole sheet instead.")))
         return reread(_only_block(raw_rows, header_idx, chosen_block),
                       _block_note(raw_rows, header_idx, chosen_block, blocks, sheet_name), selected_period)
 

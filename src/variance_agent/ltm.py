@@ -94,12 +94,14 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
         return result
     ytd, year = _flow_statement(quarter_statements, kind), _flow_statement(annual_statements, kind)
     if ytd is None:
-        return _fail(f"'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from.")
+        return _fail(f"'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from. Compare the "
+                     "10-Q on its own instead.")
     if year is None or _months(year.periods[0]) != 12:
-        return _fail(f"'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. --ltm-from takes the 10-K "
-                     "whose year the 10-Q continues.")
+        return _fail(f"'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. Give the 10-K whose "
+                     "fiscal year the 10-Q continues instead.")
     if len(ytd.periods) < 2:
-        return _fail(f"'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built.")
+        return _fail(f"'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built. "
+                     "Compare the 10-Q on its own instead.")
     fiscal, current, prior = year.periods[0], ytd.periods[0], ytd.periods[1]
     fy_label = year.labels[0]
     if _months(current) == 12:
@@ -125,7 +127,7 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
                      f"{k_read.document_currency}; LTM adds them, so give two filings in one currency.")
     if currency not in CURRENCY_SYMBOLS:
         return _fail(f"'{quarter_name}' reports its amounts in {currency}. This tool reports in USD, EUR or GBP "
-                     "only and converts no currency.")
+                     "only and converts no currency. Use filings that report in one of those to build LTM.")
     q_keys, k_keys = _keys(q_read), _keys(k_read)
     k_by_key = {(concept, dims): name for name, (concept, dims, _) in k_keys.items()}
     q_by_key = {(concept, dims): name for name, (concept, dims, _) in q_keys.items()}

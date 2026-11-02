@@ -109,9 +109,10 @@ def _statement_kind(line_item: str, row: dict[str, object]) -> str:
     value = row.get("statement_kind")
     if is_missing(value):
         return ""
-    kind = str(value).strip().casefold()
+    kind = re.sub(r"[\s-]+", "_", str(value).strip().casefold())  # "Balance Sheet" is balance_sheet (M6)
     if kind not in _STATEMENT_KINDS:
-        raise ValueError(f"{line_item}: Statement Kind must be balance_sheet or cash_flow.")
+        raise ValueError(f"{line_item}: Statement Kind must be Balance Sheet or Cash Flow. Type one of those in the "
+                         "Statement Kind column.")
     return kind
 
 
@@ -160,7 +161,8 @@ def _classify(
 
     type_keys = [key for key in _TYPE_KEYS if key in row]
     if len(type_keys) > 1:
-        raise ValueError(f"{line_item}: multiple classification aliases: {', '.join(type_keys)}.")
+        raise ValueError(f"{line_item}: multiple columns give its type ({', '.join(type_keys)}). Keep one Type "
+                         "column and upload the file again.")
     type_field = first_present(row, _TYPE_KEYS)
     if type_field:
         explicit = explicit_line_type(type_field[1])
@@ -320,7 +322,8 @@ def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> l
         if line_type not in detail_types and len(summaries) > 1:
             raise ValueError(
                 f"Multiple {line_type.value} summary rows were supplied without detail rows; "
-                "aggregation would be ambiguous and could double count."
+                "aggregation would be ambiguous and could double count. Keep one total, or add the lines it "
+                "totals, and upload the file again."
             )
 
     for line_type in (LineType.REVENUE, LineType.EXPENSE):
@@ -335,11 +338,11 @@ def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> l
         summary = summaries[0]
         budget_residual = summary.budget - sum((r.budget for r in details), Decimal("0"))
         if abs(budget_residual) > AMOUNT_TOLERANCE:
-            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+            raise ValueError(f"Summary '{summary.line_item}' does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         actual_residual = summary.actual - sum((r.actual for r in details), Decimal("0"))
         if abs(actual_residual) > AMOUNT_TOLERANCE:
-            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+            raise ValueError(f"Summary '{summary.line_item}' does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         verifications[line_type] = SummaryVerification(
             "reconciled_and_excluded", len(details), budget_residual,
@@ -558,23 +561,27 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         if has_period_column:
             period = validate_text(row.get("period"), field=f"Row {index} Period", nonblank=True)
             if period.strip() != config.period.strip():
-                raise ValueError(f"Row {index}: Period conflicts with the reporting period.")
+                raise ValueError(f"Row {index}: Period conflicts with the reporting period. Give every row the "
+                                 "reporting period, or leave the Period column out.")
         line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
         if isinstance(line_item_raw, (bool, list, dict, tuple, set)):
-            raise ValueError(f"Row {index}: Line Item must be a scalar text or numeric label.")
+            raise ValueError(f"Row {index}: Line Item must be a label, text or a number. Type a label in that "
+                             "cell.")
         line_item = "" if line_item_raw is None else str(line_item_raw).strip()
         if not line_item:
-            raise ValueError(f"Row {index}: Line Item is blank.")
+            raise ValueError(f"Row {index}: Line Item is blank. Type a label in that cell, or delete the row.")
         validate_text(line_item, field=f"Row {index} Line Item", nonblank=True)
 
         if "currency" in row and not is_missing(row["currency"]):
             row_currency = row["currency"]
             if not isinstance(row_currency, str):
-                raise ValueError(f"{line_item}: Currency must be a reporting currency code.")
+                raise ValueError(f"{line_item}: Currency must be a reporting currency code. Use USD, EUR or GBP "
+                                 "in the Currency column.")
             row_currency = validate_currency(row_currency.strip().upper())
             if row_currency != config.currency:
                 raise ValueError(f"{line_item}: row currency {row_currency} conflicts with "
-                                 f"reporting currency {config.currency}.")
+                                 f"reporting currency {config.currency}. Run each currency on its own; no currency "
+                                 "is converted.")
 
         # Budget runs keep 'Budget'; other runs name the comparison and do not list the
         # internal budget column aliases.

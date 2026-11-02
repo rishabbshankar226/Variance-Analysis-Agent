@@ -414,7 +414,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
             return None
         length = int(raw_length)
         if length > limit:
-            self._json_error("Request body is too large.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            # The page shows this text in its warning bubble (M6).
+            self._json_error(
+                f"That file is larger than the {MAX_INPUT_BYTES // (1024 * 1024)} MiB the chat accepts. Save just the "
+                "sheet with the statement as a new file and upload that." if limit == _MAX_UPLOAD_BODY else
+                "That message is too long. Ask a shorter question.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return None
         deadline = time.monotonic() + _BODY_GRACE_SECONDS + _BODY_SECONDS_PER_MIB * length / (1024 * 1024)
         chunks: list[bytes] = []

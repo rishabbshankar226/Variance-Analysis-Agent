@@ -72,3 +72,8 @@ def test_the_markdown_keeps_the_inventorys_columns() -> None:
     text = INVENTORY.markdown(INVENTORY.inventory(), "abc1234")
     assert "| Source | Message Text | Jargon? | Offers Fix? | Notes / Jargon Rationale |" in text
     assert "at commit `abc1234`" in text
+
+
+def test_every_intake_message_a_chat_reader_sees_is_plain_and_offers_a_fix() -> None:
+    failing = [f"{m.path}:{m.line} ({'; '.join(m.failing())}): {m.shown}" for m in INVENTORY.failing()]
+    assert failing == [], "\n".join(failing)

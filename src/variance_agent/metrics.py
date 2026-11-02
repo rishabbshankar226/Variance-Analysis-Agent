@@ -82,7 +82,8 @@ def load_metrics(data: bytes) -> list[Metric]:
             if raw is None and not required:
                 return ()
             if not isinstance(raw, list) or not raw:
-                raise _bad(f"{key} must be a non-empty list of terms (metric '{metric}').")
+                raise _bad(f"{key} must be a non-empty list of terms (metric '{metric}'). List at least one term "
+                           "for it in the metrics file.")
             out = []
             for term in raw:
                 if not isinstance(term, dict) or set(term) - _TERM_KEYS:
@@ -127,7 +128,7 @@ class _Sources:
         self.currency = codes[0] if codes else "USD"  # the filings' own currency (X30)
         if self.currency not in CURRENCY_SYMBOLS:
             raise ValueError(f"'{primary_name}' reports its amounts in {self.currency}. This tool reports in USD, EUR "
-                             "or GBP only and converts no currency.")
+                             "or GBP only and converts no currency. Use filings that report in one of those.")
 
     def _read(self, document: str, statement: Statement) -> IntakeResult:
         key = (document, statement.name)
@@ -309,7 +310,8 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
                 described = f"{name} [{_STATEMENTS[term.statement]}, {term.period}]"
                 report.append(f"  - {_safe(described)}: {_safe(joined)}{total}")
     if not rows:
-        raise ValueError("No metric could be computed. " + " ".join(f"{n}." for n in notes))
+        raise ValueError("No metric could be computed. Check that each metric names figures the filing reports. "
+                         + " ".join(f"{n}." for n in notes))
     result = IntakeResult(rows=rows, rows_read=len(rows), half_filled=True, source_kind="ixbrl",
                           visible_transformations=list(notes), report_appendix=["## Metrics", "", *report],
                           document_currency=sources.currency)

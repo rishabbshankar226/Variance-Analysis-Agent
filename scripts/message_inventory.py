@@ -60,8 +60,7 @@ REFUSALS = {"_fail", "_statement_refusal", "_refusal", "refuse", "_json_error"}
 # (module, function) -> the message its messages are shown inside, which carries the fix.
 WRAPPED = {
     ("intake.py", "parse_assisted_decimal"): "shown under \"Fix these cells and upload the file again\"",
-    **{("excel.py", name): "shown after \"Could not read Excel file ...\""
-       for name in ("inspect_workbook", "_worksheet_scan", "cell_value")},
+    ("excel.py", "cell_value"): "shown after \"Could not read Excel file ...\"",
     **{("parsing.py", name): "shown after \"Could not read JSON data ...\""
        for name in ("load_json_text", "load_json_value", "_json_object", "_validate_json_depth",
                     "_reject_json_constant")},
@@ -75,6 +74,10 @@ NOT_SHOWN = {
                     "_normalized_headers", "normalize_row")},
     # The engine re-checks values intake has already read; a typed threshold's error is caught and replaced.
     **{("parsing.py", name): "re-check of a value already read (API)" for name in ("parse_decimal", "_require_finite")},
+    # Assisted intake checks a workbook first and puts its own refusal in place of these ("could not be opened
+    # safely", or the large-sheet refusal); only the command line's comparison reader prints them.
+    **{("excel.py", name): "replaced in the chat by intake's workbook refusal"
+       for name in ("inspect_workbook", "_worksheet_scan")},
     ("analysis.py", "_validate_comparison"): "check of the API's arguments",
     ("analysis.py", "_verify_result"): "internal check",
 }
@@ -224,6 +227,13 @@ def _messages(path: Path) -> list[Message]:
                  and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
                  for target in node.targets if isinstance(target, ast.Name)}
     found: list[Message] = []
+    # Text a function assigns to a local name before passing it on (message = f"..."; ...(message)).
+    local_texts: dict[tuple[str, str], list[str]] = {}
+
+    def texts(expr: ast.AST, function: str) -> list[str | None]:
+        if isinstance(expr, ast.Name) and (function, expr.id) in local_texts:
+            return list(local_texts[function, expr.id])
+        return [_render(expr, constants)]
 
     def add(node: ast.AST, kind: str, text: str | None, function: str, caught: bool, *, chips: bool = False,
             internal: bool = False) -> None:
@@ -260,10 +270,15 @@ def _messages(path: Path) -> list[Message]:
             for part in [*node.handlers, *node.orelse, *node.finalbody]:
                 visit(part, function, catching)
             return
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            assigned = _render(node.value, constants)
+            if assigned is not None:
+                local_texts.setdefault((function, node.targets[0].id), []).append(assigned)
         if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
             name = _call_name(node.exc)
-            add(node, f"raise {name}", _render(node.exc.args[0], constants), function,
-                name in catching or "Exception" in catching, internal=name in INTERNAL)
+            for text in texts(node.exc.args[0], function):
+                add(node, f"raise {name}", text, function, name in catching or "Exception" in catching,
+                    internal=name in INTERNAL)
         elif isinstance(node, ast.Call):
             name = _call_name(node)
             keywords = {k.arg: k.value for k in node.keywords if k.arg}
@@ -272,13 +287,14 @@ def _messages(path: Path) -> list[Message]:
                                                      and keywords["chips"].value is None)
                 level = keywords.get("level")
                 error = isinstance(level, ast.Constant) and level.value == "error"
-                add(node, "error reply" if error else "reply", _render(keywords["text"], constants), function,
-                    False, chips=chips)
+                for text in texts(keywords["text"], function):
+                    add(node, "error reply" if error else "reply", text, function, False, chips=chips)
             elif "fatal_error_message" in keywords:
-                add(node, "refusal", _render(keywords["fatal_error_message"], constants), function, False)
+                for text in texts(keywords["fatal_error_message"], function):
+                    add(node, "refusal", text, function, False)
             elif name in REFUSALS and node.args:
-                message = node.args[-1] if name == "_statement_refusal" else node.args[0]
-                add(node, "refusal", _render(message, constants), function, False)
+                for text in texts(node.args[-1] if name == "_statement_refusal" else node.args[0], function):
+                    add(node, "refusal", text, function, False)
         for child in ast.iter_child_nodes(node):
             visit(child, function, catching)
 

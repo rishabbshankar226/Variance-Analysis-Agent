@@ -197,7 +197,7 @@ def test_a_balance_sheet_without_its_identity_lines_refuses_plainly() -> None:
 @pytest.mark.parametrize("prolog", [b'<!DOCTYPE html [<!ENTITY x "y">]>', b'<!ENTITY x "y">', b"<!doctype x [ ]>"])
 def test_entity_declarations_and_doctype_subsets_are_refused_before_reading(prolog: bytes) -> None:
     assert _read(prolog + income_filing()).fatal_error_message == (
-        "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. "
+        "'hal-20250927.htm' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. "
         "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
 
 

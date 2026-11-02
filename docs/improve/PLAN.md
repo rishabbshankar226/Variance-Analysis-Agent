@@ -515,6 +515,9 @@ Boundary cases:
 |---|---|---|
 | `tests/test_chat_hardening.py::test_unmatched_questions_on_a_big_file_stay_fast` (7 cases) | `assert time.perf_counter() - start < 0.5` is replaced by the work counts of Decision 7. `assert response.text` stays. | T1. The bound failed under load. Measured here: 5 of 7 cases failed on each of two runs beside 64 CPU-bound processes. The work counts pin the same fix without a clock. |
 | `tests/test_interface_design.py::test_status_words_mirror_the_servers_map` | the page shows `'Unclassified'` as `{"word": "Unclassified", "tone": None}`; it becomes `{"word": "Not yet labeled", "tone": None}` | X27 (approved at STOP 1). The test checks that the page's word map mirrors the server's `status_label`, and X27 changes that label. Its mirror check stays as it is. |
+| `tests/test_ixbrl.py` (the declared-entity refusal, line 200) | the expected text "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. " becomes "'hal-20250927.htm' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. " | M6: "XML" is a forbidden word in the rules file; the refusal and its fix are otherwise unchanged |
+| `tests/test_excel_archive_hardening.py::test_a_dtd_after_a_long_prolog_comment_is_still_refused` and `::test_a_dtd_straddling_a_read_boundary_is_still_found` | `pytest.raises(ValueError, match="DTD")` becomes `match="declares entities of its own"`; each test still asserts the declaration is refused | M6: "DTD" is a forbidden word in the rules file |
+| `tests/test_pdf_intake.py::test_unknown_statement_lists_the_ones_found` | the expected refusal gains its last sentence, " Choose one of those statements." | M6: the refusal named the statements but gave no step; the same refusal for a filing already ends so (intake.py, the Inline XBRL path) |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
 

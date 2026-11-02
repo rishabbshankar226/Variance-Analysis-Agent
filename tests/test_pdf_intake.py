@@ -121,7 +121,7 @@ def test_unknown_statement_lists_the_ones_found() -> None:
     assert result.has_fatal_errors
     assert result.fatal_error_message == (
         f"No statement called 'Cash flows' was found in '{TEN_K.name}'. "
-        f"Statements found: {INCOME}, {BALANCE}."
+        f"Statements found: {INCOME}, {BALANCE}. Choose one of those statements."
     )
 
 

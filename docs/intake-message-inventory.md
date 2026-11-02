@@ -1,6 +1,6 @@
 # Intake Message Inventory
 
-This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `cf2f548`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
+This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `d8542ff`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
 
 Per the definitions in [`.agents/rules/variance-intake.md`](../.agents/rules/variance-intake.md), which apply to a message Maya sees:
 - **Jargon**: a snake_case key or `repr()` quoting, an exception name, CLI flag syntax (unless the message says it is optional), one of the words "normalize," "alias," "schema," "OOXML," "archive," "XML," "DTD," "payload," "Row Kind," "Unclassified", or an exit code.
@@ -14,30 +14,30 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 
 | Metric | Count | Percentage |
 |---|---|---|
-| **Messages a chat reader can see** | **228** | 100.0% |
-| **Messages Containing Jargon** | **17** | 7.5% |
-| **Plain-Language Messages** | **211** | 92.5% |
-| **Errors and refusals scored for a fix** | **82** | 36.0% |
-| **Errors Offering an Actionable Fix** | **48** | 58.5% of errors |
-| **Errors With No Fix** | **34** | 41.5% of errors |
-| Listed, not seen in the chat | 113 | |
+| **Messages a chat reader can see** | **235** | 100.0% |
+| **Messages Containing Jargon** | **0** | 0.0% |
+| **Plain-Language Messages** | **235** | 100.0% |
+| **Errors and refusals scored for a fix** | **86** | 36.6% |
+| **Errors Offering an Actionable Fix** | **86** | 100.0% of errors |
+| **Errors With No Fix** | **0** | 0.0% of errors |
+| Listed, not seen in the chat | 128 | |
 
 ### Breakdown by Component
 
 | Component Source | Messages Seen | Jargon Messages | Errors Offering a Fix |
 |---|---|---|---|
-| [`variance_agent/analysis.py`](../src/variance_agent/analysis.py) | 18 | 3 (16.7%) | 10 of 18 |
+| [`variance_agent/analysis.py`](../src/variance_agent/analysis.py) | 18 | 0 (0.0%) | 18 of 18 |
 | [`variance_agent/chat/earnings.py`](../src/variance_agent/chat/earnings.py) | 11 | 0 (0.0%) | 0 of 0 |
-| [`variance_agent/chat/handlers.py`](../src/variance_agent/chat/handlers.py) | 111 | 1 (0.9%) | 11 of 14 |
-| [`variance_agent/chat/server.py`](../src/variance_agent/chat/server.py) | 4 | 0 (0.0%) | 3 of 4 |
-| [`variance_agent/excel.py`](../src/variance_agent/excel.py) | 16 | 7 (43.8%) | 0 of 0 |
-| [`variance_agent/intake.py`](../src/variance_agent/intake.py) | 33 | 1 (3.0%) | 7 of 20 |
-| [`variance_agent/ixbrl.py`](../src/variance_agent/ixbrl.py) | 5 | 2 (40.0%) | 4 of 5 |
+| [`variance_agent/chat/handlers.py`](../src/variance_agent/chat/handlers.py) | 129 | 0 (0.0%) | 14 of 14 |
+| [`variance_agent/chat/server.py`](../src/variance_agent/chat/server.py) | 4 | 0 (0.0%) | 4 of 4 |
+| [`variance_agent/excel.py`](../src/variance_agent/excel.py) | 1 | 0 (0.0%) | 0 of 0 |
+| [`variance_agent/intake.py`](../src/variance_agent/intake.py) | 37 | 0 (0.0%) | 24 of 24 |
+| [`variance_agent/ixbrl.py`](../src/variance_agent/ixbrl.py) | 5 | 0 (0.0%) | 5 of 5 |
 | [`variance_agent/join.py`](../src/variance_agent/join.py) | 2 | 0 (0.0%) | 2 of 2 |
-| [`variance_agent/ltm.py`](../src/variance_agent/ltm.py) | 10 | 1 (10.0%) | 6 of 10 |
-| [`variance_agent/metrics.py`](../src/variance_agent/metrics.py) | 4 | 0 (0.0%) | 1 of 4 |
-| [`variance_agent/parsing.py`](../src/variance_agent/parsing.py) | 9 | 2 (22.2%) | 0 of 0 |
-| [`variance_agent/pdf_tables.py`](../src/variance_agent/pdf_tables.py) | 5 | 0 (0.0%) | 4 of 5 |
+| [`variance_agent/ltm.py`](../src/variance_agent/ltm.py) | 10 | 0 (0.0%) | 10 of 10 |
+| [`variance_agent/metrics.py`](../src/variance_agent/metrics.py) | 4 | 0 (0.0%) | 4 of 4 |
+| [`variance_agent/parsing.py`](../src/variance_agent/parsing.py) | 9 | 0 (0.0%) | 0 of 0 |
+| [`variance_agent/pdf_tables.py`](../src/variance_agent/pdf_tables.py) | 5 | 0 (0.0%) | 5 of 5 |
 
 ---
 
@@ -49,47 +49,47 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 |---|---|---|---|---|
 | `analysis.py:95` | `Row {row_number}: multiple aliases for '{display_name}': {', '.join(present)}. Supply one column per field.` | No | Yes | shown as 'Multiple columns match the same field. Please provide only one column for each field.' |
 | `analysis.py:100` | `Row {row_number}: required field '{display_name}' was not found.{accepted}` | No | Yes | shown as 'Could not find a required '{display_name}' column. Please check your column headers or choose a different worksheet.' |
-| `analysis.py:114` | `{line_item}: Statement Kind must be balance_sheet or cash_flow.` | **Yes** | **No** | snake_case 'balance_sheet' |
-| `analysis.py:146` | `{line_item}: Row Kind must be Detail, Total, or Subtotal.` | No | Yes | shown as 'Some subtotal or total rows could not be distinguished from detail rows. Please check summary line items.' |
-| `analysis.py:150` | `{line_item}: ambiguous summary label; specify Row Kind as Detail, Total, or Subtotal.` | No | Yes | shown as 'Some subtotal or total rows could not be distinguished from detail rows. Please check summary line items.' |
-| `analysis.py:163` | `{line_item}: multiple classification aliases: {', '.join(type_keys)}.` | No | **No** | shown as '{line_item}: multiple classification synonym: {', '.join(type_keys)}.' |
-| `analysis.py:321` | `Multiple {line_type.value} summary rows were supplied without detail rows; aggregation would be ambiguous and could double count.` | No | **No** |  |
-| `analysis.py:333` | `Multiple {line_type.value} summary rows have ambiguous scope; supply detail rows only or one reconciled total.` | No | Yes |  |
-| `analysis.py:338` | `Summary {summary.line_item!r} does not reconcile to {line_type.value} detail rows; check for missing or overlapping data.` | **Yes** | Yes | repr quoting |
-| `analysis.py:342` | `Summary {summary.line_item!r} does not reconcile to {line_type.value} detail rows; check for missing or overlapping data.` | **Yes** | Yes | repr quoting |
-| `analysis.py:393` | `Comparison basis must be a ComparisonBasis value.` | No | **No** | check of the API's arguments |
-| `analysis.py:411` | `segment mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:413` | `dollar variance mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:417` | `percentage mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:419` | `measure or direction mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:425` | `measure/direction metadata mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:432` | `comparison metadata mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:434` | `basis-point variance mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:436` | `statement kind mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:439` | `limit, benchmark or target outcome mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:442` | `F/U status mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:445` | `materiality mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:450` | `driver component reconciliation mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
-| `analysis.py:458` | `material variance membership or sort order is incorrect` | No | **No** | internal check |
-| `analysis.py:466` | `{line_type.value} aggregate metrics mismatch` | No | **No** | internal check |
-| `analysis.py:487` | `{label} reconciliation mismatch` | No | **No** | internal check |
-| `analysis.py:498` | `dataset contains no data rows` | No | **No** | a clause another message completes |
-| `analysis.py:506` | `Configuration must be an AnalysisConfig instance.` | No | **No** | check of the API's arguments |
-| `analysis.py:512` | `Rows must be a list of row objects.` | No | **No** | check of the API's arguments |
-| `analysis.py:514` | `Dataset contains no data rows.` | No | **No** | check of the API's arguments |
-| `analysis.py:516` | `Dataset exceeds the supported row count ({MAX_ROWS}).` | No | **No** | check of the API's arguments |
-| `analysis.py:520` | `Materiality thresholds must be Decimal values initialized from strings.` | No | **No** | check of the API's arguments |
-| `analysis.py:522` | `Materiality thresholds must be finite numbers.` | No | **No** | check of the API's arguments |
-| `analysis.py:524` | `Materiality thresholds must be non-negative.` | No | **No** | check of the API's arguments |
-| `analysis.py:527` | `Type map must be a dictionary of line-item strings to classifications.` | No | Yes |  |
-| `analysis.py:531` | `Type map keys must be nonblank line-item strings.` | No | Yes |  |
-| `analysis.py:536` | `Type map value for {item!r} must be Revenue, Expense, or Unclassified.` | **Yes** | Yes | check of the API's arguments; shown as 'Type map value for {item!r} must be Revenue, Expense, or not yet labeled revenue or expense.'; repr quoting |
-| `analysis.py:561` | `Row {index}: Period conflicts with the reporting period.` | No | **No** |  |
-| `analysis.py:564` | `Row {index}: Line Item must be a scalar text or numeric label.` | No | **No** |  |
-| `analysis.py:567` | `Row {index}: Line Item is blank.` | No | **No** |  |
-| `analysis.py:573` | `{line_item}: Currency must be a reporting currency code.` | No | **No** |  |
-| `analysis.py:576` | `{line_item}: row currency {row_currency} conflicts with reporting currency {config.currency}.` | No | **No** |  |
-| `analysis.py:586` | `{line_item}: declared measure amounts cannot be float; supply exact numeric text.` | No | Yes |  |
+| `analysis.py:114` | `{line_item}: Statement Kind must be Balance Sheet or Cash Flow. Type one of those in the Statement Kind column.` | No | Yes |  |
+| `analysis.py:147` | `{line_item}: Row Kind must be Detail, Total, or Subtotal.` | No | Yes | shown as 'Some subtotal or total rows could not be distinguished from detail rows. Please check summary line items.' |
+| `analysis.py:151` | `{line_item}: ambiguous summary label; specify Row Kind as Detail, Total, or Subtotal.` | No | Yes | shown as 'Some subtotal or total rows could not be distinguished from detail rows. Please check summary line items.' |
+| `analysis.py:164` | `{line_item}: multiple columns give its type ({', '.join(type_keys)}). Keep one Type column and upload the file again.` | No | Yes |  |
+| `analysis.py:323` | `Multiple {line_type.value} summary rows were supplied without detail rows; aggregation would be ambiguous and could double count. Keep one total, or add the lines it totals, and upload the file again.` | No | Yes |  |
+| `analysis.py:336` | `Multiple {line_type.value} summary rows have ambiguous scope; supply detail rows only or one reconciled total.` | No | Yes |  |
+| `analysis.py:341` | `Summary '{summary.line_item}' does not reconcile to {line_type.value} detail rows; check for missing or overlapping data.` | No | Yes |  |
+| `analysis.py:345` | `Summary '{summary.line_item}' does not reconcile to {line_type.value} detail rows; check for missing or overlapping data.` | No | Yes |  |
+| `analysis.py:396` | `Comparison basis must be a ComparisonBasis value.` | No | **No** | check of the API's arguments |
+| `analysis.py:414` | `segment mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:416` | `dollar variance mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:420` | `percentage mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:422` | `measure or direction mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:428` | `measure/direction metadata mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:435` | `comparison metadata mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:437` | `basis-point variance mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:439` | `statement kind mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:442` | `limit, benchmark or target outcome mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:445` | `F/U status mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:448` | `materiality mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:453` | `driver component reconciliation mismatch for {row.line_item!r}` | **Yes** | **No** | internal check; repr quoting |
+| `analysis.py:461` | `material variance membership or sort order is incorrect` | No | **No** | internal check |
+| `analysis.py:469` | `{line_type.value} aggregate metrics mismatch` | No | **No** | internal check |
+| `analysis.py:490` | `{label} reconciliation mismatch` | No | **No** | internal check |
+| `analysis.py:501` | `dataset contains no data rows` | No | **No** | a clause another message completes |
+| `analysis.py:509` | `Configuration must be an AnalysisConfig instance.` | No | **No** | check of the API's arguments |
+| `analysis.py:515` | `Rows must be a list of row objects.` | No | **No** | check of the API's arguments |
+| `analysis.py:517` | `Dataset contains no data rows.` | No | **No** | check of the API's arguments |
+| `analysis.py:519` | `Dataset exceeds the supported row count ({MAX_ROWS}).` | No | **No** | check of the API's arguments |
+| `analysis.py:523` | `Materiality thresholds must be Decimal values initialized from strings.` | No | **No** | check of the API's arguments |
+| `analysis.py:525` | `Materiality thresholds must be finite numbers.` | No | **No** | check of the API's arguments |
+| `analysis.py:527` | `Materiality thresholds must be non-negative.` | No | **No** | check of the API's arguments |
+| `analysis.py:530` | `Type map must be a dictionary of line-item strings to classifications.` | No | Yes |  |
+| `analysis.py:534` | `Type map keys must be nonblank line-item strings.` | No | Yes |  |
+| `analysis.py:539` | `Type map value for {item!r} must be Revenue, Expense, or Unclassified.` | **Yes** | Yes | check of the API's arguments; shown as 'Type map value for {item!r} must be Revenue, Expense, or not yet labeled revenue or expense.'; repr quoting |
+| `analysis.py:564` | `Row {index}: Period conflicts with the reporting period. Give every row the reporting period, or leave the Period column out.` | No | Yes |  |
+| `analysis.py:568` | `Row {index}: Line Item must be a label, text or a number. Type a label in that cell.` | No | Yes |  |
+| `analysis.py:572` | `Row {index}: Line Item is blank. Type a label in that cell, or delete the row.` | No | Yes |  |
+| `analysis.py:578` | `{line_item}: Currency must be a reporting currency code. Use USD, EUR or GBP in the Currency column.` | No | Yes |  |
+| `analysis.py:582` | `{line_item}: row currency {row_currency} conflicts with reporting currency {config.currency}. Run each currency on its own; no currency is converted.` | No | Yes |  |
+| `analysis.py:593` | `{line_item}: declared measure amounts cannot be float; supply exact numeric text.` | No | Yes |  |
 
 ### `chat/earnings.py`
 
@@ -123,106 +123,124 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `handlers.py:436` | `{blanks.capitalize()} cannot stay blank in the analysis: a line with no amount is read as 0 ({zero_comparison_phrase(basis)}). Choose **{treat}** to continue, or upload a corrected file.` | No | n/a | chips |
 | `handlers.py:464` | `Found data for multiple periods in your file. Which period would you like to analyze?` | No | n/a | chips |
 | `handlers.py:485` | `Please upload a file using the drop zone above.` | No | n/a | chips |
+| `handlers.py:498` | `{lead}What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)` | No | n/a |  |
 | `handlers.py:500` | `{text} Your file's title says {periods}: choose {'it' if len(named) == 1 else 'one'} below, or type a different period.` | No | n/a | chips |
 | `handlers.py:514` | `Please choose which period you would like to analyze. Pick one of the periods found in your file.` | No | n/a | chips |
 | `handlers.py:547` | `I no longer have your file. Please upload it again using the drop zone above.` | No | n/a | chips |
 | `handlers.py:599` | `Covenant headroom is computed from a filing. Upload the 10-K's or 10-Q's .htm document from EDGAR first.` | No | n/a |  |
 | `handlers.py:602` | `Upload your metrics file: a JSON file declaring each ratio's terms (see docs/financial-rules.md, Derived metrics). Then I'll ask for the covenant schedule.` | No | n/a |  |
 | `handlers.py:615` | `Now upload the covenant schedule: each metric's name, its Limit, and its Limit Kind (Max or Min), with a Buffer where you have one.` | No | n/a |  |
-| `handlers.py:626` | `I couldn't compare these metrics.` | No | **No** |  |
-| `handlers.py:637` | `This file has no {words} to compare. Upload a 10-K or 10-Q from EDGAR, and I'll read its statements.` | No | n/a |  |
-| `handlers.py:647` | `Upload a file with Actual, {needs}, and I'll compare each row against its {header.lower()}.` | No | n/a |  |
-| `handlers.py:662` | `'{safe_inline(filename)}' {_half_wording(missing, key)}` | No | n/a |  |
-| `handlers.py:708` | `I couldn't join these two files.` | No | **No** |  |
-| `handlers.py:736` | `{message.removesuffix(JOIN_FIX)}Choose **{chip}** to read them with a {basis_noun(basis)} of 0, or upload a corrected file.` | No | Yes | chips |
-| `handlers.py:751` | `I couldn't join these two files.` | No | **No** |  |
-| `handlers.py:776` | `LTM is built from a 10-Q and a 10-K filed on EDGAR. Upload the 10-Q's .htm document first.` | No | n/a |  |
-| `handlers.py:779` | `Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year to date less last year to date, line by line by XBRL concept, and compare it with the fiscal year.` | No | n/a |  |
-| `handlers.py:789` | `I couldn't build LTM from these two filings.` | No | Yes | chips |
-| `handlers.py:954` | `Found **{count}** line item{'s' if count != 1 else ''} with {blanks} (such as {safe_inline(sample)}). Blank amounts cannot stay blank in the analysis, so they are read as 0. {treat}?` | No | n/a | chips |
-| `handlers.py:973` | `Found data for multiple periods in your file. Which period would you like to analyze?` | No | n/a | chips |
-| `handlers.py:1036` | `The reporting period cannot be blank. Please enter a period (e.g., Q3 2026).` | No | n/a |  |
-| `handlers.py:1041` | `Please enter a short period label of up to {_MAX_PERIOD_CHARS} characters (e.g., Q3 2026, October 2026, FY2026).` | No | n/a | chips |
-| `handlers.py:1048` | `'{safe_inline(period)}' looks like a command, not a reporting period. Enter the period this file covers first (e.g., Q3 2026, October 2026, FY2026).` | No | n/a | chips |
-| `handlers.py:1058` | `Period set to: **{safe_inline(period)}** Now set the materiality thresholds. Enter a dollar amount and a percentage, for example: '$10,000 or 5%' Or choose a preset below:` | No | n/a | chips |
-| `handlers.py:1318` | `No line item matching '{display_q}' was found. Did you mean {names}?` | No | n/a | chips |
-| `handlers.py:1326` | `No line item matching '{display_q}' was found. Available items: {items_list}` | No | n/a |  |
-| `handlers.py:1336` | `I couldn't parse those thresholds. Please enter them as: '$10,000 or 5%'` | No | n/a | chips |
-| `handlers.py:1347` | `Thresholds set: **{format_threshold_amount(dollar, session.currency)}** or **{format_threshold_pct(pct_ratio)}** What is the reporting currency?` | No | n/a | chips |
-| `handlers.py:1379` | `Please choose a supported currency: USD, EUR, or GBP.` | No | n/a | chips |
-| `handlers.py:1417` | `'{safe_inline(name)}' looks like the total of the {line_type} lines above it{figures}. A total that doesn't match its lines can't be checked, so I stopped instead of guessing. Leave it out of the line items, or upload a corrected file.` | No | Yes | chips |
-| `handlers.py:1447` | `I need your materiality thresholds first. Enter a dollar amount and a percentage, for example: '$10,000 or 5%'` | No | n/a | chips |
-| `handlers.py:1466` | `{text} {fix}` | No | Yes | chips |
-| `handlers.py:1557` | `Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or expense. **'{item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
-| `handlers.py:1596` | `Rules applied! **{remaining}** item{'s' if remaining != 1 else ''} remaining. **'{item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
-| `handlers.py:1637` | `Please choose Revenue, Expense, or Skip for '{safe_inline(current_item)}'.` | No | n/a | chips |
-| `handlers.py:1650` | `Got it. {remaining} remaining. **'{next_item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
-| `handlers.py:1972` | `**Layout Mapping Saved** Here are your confirmed layout settings. You can reuse this mapping in future months with '--mapping <file>': '''json {mapping_json} '''` | **Yes** | n/a | flag --mapping; chips |
-| `handlers.py:2031` | `A workbook isn't available for this comparison yet. The report and the audit file are; type 'export report' or 'export audit'.` | No | n/a | chips |
-| `handlers.py:2035` | `A workbook isn't available for this comparison yet. The report and the audit file are; type 'export report' or 'export audit'.` | No | n/a | chips |
-| `handlers.py:2128` | `Session cleared. Upload a new file to begin.` | No | n/a |  |
-| `handlers.py:2206` | `No line item exceeded either configured materiality threshold.` | No | n/a | chips |
-| `handlers.py:2226` | `**Material Variances** (Threshold: {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or {format_threshold_pct(cfg.percent_threshold)})` | No | n/a | chips |
-| `handlers.py:2246` | `No {label.lower()} variances found.` | No | n/a | chips |
-| `handlers.py:2267` | `**{label} Variances** ({len(filtered)} item{'s' if len(filtered) != 1 else ''})` | No | n/a | chips |
-| `handlers.py:2285` | `No {type_label(line_type)} rows found.` | No | n/a | chips |
-| `handlers.py:2298` | `**{type_label(line_type)} Items** ({len(filtered)} row{'s' if len(filtered) != 1 else ''})` | No | n/a | chips |
-| `handlers.py:2315` | `Please ask for at least 1 line, for example 'top 3'.` | No | n/a | chips |
-| `handlers.py:2329` | `No {line_type.value if line_type else 'line item'} rows found.` | No | n/a | chips |
-| `handlers.py:2344` | `**Top {count} {line_type.value + ' ' if line_type else ''}Variances by Absolute Amount**` | No | n/a | chips |
-| `handlers.py:2443` | `Multiple matches found. Which one? {'\n'.join((f'• {safe_inline(m)}' for m in matches))}` | No | n/a | chips |
-| `handlers.py:2499` | `Multiple matches: {'\n'.join((f'• {safe_inline(m)}' for m in matches))}` | No | n/a | chips |
-| `handlers.py:2509` | `{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.` | No | n/a | chips |
-| `handlers.py:2545` | `I couldn't parse those thresholds. Use: 'threshold $10,000 or 5%', or adjust one: 'threshold $25,000' or 'threshold 8%'` | No | n/a | chips |
-| `handlers.py:2555` | `Materiality thresholds are not fully specified. Please enter both: '$10,000 or 5%'` | No | n/a | chips |
-| `handlers.py:2593` | `No data quality warnings.` | No | n/a | chips |
-| `handlers.py:2771` | `{written} written to '{safe_inline(str(target) if path.startswith('~') else path)}'.` | No | n/a | chips |
-| `handlers.py:2777` | `Could not write to '{safe_inline(path)}': {display_text(str(exc))}` | No | Yes | chips |
-| `handlers.py:2815` | `Saving to '{safe_inline(path)}' is turned off on this hosted version. Use **{chip}** to download the file instead.` | No | Yes | chips |
-| `handlers.py:3016` | `**No Material Risks Detected** There are zero material unfavorable variances exceeding your thresholds ({format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or {format_threshold_pct(cfg.percent_threshold)}). All revenue targets and expense allocations performed within {_noun(cfg)} tolerance.` | No | n/a | chips |
-| `handlers.py:3083` | `**No Material Favorable Variances** No line items exceeded the favorable materiality thresholds. Check 'summary' or lower thresholds with 'threshold $X or Y%' to explore smaller variances.` | No | n/a | chips |
-| `handlers.py:3126` | `No classified Revenue rows exist in this dataset.` | No | n/a | chips |
-| `handlers.py:3133` | `Total revenue cannot be certified because there are still unclassified line items. Classify them first.` | No | Yes | chips |
-| `handlers.py:3192` | `No classified Expense rows exist in this dataset.` | No | n/a | chips |
-| `handlers.py:3199` | `Total expenses cannot be certified because there are still unclassified line items.` | No | Yes | chips |
-| `handlers.py:3311` | `No line items with a non-zero {_noun(cfg)} were found.` | No | n/a | chips |
-| `handlers.py:3331` | `**Top Line Items by Percentage Variance** (Largest relative swings):` | No | n/a | chips |
-| `handlers.py:3484` | `Could not find a line item matching '{safe_inline(name1)}'.` | No | n/a | chips |
-| `handlers.py:3490` | `Could not find a line item matching '{safe_inline(name2)}'.` | No | n/a | chips |
-| `handlers.py:3497` | `Multiple matches for '{safe_inline(name1)}': {', '.join(matches1)}. Please be more specific.` | No | n/a | chips |
-| `handlers.py:3503` | `Multiple matches for '{safe_inline(name2)}': {', '.join(matches2)}. Please be more specific.` | No | n/a | chips |
-| `handlers.py:3516` | `Comparing '**{safe_inline(row1.line_item)}**' against itself. Account details:` | No | n/a | chips |
-| `handlers.py:3536` | `**Side-by-Side Comparison: {safe_inline(row1.line_item)} vs. {safe_inline(row2.line_item)}** {lead}` | No | n/a | chips |
-| `handlers.py:3555` | `**Zero Variance Volatility:** All line items performed exactly to {_noun(cfg)}.` | No | n/a | chips |
-| `handlers.py:3615` | `**No {wording.heading}:** {wording.empty_state}` | No | n/a | chips |
-| `handlers.py:3667` | `**No Cost Savings:** No expense accounts operated below their budgeted allocation.` | No | n/a | chips |
-| `handlers.py:3717` | `**No Revenue Misses:** All revenue accounts met or exceeded the {_noun(cfg)}.` | No | n/a | chips |
-| `handlers.py:3862` | `No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) or a PDF filing first.` | No | n/a | chips |
-| `handlers.py:3871` | `The uploaded file **'{safe_inline(session.source_name)}'** is a {suffix.upper().lstrip('.')} file, which contains a single dataset rather than multiple worksheets.` | No | n/a | chips |
-| `handlers.py:3885` | `No readable {word}s found in '{safe_inline(session.source_name)}'.` | No | n/a |  |
-| `handlers.py:3917` | `No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) or a PDF filing first.` | No | n/a |  |
-| `handlers.py:3925` | `The uploaded file **'{safe_inline(session.source_name)}'** is a {suffix.upper().lstrip('.')} file, which does not have multiple worksheets.` | No | n/a |  |
-| `handlers.py:3963` | `{word.capitalize()} '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'. Available {word}s: {available_str}.` | No | Yes | chips |
-| `handlers.py:3972` | `{word.capitalize()} **'{safe_inline(matched_sheet)}'** is already active.` | No | n/a | chips |
-| `handlers.py:4000` | `Failed to load {word} '{safe_inline(matched_sheet)}': {plain_err}` | No | Yes | chips |
-| `handlers.py:4040` | `Switched to {word} **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}). Current reporting period: **{safe_inline(session.period or 'Not set')}**.` | No | n/a |  |
-| `handlers.py:4051` | `Upload a workbook first; I'll ask about hidden rows if it has any.` | No | n/a |  |
-| `handlers.py:4076` | `Got it. I will compare Actual against the {noun} once you upload a file.` | No | n/a |  |
-| `handlers.py:4095` | `Could not compare against the {noun}: {plain_analysis_error(technical)}` | No | Yes | chips |
-| `handlers.py:4137` | `Please specify a simulation amount or percentage (e.g., 'what if revenue drops 5%?' or 'what if marketing increases $20,000?').` | No | n/a | chips |
-| `handlers.py:4169` | `Could not parse numeric amount from '{safe_inline(raw_amount)}'.` | No | n/a | chips |
-| `handlers.py:4180` | `A drop of more than 100% would take {safe_inline(target_clean)} below zero, which is not a meaningful scenario. Try a smaller percentage or a dollar amount.` | No | n/a | chips |
-| `handlers.py:4202` | `Could not identify target '{safe_inline(target_clean)}'. You can simulate 'revenue', 'expenses', or a specific line item from your data.` | No | n/a | chips |
-| `handlers.py:4210` | `**{safe_inline(matched_row.line_item)}** is not classified as Revenue or Expense, so I cannot tell whether a change helps or hurts profit. Classify it first: type 'new', upload the file again and label it when asked, or add a Type column to your file.` | No | n/a | chips |
-| `handlers.py:4799` | `I am ready to explore **{safe_inline(session.result.config.period)}** from this filing. Type 'summary' for its own printed totals, or drill into any line (e.g. 'why {safe_inline(session.result.rows[0].line_item)}').` | No | n/a |  |
-| `handlers.py:5037` | `Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}: • **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)} • **Actual:** {format_money(row.actual, cfg.currency, places)} • **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** ({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc}) Would you like to inspect its causal driver decomposition ('why {safe_inline(row.line_item)}') or simulate a change ('what if {safe_inline(row.line_item)} drops 5%')?` | No | n/a | chips |
-| `handlers.py:5062` | `**Note:** Net operating impact measures the overall variance contribution toward operating profit. Under standard financial rules, profit measures are not treated as additive revenue to prevent double-counting. Try asking: 'summary', 'what is net impact?', or 'totals'.` | No | n/a | chips |
-| `handlers.py:5073` | `**Note:** This analysis evaluates actual performance against {baseline} for the closed reporting period. To project full-year outcomes based on current pace, ask for 'run rate' or test scenarios with 'what if revenue drops 5%?'.` | No | n/a | chips |
-| `handlers.py:5092` | `I want to make sure I provide the exact figures you need. I couldn't find an account matching "{safe_inline(text if len(text) <= 80 else text[:80] + '…')}" in your current dataset. Here are a few ways we can explore your numbers: • **Account Driver Breakdown:** Ask 'why [Account Name]' (e.g. 'why {safe_inline(first_item)}') • **Profit Waterfall:** Ask for 'waterfall' to reconcile {noun} to actual operating profit • **Scenario Analysis:** Try 'what if revenue drops 5%?' or 'sensitivity' • **Management Commentary:** Ask for 'memo' or 'tldr' for executive highlights` | No | n/a | chips |
-| `handlers.py:5235` | `Choose Higher or Lower for this measure.` | No | n/a | chips |
-| `handlers.py:5242` | `Choose how to read bare rates before the analysis.` | No | n/a | chips |
-| `handlers.py:5249` | `Threshold must be non-negative.` | No | **No** | caught where it is raised |
-| `handlers.py:5251` | `Enter a non-negative numeric threshold, such as 25.` | No | n/a |  |
+| `handlers.py:626` | `I couldn't compare these metrics. Upload the covenant schedule again, or type 'new' to start over.` | No | Yes |  |
+| `handlers.py:638` | `This file has no {words} to compare. Upload a 10-K or 10-Q from EDGAR, and I'll read its statements.` | No | n/a |  |
+| `handlers.py:648` | `Upload a file with Actual, {needs}, and I'll compare each row against its {header.lower()}.` | No | n/a |  |
+| `handlers.py:663` | `'{safe_inline(filename)}' {_half_wording(missing, key)}` | No | n/a |  |
+| `handlers.py:697` | `'{safe_inline(filename)}' replaces '{safe_inline(held_name)}': it {wording}` | No | n/a |  |
+| `handlers.py:709` | `I couldn't join these two files. Upload them again, or upload one file that holds both the comparison and Actual.` | No | Yes |  |
+| `handlers.py:741` | `{message.removesuffix(JOIN_FIX)}Choose **{chip}** to read them with a {basis_noun(basis)} of 0, or upload a corrected file.` | No | Yes | chips |
+| `handlers.py:756` | `I couldn't join these two files. Upload them again, or upload one file that holds both the comparison and Actual.` | No | Yes |  |
+| `handlers.py:781` | `LTM is built from a 10-Q and a 10-K filed on EDGAR. Upload the 10-Q's .htm document first.` | No | n/a |  |
+| `handlers.py:784` | `Upload the 10-K whose fiscal year this 10-Q continues. I'll build LTM as that fiscal year plus this year to date less last year to date, line by line by XBRL concept, and compare it with the fiscal year.` | No | n/a |  |
+| `handlers.py:794` | `I couldn't build LTM from these two filings.` | No | Yes | chips |
+| `handlers.py:959` | `Found **{count}** line item{'s' if count != 1 else ''} with {blanks} (such as {safe_inline(sample)}). Blank amounts cannot stay blank in the analysis, so they are read as 0. {treat}?` | No | n/a | chips |
+| `handlers.py:978` | `Found data for multiple periods in your file. Which period would you like to analyze?` | No | n/a | chips |
+| `handlers.py:1041` | `The reporting period cannot be blank. Please enter a period (e.g., Q3 2026).` | No | n/a |  |
+| `handlers.py:1046` | `Please enter a short period label of up to {_MAX_PERIOD_CHARS} characters (e.g., Q3 2026, October 2026, FY2026).` | No | n/a | chips |
+| `handlers.py:1053` | `'{safe_inline(period)}' looks like a command, not a reporting period. Enter the period this file covers first (e.g., Q3 2026, October 2026, FY2026).` | No | n/a | chips |
+| `handlers.py:1063` | `Period set to: **{safe_inline(period)}** Now set the materiality thresholds. Enter a dollar amount and a percentage, for example: '$10,000 or 5%' Or choose a preset below:` | No | n/a | chips |
+| `handlers.py:1323` | `No line item matching '{display_q}' was found. Did you mean {names}?` | No | n/a | chips |
+| `handlers.py:1331` | `No line item matching '{display_q}' was found. Available items: {items_list}` | No | n/a |  |
+| `handlers.py:1341` | `I couldn't parse those thresholds. Please enter them as: '$10,000 or 5%'` | No | n/a | chips |
+| `handlers.py:1352` | `Thresholds set: **{format_threshold_amount(dollar, session.currency)}** or **{format_threshold_pct(pct_ratio)}** What is the reporting currency?` | No | n/a | chips |
+| `handlers.py:1384` | `Please choose a supported currency: USD, EUR, or GBP.` | No | n/a | chips |
+| `handlers.py:1422` | `'{safe_inline(name)}' looks like the total of the {line_type} lines above it{figures}. A total that doesn't match its lines can't be checked, so I stopped instead of guessing. Leave it out of the line items, or upload a corrected file.` | No | Yes | chips |
+| `handlers.py:1452` | `I need your materiality thresholds first. Enter a dollar amount and a percentage, for example: '$10,000 or 5%'` | No | n/a | chips |
+| `handlers.py:1471` | `{text} {fix}` | No | Yes | chips |
+| `handlers.py:1562` | `Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or expense. **'{item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
+| `handlers.py:1601` | `Rules applied! **{remaining}** item{'s' if remaining != 1 else ''} remaining. **'{item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
+| `handlers.py:1642` | `Please choose Revenue, Expense, or Skip for '{safe_inline(current_item)}'.` | No | n/a | chips |
+| `handlers.py:1655` | `Got it. {remaining} remaining. **'{next_item}'** is not yet labeled revenue or expense. Should it be:` | No | n/a | chips |
+| `handlers.py:1977` | `**Layout Mapping Saved** Here are your confirmed layout settings. Save them as a file to reuse in future months; on the command line, that file is the optional '--mapping' setting: '''json {mapping_json} '''` | No | n/a | chips |
+| `handlers.py:2037` | `A workbook isn't available for this comparison yet. The report and the audit file are; type 'export report' or 'export audit'.` | No | n/a | chips |
+| `handlers.py:2041` | `A workbook isn't available for this comparison yet. The report and the audit file are; type 'export report' or 'export audit'.` | No | n/a | chips |
+| `handlers.py:2124` | `**What you can ask** I compare each line's Actual against your budget, forecast or prior period, flag the gaps big enough to matter, and say whether each one helped or hurt profit. Every figure comes from exact, repeatable calculations, never estimates. It is built for FP&A analysts, controllers and anyone preparing a month-end or quarter-end variance review. **Analysis** • 'memo' / 'briefing': a management briefing on the period, with a download • 'waterfall' / 'bridge': the walk from budget to actual operating profit, step by step • 'what if [line] [+/-X% or $Y]': profit and margin if one line changes • 'sensitivity': operating profit under five revenue and expense swings • 'run rate' / 'project year end': the annualised pace and a latest-estimate projection • 'drivers' / 'driver summary': which lines have driver data, and whether it reconciles • 'biggest risks': the largest material unfavorable variances • 'biggest wins': the largest favorable variances • 'revenue status': revenue against budget, line by line • 'expense status': expenses against budget, and the largest overspends • 'burn rate' / 'budget utilization': the share of the expense budget spent • 'variance concentration' / 'pareto': the share of the total variance in the top three lines • 'unbudgeted spend': lines with spending and no budget • 'cost savings': expense lines below budget • 'revenue misses': revenue lines below budget • 'highest percent': the largest variances in percentage terms • 'compare [line] vs [line]': two lines side by side, actual against budget, or revenue against expenses • 'sheets' / 'sheet <name>': list and switch Excel worksheets or PDF statements • 'metrics': line counts, the material share and the mix of lines **Concepts, any time** • 'what is materiality?': the dollar-or-percent test for what needs explaining • 'favorable vs unfavorable': why a revenue gain and an expense saving are both favorable • 'what is net impact?': how net operating impact is worked out • 'budget vs forecast': how a budget and a latest estimate differ • 'timing vs permanent': variances that reverse and variances that last • 'operating leverage': fixed and variable costs, and drop-through • 'what are financial kpis?': the measures a variance review reports • 'what is driver decomposition?': splitting a variance into price and volume • 'audit trail': what the audit file records, including source fingerprints **Exploring the results** • 'summary': the headline figures and net operating impact • 'material': every material variance • 'unfavorable' / 'favorable': one status only • 'revenue' / 'expenses': one type only • 'top 3': the largest variances by amount • 'totals': revenue and expense totals • 'warnings': data quality notes • 'recommendations': suggested next steps for the largest variances **One line in detail** • 'why [line]': what drove one line's variance • 'detail [line]': everything recorded for one line • 'threshold $X or Y%': run again with different materiality thresholds **Export and session** • 'export report': download the Markdown report • 'export excel': download the Excel workbook • 'export csv': download every row as CSV • 'export audit': download the audit file (JSON) • 'report': show the full report here • 'new': start over with a new file • 'help': show this list` | No | n/a | chips |
+| `handlers.py:2134` | `Session cleared. Upload a new file to begin.` | No | n/a |  |
+| `handlers.py:2212` | `No line item exceeded either configured materiality threshold.` | No | n/a | chips |
+| `handlers.py:2232` | `**Material Variances** (Threshold: {format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or {format_threshold_pct(cfg.percent_threshold)})` | No | n/a | chips |
+| `handlers.py:2252` | `No {label.lower()} variances found.` | No | n/a | chips |
+| `handlers.py:2273` | `**{label} Variances** ({len(filtered)} item{'s' if len(filtered) != 1 else ''})` | No | n/a | chips |
+| `handlers.py:2291` | `No {type_label(line_type)} rows found.` | No | n/a | chips |
+| `handlers.py:2304` | `**{type_label(line_type)} Items** ({len(filtered)} row{'s' if len(filtered) != 1 else ''})` | No | n/a | chips |
+| `handlers.py:2321` | `Please ask for at least 1 line, for example 'top 3'.` | No | n/a | chips |
+| `handlers.py:2335` | `No {line_type.value if line_type else 'line item'} rows found.` | No | n/a | chips |
+| `handlers.py:2350` | `**Top {count} {line_type.value + ' ' if line_type else ''}Variances by Absolute Amount**` | No | n/a | chips |
+| `handlers.py:2449` | `Multiple matches found. Which one? {'\n'.join((f'• {safe_inline(m)}' for m in matches))}` | No | n/a | chips |
+| `handlers.py:2505` | `Multiple matches: {'\n'.join((f'• {safe_inline(m)}' for m in matches))}` | No | n/a | chips |
+| `handlers.py:2515` | `{len(named_rows)} line items are named '{safe_inline(matched_name)}'; here is each one.` | No | n/a | chips |
+| `handlers.py:2551` | `I couldn't parse those thresholds. Use: 'threshold $10,000 or 5%', or adjust one: 'threshold $25,000' or 'threshold 8%'` | No | n/a | chips |
+| `handlers.py:2561` | `Materiality thresholds are not fully specified. Please enter both: '$10,000 or 5%'` | No | n/a | chips |
+| `handlers.py:2599` | `No data quality warnings.` | No | n/a | chips |
+| `handlers.py:2777` | `{written} written to '{safe_inline(str(target) if path.startswith('~') else path)}'.` | No | n/a | chips |
+| `handlers.py:2783` | `Could not write to '{safe_inline(path)}': {display_text(str(exc))}` | No | Yes | chips |
+| `handlers.py:2821` | `Saving to '{safe_inline(path)}' is turned off on this hosted version. Use **{chip}** to download the file instead.` | No | Yes | chips |
+| `handlers.py:3022` | `**No Material Risks Detected** There are zero material unfavorable variances exceeding your thresholds ({format_threshold_amount(cfg.dollar_threshold, cfg.currency)} or {format_threshold_pct(cfg.percent_threshold)}). All revenue targets and expense allocations performed within {_noun(cfg)} tolerance.` | No | n/a | chips |
+| `handlers.py:3089` | `**No Material Favorable Variances** No line items exceeded the favorable materiality thresholds. Check 'summary' or lower thresholds with 'threshold $X or Y%' to explore smaller variances.` | No | n/a | chips |
+| `handlers.py:3132` | `No classified Revenue rows exist in this dataset.` | No | n/a | chips |
+| `handlers.py:3139` | `Total revenue cannot be certified because there are still unclassified line items. Classify them first.` | No | Yes | chips |
+| `handlers.py:3198` | `No classified Expense rows exist in this dataset.` | No | n/a | chips |
+| `handlers.py:3205` | `Total expenses cannot be certified because there are still unclassified line items.` | No | Yes | chips |
+| `handlers.py:3317` | `No line items with a non-zero {_noun(cfg)} were found.` | No | n/a | chips |
+| `handlers.py:3337` | `**Top Line Items by Percentage Variance** (Largest relative swings):` | No | n/a | chips |
+| `handlers.py:3490` | `Could not find a line item matching '{safe_inline(name1)}'.` | No | n/a | chips |
+| `handlers.py:3496` | `Could not find a line item matching '{safe_inline(name2)}'.` | No | n/a | chips |
+| `handlers.py:3503` | `Multiple matches for '{safe_inline(name1)}': {', '.join(matches1)}. Please be more specific.` | No | n/a | chips |
+| `handlers.py:3509` | `Multiple matches for '{safe_inline(name2)}': {', '.join(matches2)}. Please be more specific.` | No | n/a | chips |
+| `handlers.py:3522` | `Comparing '**{safe_inline(row1.line_item)}**' against itself. Account details:` | No | n/a | chips |
+| `handlers.py:3542` | `**Side-by-Side Comparison: {safe_inline(row1.line_item)} vs. {safe_inline(row2.line_item)}** {lead}` | No | n/a | chips |
+| `handlers.py:3561` | `**Zero Variance Volatility:** All line items performed exactly to {_noun(cfg)}.` | No | n/a | chips |
+| `handlers.py:3621` | `**No {wording.heading}:** {wording.empty_state}` | No | n/a | chips |
+| `handlers.py:3673` | `**No Cost Savings:** No expense accounts operated below their budgeted allocation.` | No | n/a | chips |
+| `handlers.py:3723` | `**No Revenue Misses:** All revenue accounts met or exceeded the {_noun(cfg)}.` | No | n/a | chips |
+| `handlers.py:3862` | `**P&L Variance Bridge (Waterfall Walk)** Reconciling baseline {_heading(cfg)} Operating Profit to Actual Operating Profit for **{safe_inline(session.period or '')}**: • **{_heading(cfg)} Operating Profit**: {format_money(budget_profit, cur, places)} • **Revenue Bridge Impact**: {format_money(rev_impact, cur, places)} ({rev_status}) • **Expense Bridge Impact**: {format_money(exp_impact, cur, places)} ({exp_status}) • **Actual Operating Profit**: {format_money(actual_profit, cur, places)} • **Net Profit Variance**: {format_money(net_var, cur, places)} ({status_text}) Each line item's contribution to operating profit is displayed in the bridge table below (positive values expand profit; negative values contract profit):` | No | n/a | chips |
+| `handlers.py:3868` | `No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) or a PDF filing first.` | No | n/a | chips |
+| `handlers.py:3877` | `The uploaded file **'{safe_inline(session.source_name)}'** is a {suffix.upper().lstrip('.')} file, which contains a single dataset rather than multiple worksheets.` | No | n/a | chips |
+| `handlers.py:3891` | `No readable {word}s found in '{safe_inline(session.source_name)}'.` | No | n/a |  |
+| `handlers.py:3917` | `**{word.capitalize()}s in '{safe_inline(session.source_name)}' ({len(sheets)} total):** {'\n'.join(sheet_list_md)} To switch {word}s, type '{_sheet_chip(session, '<name>').lower()}' (e.g., '{_sheet_chip(session, safe_inline(sheets[1] if len(sheets) > 1 else sheets[0])).replace('Statement ', 'statement ', 1).replace('Sheet ', 'sheet ', 1)}').` | No | n/a | chips |
+| `handlers.py:3923` | `No file has been uploaded yet. Please upload an Excel workbook (.xlsx or .xlsm) or a PDF filing first.` | No | n/a |  |
+| `handlers.py:3931` | `The uploaded file **'{safe_inline(session.source_name)}'** is a {suffix.upper().lstrip('.')} file, which does not have multiple worksheets.` | No | n/a |  |
+| `handlers.py:3969` | `{word.capitalize()} '{safe_inline(target_sheet)}' was not found in '{safe_inline(session.source_name)}'. Available {word}s: {available_str}.` | No | Yes | chips |
+| `handlers.py:3978` | `{word.capitalize()} **'{safe_inline(matched_sheet)}'** is already active.` | No | n/a | chips |
+| `handlers.py:4006` | `Failed to load {word} '{safe_inline(matched_sheet)}': {plain_err}` | No | Yes | chips |
+| `handlers.py:4046` | `Switched to {word} **'{safe_inline(matched_sheet)}'** ({row_count} data row{'s' if row_count != 1 else ''}). Current reporting period: **{safe_inline(session.period or 'Not set')}**.` | No | n/a |  |
+| `handlers.py:4057` | `Upload a workbook first; I'll ask about hidden rows if it has any.` | No | n/a |  |
+| `handlers.py:4082` | `Got it. I will compare Actual against the {noun} once you upload a file.` | No | n/a |  |
+| `handlers.py:4101` | `Could not compare against the {noun}: {plain_analysis_error(technical)}` | No | Yes | chips |
+| `handlers.py:4143` | `Please specify a simulation amount or percentage (e.g., 'what if revenue drops 5%?' or 'what if marketing increases $20,000?').` | No | n/a | chips |
+| `handlers.py:4175` | `Could not parse numeric amount from '{safe_inline(raw_amount)}'.` | No | n/a | chips |
+| `handlers.py:4186` | `A drop of more than 100% would take {safe_inline(target_clean)} below zero, which is not a meaningful scenario. Try a smaller percentage or a dollar amount.` | No | n/a | chips |
+| `handlers.py:4208` | `Could not identify target '{safe_inline(target_clean)}'. You can simulate 'revenue', 'expenses', or a specific line item from your data.` | No | n/a | chips |
+| `handlers.py:4216` | `**{safe_inline(matched_row.line_item)}** is not classified as Revenue or Expense, so I cannot tell whether a change helps or hurts profit. Classify it first: type 'new', upload the file again and label it when asked, or add a Type column to your file.` | No | n/a | chips |
+| `handlers.py:4798` | `**Causal Driver Models Overview** • **Lines with a reconciled driver model:** **{len(rows_reconciled)}** of **{len(result.rows)}** ({with_data}). • **Material variances covered:** **{coverage_pct}%** have a reconciled driver breakdown. A driver model splits a variance from {_noun(cfg)} into its causes, such as price and volume, or rate and volume.` | No | n/a | chips |
+| `handlers.py:4805` | `I am ready to explore **{safe_inline(session.result.config.period)}** from this filing. Type 'summary' for its own printed totals, or drill into any line (e.g. 'why {safe_inline(session.result.rows[0].line_item)}').` | No | n/a |  |
+| `handlers.py:4856` | `I am ready to explore your **{cfg.period}** financial results. Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}. What would you like to review? You can ask for an 'executive memo', a 'waterfall' walk, 'run rate' projections, or drill down into any account (e.g. 'why {safe_inline(session.result.rows[0].line_item)}').` | No | n/a | chips |
+| `handlers.py:4856` | `Your file has been validated and loaded. Which reporting period does it cover? For example 'Q3 2026' or 'August 2026'.` | No | n/a | chips |
+| `handlers.py:4856` | `Next come the materiality thresholds: a dollar amount and a percentage, for example '$10,000 or 5%'.` | No | n/a | chips |
+| `handlers.py:4856` | `What currency are these figures reported in? For example 'USD', 'EUR' or 'GBP'.` | No | n/a | chips |
+| `handlers.py:4856` | `Some lines are not yet labeled revenue or expense. Choose 'Revenue', 'Expense' or 'Skip' for the line named above.` | No | n/a | chips |
+| `handlers.py:4856` | `**Welcome to the Variance Analysis Agent.** Every figure comes from exact, repeatable calculations. Drop a CSV, JSON or Excel workbook above to start, or ask about a variance concept.` | No | n/a | chips |
+| `handlers.py:4867` | `You're very welcome! Always glad to assist with institutional FP&A rigor. Feel free to test scenario simulations (e.g. 'what if revenue drops 5%?'), inspect causal drivers, or export the executive commentary memo whenever you're ready.` | No | n/a | chips |
+| `handlers.py:4890` | `**Institutional Variance Analysis Agent** I am an intelligent, deterministic financial analysis assistant built specifically for FP&A teams, controllers, and CFO organizations. **How I differ from a non-deterministic LLM:** • **100% Deterministic Calculations**: Zero hallucination. Every variance, percentage, and waterfall step is computed with 50-digit exact Decimal precision. • **Source Fingerprints**: Every analysis produces a SHA-256 fingerprint of the file it came from, for traceability. • **Conversational Fluency**: I interpret natural business queries, multi-turn follow-ups, and scenarios, giving you the ease of a conversational AI with the trustworthiness of an audited ledger. • **No AI Model In The Loop**: The calculations use standard-library Python and no language model sees or computes your numbers. {where}` | No | n/a | chips |
+| `handlers.py:4964` | `**The Executive TL;DR for {cfg.period}:** Operating Profit finished at **{format_money(actual_profit, cur, places)}**, {outcome} with operating margin standing at **{_pct_text(margin)}**. {revenue_clause}, while {expense_clause}.{driver_context}` | No | n/a | chips |
+| `handlers.py:5043` | `Here is what happened with **{safe_inline(row.line_item)}** in {cfg.period}: • **{_heading(cfg)}:** {format_money(row.budget, cfg.currency, places)} • **Actual:** {format_money(row.actual, cfg.currency, places)} • **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** ({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc}) Would you like to inspect its causal driver decomposition ('why {safe_inline(row.line_item)}') or simulate a change ('what if {safe_inline(row.line_item)} drops 5%')?` | No | n/a | chips |
+| `handlers.py:5068` | `**Note:** Net operating impact measures the overall variance contribution toward operating profit. Under standard financial rules, profit measures are not treated as additive revenue to prevent double-counting. Try asking: 'summary', 'what is net impact?', or 'totals'.` | No | n/a | chips |
+| `handlers.py:5079` | `**Note:** This analysis evaluates actual performance against {baseline} for the closed reporting period. To project full-year outcomes based on current pace, ask for 'run rate' or test scenarios with 'what if revenue drops 5%?'.` | No | n/a | chips |
+| `handlers.py:5098` | `I want to make sure I provide the exact figures you need. I couldn't find an account matching "{safe_inline(text if len(text) <= 80 else text[:80] + '…')}" in your current dataset. Here are a few ways we can explore your numbers: • **Account Driver Breakdown:** Ask 'why [Account Name]' (e.g. 'why {safe_inline(first_item)}') • **Profit Waterfall:** Ask for 'waterfall' to reconcile {noun} to actual operating profit • **Scenario Analysis:** Try 'what if revenue drops 5%?' or 'sensitivity' • **Management Commentary:** Ask for 'memo' or 'tldr' for executive highlights` | No | n/a | chips |
+| `handlers.py:5230` | `For **{safe_inline(name)}**, is Higher or Lower better?` | No | n/a | chips |
+| `handlers.py:5230` | `For **{safe_inline(name)}**, read {safe_inline(bare[0])} as {percent}%? Confirm fractions, or keep bare numbers as percentage points.` | No | n/a | chips |
+| `handlers.py:5230` | `What absolute threshold in {unit} should flag {kind} variances? Enter a non-negative number.` | No | n/a | chips |
+| `handlers.py:5241` | `Choose Higher or Lower for this measure.` | No | n/a | chips |
+| `handlers.py:5248` | `Choose how to read bare rates before the analysis.` | No | n/a | chips |
+| `handlers.py:5255` | `Threshold must be non-negative.` | No | **No** | caught where it is raised |
+| `handlers.py:5257` | `Enter a non-negative numeric threshold, such as 25.` | No | n/a |  |
 
 ### `chat/server.py`
 
@@ -242,30 +260,30 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `server.py:388` | `Expected a JSON object with a text string.` | No | **No** | protocol reply |
 | `server.py:392` | `Empty message.` | No | **No** | protocol reply |
 | `server.py:413` | `Invalid Content-Length.` | No | **No** | protocol reply |
-| `server.py:417` | `Request body is too large.` | No | **No** |  |
-| `server.py:425` | `The upload arrived too slowly. Please try again.` | No | Yes |  |
-| `server.py:479` | `Static file not found: {filename}` | No | **No** | protocol reply |
+| `server.py:418` | `That file is larger than the {MAX_INPUT_BYTES // (1024 * 1024)} MiB the chat accepts. Save just the sheet with the statement as a new file and upload that.` | No | Yes |  |
+| `server.py:429` | `The upload arrived too slowly. Please try again.` | No | Yes |  |
+| `server.py:483` | `Static file not found: {filename}` | No | **No** | protocol reply |
 
 ### `excel.py`
 
 | Source | Message Text | Jargon? | Offers Fix? | Notes / Jargon Rationale |
 |---|---|---|---|---|
-| `excel.py:345` | `Excel XML exceeds the supported depth ({MAX_XML_DEPTH}).` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'XML' |
-| `excel.py:350` | `Excel physical rows must increase within 1..{MAX_ROWS}.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:378` | `Excel worksheet exceeds the supported cell count ({MAX_CELLS}).` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:387` | `Excel cell contains an invalid physical coordinate.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:393` | `Excel cell coordinate conflicts with its physical row.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:396` | `Excel physical coordinates exceed {MAX_ROWS} rows or {MAX_COLUMNS} columns.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:399` | `Excel physical cell columns must be strictly increasing.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:411` | `Excel numeric literal exceeds the supported length.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:505` | `Excel archive exceeds {MAX_ARCHIVE_MEMBERS} members.` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'archive' |
-| `excel.py:507` | `Excel archive contains duplicate member paths.` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'archive' |
-| `excel.py:509` | `Excel archive exceeds the 64 MiB expanded size limit.` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'archive' |
-| `excel.py:520` | `Excel part {member.filename} exceeds {_MAX_AUXILIARY_PART_BYTES // (1024 * 1024)} MiB.` | No | n/a | shown after "Could not read Excel file ..." |
-| `excel.py:528` | `Excel archive exceeds the 64 MiB expanded size limit.` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'archive' |
-| `excel.py:530` | `Excel XML DTD and entity declarations are forbidden.` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'XML' |
-| `excel.py:537` | `Invalid Excel archive: {exc}` | **Yes** | n/a | shown after "Could not read Excel file ..."; word 'archive' |
-| `excel.py:544` | `Excel numeric cell is missing its stored decimal representation.` | No | n/a | shown after "Could not read Excel file ..." |
+| `excel.py:345` | `A sheet in the workbook is nested more than {MAX_XML_DEPTH} levels deep, more than I can read.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:350` | `Excel physical rows must increase within 1..{MAX_ROWS}.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:378` | `Excel worksheet exceeds the supported cell count ({MAX_CELLS}).` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:387` | `Excel cell contains an invalid physical coordinate.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:393` | `Excel cell coordinate conflicts with its physical row.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:396` | `Excel physical coordinates exceed {MAX_ROWS} rows or {MAX_COLUMNS} columns.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:399` | `Excel physical cell columns must be strictly increasing.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:411` | `Excel numeric literal exceeds the supported length.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:505` | `The workbook holds more than {MAX_ARCHIVE_MEMBERS} parts, more than I can read.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:507` | `The workbook holds two parts with the same name, so it is damaged.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:509` | `The workbook is larger than 64 MiB once unpacked, more than I can read.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:520` | `Excel part {member.filename} exceeds {_MAX_AUXILIARY_PART_BYTES // (1024 * 1024)} MiB.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:528` | `The workbook is larger than 64 MiB once unpacked, more than I can read.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:530` | `The workbook declares entities of its own, which workbooks saved by Excel don't, so this reader refuses it.` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:538` | `The workbook is damaged and can't be opened ({exc}).` | No | **No** | replaced in the chat by intake's workbook refusal |
+| `excel.py:545` | `Excel numeric cell is missing its stored decimal representation.` | No | n/a | shown after "Could not read Excel file ..." |
 
 ### `intake.py`
 
@@ -286,27 +304,31 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `intake.py:722` | `{line_item}: field '{field}' exceeds the supported numeric length.` | No | n/a | shown under "Fix these cells and upload the file again" |
 | `intake.py:1310` | `Excel files require the optional Excel tools. Please install with: pip install 'variance-analysis-agent[excel]'` | No | Yes | a clause another message completes |
 | `intake.py:1630` | `I could not read '{filename}' as text. Save it as a UTF-8 CSV (in Excel: Save As, then CSV UTF-8) and upload it again.` | No | Yes |  |
-| `intake.py:1732` | `The file '{filename}' exceeds the supported file size limit of 32 MiB.` | No | **No** |  |
-| `intake.py:1792` | `Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), a CSV, TSV, JSON or PDF file.` | No | Yes |  |
-| `intake.py:1838` | `'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read.` | No | **No** |  |
-| `intake.py:1843` | `'{filename}' has more rows or cells than I can read (limits: {MAX_ROWS} rows and {MAX_CELLS} cells).` | No | **No** |  |
-| `intake.py:1849` | `I could not split '{filename}' into columns: {exc}.` | No | **No** |  |
-| `intake.py:1933` | `Could not read JSON data from '{filename}': {exc}` | No | **No** |  |
-| `intake.py:1980` | `The Excel workbook '{filename}' contains no worksheets.` | No | **No** |  |
-| `intake.py:2019` | `Worksheet '{chosen_sheet}' was not found in '{filename}'. Available sheets: {', '.join(sheetnames)}.` | No | **No** |  |
-| `intake.py:2110` | `Could not read Excel file '{filename}': {exc}` | No | **No** |  |
-| `intake.py:2370` | `Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named or repr(sheet_name)}.` | **Yes** | Yes | repr quoting |
-| `intake.py:2382` | `has lines hidden in Excel, and leaving lines out would break the statement's subtotals. Count them, or unhide them` | No | Yes | a clause another message completes |
-| `intake.py:2385` | `shows some amounts scaled by their number format, so their unit can't be read from the caption. Give the amounts a plain number format` | No | Yes | a clause another message completes |
-| `intake.py:2388` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Choose the income statement's sheet instead.` | No | Yes |  |
-| `intake.py:2411` | `Sheet '{sheet_name}' {problem}, and upload the file again.` | No | Yes |  |
-| `intake.py:2507` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
-| `intake.py:2566` | `'{names_by_line[at]}' prints no figure for {chosen.labels[column]} in the {chosen.name}, and no subtotal there confirms it is 0, so I stopped instead of guessing. Choose another statement from this filing.` | No | Yes |  |
-| `intake.py:2658` | `I couldn't check the {chosen.name}.` | No | **No** |  |
-| `intake.py:2975` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}.` | No | **No** |  |
-| `intake.py:2987` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet.{instead}` | No | **No** |  |
-| `intake.py:3089` | `The file '{filename}' contains no data.` | No | **No** |  |
-| `intake.py:3149` | `Sheet '{sheet_name}' has no separate table in {excel.block}.` | No | **No** |  |
+| `intake.py:1732` | `The file '{filename}' exceeds the supported file size limit of 32 MiB. Save just the sheet with the statement as a new file and upload that.` | No | Yes |  |
+| `intake.py:1793` | `Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), a CSV, TSV, JSON or PDF file.` | No | Yes |  |
+| `intake.py:1839` | `'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read. Delete the columns the analysis doesn't need and upload the file again.` | No | Yes |  |
+| `intake.py:1845` | `'{filename}' has more rows or cells than I can read (limits: {MAX_ROWS} rows and {MAX_CELLS} cells). Save just the rows the analysis needs as a new file and upload that.` | No | Yes |  |
+| `intake.py:1852` | `I could not split '{filename}' into columns: {str(exc).rstrip('.')}. Save it from Excel as CSV and upload that.` | No | Yes |  |
+| `intake.py:1937` | `Could not read JSON data from '{filename}': {str(exc).rstrip('.')}. Save the table as CSV or Excel and upload that instead.` | No | Yes |  |
+| `intake.py:1977` | `The Excel file '{filename}' has a worksheet larger than I can read (at most {MAX_ROWS} rows and {MAX_CELLS} cells on any sheet, hidden sheets included). Export the sheet you need to CSV, or save a copy without the large sheet.` | No | Yes |  |
+| `intake.py:1977` | `The Excel file '{filename}' could not be opened safely. Open it in Excel, save it again as .xlsx, and upload that.` | No | Yes |  |
+| `intake.py:1986` | `The Excel workbook '{filename}' contains no worksheets. Open it in Excel, check that it holds the statement, then save it and upload it again.` | No | Yes |  |
+| `intake.py:2026` | `Worksheet '{chosen_sheet}' was not found in '{filename}'. Available sheets: {', '.join(sheetnames)}. Choose one of those sheets.` | No | Yes |  |
+| `intake.py:2117` | `Could not read Excel file '{filename}': {str(exc).rstrip('.')}. Open it in Excel, save the sheet with the statement as a new workbook, and upload that.` | No | Yes |  |
+| `intake.py:2378` | `Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named}.` | No | Yes |  |
+| `intake.py:2390` | `has lines hidden in Excel, and leaving lines out would break the statement's subtotals. Count them, or unhide them` | No | Yes | a clause another message completes |
+| `intake.py:2393` | `shows some amounts scaled by their number format, so their unit can't be read from the caption. Give the amounts a plain number format` | No | Yes | a clause another message completes |
+| `intake.py:2396` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Choose the income statement's sheet instead.` | No | Yes |  |
+| `intake.py:2419` | `Sheet '{sheet_name}' {problem}, and upload the file again.` | No | Yes |  |
+| `intake.py:2515` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
+| `intake.py:2574` | `'{names_by_line[at]}' prints no figure for {chosen.labels[column]} in the {chosen.name}, and no subtotal there confirms it is 0, so I stopped instead of guessing. Choose another statement from this filing.` | No | Yes |  |
+| `intake.py:2666` | `I couldn't check the {chosen.name}. Upload a CSV or Excel copy of the statement instead.` | No | Yes |  |
+| `intake.py:2984` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
+| `intake.py:2995` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Upload the income statement instead, or a CSV or Excel copy of it.` | No | Yes |  |
+| `intake.py:3099` | `The file '{filename}' contains no data. Upload a file with a header row (such as Line Item, Budget, Actual) and at least one line.` | No | Yes |  |
+| `intake.py:3145` | `Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' (a Forecast or Prior Year column can stand in for Budget). Add a header row that names those columns, and upload the file again.{hint}` | No | Yes |  |
+| `intake.py:3145` | `Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, and Actual columns in '{filename}'. Add a header row that names those columns, and upload the file again.` | No | Yes |  |
+| `intake.py:3163` | `Sheet '{sheet_name}' has no separate table in {excel.block}. Choose one of its tables: {tables_named}.` | No | Yes |  |
 
 ### `ixbrl.py`
 
@@ -322,11 +344,11 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `ixbrl.py:258` | `the filing has more figures than can be read` | No | **No** | a clause another message completes |
 | `ixbrl.py:270` | `the filing has more tables than can be read` | No | **No** | a clause another message completes |
 | `ixbrl.py:277` | `a table in the filing has more rows than can be read` | No | **No** | a clause another message completes |
-| `ixbrl.py:456` | `'{filename}' declares an XML entity or document type subset, which this reader refuses. Upload a CSV or Excel copy of the statement, or the filing's PDF.` | **Yes** | Yes | word 'XML' |
+| `ixbrl.py:456` | `'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.` | No | Yes |  |
 | `ixbrl.py:466` | `'{filename}' is a web page without Inline XBRL figures, so it has no statements I can find. Upload the filing's 10-K or 10-Q document from its EDGAR folder, its PDF, or a CSV or Excel table.` | No | Yes |  |
 | `ixbrl.py:523` | `The financial statements aren't in '{filename}' itself: it points to {elsewhere}, the annual report that holds them. Upload that document from the same EDGAR filing, or the statements as Excel or CSV.` | No | Yes |  |
 | `ixbrl.py:526` | `I could not find the financial statements in '{filename}': no table there is titled as an income statement, balance sheet or cash flow statement and holds their tagged figures. If the filing puts them in another document (often Exhibit 13, the annual report), upload that document from the same EDGAR filing; otherwise upload the statements as Excel or CSV.` | No | Yes |  |
-| `ixbrl.py:645` | `'{filename}' declares an XML entity or document type subset, which this reader refuses.` | **Yes** | **No** | word 'XML' |
+| `ixbrl.py:645` | `'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.` | No | Yes |  |
 
 ### `join.py`
 
@@ -343,14 +365,14 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 |---|---|---|---|---|
 | `ltm.py:82` | `No statement called '{sheet}' was found in '{quarter_name}'. Statements found: {', '.join((s.name for s in quarter_statements))}. Choose one of those statements.` | No | Yes |  |
 | `ltm.py:86` | `LTM is built for income statements: a cash flow statement's beginning and ending cash are balances, which don't add across periods. Choose the income statement, or compare the cash flow statement on its own.` | No | Yes |  |
-| `ltm.py:97` | `'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from.` | No | **No** |  |
-| `ltm.py:99` | `'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. --ltm-from takes the 10-K whose year the 10-Q continues.` | **Yes** | **No** | flag --ltm-from |
-| `ltm.py:102` | `'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built.` | No | **No** |  |
-| `ltm.py:124` | `'{quarter_name}' reports in {q_read.document_currency} and '{annual_name}' in {k_read.document_currency}; LTM adds them, so give two filings in one currency.` | No | Yes |  |
-| `ltm.py:127` | `'{quarter_name}' reports its amounts in {currency}. This tool reports in USD, EUR or GBP only and converts no currency.` | No | **No** |  |
-| `ltm.py:134` | `'{name}' ({concept}) is in '{quarter_name}' but not in '{annual_name}', so LTM can't be built line by line without changing a total. Compare the 10-Q on its own instead.` | No | Yes |  |
-| `ltm.py:138` | `'{name}' ({concept}) is in '{annual_name}' but not in '{quarter_name}', so LTM can't be built line by line without changing a total. Compare the 10-Q on its own instead.` | No | Yes |  |
-| `ltm.py:152` | `'{name}' reads as {str(row.get('type')).lower()} in '{quarter_name}' but as {str(k_row.get('type')).lower()} in '{annual_name}', so LTM can't add them. Compare the 10-Q on its own instead.` | No | Yes |  |
+| `ltm.py:97` | `'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from. Compare the 10-Q on its own instead.` | No | Yes |  |
+| `ltm.py:100` | `'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. Give the 10-K whose fiscal year the 10-Q continues instead.` | No | Yes |  |
+| `ltm.py:103` | `'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built. Compare the 10-Q on its own instead.` | No | Yes |  |
+| `ltm.py:126` | `'{quarter_name}' reports in {q_read.document_currency} and '{annual_name}' in {k_read.document_currency}; LTM adds them, so give two filings in one currency.` | No | Yes |  |
+| `ltm.py:129` | `'{quarter_name}' reports its amounts in {currency}. This tool reports in USD, EUR or GBP only and converts no currency. Use filings that report in one of those to build LTM.` | No | Yes |  |
+| `ltm.py:136` | `'{name}' ({concept}) is in '{quarter_name}' but not in '{annual_name}', so LTM can't be built line by line without changing a total. Compare the 10-Q on its own instead.` | No | Yes |  |
+| `ltm.py:140` | `'{name}' ({concept}) is in '{annual_name}' but not in '{quarter_name}', so LTM can't be built line by line without changing a total. Compare the 10-Q on its own instead.` | No | Yes |  |
+| `ltm.py:154` | `'{name}' reads as {str(row.get('type')).lower()} in '{quarter_name}' but as {str(k_row.get('type')).lower()} in '{annual_name}', so LTM can't add them. Compare the 10-Q on its own instead.` | No | Yes |  |
 
 ### `metrics.py`
 
@@ -363,25 +385,25 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `metrics.py:71` | `metric '{name}' appears twice.` | No | **No** | a clause another message completes |
 | `metrics.py:75` | `measure must be Currency or Multiple (metric '{name}').` | No | **No** | a clause another message completes |
 | `metrics.py:78` | `better must be Higher or Lower (metric '{name}').` | No | **No** | a clause another message completes |
-| `metrics.py:85` | `{key} must be a non-empty list of terms (metric '{metric}').` | No | **No** |  |
-| `metrics.py:90` | `unknown key '{extra[0]}' in a term of metric '{metric}'.` | No | **No** | a clause another message completes |
-| `metrics.py:93` | `each term names a concept or a label, not both (metric '{metric}').` | No | **No** | a clause another message completes |
-| `metrics.py:95` | `statement must be income, balance_sheet or cash_flow (metric '{metric}').` | **Yes** | **No** | a clause another message completes; snake_case 'balance_sheet' |
-| `metrics.py:97` | `period must be instant, fy, ytd or ltm (metric '{metric}').` | No | **No** | a clause another message completes |
-| `metrics.py:99` | `sign must be 1 or -1 (metric '{metric}').` | No | **No** | a clause another message completes |
-| `metrics.py:125` | `The filings report in {' and '.join(codes)}; a metric adds their figures, so give filings in one currency.` | No | Yes |  |
-| `metrics.py:129` | `'{primary_name}' reports its amounts in {self.currency}. This tool reports in USD, EUR or GBP only and converts no currency.` | No | **No** |  |
-| `metrics.py:153` | `the {_STATEMENTS[term.statement]} statement of '{document}' couldn't be read: {read.fatal_error_message}` | No | **No** | a clause another message completes |
-| `metrics.py:160` | `no line {named} on the {_STATEMENTS[term.statement]} statement for {term.period}, so it can't be computed` | No | **No** | a clause another message completes |
-| `metrics.py:163` | `more than one line {named} on the {_STATEMENTS[term.statement]} statement, so the term is ambiguous` | No | **No** | a clause another message completes |
-| `metrics.py:172` | `a balance sheet line takes period instant, and only a balance sheet line does` | No | **No** | a clause another message completes |
-| `metrics.py:178` | `'{line['line_item']}' prints no figure in that column of '{document}'` | No | **No** | a clause another message completes |
-| `metrics.py:189` | `'{primary}' has no balance sheet` | No | **No** | a clause another message completes |
-| `metrics.py:198` | `'{document}' has no {which} {_STATEMENTS[term.statement]} statement` | No | **No** | a clause another message completes |
-| `metrics.py:203` | `an ltm term needs --ltm-from with the 10-K` | **Yes** | **No** | a clause another message completes; flag --ltm-from |
-| `metrics.py:207` | `LTM needs the {_STATEMENTS[term.statement]} statement for the fiscal year and both years to date` | No | **No** | a clause another message completes |
-| `metrics.py:217` | `'{line['line_item']}' is a cash balance, which doesn't add across periods, so it can't be an LTM term` | No | **No** | a clause another message completes |
-| `metrics.py:312` | `No metric could be computed. {' '.join((f'{n}.' for n in notes))}` | No | **No** |  |
+| `metrics.py:85` | `{key} must be a non-empty list of terms (metric '{metric}'). List at least one term for it in the metrics file.` | No | Yes |  |
+| `metrics.py:91` | `unknown key '{extra[0]}' in a term of metric '{metric}'.` | No | **No** | a clause another message completes |
+| `metrics.py:94` | `each term names a concept or a label, not both (metric '{metric}').` | No | **No** | a clause another message completes |
+| `metrics.py:96` | `statement must be income, balance_sheet or cash_flow (metric '{metric}').` | **Yes** | **No** | a clause another message completes; snake_case 'balance_sheet' |
+| `metrics.py:98` | `period must be instant, fy, ytd or ltm (metric '{metric}').` | No | **No** | a clause another message completes |
+| `metrics.py:100` | `sign must be 1 or -1 (metric '{metric}').` | No | **No** | a clause another message completes |
+| `metrics.py:126` | `The filings report in {' and '.join(codes)}; a metric adds their figures, so give filings in one currency.` | No | Yes |  |
+| `metrics.py:130` | `'{primary_name}' reports its amounts in {self.currency}. This tool reports in USD, EUR or GBP only and converts no currency. Use filings that report in one of those.` | No | Yes |  |
+| `metrics.py:154` | `the {_STATEMENTS[term.statement]} statement of '{document}' couldn't be read: {read.fatal_error_message}` | No | **No** | a clause another message completes |
+| `metrics.py:161` | `no line {named} on the {_STATEMENTS[term.statement]} statement for {term.period}, so it can't be computed` | No | **No** | a clause another message completes |
+| `metrics.py:164` | `more than one line {named} on the {_STATEMENTS[term.statement]} statement, so the term is ambiguous` | No | **No** | a clause another message completes |
+| `metrics.py:173` | `a balance sheet line takes period instant, and only a balance sheet line does` | No | **No** | a clause another message completes |
+| `metrics.py:179` | `'{line['line_item']}' prints no figure in that column of '{document}'` | No | **No** | a clause another message completes |
+| `metrics.py:190` | `'{primary}' has no balance sheet` | No | **No** | a clause another message completes |
+| `metrics.py:199` | `'{document}' has no {which} {_STATEMENTS[term.statement]} statement` | No | **No** | a clause another message completes |
+| `metrics.py:204` | `an ltm term needs --ltm-from with the 10-K` | **Yes** | **No** | a clause another message completes; flag --ltm-from |
+| `metrics.py:208` | `LTM needs the {_STATEMENTS[term.statement]} statement for the fiscal year and both years to date` | No | **No** | a clause another message completes |
+| `metrics.py:218` | `'{line['line_item']}' is a cash balance, which doesn't add across periods, so it can't be an LTM term` | No | **No** | a clause another message completes |
+| `metrics.py:313` | `No metric could be computed. Check that each metric names figures the filing reports. {' '.join((f'{n}.' for n in notes))}` | No | Yes |  |
 
 ### `parsing.py`
 
@@ -408,10 +430,10 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `parsing.py:169` | `CSV row {reader.line_num}: column count does not match header.` | No | **No** | strict reader (command line and API) |
 | `parsing.py:171` | `CSV row {reader.line_num}: data appears under a blank header.` | No | **No** | strict reader (command line and API) |
 | `parsing.py:174` | `CSV exceeds the supported row or cell count.` | No | **No** | strict reader (command line and API) |
-| `parsing.py:182` | `Duplicate JSON key: {key!r}.` | **Yes** | n/a | shown after "Could not read JSON data ..."; repr quoting |
+| `parsing.py:182` | `Duplicate JSON key: '{key}'.` | No | n/a | shown after "Could not read JSON data ..." |
 | `parsing.py:200` | `JSON exceeds the supported value count.` | No | n/a | shown after "Could not read JSON data ..." |
 | `parsing.py:210` | `JSON nesting exceeds the supported depth.` | No | n/a | shown after "Could not read JSON data ..." |
-| `parsing.py:215` | `JSON constant {value!r} is not a finite number.` | **Yes** | n/a | shown after "Could not read JSON data ..."; repr quoting |
+| `parsing.py:215` | `JSON constant '{value}' is not a finite number.` | No | n/a | shown after "Could not read JSON data ..." |
 | `parsing.py:225` | `JSON nesting exceeds the supported depth.` | No | n/a | shown after "Could not read JSON data ..." |
 | `parsing.py:234` | `JSON input contains both 'rows' and 'data'; supply one dataset.` | No | n/a | shown after "Could not read JSON data ..." |
 | `parsing.py:237` | `JSON input must be a list of row objects or contain a 'rows'/'data' list.` | No | n/a | shown after "Could not read JSON data ..." |
@@ -442,4 +464,4 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `pdf_tables.py:234` | `'{filename}' has {page_count} pages, more than the {max_pages} we can read at once. Save just the financial statement pages as a new PDF and upload that.` | No | Yes |  |
 | `pdf_tables.py:254` | `'{filename}' looks like a scanned image, so there is no text to read. Export the statement to Excel or CSV, or use a PDF saved from the filing itself, not a scan.` | No | Yes |  |
 | `pdf_tables.py:295` | `We couldn't find an income statement, balance sheet or cash flow statement in '{filename}'. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |
-| `pdf_tables.py:305` | `The PDF reader returned a word without a position.` | No | **No** |  |
+| `pdf_tables.py:305` | `The PDF reader returned a word without a position. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |

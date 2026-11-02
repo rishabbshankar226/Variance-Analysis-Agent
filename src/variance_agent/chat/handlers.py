@@ -623,7 +623,8 @@ def _load_covenant_file(session: Session, file_bytes: bytes, filename: str) -> R
     except ValueError as exc:
         return Response(text=str(exc), phase=session.phase, level="error")
     if intake_res.has_fatal_errors:
-        return Response(text=intake_res.fatal_error_message or "I couldn't compare these metrics.", phase=session.phase,
+        return Response(text=intake_res.fatal_error_message or "I couldn't compare these metrics. Upload the covenant "
+                        "schedule again, or type `new` to start over.", phase=session.phase,
                         level="error")
     return _intake_response(session, intake_res, session.source_name)
 
@@ -705,9 +706,13 @@ def _load_other_half(session: Session, file_bytes: bytes, filename: str, first_v
         offer = _unbudgeted_offer(session, intake_res, actual, actual_name, comparison, comparison_name)
         if offer is not None:
             return offer
-        return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
-                        phase=session.phase, level="error", ask_upload=True)
+        return Response(text=intake_res.fatal_error_message or _JOIN_FAILED, phase=session.phase, level="error",
+                        ask_upload=True)
     return _joined(session, intake_res, actual, actual_name, first_visit)
+
+
+_JOIN_FAILED = ("I couldn't join these two files. Upload them again, or upload one file that holds both the "
+                "comparison and Actual.")
 
 
 def _joined(session: Session, intake_res: IntakeResult, actual: bytes, actual_name: str,
@@ -748,8 +753,8 @@ def _join_unbudgeted(session: Session, first_visit: bool | None) -> Response:
     intake_res = join_files(actual, actual_name, comparison, comparison_name, treat_blank_budgets_as_zero=False,
                             unbudgeted_as_zero=True)
     if intake_res.has_fatal_errors:
-        return Response(text=intake_res.fatal_error_message or "I couldn't join these two files.",
-                        phase=session.phase, level="error", ask_upload=True)
+        return Response(text=intake_res.fatal_error_message or _JOIN_FAILED, phase=session.phase, level="error",
+                        ask_upload=True)
     return _joined(session, intake_res, actual, actual_name, first_visit)
 
 
@@ -1972,7 +1977,8 @@ def _handle_save_mapping(session: Session) -> Response:
     return Response(
         text=(
             "**Layout Mapping Saved**\n\n"
-            "Here are your confirmed layout settings. You can reuse this mapping in future months with `--mapping <file>`:\n\n"
+            "Here are your confirmed layout settings. Save them as a file to reuse in future months; on the "
+            "command line, that file is the optional `--mapping` setting:\n\n"
             f"```json\n{mapping_json}\n```"
         ),
         chips=["Summary", "Export report", "Show unfavorable"],

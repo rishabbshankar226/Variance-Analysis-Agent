@@ -302,7 +302,8 @@ def _extract(data: bytes, filename: str, max_pages: int, max_seconds: float, *, 
 def _coord(value: object) -> float:
     if isinstance(value, (int, float)):
         return float(value)
-    raise PdfReadError("The PDF reader returned a word without a position.")
+    raise PdfReadError("The PDF reader returned a word without a position. Export the statement to Excel or CSV "
+                       "and upload that instead.")
 
 
 def _word(raw: dict[str, object]) -> _Word:

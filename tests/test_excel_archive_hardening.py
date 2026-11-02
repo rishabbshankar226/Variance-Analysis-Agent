@@ -109,7 +109,7 @@ def test_a_dtd_after_a_long_prolog_comment_is_still_refused(member: str, encodin
         f'<root xmlns="{SHEET_NS}"/>'
     ).encode(encoding)
     members[member] = hostile
-    with pytest.raises(ValueError, match="DTD"):
+    with pytest.raises(ValueError, match="declares entities of its own"):
         inspect_archive(_zip(members))
 
 
@@ -141,5 +141,5 @@ def test_a_dtd_straddling_a_read_boundary_is_still_found(offset: int) -> None:
     hostile = prefix + padding + b'--><!DOCTYPE x [<!ENTITY e "boom">]><sst/>'
     members = _workbook_members()
     members[SHARED] = hostile
-    with pytest.raises(ValueError, match="DTD"):
+    with pytest.raises(ValueError, match="declares entities of its own"):
         inspect_archive(_zip(members))
