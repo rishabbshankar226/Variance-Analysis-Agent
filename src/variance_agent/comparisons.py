@@ -338,7 +338,9 @@ def _render_comparisons(table: TableAnalysis) -> str:
         return render_earnings(table)
     if len(table.comparisons) == 1 and table.comparisons[0].result is not None and not table.comparisons[0].unavailable:
         from .report import render_markdown
-        return render_markdown(table.comparisons[0].result)
+        headline = (table.source_document or {}).get("headline")  # a filing's own printed totals (X8)
+        return render_markdown(table.comparisons[0].result,
+                               filing_headline=headline if isinstance(headline, Mapping) else None)
     headings = ["Line Item", "Measure", "Segment"]
     maps = []
     order: dict[tuple[str, str, MeasureKind], tuple[str, MeasureKind, str]] = {}

@@ -18,7 +18,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X5 | 2 | done | see `fix(X5, X30)` | `src/variance_agent/intake.py`, `ixbrl.py`, `join.py`, `ltm.py`, `metrics.py`, `cli.py`, `comparisons.py`, `api.py`, `chat/handlers.py`, `tests/test_currency_conflicts.py` (new) |
 | X6 | 2 | done | see `fix(X6)` | `src/variance_agent/intake.py`, `tests/test_period_choice.py` (new) |
 | X7 | 2 | done | see `fix(X7)` | `src/variance_agent/intake.py`, `tests/test_signed_profit_lines.py` (new) |
-| X8 | 2 | todo | | |
+| X8 | 2 | done | see `fix(X8)` | `src/variance_agent/cli.py`, `comparisons.py`, `report.py`, `tests/test_comparison_path_guards.py` (new) |
 | C1 | 2 | todo | | |
 | C3 | 2 | todo | | |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
@@ -242,6 +242,24 @@ Boundary cases:
 - A presentation-signed Gross Profit (+480,000 in a signed ledger) is kept.
 - A Gross Profit off by one dollar adds up neither way: it is turned and stays a line.
 
+**X8, what the comparison path cannot do it refuses, and a filing keeps its printed totals there.** Some flags send a run to the comparison path (`_run_comparisons`):
+- a comma list or a new basis in `--compare-to`, or a mapping's segment column;
+- `--preset` other than fpa;
+- `--long-output`, `--long-output-jsonl`, `--history`, `--layout`, `--headline`, `--per-share-lines`.
+
+A run with one of these that also asks for something only the main path does now refuses before reading anything, naming the flags on both sides. The main-path inputs are `--ltm-from` (builds LTM), `--compare-file` (joins a second file), `--metrics` (computes declared metrics), `--panel` (builds a holdings scorecard) and `--compare-to limit|benchmark|target` (reads Limit Kind, Buffer, Better or Tolerance). The message: "--layout can't be combined with --ltm-from yet: it reads the file another way, which doesn't build LTM. Leave out --layout, or leave out --ltm-from." An opt-in basis in a comma list gets the documented one-per-run refusal.
+
+`--multiple-threshold` now reaches the comparison path's configuration, as the per-share, count and bps thresholds already do.
+
+An Inline XBRL income statement read on the comparison path in the standard layout is headed by the filing's own printed totals (`_filing_headline_lines`, Decision 39), never by Total Revenue, Total Expenses and a net variance added up from its lines. `--xlsx` refuses for it, and for a balance sheet or cash flow statement, with the main path's own messages. The earnings layout and the long CSV, which add up nothing, are unchanged.
+
+Boundary cases:
+- The LTM run without `--layout` still builds LTM.
+- With `--layout` it refuses.
+- `ines_limits.csv` with `--compare-to limit` alone reads, with `--long-output` it refuses, and `limit,benchmark` gets the one-per-run refusal.
+- A Multiple row with `--multiple-threshold 0.1 --long-output` reads.
+- The 10-K with `--long-output` heads the report with its printed totals, and with `--xlsx` refuses.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -311,6 +329,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | X5, X30 | `currency_conflict`, the marked-cell and statement-currency records, the CLI, API and chat checks, and the LTM and metrics currency removed across eight modules (`git apply -R`), tests kept | `pytest tests/test_currency_conflicts.py` | 9 failed, 4 passed: euro, pound and filing-currency runs all exit 0 under the wrong currency, the chat analyses EUR cells as USD, and the euro LTM table prints `$4,300,000,000.00`. The four that pass read in their own currency or are unmarked. |
 | X6 | the chosen-pair override after `detect_comparison_columns` removed (`git apply -R`), tests kept | `pytest tests/test_period_choice.py` | 2 failed, 3 passed: choosing Sep-26 reads 500,000 / 540,000 (the YTD cells), and the chat summary maps 'Budget YTD'. The no-choice and one-pair controls pass either way. |
 | X7 | `_signed_profit_lines` and its use in the flip removed (`git apply -R`), tests kept | `pytest tests/test_signed_profit_lines.py` | 4 failed, 1 passed: Gross Profit and Net Income stay among the lines with their credit sign, the chat totals are wrong, and the off-by-one line keeps -480,001. The presentation-signed control passes either way. |
+| X8 | `_refuse_main_path_inputs`, the comparison path's multiple threshold, `_refuse_filing_workbook` there, and the filing headline in `render_measure_report` removed (`git apply -R`), tests kept | `pytest tests/test_comparison_path_guards.py` | 7 failed, 1 passed: LTM plus `--layout` or `--long-output` exits 0 with quarter figures, the limit run gives "No Limit column found", `--multiple-threshold` is ignored, the 10-K report sums Total Revenue, and the filing workbook is written. The plain LTM control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

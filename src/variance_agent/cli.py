@@ -403,6 +403,7 @@ def _run(args: Arguments) -> int:
     if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
             or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
             or args.layout is not None or args.headline or args.per_share_lines is True):
+        _refuse_main_path_inputs(args, requested, mapped_segment)
         return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
     compare_to_basis = requested[0] if requested else None
     strict_without_basis = False
@@ -631,13 +632,8 @@ def _run(args: Arguments) -> int:
     if result.config.comparison_basis in OPT_IN_BASES and args.xlsx:
         raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "
                          "the report and the audit file hold every outcome.")
-    if statement_checks and args.xlsx:
-        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; "
-                         "the report and the audit file hold every figure.")
-    if intake_res is not None and intake_res.filing_headline is not None and args.xlsx:
-        # The workbook adds up revenue and expense totals of its own; a filing is headed by its printed ones (Decision 39).
-        raise ValueError("--xlsx isn't available for a filing's income statement yet: the workbook adds up revenue and "
-                         "expense totals of its own. Leave out --xlsx; the report and the audit file hold every figure.")
+    if args.xlsx:
+        _refuse_filing_workbook(intake_res, bool(statement_checks))
     appendix = intake_res.report_appendix if intake_res is not None else []
     headline = intake_res.filing_headline if intake_res is not None else None
     report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None,
@@ -713,6 +709,47 @@ def _comparison_argument(value: str) -> str:
     return ",".join(tokens)
 
 
+# What only the main path reads, and what the comparison path's reader doesn't do instead (X8).
+_MAIN_PATH_INPUTS = (("ltm_from", "--ltm-from", "doesn't build LTM"),
+                     ("compare_file", "--compare-file", "doesn't join a second file"),
+                     ("metrics", "--metrics", "doesn't compute declared metrics"),
+                     ("panel", "--panel", "doesn't build a holdings scorecard"))
+
+
+def _refuse_main_path_inputs(args: Arguments, requested: tuple[ComparisonBasis, ...], mapped_segment: bool) -> None:
+    """A run the comparison path takes refuses what only the main path reads, naming the flags on both sides (X8)."""
+    opt_in = [basis for basis in requested if basis in OPT_IN_BASES]
+    if opt_in and len(requested) > 1:
+        raise ValueError("--compare-to limit, benchmark and target run one per run: give one of them alone.")
+    triggers = [flag for flag, on in (
+        (f"--compare-to {args.compare_to}", len(requested) > 1 or any(b in NEW_BASES for b in requested)),
+        ("the mapping's segment column", mapped_segment),
+        (f"--preset {getattr(args, 'preset', 'fpa')}", getattr(args, "preset", "fpa") != "fpa"),
+        ("--layout", args.layout is not None), ("--headline", bool(args.headline)),
+        ("--per-share-lines", args.per_share_lines is True), ("--history", bool(args.history)),
+        ("--long-output", bool(args.long_output)), ("--long-output-jsonl", bool(args.long_output_jsonl))) if on]
+    inputs = [(flag, does) for attr, flag, does in _MAIN_PATH_INPUTS if getattr(args, attr, None)]
+    inputs += [(f"--compare-to {basis.value}", "doesn't read Limit Kind, Buffer, Better or Tolerance") for basis in opt_in]
+    if not triggers or not inputs:
+        return
+    named = triggers[0] if len(triggers) == 1 else ", ".join(triggers[:-1]) + " and " + triggers[-1]
+    verb = "it reads" if len(triggers) == 1 else "they read"
+    flag, does = inputs[0]
+    raise ValueError(f"{named} can't be combined with {flag} yet: {verb} the file another way, which {does}. "
+                     f"Leave out {named}, or leave out {flag}.")
+
+
+def _refuse_filing_workbook(intake_res: IntakeResult | None, statement: bool) -> None:
+    """--xlsx refuses for a filing's statements, on either path (Decision 39, X8)."""
+    if statement:
+        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; "
+                         "the report and the audit file hold every figure.")
+    if intake_res is not None and intake_res.filing_headline is not None:
+        # The workbook adds up revenue and expense totals of its own; a filing is headed by its printed ones (Decision 39).
+        raise ValueError("--xlsx isn't available for a filing's income statement yet: the workbook adds up revenue and "
+                         "expense totals of its own. Leave out --xlsx; the report and the audit file hold every figure.")
+
+
 def _refuse_other_currency(intake_res: object, currency: str, filename: str) -> None:
     """Refuse amounts marked in another currency than --currency; none is converted (X5, X30)."""
     from .intake import IntakeResult, currency_conflict
@@ -732,6 +769,7 @@ def _run_comparisons(
 ) -> int:
     from .comparisons import (analyze_comparisons, build_comparison_audit, read_comparison_input,
                               render_comparisons, detect_comparison_bases)
+    from .intake import IntakeResult
     from .mapping import LayoutMapping
     from .xlsx import render_comparison_xlsx
     assert args.input is not None and args.period is not None
@@ -752,6 +790,8 @@ def _run_comparisons(
         hidden_rows=getattr(args, "hidden_rows", None) or (layout.hidden_rows if layout is not None else None),
     )
     _refuse_other_currency(metadata.get("intake_result"), args.currency, path.name)
+    if args.xlsx and isinstance(read := metadata.get("intake_result"), IntakeResult):
+        _refuse_filing_workbook(read, bool(read.statement_kind))
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
     if not bases and not extended:
@@ -783,7 +823,8 @@ def _run_comparisons(
     config = AudienceConfig(args.period, args.dollar_threshold, args.percent_threshold / Decimal("100"),
                             currency=args.currency, type_map=_parse_type_map(type_map_bytes) if type_map_bytes is not None else {},
                             per_share_threshold=option("per_share_threshold"), count_threshold=option("count_threshold"),
-                            bps_threshold=option("bps_threshold"), percent_values=percent_values, extended_headers=True,
+                            bps_threshold=option("bps_threshold"), multiple_threshold=option("multiple_threshold"),
+                            percent_values=percent_values, extended_headers=True,
                             preset=args.preset, layout=args.layout, per_share_lines=args.per_share_lines,
                             headline_items=tuple(args.headline or ()))
     if isinstance(metadata.get("comparison_label"), str):

@@ -437,7 +437,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
                               metric_order=tuple(_identity(row) for row in result.rows))
         return render_earnings(table)
     if is_audience_result(result):
-        return render_measure_report(result)
+        return render_measure_report(result, filing_headline=filing_headline)
     cfg = result.config
     places = _report_places(result)
     heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
@@ -553,8 +553,12 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
 
 
 @financial_context()
-def render_measure_report(result: AnalysisResult, *, segment_view: bool = False) -> str:
-    """Describe declared metrics without adding incompatible units."""
+def render_measure_report(result: AnalysisResult, *, segment_view: bool = False,
+                          filing_headline: Mapping[str, object] | None = None) -> str:
+    """Describe declared metrics without adding incompatible units.
+
+    A filing's income statement is headed by its own printed totals, never by added-up ones (Decision 39, X8).
+    """
     cfg = result.config
     if not segment_view and any(row.segment_declared for row in result.rows):
         from dataclasses import replace
@@ -575,14 +579,18 @@ def render_measure_report(result: AnalysisResult, *, segment_view: bool = False)
     complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
                 and any(row.line_type is LineType.REVENUE for row in money)
                 and any(row.line_type is LineType.EXPENSE for row in money))
-    lines.extend(["## Currency totals", ""])
-    if complete:
-        lines.extend([_aggregate_line("Total Revenue", result.revenue, cfg.currency),
+    if filing_headline is not None:
+        unit = [f"- Units: {_safe_inline(str(filing_headline['unit']))}"] if filing_headline.get("unit") else []
+        lines.extend(["## Headline figures", "", *unit,
+                      *_filing_headline_lines(filing_headline, cfg.currency, _report_places(result))])
+    elif complete:
+        lines.extend(["## Currency totals", "",
+                      _aggregate_line("Total Revenue", result.revenue, cfg.currency),
                       _aggregate_line("Total Expenses", result.expenses, cfg.currency),
                       "- Net operating variance: " + _money(result.revenue.variance_dollars -
                                                              result.expenses.variance_dollars, cfg.currency)])
     else:
-        lines.append("Currency totals are incomplete; net operating impact is unavailable.")
+        lines.extend(["## Currency totals", "", "Currency totals are incomplete; net operating impact is unavailable."])
     for label, rows in (("Currency variances", money),
                         ("Other measures", tuple(row for row in result.rows if not currency_row(row)))):
         if not rows:
