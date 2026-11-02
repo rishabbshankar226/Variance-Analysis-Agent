@@ -400,7 +400,7 @@ def load_input(
 def get_workbook_sheets(data: bytes, suffix: str) -> list[str]:
     """Return list of sheet names from Excel bytes without parsing data rows."""
     suffix = suffix.lower()
-    if suffix not in {".xlsx", ".xlsm"}:
+    if suffix not in {".xlsx", ".xlsm", ".xls"}:  # a legacy .xls fails to open and lists none
         return []
     load_workbook = _excel_loader()
     with io.BytesIO(data) as source:

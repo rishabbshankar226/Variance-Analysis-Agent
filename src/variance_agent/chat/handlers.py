@@ -531,7 +531,7 @@ def _file_is_gone(session: Session) -> Response:
     )
 
 
-_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".pdf", ".htm", ".html"}
+_MULTI_TABLE_SUFFIXES = {".xlsx", ".xlsm", ".xls", ".pdf", ".htm", ".html"}  # an .xls that reads is Excel 2007+ (X17)
 
 
 def _is_pdf(session: Session) -> bool:

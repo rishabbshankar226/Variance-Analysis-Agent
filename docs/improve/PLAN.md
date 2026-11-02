@@ -32,7 +32,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X14 | 3 | done | see `fix(X14)` | `src/variance_agent/audit.py`, `comparisons.py`, `tests/test_comparison_audit_versions.py` (new) |
 | X15 | 3 | done | see `fix(X15)` | `src/variance_agent/parsing.py`, `comparisons.py`, `tests/test_tsv_input.py` (new) |
 | X16 | 3 | done | see `fix(X16)` | `src/variance_agent/intake.py`, `tests/test_section_headings.py` (new) |
-| X17 | 3 | todo | | |
+| X17 | 3 | done | see `fix(X17)` | `src/variance_agent/chat/handlers.py`, `parsing.py`, `tests/test_xls_sheets.py` (new) |
 | X18 | 3 | todo | | |
 | X19 | 3 | todo | | |
 | X20 | 3 | todo | | |
@@ -339,6 +339,12 @@ Boundary cases:
 - Headings with every other cell blank are left out with the note.
 - The same label with a Budget and a blank Actual still refuses "Row 5, Rent, Actual column: the amount is blank."
 
+**X17, sheets of an `.xls` workbook in the chat.** An `.xls` upload that intake reads is an Excel 2007+ workbook saved under the old extension; a real legacy `.xls` is refused at upload, as before. Its sheets are listed and switched like an `.xlsx` workbook's: `.xls` joins the chat's multi-table suffixes and `get_workbook_sheets`.
+
+Boundary cases:
+- "list sheets" and "sheet Data" work on such an `.xls`.
+- A `.csv` still answers that it holds a single dataset.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -441,6 +447,7 @@ Items:
 | X28 | the decode and JSON-error wrapping in `load_mapping` removed (`git apply -R`), tests kept | `pytest tests/test_cli_small_refusals.py -k mapping` | 2 failed, 1 passed: `{oops` gives "Expecting property name enclosed in double quotes...", and non-UTF-8 bytes give a decode error. The `[]` control passes either way. |
 | X29 | the long outputs removed from the `--check-only` refusal (`git apply -R`), tests kept | `pytest tests/test_cli_small_refusals.py -k check_only` | 2 failed, 1 passed: `--check-only --long-output x.csv` exits 0 with "Validation passed" and writes nothing |
 | X16 | the section-heading skip and its note removed (`git apply -R`), tests kept | `pytest tests/test_section_headings.py` | 1 failed, 1 passed: "Row 2, REVENUE, Actual column: the amount is blank" stops intake. The blank-cell control passes either way. |
+| X17 | `.xls` removed from the chat's multi-table suffixes and from `get_workbook_sheets` (`git apply -R`), tests kept | `pytest tests/test_xls_sheets.py` | 1 failed, 2 passed: `book.xls` answers "contains a single dataset". The `.xlsx` and `.csv` controls pass either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
