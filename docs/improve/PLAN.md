@@ -593,6 +593,12 @@ Items:
 - Workbook: the comparison workbook for the same file shows $1,234,000.00 on both its Earnings and Measures sheets. Its cells hold formatted text, not numbers, which is existing behaviour and something for N1 to keep in mind.
 - Chat reply: an on-budget file's board memo reads "Operating Profit finished at **$75,000.00**, **in line with** the planned budget of **$75,000.00**. Operating margin **held** at **50.0%** (+0.0 pts)."
 
+## Looking at the outputs, Phase 3
+
+- Report: X31's workbook (Gross margin stored 0.4 and 0.425 under `0.0%`), run with `--percent-values points`, reports "| Gross margin | Percent | 40% | 42.5% | 250 bps | N/A (rate) | F | Yes |". The figures are right. Its "How the file was read" section lists the measure path's own notes, not intake's, so the new "read Budget and Actual as the percentages Excel shows" note reaches the chat summary and stderr only. Neither the Markdown report nor the audit's `inferences` records it, so neither traces 40% back to the stored 0.4. The report and audit also say "Read bare Percent values as points." when no bare value was read. Measure reports have never carried intake's notes, so this is a provenance gap, not a wrong figure. It is raised at STOP 2 as X42, since changing what an existing report or audit says needs approval.
+- Workbook: the same run's `--xlsx` Measures sheet holds "40%", "42.5%" and "250 bps" as formatted text, matching the report. These measure cells are text, as Phase 2 noted, which N1 should keep in mind.
+- Chat reply: after X36's chip, the joined summary reads "Joined 'bud.csv' to 'act.csv' by 'GL Account': 6 lines, 5 in both files" and "Read 1 line in 'act.csv' but not in 'bud.csv' as 0 (unbudgeted): 5040 (Travel)", so the summary says which line was read as 0 before the analyst confirms.
+
 ## Revert proofs
 
 | ID | Fix reverted | Test run | Result with the fix reverted |
