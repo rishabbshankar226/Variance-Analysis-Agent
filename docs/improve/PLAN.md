@@ -38,7 +38,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X20 | 3 | done | see `fix(X20)` | `src/variance_agent/intake.py`, `tests/test_excel_zero_section.py` (new) |
 | X21 | 3 | done | see `fix(X21)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_two_files.py` (new) |
 | X22 | 3 | done | see `fix(X22)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `chat/session.py`, `tests/test_chat_unreconciled_total.py` (new) |
-| X23 | 3 | todo | | |
+| X23 | 3 | done | see `fix(X23)` | `src/variance_agent/intake.py`, `tests/test_header_units.py` (new) |
 | X24 | 3 | todo | | |
 | M1 | 3 | todo | | name the second document only (Decision 12) |
 | M2 | 3 | todo | | |
@@ -411,6 +411,16 @@ Boundary cases on a fictional thousands report:
 - The chip leaves it out, the analysis runs, and the Expense total is 250,000.
 - Total Opex 250 reconciles and is excluded silently, as today.
 
+**X23, a unit or currency in an amount heading.** An amount heading may end in a unit or currency qualifier: "Budget ($000)", "Budget $000", "Budget ($K)", "Budget (in thousands)", "Budget ($ in thousands)", "Actual (000s)", "Budget $", "Budget (USD)". It is recognised as Budget or Actual by the words before the qualifier. Only those qualifiers are set aside, so "Budget (Q3)" is not.
+
+The qualifier stays in the header text the caption detector reads (X4), so "($000)" scales by 1,000 with the usual visible note. A currency it names (`$`, `€`, `£`, USD, EUR or GBP) is recorded like a marked cell (X5): "Budget (EUR)" refuses under USD, naming "the 'Budget (EUR)' column heading". The comparison path's header names are not widened here; that is X18's list.
+
+Boundary cases:
+- The 6 forms that failed now read.
+- "Budget ($000)" scales by 1,000.
+- "Budget (USD)" reads unscaled under USD and refuses under EUR.
+- "Budget (Q3)" stays unrecognised.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -522,6 +532,7 @@ Items:
 | X25 | the `expanduser` and the named landing path removed (`git apply -R`), tests kept | `pytest tests/test_chat_export_paths.py` | 1 failed, 1 passed: `~/r.md` creates `work/~/r.md`, and home stays empty. The relative-path control passes either way. |
 | X27 | the display words, the chip's intent words and the page's word removed across four files (`git apply -R`), tests kept | `pytest tests/test_chat_not_yet_labeled.py tests/test_interface_design.py` | 3 failed, 62 passed: "Unclassified" shows in the material table and the warnings, the "Not yet labeled" chip doesn't route, and the page's word map no longer mirrors the edited assertion |
 | X22 | the refusal response, the leave-out handler and route, the session field and the rule 6 pattern removed (`git apply -R`), tests kept | `pytest tests/test_chat_unreconciled_total.py` | 3 failed, 1 passed: "...Expense detail rows detail rows", the chat drops to "upload a file", and "Leave Total Opex out" does not route. The matching-total control passes either way. |
+| X23 | `_HEADER_QUALIFIER`, the qualifier retry in `match_column_synonym` and the heading currency mark removed (`git apply -R`), tests kept | `pytest tests/test_header_units.py` | 10 failed, 1 passed: every qualified heading is unknown, and the file has no Budget column. The "(Q3)" control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

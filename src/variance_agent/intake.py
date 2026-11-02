@@ -569,6 +569,15 @@ def normalize_header(raw: str) -> str:
     return text.strip("_")
 
 
+_HEADER_UNIT = r"(?:'?000'?s?|thousands?|millions?|billions?|k|mm?|bn)"
+_HEADER_CURRENCY = r"(?:[$€£]|usd|eur|gbp|dollars|euros|pounds)"
+# A unit or currency qualifier at the end of an amount heading, and nothing else: never "(Q3)" (X23).
+_HEADER_QUALIFIER = re.compile(
+    rf"\s*(?:\(\s*(?:{_HEADER_CURRENCY}\s*)?(?:in\s+)?(?:{_HEADER_CURRENCY}\s*)?{_HEADER_UNIT}?\s*\)"
+    rf"|{_HEADER_CURRENCY}\s*'?{_HEADER_UNIT}?|'?000'?s)\s*$", re.IGNORECASE)
+_HEADER_CURRENCY_CODE = re.compile(r"[$€£]|\b(?:usd|eur|gbp)\b", re.IGNORECASE)
+
+
 def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
     """Map a raw header name to its canonical role and an optional transformation note."""
     norm = normalize_header(header)
@@ -588,6 +597,12 @@ def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
         return CanonicalRole.CURRENCY, None
     if norm in _TYPE_SYNONYMS:
         return CanonicalRole.TYPE, None
+    # "Budget ($000)", "Actual (USD)": the words before a unit or currency qualifier name the amount (X23).
+    bare = _HEADER_QUALIFIER.sub("", header).strip()
+    if bare and bare != header.strip():
+        role, note = match_column_synonym(bare)
+        if role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL):
+            return role, note
 
     return CanonicalRole.UNKNOWN, None
 
@@ -3127,6 +3142,11 @@ def _process_raw_table(
     problems: list[IntakeProblem] = []
     unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
     symbol_cells: list[tuple[str, str, str]] = []  # amounts whose text marks a currency (X5)
+    for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL):  # a heading that names a currency marks its column (X23)
+        heading = column_mapping.get(role, "")
+        if (qualifier := _HEADER_QUALIFIER.search(heading)) and (mark := _HEADER_CURRENCY_CODE.search(qualifier.group())):
+            heading_code = SYMBOL_CURRENCIES.get(mark.group(), mark.group().upper())
+            symbol_cells.append((filename, f"the '{heading}' column heading", heading_code))
     section_rows: list[str] = []  # labels with nothing beside them: section headings (X16)
     blank_budget_items: list[str] = []
     # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
