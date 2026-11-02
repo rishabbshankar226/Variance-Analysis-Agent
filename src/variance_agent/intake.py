@@ -27,7 +27,7 @@ from typing import cast
 from collections.abc import Callable
 
 from .classification import infer_line_type
-from .currencies import SYMBOL_CURRENCIES
+from .currencies import CURRENCY_SYMBOLS, SYMBOL_CURRENCIES
 from .excel import (
     SheetLayout,
     WorkbookFacts,
@@ -447,6 +447,10 @@ class IntakeResult:
     comparison_candidates: list[str] = field(default_factory=list)
     comparison_choices: list[ComparisonBasis] = field(default_factory=list)
     source_kind: str | None = None  # "pdf" when the rows were read out of a PDF statement
+    # The currency a filing's monetary facts are in, and amount cells whose text marks a currency (X5, X30).
+    document_currency: str = ""
+    # (file, "Row 2, Sales, Budget column: €100", "EUR")
+    symbol_cells: list[tuple[str, str, str]] = field(default_factory=list)
     source_pages: tuple[int, ...] = ()
     reader_notes: list[str] = field(default_factory=list)
     comparable_sheets: list[str] = field(default_factory=list)  # PDF statements that can be compared
@@ -2488,6 +2492,7 @@ def _read_ixbrl_bytes(
         result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in reading)]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
+    result.document_currency = chosen.currency
     unit_note = [f"Units: {unit_text}"] if (unit_text := _unit_sentence(lines)) else []
     result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes]
     result.xbrl_lines = [
@@ -2550,6 +2555,7 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
               "with it at 0" for row, column in checked.blanks if not money[row].dash]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
+    result.document_currency = chosen.currency
     result.statement_kind = chosen.kind
     result.statement_checks = [*unit_note, identity, *left_out, *blanks, _CHANGE_NOTE]
     left, right = checked.sides
@@ -3097,6 +3103,7 @@ def _process_raw_table(
     output_rows: list[dict[str, object]] = []
     problems: list[IntakeProblem] = []
     unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
+    symbol_cells: list[tuple[str, str, str]] = []  # amounts whose text marks a currency (X5)
     blank_budget_items: list[str] = []
     # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
     currency_cells: list[tuple[int, int, str, str]] = []
@@ -3190,6 +3197,11 @@ def _process_raw_table(
             )
             problems.append(problem)
             unreadable_cells.append(problem)
+
+        for raw, field_label in ((raw_budget, comparison_field), (raw_actual, "Actual")):
+            if isinstance(raw, str) and (code := next((c for s, c in SYMBOL_CURRENCIES.items() if s in raw), None)):
+                symbol_cells.append(
+                    (filename, f"Row {physical_idx}, {line_item_str}, {field_label} column: {raw.strip()}", code))
 
         row_dict: dict[str, object] = {
             "line_item": line_item_str,
@@ -3348,6 +3360,7 @@ def _process_raw_table(
         detected_totals=reconciled_names,
         unreconciled_totals=subtotals_det.unreconciled_totals,
         detected_unit_multiplier=detected_mult,
+        symbol_cells=symbol_cells,
         detected_signed_ledger=signed_det.is_signed_ledger,
         negative_revenue_items=flipped_items,
         detected_period_pairs=period_pairs,
@@ -3417,6 +3430,32 @@ def _reconcile_display(
     change = "unit_scale in the mapping" if mapping else "the title"
     lines.append(f"Give every amount the same number format, or change {change}, and upload the file again.")
     return None, "\n".join(lines)
+
+
+def currency_conflict(result: IntakeResult, currency: str, filename: str) -> tuple[str, str] | None:
+    """Why amounts marked in another currency cannot report in `currency` (X5, X30), and the currency they are in.
+
+    No currency is ever converted. Returns (problem, marked currency or "") for the caller to add its own fix,
+    or None when they agree.
+    """
+    if result.document_currency and result.document_currency != currency:
+        found = result.document_currency
+        if found not in CURRENCY_SYMBOLS:
+            return (f"'{filename}' reports its amounts in {found}. This tool reports in USD, EUR or GBP only and "
+                    "converts no currency.", "")
+        return (f"'{filename}' reports its amounts in {found}, but the reporting currency is {currency}, and no "
+                "currency is converted.", found)
+    marked = [(cell, code) for _, cell, code in result.symbol_cells if code != currency]
+    if not marked:
+        return None
+    codes = sorted({code for _, code in marked})
+    files = " and ".join(f"'{name}'" for name in dict.fromkeys(f for f, _, c in result.symbol_cells if c != currency))
+    lines = [f"Some amounts in {files} are marked in {' and '.join(codes)}, but the reporting currency is "
+             f"{currency}, and no currency is converted:"]
+    lines.extend(f"- {cell}" for cell, _ in marked[:_MAX_LISTED_CELLS])
+    if len(marked) > _MAX_LISTED_CELLS:
+        lines.append(f"- ...and {len(marked) - _MAX_LISTED_CELLS} more.")
+    return "\n".join(lines), codes[0] if len(codes) == 1 else ""
 
 
 def reconcile_declared_unit(

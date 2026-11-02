@@ -46,6 +46,7 @@ from variance_agent.intake import (
     IntakeResult,
     apply_classification_rules,
     audit_transformations,
+    currency_conflict,
     format_intake_summary,
     infer_gl_range_rules,
     plain_analysis_error,
@@ -1327,6 +1328,16 @@ def _run_analysis(session: Session) -> Response:
     if measure_question is not None:
         return measure_question
     intake = session.intake_result
+    if intake is not None and session.currency is not None and (conflict := currency_conflict(
+            intake, session.currency, session.source_name or "your file")) is not None:
+        problem, found = conflict  # no currency is converted (X5, X30): ask again, offering the marked one
+        session.phase = Phase.AWAITING_CURRENCY
+        fix = (f"Choose {found} to report in {found}, or upload the amounts in {session.currency}." if found
+               else "Upload a file whose amounts are all in USD, EUR or GBP.")
+        text = "\n".join(f"- {safe_inline(line[2:])}" if line.startswith("- ") else safe_inline(line)
+                         for line in problem.splitlines())
+        return Response(text=f"{text}\n\n{fix}", chips=[found] if found else ["Upload a different file"],
+                        phase=Phase.AWAITING_CURRENCY, level="error")
     config = AnalysisConfig(
         period=session.period,
         dollar_threshold=session.dollar_threshold,

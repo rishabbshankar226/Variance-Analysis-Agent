@@ -168,6 +168,7 @@ class Statement:
     left_out: list[str] = field(default_factory=list)
     problem: str = ""  # why this statement cannot be read; other statements of the filing still can
     heading: str = ""  # the text printed before and atop the statement's table (titles, "As Restated")
+    currency: str = ""  # the ISO code of its monetary facts ("EUR"), comma-joined if they disagree (X30)
 
 
 def _transform(fmt: str, text: str) -> Decimal:
@@ -673,6 +674,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                per_share_lines: bool, durations: list[tuple[str, ...]] | None = None) -> Statement:
     labels = _period_labels(periods)
     statement = Statement(kind, name, periods, labels, [])
+    currencies: set[str] = set()
     if len(set(labels)) != len(labels):
         statement.notes.append("Two columns share a period label")
     statement.notes.extend(f"Read the column for {p[-1]} as {label}" for p, label in zip(periods, labels, strict=True))
@@ -711,6 +713,8 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             fact_measure = _measure(unit)
             if not fact_measure:
                 continue
+            if unit.lower().startswith("iso4217:"):
+                currencies.add(unit.split(":", 1)[1].split("/", 1)[0].upper())
             if fact.nil:
                 continue  # xsi:nil: the filing states there is no value, so the cell is blank
             if fact.problem or fact.stored is None or fact.magnitude is None:
@@ -737,6 +741,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             statement.left_out.append(f"'{label}' (per-share and share counts are not money totals)")
             continue
         statement.lines.append(Line(label, section, concept, measure, keys, dash, balance))
+    statement.currency = ",".join(sorted(currencies))
     if breakdowns:
         statement.notes.append(f"Read {len(breakdowns)} line{'s' if len(breakdowns) != 1 else ''} that break a total down "
                                f"by one axis (such as '{breakdowns[0]}') as printed lines; the audit names each axis and member")

@@ -435,6 +435,7 @@ def _run(args: Arguments) -> int:
         )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
+        _refuse_other_currency(intake_res, args.currency, input_path.name)
         rows = list(intake_res.rows)
         if mapping_obj.exclude_totals:
             to_exclude = set(mapping_obj.exclude_totals)
@@ -535,6 +536,7 @@ def _run(args: Arguments) -> int:
             )
         if intake_res.has_fatal_errors:
             raise ValueError(_intake_error(intake_res))
+        _refuse_other_currency(intake_res, args.currency, input_path.name)
         parsed_rows = intake_res.rows
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
@@ -711,6 +713,19 @@ def _comparison_argument(value: str) -> str:
     return ",".join(tokens)
 
 
+def _refuse_other_currency(intake_res: object, currency: str, filename: str) -> None:
+    """Refuse amounts marked in another currency than --currency; none is converted (X5, X30)."""
+    from .intake import IntakeResult, currency_conflict
+    if not isinstance(intake_res, IntakeResult) or (conflict := currency_conflict(intake_res, currency, filename)) is None:
+        return
+    problem, found = conflict
+    if intake_res.document_currency:
+        fix = f"Run with --currency {found}." if found else ""
+    else:
+        fix = f"Run with --currency {found}, or give every amount in {currency}." if found else "Give every amount in one currency."
+    raise ValueError(f"{problem}\n{fix}".rstrip())
+
+
 def _run_comparisons(
     args: Arguments, source_bytes: bytes, type_map_bytes: bytes | None, requested: tuple[ComparisonBasis, ...],
     mapping: object,
@@ -736,6 +751,7 @@ def _run_comparisons(
         metadata=metadata,
         hidden_rows=getattr(args, "hidden_rows", None) or (layout.hidden_rows if layout is not None else None),
     )
+    _refuse_other_currency(metadata.get("intake_result"), args.currency, path.name)
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
     if not bases and not extended:

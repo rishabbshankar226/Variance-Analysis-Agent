@@ -15,13 +15,13 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C2 | 2 | done | see `fix(C2)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_captions.py` (new) |
 | C5 | 2 | done | see `fix(C5)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_zero_variance.py` (new) |
 | X4 | 2 | done | see `fix(X4)` | `src/variance_agent/intake.py`, `tests/test_unit_scaling.py` |
-| X5 | 2 | todo | | |
+| X5 | 2 | done | see `fix(X5, X30)` | `src/variance_agent/intake.py`, `ixbrl.py`, `join.py`, `ltm.py`, `metrics.py`, `cli.py`, `comparisons.py`, `api.py`, `chat/handlers.py`, `tests/test_currency_conflicts.py` (new) |
 | X6 | 2 | todo | | |
 | X7 | 2 | todo | | |
 | X8 | 2 | todo | | |
 | C1 | 2 | todo | | |
 | C3 | 2 | todo | | |
-| X30 | 2 | todo | | |
+| X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | todo | | |
@@ -194,6 +194,33 @@ The FP&A note now names billions too ("Amounts scaled from billions (x1,000,000,
 
 Boundary cases: every one of the 32 variants in `.scratch/audit-numbers/captions.py`, plus "Costs incurred in M&A review", which is 1, against "(in M)", which is a million. Each existing test case keeps its result.
 
+**X5 and X30, amounts in another currency.** No currency is converted, so an amount marked in one currency is never reported under another.
+
+Intake records the currency each source marks:
+- **X5.** Every assisted amount cell whose text carries `$`, `€` or `£`, with its row, line and column.
+- **X30.** A filing statement's currency, taken from the ISO code of its monetary facts' units. A per-share unit such as `iso4217:EUR/xbrli:shares` counts as EUR.
+
+`intake.currency_conflict(result, currency)` says why the reporting currency disagrees, or returns None. The two-file join carries both halves' marked cells.
+
+Where the check runs:
+- The CLI's assisted and mapped paths, after intake.
+- The comparison path's filing read, in the CLI and in `api.analyze_file`.
+- The chat, in `_run_analysis`. A conflict there returns to the currency question with a chip for the marked currency, and the analysis does not run.
+
+Refusal wording: "Some amounts in 'x.csv' are marked in EUR, but the reporting currency is USD, and no currency is converted:", then up to 10 cells, then the fix. The CLI says "Run with --currency EUR"; the chat says "Choose EUR". A filing reads "'f.htm' reports its amounts in JPY ...". A currency the tool cannot report in (JPY) says "this tool reports in USD, EUR or GBP only". Mixed marks say "give every amount in one currency".
+
+The LTM build table and the derived-metric citations print in the filing's own currency, never a hard-coded `$`. Once a conflict is refused, that is the reporting currency.
+
+Boundary cases:
+- `€100` under EUR reads.
+- `€100` under USD refuses, naming the cell.
+- An unmarked `100` reads under any currency.
+- `$` under USD reads.
+- One `£` cell among `$` cells under USD refuses, naming only the `£` cell.
+- A USD filing under EUR refuses.
+- A JPY filing refuses under every currency.
+- An EUR filing under EUR builds an LTM table in `€`.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -260,6 +287,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | C2 | `_apply_unit_caption` and the display capture removed from `comparisons.py` (`git apply -R`), tests kept | `pytest tests/test_comparison_captions.py` | 6 failed, 4 passed: caption-alone earnings reads `$1,234.00`, no scale note or audit `unit_scale`, no "not scaled again" note, the mixed-format earnings run does not refuse, and CSV cells stay unscaled. The passing four are the format-alone and both cases and the FP&A refusal, which held before. |
 | C5 | `_fu`, `_fu_between`, `_in_line`, the zero branches and the run-rate identities removed (`git apply -R`), tests kept | `pytest tests/test_chat_zero_variance.py` | 11 failed, 5 passed: zero totals show F in the compare, run-rate and what-if tables, the sensitivity baseline is F, and every "in line" sentence is missing. The one-cent controls and the run-rate oracle pass either way, as designed. |
 | X4 | `_unit_caption_re`, `_BILLIONS_RE` and the billions label removed; the old two patterns restored (`git apply -R`), tests kept | `pytest tests/test_unit_scaling.py` | 23 failed, 20 passed: the 20 missed forms read 1, "in M&A" and "in M." read 1,000,000, and the billions file is unscaled |
+| X5, X30 | `currency_conflict`, the marked-cell and statement-currency records, the CLI, API and chat checks, and the LTM and metrics currency removed across eight modules (`git apply -R`), tests kept | `pytest tests/test_currency_conflicts.py` | 9 failed, 4 passed: euro, pound and filing-currency runs all exit 0 under the wrong currency, the chat analyses EUR cells as USD, and the euro LTM table prints `$4,300,000,000.00`. The four that pass read in their own currency or are unmarked. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

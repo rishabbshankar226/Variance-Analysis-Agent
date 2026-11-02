@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from decimal import Decimal
 
+from .currencies import CURRENCY_SYMBOLS
 from .intake import IntakeResult, read_input_assisted
 from .ixbrl import IxbrlError, Statement, read_statements
 from .ltm import _months
@@ -119,6 +120,14 @@ class _Sources:
             except IxbrlError as exc:
                 raise ValueError(str(exc)) from None
         self._reads: dict[tuple[str, str], IntakeResult] = {}
+        codes = sorted({s.currency for statements in self.statements.values() for s in statements if s.currency})
+        if len(codes) > 1:
+            raise ValueError(f"The filings report in {' and '.join(codes)}; a metric adds their figures, so give "
+                             "filings in one currency.")
+        self.currency = codes[0] if codes else "USD"  # the filings' own currency (X30)
+        if self.currency not in CURRENCY_SYMBOLS:
+            raise ValueError(f"'{primary_name}' reports its amounts in {self.currency}. This tool reports in USD, EUR "
+                             "or GBP only and converts no currency.")
 
     def _read(self, document: str, statement: Statement) -> IntakeResult:
         key = (document, statement.name)
@@ -229,14 +238,14 @@ def _safe(text: str) -> str:
     return _safe_inline(text)
 
 
-def _money(value: Decimal) -> str:
+def _money(value: Decimal, currency: str) -> str:
     from .report import _money as money
-    return money(value)
+    return money(value, currency)
 
 
-def _dollars(value: Decimal) -> str:
+def _dollars(value: Decimal, currency: str) -> str:
     whole = value == value.to_integral_value()
-    return ("-" if value < 0 else "") + "$" + format(abs(value).quantize(Decimal(1)) if whole else abs(value), ",f")
+    return ("-" if value < 0 else "") + CURRENCY_SYMBOLS[currency] + format(abs(value).quantize(Decimal(1)) if whole else abs(value), ",f")
 
 
 def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annual: bytes | None = None,
@@ -270,7 +279,7 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
         cited = [{**citation, "line_item": n, "sign": t.sign, "period": t.period, "side": side}
                  for side in ("numerator", "denominator") for t, _, citations, n in resolved[side] for citation in citations]
         if metric.denominator and bottom <= 0:
-            reason = f"NM, because its denominator is {_dollars(bottom)} (zero or negative)"
+            reason = f"NM, because its denominator is {_dollars(bottom, sources.currency)} (zero or negative)"
             left_out[metric.name] = reason
             notes.append(f"{metric.name}: {reason}")
             report.append(f"- {_safe(notes[-1])}")
@@ -286,21 +295,24 @@ def build_metrics(metrics: list[Metric], primary: bytes, primary_name: str, annu
         records.append({"name": metric.name, "formula": formula, "value": format(value, "f"), "reason": None, "terms": cited})
         from .measures import format_measure
         from .models import MeasureKind
-        shown = format_measure(value, MeasureKind.MULTIPLE if metric.measure == "Multiple" else MeasureKind.CURRENCY)
+        shown = format_measure(value, MeasureKind.MULTIPLE if metric.measure == "Multiple" else MeasureKind.CURRENCY,
+                               sources.currency)
         notes.append(f"{metric.name} = {shown} = {formula}")
         report.append(f"- {_safe(metric.name)} = {shown} = {_safe(formula)}")
         for side in ("numerator", "denominator"):
             for term, term_value, citations, name in resolved[side]:
-                parts = [f"{_money(Decimal(str(c['value'])))} ({c['column']}, {c['document']})" for c in citations]
+                parts = [f"{_money(Decimal(str(c['value'])), sources.currency)} ({c['column']}, {c['document']})"
+                         for c in citations]
                 joined = parts[0] + "".join((" - " if c.get("weight") == -1 else " + ") + p
                                             for c, p in zip(citations[1:], parts[1:], strict=True))
-                total = f" = {_money(term_value)}" if len(citations) > 1 else ""
+                total = f" = {_money(term_value, sources.currency)}" if len(citations) > 1 else ""
                 described = f"{name} [{_STATEMENTS[term.statement]}, {term.period}]"
                 report.append(f"  - {_safe(described)}: {_safe(joined)}{total}")
     if not rows:
         raise ValueError("No metric could be computed. " + " ".join(f"{n}." for n in notes))
     result = IntakeResult(rows=rows, rows_read=len(rows), half_filled=True, source_kind="ixbrl",
-                          visible_transformations=list(notes), report_appendix=["## Metrics", "", *report])
+                          visible_transformations=list(notes), report_appendix=["## Metrics", "", *report],
+                          document_currency=sources.currency)
     result.join = {"kind": "metrics", "documents": [
         {"name": name, "sha256": hashlib.sha256(data).hexdigest()} for name, data in sources.documents],
         "metrics": records, "reader_notes": list(notes)}
