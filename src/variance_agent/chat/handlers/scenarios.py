@@ -155,7 +155,8 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
 
     if not raw_amount:
         return Response(
-            text="Please specify a simulation amount or percentage (e.g., `what if revenue drops 5%?` or `what if marketing increases $20,000?`).",
+            text="Please specify a simulation amount or percentage (e.g., `what if revenue drops 5%?` or `what if marketing increases "
+                 "$20,000?`).",
             chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Sensitivity analysis"],
             phase=Phase.EXPLORING,
         )
@@ -169,7 +170,8 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
 
     amount_clean = raw_amount.lstrip("+-").strip()
     is_percent = "%" in amount_clean
-    amount_num_str = amount_clean.replace("%", "").replace(sym, "").replace("$", "").replace("€", "").replace("£", "").replace(",", "").strip()
+    amount_num_str = (amount_clean.replace("%", "").replace(sym, "").replace("$", "").replace("€", "").replace("£", "")
+                      .replace(",", "").strip())
 
     multiplier = Decimal(1)
     if not is_percent:
@@ -314,8 +316,10 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
         f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
         f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
-        f"• **Simulated Operating Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, {_pct_text(margin_delta, '+.1f', ' pts')})\n"
-        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. {'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
+        f"• **Simulated Operating Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, "
+        f"{_pct_text(margin_delta, '+.1f', ' pts')})\n"
+        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. "
+        f"{'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
     )
 
     target_row = [] if matched_row is None else [
@@ -549,10 +553,12 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         f"• **Annualized Operating Profit (Run-Rate)**: **{format_money(rr_profit, cur, places)}**\n"
         f"  *If current operational velocity continues for the full year, profit is projected at {format_money(rr_profit, cur, places)} "
         + (f"(in line with annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n" if rr_var == 0 else
-           f"({format_money(rr_var, cur, places)} {rr_status} vs. annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n")
+           f"({format_money(rr_var, cur, places)} {rr_status} vs. annual {_noun(cfg)} of "
+           f"{format_money(annual_budget_profit, cur, places)}).*\n\n")
         +
         f"• **Corporate Latest Estimate (LE = Actuals + {remaining_label})**: **{format_money(le_profit, cur, places)}**\n"
-        f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at {format_money(le_profit, cur, places)} "
+        f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at "
+        f"{format_money(le_profit, cur, places)} "
         + (f"(in line with {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n" if le_var == 0 else
            f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n")
         +
@@ -594,7 +600,8 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Expenses": format_money(budget_exp * multiplier, cur, places),
             "Operating Profit": format_money(annual_budget_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(Decimal(0), cur, places),
-            "Operating Margin": f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%" if (budget_rev * multiplier) != 0 else "N/A",
+            "Operating Margin": (f"{(ratio(annual_budget_profit, budget_rev * multiplier) * 100):.1f}%"
+                                 if (budget_rev * multiplier) != 0 else "N/A"),
             "Status": "Neutral",
         },
     ]

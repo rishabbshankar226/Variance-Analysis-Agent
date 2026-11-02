@@ -91,7 +91,8 @@ def _handle_executive_memo(session: Session) -> Response:
         "# Executive Management Briefing & Variance Commentary",
         f"**Reporting Period:** {cfg.period}  ",
         f"**Currency:** {cfg.currency}  ",
-        f"**Materiality Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}  \n",
+        f"**Materiality Thresholds:** {format_threshold_amount(cfg.dollar_threshold, cur)} or "
+        f"{format_threshold_pct(cfg.percent_threshold)}  \n",
         "---",
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
@@ -105,41 +106,58 @@ def _handle_executive_memo(session: Session) -> Response:
            f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** "
            f"({_pct_text(margin_delta, '+.1f', ' pts')}).\n"),
         "### 2. Top-Line Performance (Revenue)",
-        f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(rev_budget, cur, places)}** "
-        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'in line' if rev_var == 0 else 'Favorable' if rev_var > 0 else 'Unfavorable'}).",
+        f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of "
+        f"**{format_money(rev_budget, cur, places)}** "
+        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, "
+        f"{'in line' if rev_var == 0 else 'Favorable' if rev_var > 0 else 'Unfavorable'}).",
     ]
 
     if top_rev_beat:
-        memo_lines.append(f"• **Key Outperformer:** **{safe_inline(top_rev_beat.line_item)}** generated {format_money(top_rev_beat.actual, cur, places)} (+{format_money(top_rev_beat.variance_dollars, cur, places)} above {_noun(cfg)}).")
+        memo_lines.append(f"• **Key Outperformer:** **{safe_inline(top_rev_beat.line_item)}** generated "
+                          f"{format_money(top_rev_beat.actual, cur, places)} (+{format_money(top_rev_beat.variance_dollars, cur, places)} "
+                          f"above {_noun(cfg)}).")
     if top_rev_miss:
-        memo_lines.append(f"• **Primary Drag:** **{safe_inline(top_rev_miss.line_item)}** delivered {format_money(top_rev_miss.actual, cur, places)} ({format_money(top_rev_miss.variance_dollars, cur, places)} miss vs. {_noun(cfg)}).")
+        memo_lines.append(f"• **Primary Drag:** **{safe_inline(top_rev_miss.line_item)}** delivered "
+                          f"{format_money(top_rev_miss.actual, cur, places)} ({format_money(top_rev_miss.variance_dollars, cur, places)} "
+                          f"miss vs. {_noun(cfg)}).")
 
     memo_lines.extend([
         "\n### 3. Cost Discipline & Overruns (Expenses)",
-        f"Total Operating Expenses ended at **{format_money(exp_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(exp_budget, cur, places)}** "
-        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, {'in line' if exp_var == 0 else 'Unfavorable' if exp_var > 0 else 'Favorable'}).",
+        f"Total Operating Expenses ended at **{format_money(exp_actual, cur, places)}** vs. {_heading(cfg)} of "
+        f"**{format_money(exp_budget, cur, places)}** "
+        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, "
+        f"{'in line' if exp_var == 0 else 'Unfavorable' if exp_var > 0 else 'Favorable'}).",
     ])
 
     if top_exp_over:
-        memo_lines.append(f"• **Primary Cost Risk:** **{safe_inline(top_exp_over.line_item)}** overspent by {format_money(top_exp_over.variance_dollars, cur, places)} ({'+' if top_exp_over.variance_percent is not None else ''}{format_pct(top_exp_over.budget, top_exp_over.variance_dollars, top_exp_over.percent_label)}).")
+        memo_lines.append(f"• **Primary Cost Risk:** **{safe_inline(top_exp_over.line_item)}** overspent by "
+                          f"{format_money(top_exp_over.variance_dollars, cur, places)} "
+                          f"({'+' if top_exp_over.variance_percent is not None else ''}"
+                          f"{format_pct(top_exp_over.budget, top_exp_over.variance_dollars, top_exp_over.percent_label)}).")
     if top_exp_save:
-        memo_lines.append(f"• **Key Cost Savings:** **{safe_inline(top_exp_save.line_item)}** saved {format_money(abs(top_exp_save.variance_dollars), cur, places)} vs. {'allocated budget' if _is_budget(cfg) else _noun(cfg)}.")
+        memo_lines.append(f"• **Key Cost Savings:** **{safe_inline(top_exp_save.line_item)}** saved "
+                          f"{format_money(abs(top_exp_save.variance_dollars), cur, places)} vs. "
+                          f"{'allocated budget' if _is_budget(cfg) else _noun(cfg)}.")
 
     memo_lines.extend([
         "\n### 4. Governance & Material Variances",
-        f"• **{len(result.material_rows)}** line items breached the materiality hurdle ({format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}).",
+        f"• **{len(result.material_rows)}** line items breached the materiality hurdle "
+        f"({format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}).",
         f"• **Net Flow-Through:** {format_money(net_impact, cur, places)} retained in net operating profit.",
-        f"• **Driver Evidence Coverage:** {reconciled_count} of {len(result.material_rows)} material items verified by mathematical driver decomposition.",
+        f"• **Driver Evidence Coverage:** {reconciled_count} of {len(result.material_rows)} material items verified by mathematical driver "
+        "decomposition.",
         "\n### 5. Prioritized Management Action Items",
     ])
 
     if top_exp_over:
-        memo_lines.append(f"1. **Cost Remediation:** Initiate immediate operational review on **{safe_inline(top_exp_over.line_item)}** to stabilize cost trajectory.")
+        memo_lines.append(f"1. **Cost Remediation:** Initiate immediate operational review on **{safe_inline(top_exp_over.line_item)}** to "
+                          "stabilize cost trajectory.")
     else:
         memo_lines.append("1. **Cost Discipline:** Maintain expense ceiling caps across all departmental allocations.")
 
     if top_rev_beat:
-        memo_lines.append(f"2. **Revenue Scaling:** Protect and expand pipeline investments supporting **{safe_inline(top_rev_beat.line_item)}**.")
+        memo_lines.append("2. **Revenue Scaling:** Protect and expand pipeline investments supporting "
+                          f"**{safe_inline(top_rev_beat.line_item)}**.")
     else:
         memo_lines.append(
             "2. **Sales Acceleration:** Formulate commercial recovery plans targeting lagging revenue lines."
@@ -221,7 +239,8 @@ def _handle_driver_summary(session: Session) -> Response:
             "Driver Components": comps,
         })
 
-    coverage_pct = (ratio(Decimal(len(rows_reconciled)), Decimal(len(result.material_rows))) * Decimal(100)) if result.material_rows else Decimal(100)
+    coverage_pct = ((ratio(Decimal(len(rows_reconciled)), Decimal(len(result.material_rows))) * Decimal(100))
+                    if result.material_rows else Decimal(100))
 
     with_data = f"{len(rows_with_drivers)} with driver data"
     text = (
@@ -344,9 +363,12 @@ def _handle_profitability(session: Session) -> Response:
     text = (
         f"**Profitability Standing: {cfg.period}**\n\n"
         f"Operations are {stance}!\n\n"
-        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (operating margin: **{_pct_text(actual_margin)}**)\n"
-        f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} ({'Planned' if _is_budget(cfg) else _heading(cfg)} margin: {_pct_text(budget_margin)})\n"
-        f"• **Variance vs. {_heading(cfg)}:** **{format_money(net_impact, cur, places)}** ({status}; margin change: {_pct_text(margin_delta, '+.1f', ' pts')})\n\n"
+        f"• **Actual Operating Profit:** **{format_money(actual_profit, cur, places)}** (operating margin: "
+        f"**{_pct_text(actual_margin)}**)\n"
+        f"• **{_planned(cfg)} Operating Profit:** {format_money(budget_profit, cur, places)} "
+        f"({'Planned' if _is_budget(cfg) else _heading(cfg)} margin: {_pct_text(budget_margin)})\n"
+        f"• **Variance vs. {_heading(cfg)}:** **{format_money(net_impact, cur, places)}** ({status}; margin change: "
+        f"{_pct_text(margin_delta, '+.1f', ' pts')})\n\n"
         f"Operating profit reflects gross commercial revenues ({format_money(result.revenue.actual, cur, places)}) "
         f"less total operating expenses ({format_money(result.expenses.actual, cur, places)})."
     )

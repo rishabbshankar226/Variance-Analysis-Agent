@@ -162,9 +162,11 @@ def _handle_expense_status(session: Session) -> Response:
     diff = exp.actual - exp.budget
 
     if under_budget:
-        verdict = f"**Expenses Remained Under {_heading(cfg)}: Saved {format_money(abs(diff), cfg.currency, places)} ({format_pct(exp.budget, exp.variance_dollars, exp.percent_label)})**"
+        verdict = (f"**Expenses Remained Under {_heading(cfg)}: Saved {format_money(abs(diff), cfg.currency, places)} "
+                   f"({format_pct(exp.budget, exp.variance_dollars, exp.percent_label)})**")
     else:
-        verdict = f"**Expenses Exceeded {_heading(cfg)}: Overspend of {format_money(diff, cfg.currency, places)} ({format_pct(exp.budget, exp.variance_dollars, exp.percent_label)})**"
+        verdict = (f"**Expenses Exceeded {_heading(cfg)}: Overspend of {format_money(diff, cfg.currency, places)} "
+                   f"({format_pct(exp.budget, exp.variance_dollars, exp.percent_label)})**")
 
     lines = [
         verdict + "\n",
@@ -225,7 +227,8 @@ def _handle_budget_utilization(session: Session) -> Response:
     elif result.expenses.budget != 0:
         util = ratio(result.expenses.actual, result.expenses.budget) * Decimal("100")
         diff = result.expenses.actual - result.expenses.budget
-        status_text = f"over {noun} by {format_money(diff, cfg.currency, places)}" if diff > 0 else f"under {noun} by {format_money(abs(diff), cfg.currency, places)}"
+        status_text = (f"over {noun} by {format_money(diff, cfg.currency, places)}" if diff > 0
+                       else f"under {noun} by {format_money(abs(diff), cfg.currency, places)}")
         lines.append(f"• **{utilization}:** **{util:.1f}%** ({status_text})")
     else:
         lines.append(f"• **{utilization}:** N/A ({zero_note})")
@@ -341,12 +344,14 @@ def _handle_cost_savings(session: Session) -> Response:
     for row in savings_rows[:5]:
         lines.append(
             f"• **{safe_inline(row.line_item)}:** Saved {format_money(abs(row.variance_dollars), cfg.currency, places)} "
-            f"(Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}, "
+            f"(Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: "
+            f"{format_money(row.budget, cfg.currency, places)}, "
             f"{format_pct(row.budget, row.variance_dollars, row.percent_label)})"
         )
 
     lines.append(
-        "\n**Note:** An underspend can be a lasting saving or an invoice that arrives in a later period; the figures alone do not say which."
+        "\n**Note:** An underspend can be a lasting saving or an invoice that arrives in a later period; the figures alone do not say "
+        "which."
     )
 
     chips = [f"Why {savings_rows[0].line_item}?", "Expenses", "Summary"]
@@ -392,7 +397,8 @@ def _handle_revenue_misses(session: Session) -> Response:
     for row in miss_rows[:5]:
         lines.append(
             f"• **{safe_inline(row.line_item)}:** Shortfall of {format_money(abs(row.variance_dollars), cfg.currency, places)} "
-            f"(Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}, "
+            f"(Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: "
+            f"{format_money(row.budget, cfg.currency, places)}, "
             f"{format_pct(row.budget, row.variance_dollars, row.percent_label)})"
         )
 

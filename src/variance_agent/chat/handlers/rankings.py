@@ -78,8 +78,10 @@ def _handle_biggest_risks(session: Session) -> Response:
         type_label = "Revenue shortfall" if row.line_type == LineType.REVENUE else "Cost overrun"
         lines.append(
             f"**{i}. {safe_inline(row.line_item)}** ({type_label})\n"
-            f"• Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}\n"
-            f"• Variance: **{format_money(row.variance_dollars, cfg.currency, places)}** ({format_pct(row.budget, row.variance_dollars, row.percent_label)})\n"
+            f"• Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: "
+            f"{format_money(row.budget, cfg.currency, places)}\n"
+            f"• Variance: **{format_money(row.variance_dollars, cfg.currency, places)}** "
+            f"({format_pct(row.budget, row.variance_dollars, row.percent_label)})\n"
             f"• Evidence: *{driver_status}*\n"
         )
 
@@ -137,11 +139,14 @@ def _handle_biggest_wins(session: Session) -> Response:
         nature = "Revenue beat" if row.line_type == LineType.REVENUE else "Cost savings / underspend"
         lines.append(
             f"**{i}. {safe_inline(row.line_item)}** ({nature})\n"
-            f"• Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}\n"
-            f"• Favorable Variance: **{format_money(row.variance_dollars, cfg.currency, places)}** ({format_pct(row.budget, row.variance_dollars, row.percent_label)})\n"
+            f"• Actual: {format_money(row.actual, cfg.currency, places)} vs. {_heading(cfg)}: "
+            f"{format_money(row.budget, cfg.currency, places)}\n"
+            f"• Favorable Variance: **{format_money(row.variance_dollars, cfg.currency, places)}** "
+            f"({format_pct(row.budget, row.variance_dollars, row.percent_label)})\n"
         )
 
-    lines.append(f"**Note:** An expense below {_noun(cfg)} can be a lasting saving or spending that moves to a later period; the figures alone do not say which.")
+    lines.append(f"**Note:** An expense below {_noun(cfg)} can be a lasting saving or spending that moves to a later period; the figures "
+                 "alone do not say which.")
 
     chips = [f"Why {favorable[0].line_item}?", "Summary", "Biggest risks"]
     return Response(text="\n".join(lines), chips=chips, phase=Phase.EXPLORING)
@@ -318,7 +323,8 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
             text=_with_unclassified_note(
                 f"**Macro Financial Comparison: Revenue vs. Expenses**\n\n"
                 f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
-                f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of {format_money(actual_profit, cfg.currency, places)}** "
+                f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of "
+                f"{format_money(actual_profit, cfg.currency, places)}** "
                 f"({_pct_text(margin)} operating margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
@@ -375,9 +381,11 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
 
     diff_var = abs(row1.variance_dollars) - abs(row2.variance_dollars)
     if diff_var > 0:
-        lead = f"**{safe_inline(row1.line_item)}** has the larger absolute variance swing by {format_money(diff_var, cfg.currency, places)}."
+        lead = (f"**{safe_inline(row1.line_item)}** has the larger absolute variance swing by "
+                f"{format_money(diff_var, cfg.currency, places)}.")
     elif diff_var < 0:
-        lead = f"**{safe_inline(row2.line_item)}** has the larger absolute variance swing by {format_money(abs(diff_var), cfg.currency, places)}."
+        lead = (f"**{safe_inline(row2.line_item)}** has the larger absolute variance swing by "
+                f"{format_money(abs(diff_var), cfg.currency, places)}.")
     else:
         lead = "Both line items have identical absolute variance swings."
 

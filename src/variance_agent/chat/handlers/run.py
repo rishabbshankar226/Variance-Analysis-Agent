@@ -203,7 +203,8 @@ def _run_analysis(session: Session) -> Response:
             chips.extend(["Label all as Expense", "Label all as Revenue"])
         chips.extend(["Skip", "Skip all"])
         return Response(
-            text=f"Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or expense.\n\n"
+            text=f"Analysis complete, but **{remaining}** line item{'s are' if remaining != 1 else ' is'} not yet labeled revenue or "
+                 "expense.\n\n"
                  f"**'{item}'** is not yet labeled revenue or expense. Should it be:",
             chips=chips,
             phase=Phase.RESOLVE_UNCLASSIFIED,

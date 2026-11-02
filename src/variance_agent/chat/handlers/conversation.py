@@ -84,11 +84,13 @@ def _handle_greeting(session: Session) -> Response:
 
         text = (
             f"I am ready to explore your **{cfg.period}** financial results.\n\n"
-            f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. "
+            f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or "
+            f"{format_threshold_pct(cfg.percent_threshold)}**. "
             + (f"Overall net operating impact is **in line with** {_noun(cfg)}.\n\n" if net_impact == 0 else
                f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n")
             +
-            f"What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
+            "What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill "
+            f"down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
         )
         chips = ["Executive memo", "Waterfall", "Biggest risks", "Sensitivity"]
     elif session.phase == Phase.AWAITING_PERIOD:
@@ -150,13 +152,16 @@ def _handle_identity(session: Session) -> Response:
         "I am an intelligent, deterministic financial analysis assistant built specifically for FP&A teams, "
         "controllers, and CFO organizations.\n\n"
         "**How I differ from a non-deterministic LLM:**\n"
-        "• **100% Deterministic Calculations**: Zero hallucination. Every variance, percentage, and waterfall step is computed with 50-digit exact Decimal precision.\n"
+        "• **100% Deterministic Calculations**: Zero hallucination. Every variance, percentage, and waterfall step is computed with "
+        "50-digit exact Decimal precision.\n"
         "• **Source Fingerprints**: Every analysis produces a SHA-256 fingerprint of the file it came from, for traceability.\n"
-        "• **Conversational Fluency**: I interpret natural business queries, multi-turn follow-ups, and scenarios, giving you the ease of a conversational AI with the trustworthiness of an audited ledger.\n"
+        "• **Conversational Fluency**: I interpret natural business queries, multi-turn follow-ups, and scenarios, giving you the ease of "
+        "a conversational AI with the trustworthiness of an audited ledger.\n"
         "• **No AI Model In The Loop**: The calculations use standard-library Python and no language model sees or computes your numbers. "
         + where
     )
-    chips = ["Summary", "Executive memo", "What is materiality?", "Help"] if session.phase == Phase.EXPLORING else ["Supported file formats", "Help"]
+    chips = ["Summary", "Executive memo", "What is materiality?", "Help"] if session.phase == Phase.EXPLORING else ["Supported file "
+                                                                                                                    "formats", "Help"]
     return Response(text=text, chips=chips, phase=session.phase)
 
 
@@ -182,7 +187,8 @@ def _describe_item_reply(session: Session, matched_name: str) -> Response:
              f"• **Actual:** {format_money(row.actual, cfg.currency, places)}\n"
              f"• **Variance:** **{format_money(row.variance_dollars, cfg.currency, places)}** "
              f"({format_pct(row.budget, row.variance_dollars, row.percent_label)}, {status_desc})\n\n"
-             f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what if {safe_inline(row.line_item)} drops 5%`)?",
+             f"Would you like to inspect its causal driver decomposition (`why {safe_inline(row.line_item)}`) or simulate a change (`what "
+             f"if {safe_inline(row.line_item)} drops 5%`)?",
         table=[row_to_table_dict(row, cfg.currency, places, _heading(cfg))],
         chips=[f"Why {row.line_item}?", f"Detail {row.line_item}?", "Waterfall", "Summary"],
         phase=Phase.EXPLORING,
@@ -214,7 +220,8 @@ def _handle_unknown(session: Session, text: str) -> Response:
         baseline = "the baseline budget" if noun == "budget" else f"the {noun}"
         return Response(
             text=f"**Note:** This analysis evaluates actual performance against {baseline} for the closed reporting period. "
-                 "To project full-year outcomes based on current pace, ask for `run rate` or test scenarios with `what if revenue drops 5%?`.",
+                 "To project full-year outcomes based on current pace, ask for `run rate` or test scenarios with `what if revenue drops "
+                 "5%?`.",
             chips=["Run rate", "Sensitivity", "Summary"],
             phase=session.phase,
         )
@@ -232,7 +239,8 @@ def _handle_unknown(session: Session, text: str) -> Response:
 
     first_item = session.result.rows[0].line_item if (session.result and session.result.rows) else "Marketing"
     return Response(
-        text=f"I want to make sure I provide the exact figures you need. I couldn't find an account matching \"{safe_inline(text if len(text) <= 80 else text[:80] + '…')}\" in your current dataset.\n\n"
+        text="I want to make sure I provide the exact figures you need. I couldn't find an account matching "
+             f"\"{safe_inline(text if len(text) <= 80 else text[:80] + '…')}\" in your current dataset.\n\n"
              "Here are a few ways we can explore your numbers:\n"
              f"• **Account Driver Breakdown:** Ask `why [Account Name]` (e.g. `why {safe_inline(first_item)}`)\n"
              f"• **Profit Waterfall:** Ask for `waterfall` to reconcile {noun} to actual operating profit\n"
