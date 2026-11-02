@@ -226,9 +226,22 @@ def test_the_glyph_check_catches_each_kind() -> None:
     )
 
 
-@pytest.mark.parametrize("module", sorted(p.name for p in CHAT.glob("*.py")))
+def _chat_modules() -> list[str]:
+    """Every chat module; a package (chat/handlers/, S1) is listed once, under its old module's name."""
+    packages = [f"{p.name}.py" for p in CHAT.iterdir() if p.is_dir() and (p / "__init__.py").exists()]
+    return sorted([p.name for p in CHAT.glob("*.py")] + packages)
+
+
+def _chat_source(module: str) -> str:
+    path = CHAT / module
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return "".join(part.read_text(encoding="utf-8") for part in sorted((CHAT / module.removesuffix(".py")).rglob("*.py")))
+
+
+@pytest.mark.parametrize("module", _chat_modules())
 def test_reply_text_built_by_chat_has_no_glyphs(module: str) -> None:
-    found = banned_glyphs((CHAT / module).read_text(encoding="utf-8"))
+    found = banned_glyphs(_chat_source(module))
     if module in NOT_YET_CONVERTED:
         assert found, f"{module} is clean: take it off NOT_YET_CONVERTED"
     else:
