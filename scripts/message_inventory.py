@@ -98,10 +98,11 @@ FIX_VERBS = (
     "shorten", "split", "start", "supply", "switch", "tell", "try", "turn", "type", "unhide", "unmerge", "upload",
     "use", "wait",
 )
-# A fix opens a sentence, a list item or a bolded chip name, or follows "so", "or" or "then" ("..., so give
-# two filings in one currency").
-FIX = re.compile(r"(?:^|[.:;!?]\s+|[,;]\s+(?:so|or|then|and)\s+|\bso\s+|\n[-*\s]*|\*\*)(?:"
-                 + "|".join(re.escape(v) for v in FIX_VERBS) + r")\b", re.IGNORECASE)
+# A fix opens a sentence, a list item or a bolded chip name, perhaps after a condition ("If the filing puts
+# them in another document, upload that document"), or follows "so", "or" or "then" ("..., so give two
+# filings in one currency").
+FIX = re.compile(r"(?:(?:^|[.:;!?]\s+)(?:if\b[^.]*?,\s+|otherwise,?\s+)?|[,;]\s+(?:so|or|then|and)\s+|\bso\s+"
+                 r"|\n[-*\s]*|\*\*)(?:" + "|".join(re.escape(v) for v in FIX_VERBS) + r")\b", re.IGNORECASE)
 
 
 @dataclass

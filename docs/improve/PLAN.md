@@ -285,7 +285,7 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
     - A message shown inside another (an Excel or JSON read error after "Could not read ...", a cell under "Fix these cells ...") is checked for jargon, and its wrapper is scored for the fix.
     - Only errors and refusals are scored for a fix; a confirmation or a question is not.
     - Engine errors are checked as `plain_analysis_error` shows them.
-    - The scanner was frozen before any message changed. **Before, at `ff8abcb`:** 228 messages seen, 17 with jargon, 35 of 82 errors with no fix, 49 failing either check. The hand-written count at `a3ce6bb` (113 messages, 32 jargon, 70 no fix) used other scope and rules, so it is not comparable.
+    - The scanner was frozen before any message changed. One refinement followed on the same source, before any edit: it now recognises a fix given after a condition ("If the filing puts them in another document, upload that document"). **Before, at `ff8abcb`'s source:** 228 messages seen, 17 with jargon, 34 of 82 errors with no fix, 48 failing either check. The first run, without the refinement, gave 35 and 49. The hand-written count at `a3ce6bb` (113 messages, 32 jargon, 70 no fix) used other scope and rules, so it is not comparable.
     - Limits stay (constraint 10). Only the words change.
 
 ## Phase 3 rules

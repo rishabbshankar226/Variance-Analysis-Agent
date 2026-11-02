@@ -1,6 +1,6 @@
 # Intake Message Inventory
 
-This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `ff8abcb`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
+This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `cf2f548`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
 
 Per the definitions in [`.agents/rules/variance-intake.md`](../.agents/rules/variance-intake.md), which apply to a message Maya sees:
 - **Jargon**: a snake_case key or `repr()` quoting, an exception name, CLI flag syntax (unless the message says it is optional), one of the words "normalize," "alias," "schema," "OOXML," "archive," "XML," "DTD," "payload," "Row Kind," "Unclassified", or an exit code.
@@ -18,8 +18,8 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | **Messages Containing Jargon** | **17** | 7.5% |
 | **Plain-Language Messages** | **211** | 92.5% |
 | **Errors and refusals scored for a fix** | **82** | 36.0% |
-| **Errors Offering an Actionable Fix** | **47** | 57.3% of errors |
-| **Errors With No Fix** | **35** | 42.7% of errors |
+| **Errors Offering an Actionable Fix** | **48** | 58.5% of errors |
+| **Errors With No Fix** | **34** | 41.5% of errors |
 | Listed, not seen in the chat | 113 | |
 
 ### Breakdown by Component
@@ -32,7 +32,7 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | [`variance_agent/chat/server.py`](../src/variance_agent/chat/server.py) | 4 | 0 (0.0%) | 3 of 4 |
 | [`variance_agent/excel.py`](../src/variance_agent/excel.py) | 16 | 7 (43.8%) | 0 of 0 |
 | [`variance_agent/intake.py`](../src/variance_agent/intake.py) | 33 | 1 (3.0%) | 7 of 20 |
-| [`variance_agent/ixbrl.py`](../src/variance_agent/ixbrl.py) | 5 | 2 (40.0%) | 3 of 5 |
+| [`variance_agent/ixbrl.py`](../src/variance_agent/ixbrl.py) | 5 | 2 (40.0%) | 4 of 5 |
 | [`variance_agent/join.py`](../src/variance_agent/join.py) | 2 | 0 (0.0%) | 2 of 2 |
 | [`variance_agent/ltm.py`](../src/variance_agent/ltm.py) | 10 | 1 (10.0%) | 6 of 10 |
 | [`variance_agent/metrics.py`](../src/variance_agent/metrics.py) | 4 | 0 (0.0%) | 1 of 4 |
@@ -325,7 +325,7 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 | `ixbrl.py:456` | `'{filename}' declares an XML entity or document type subset, which this reader refuses. Upload a CSV or Excel copy of the statement, or the filing's PDF.` | **Yes** | Yes | word 'XML' |
 | `ixbrl.py:466` | `'{filename}' is a web page without Inline XBRL figures, so it has no statements I can find. Upload the filing's 10-K or 10-Q document from its EDGAR folder, its PDF, or a CSV or Excel table.` | No | Yes |  |
 | `ixbrl.py:523` | `The financial statements aren't in '{filename}' itself: it points to {elsewhere}, the annual report that holds them. Upload that document from the same EDGAR filing, or the statements as Excel or CSV.` | No | Yes |  |
-| `ixbrl.py:526` | `I could not find the financial statements in '{filename}': no table there is titled as an income statement, balance sheet or cash flow statement and holds their tagged figures. If the filing puts them in another document (often Exhibit 13, the annual report), upload that document from the same EDGAR filing; otherwise upload the statements as Excel or CSV.` | No | **No** |  |
+| `ixbrl.py:526` | `I could not find the financial statements in '{filename}': no table there is titled as an income statement, balance sheet or cash flow statement and holds their tagged figures. If the filing puts them in another document (often Exhibit 13, the annual report), upload that document from the same EDGAR filing; otherwise upload the statements as Excel or CSV.` | No | Yes |  |
 | `ixbrl.py:645` | `'{filename}' declares an XML entity or document type subset, which this reader refuses.` | **Yes** | **No** | word 'XML' |
 
 ### `join.py`

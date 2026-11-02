@@ -43,6 +43,7 @@ def test_only_an_error_is_scored_for_a_fix() -> None:
     assert _message("The file is empty.").offers_fix() is False
     assert _message("The file is empty. Upload a file with a header row.").offers_fix() is True
     assert _message("Rates differ, so give two filings in one currency.").offers_fix() is True
+    assert _message("Not here. If the filing puts them elsewhere, upload that document.").offers_fix() is True
     assert _message("Choose a sheet.", "error reply").offers_fix() is True
     assert _message("Period set to Q3 2026.", "reply").offers_fix() is None
     assert _message("Something failed.", "error reply", chips=True).offers_fix() is True
