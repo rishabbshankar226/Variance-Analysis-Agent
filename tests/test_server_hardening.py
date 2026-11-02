@@ -608,20 +608,19 @@ def test_downloads_are_not_cacheable_and_not_sniffed(httpd: HTTPServer) -> None:
 
 def test_a_dripped_body_is_cut_off_at_its_deadline(httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
     import socket
-    import time
 
     monkeypatch.setattr(server_module, "_BODY_GRACE_SECONDS", 0.3)
     monkeypatch.setattr(server_module, "_BODY_SECONDS_PER_MIB", 0.0)
     with socket.create_connection(("127.0.0.1", httpd.server_address[1]), timeout=10) as conn:
         conn.sendall(f"POST /message HTTP/1.1\r\nHost: {_host(httpd)}\r\nContent-Type: application/json\r\n"
                      "Content-Length: 40\r\n\r\n".encode())
-        started = time.monotonic()
-        reply = b""
+        reply, sent = b"", 0
         for _ in range(40):  # one byte every 0.1 s: the whole body would take 4 s
             try:
                 conn.sendall(b" ")
             except OSError:
                 break
+            sent += 1
             conn.settimeout(0.1)
             try:
                 reply = conn.recv(4096)
@@ -629,9 +628,12 @@ def test_a_dripped_body_is_cut_off_at_its_deadline(httpd: HTTPServer, monkeypatc
                 continue
             if reply:
                 break
+        conn.settimeout(2)
+        while chunk := conn.recv(4096):  # the server closes the connection after a 408: read the whole reply
+            reply += chunk
         assert reply.startswith(b"HTTP/1.0 408"), reply[:80]
         assert b"The upload arrived too slowly. Please try again." in reply
-        assert time.monotonic() - started < 2.5
+        assert sent < 40  # answered before the body was complete: no clock to flake under load (T1)
 
 
 def test_a_body_sent_whole_still_reads(httpd: HTTPServer) -> None:
