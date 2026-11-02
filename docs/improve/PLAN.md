@@ -49,7 +49,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
 | X31 | 3 | todo | | |
-| M4 | 3 | todo | | |
+| M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | todo | | |
 | C4 | 3 | todo | | |
 | M6 | 3 | todo | | |
