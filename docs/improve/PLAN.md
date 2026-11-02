@@ -33,7 +33,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X15 | 3 | done | see `fix(X15)` | `src/variance_agent/parsing.py`, `comparisons.py`, `tests/test_tsv_input.py` (new) |
 | X16 | 3 | done | see `fix(X16)` | `src/variance_agent/intake.py`, `tests/test_section_headings.py` (new) |
 | X17 | 3 | done | see `fix(X17)` | `src/variance_agent/chat/handlers.py`, `parsing.py`, `tests/test_xls_sheets.py` (new) |
-| X18 | 3 | todo | | |
+| X18 | 3 | done | see `fix(X18)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_headers.py` (new) |
 | X19 | 3 | todo | | |
 | X20 | 3 | todo | | |
 | X21 | 3 | todo | | |
@@ -345,6 +345,13 @@ Boundary cases:
 - "list sheets" and "sheet Data" work on such an `.xls`.
 - A `.csv` still answers that it holds a single dataset.
 
+**X18, one set of header names.** The comparison path recognises every line-item and Actual name that assisted intake does (`intake._LINE_ITEM_SYNONYMS`, `_ACTUAL_SYNONYMS`): "Description", "GL Account Name", "Account Title", "Line Item Name", "GL Description", "YTD Actual". The names it knew before keep their precedence, and the further names are used only when none of those is present. So a file with both "Account" and "Description" still takes "Account" as today, never a new ambiguity refusal. A test pins the two lists together, so they cannot drift again.
+
+Boundary cases:
+- `Description,Budget,Forecast,Actual` reads with `--compare-to budget,forecast`.
+- `Line Item,Budget,Forecast,YTD Actual` reads.
+- `Account,Description,...` still takes Account.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -448,6 +455,7 @@ Items:
 | X29 | the long outputs removed from the `--check-only` refusal (`git apply -R`), tests kept | `pytest tests/test_cli_small_refusals.py -k check_only` | 2 failed, 1 passed: `--check-only --long-output x.csv` exits 0 with "Validation passed" and writes nothing |
 | X16 | the section-heading skip and its note removed (`git apply -R`), tests kept | `pytest tests/test_section_headings.py` | 1 failed, 1 passed: "Row 2, REVENUE, Actual column: the amount is blank" stops intake. The blank-cell control passes either way. |
 | X17 | `.xls` removed from the chat's multi-table suffixes and from `get_workbook_sheets` (`git apply -R`), tests kept | `pytest tests/test_xls_sheets.py` | 1 failed, 2 passed: `book.xls` answers "contains a single dataset". The `.xlsx` and `.csv` controls pass either way. |
+| X18 | the fallback name lists and their uses removed (`git apply -R`), tests kept | `pytest tests/test_comparison_headers.py` | 3 failed, 1 passed: "Could not find a Line Item and Actual header" for Description and YTD Actual, and the drift guard finds no lists. The Account precedence control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

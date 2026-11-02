@@ -158,14 +158,16 @@ def analyze_comparisons(
                 del row[source]
             row["segment"] = segment
     keys = list(dict.fromkeys(key for row in canonical for key in row))
-    actual_key = _one_column(keys, ["actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"], "Actual", required=False)
+    actual_key = (_one_column(keys, ["actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"], "Actual", required=False)
+                  or _one_column(keys, _MORE_ACTUAL_KEYS, "Actual", required=False))
     original_headers = raw_headers or tuple(dict.fromkeys(k for row in rows for k in row))
     ordered, period_keys = _period_columns(keys, original_headers, extended=extended_headers)
     if actual_key is None and ordered:
         actual_key = period_keys[ordered[0]]
     if actual_key is None:
         raise ValueError("No Actual column found; map one explicitly.")
-    line_key = _one_column(keys, ["line_item", "line", "item", "account", "account_name", "account_description", "category"], "Line Item")
+    line_key = (_one_column(keys, _LINE_ITEM_KEYS, "Line Item", required=False)
+                or _one_column(keys, _MORE_LINE_ITEM_KEYS, "Line Item"))
     assert line_key is not None
     comparisons = []
     notes = []
@@ -394,10 +396,15 @@ def _render_comparisons(table: TableAnalysis) -> str:
     return "\n".join(lines)
 
 
-_LINE_ITEM_HEADERS = frozenset({"line_item", "account", "account_name", "account_description", "item", "category"})
 
 
 _ACTUAL_KEYS = frozenset({"actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"})
+_LINE_ITEM_KEYS = ["line_item", "line", "item", "account", "account_name", "account_description", "category"]
+# Assisted intake's further names for the same roles, used only when none of the above is present, so a file
+# that reads today picks the same column (X18). tests/test_comparison_headers.py pins these to intake's sets.
+_MORE_LINE_ITEM_KEYS = ["description", "gl_account_name", "account_title", "line_item_name", "gl_description"]
+_MORE_ACTUAL_KEYS = ["ytd_actual"]
+_ALL_LINE_ITEM_KEYS = frozenset(_LINE_ITEM_KEYS + _MORE_LINE_ITEM_KEYS)
 _RANGE_KEYS = frozenset({"low", "high", "consensus_low", "consensus_high", "guide_low", "guide_high", "guidance_low",
                          "guidance_high", "std_dev", "standard_deviation", "dispersion"})
 
@@ -442,7 +449,7 @@ def _apply_unit_caption(
     from .intake import DisplayScaledCell, _reconcile_display, _UNIT_WORDS, detect_unit_scale
     caption = detect_unit_scale(text)
     measure = next((h for h in headers if normalize_key(h) == "measure"), None)
-    line = next((h for h in headers if normalize_key(h) in _LINE_ITEM_HEADERS), None)
+    line = next((h for h in headers if normalize_key(h) in _ALL_LINE_ITEM_KEYS), None)
     columns = _amount_columns(headers)
     cells: list[tuple[dict[str, object], int, int, str, str]] = []  # row, sheet row, column, header, line item
     for row, number in zip(rows, positions, strict=True):
@@ -587,8 +594,8 @@ def read_comparison_input(
             labels = [str(v).strip() for v in record if v is not None]
             normalized = {normalize_key(v) for v in labels}
             normalized.update(role for role, source in (column_mapping or {}).items() if source in labels)
-            if normalized & _LINE_ITEM_HEADERS:
-                if normalized & {"actual", "actuals", "actual_amount", "act", "actual_ytd"} or sum(
+            if normalized & _ALL_LINE_ITEM_KEYS:
+                if normalized & (_ACTUAL_KEYS | set(_MORE_ACTUAL_KEYS)) or sum(
                         parse_period_label(label, extended=True) is not None for label in labels) >= 2:
                     candidates.append(index)
         if not candidates:
@@ -597,7 +604,7 @@ def read_comparison_input(
     if not raw:
         raise ValueError("Input contains no data.")
     headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
-    line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _LINE_ITEM_HEADERS]
+    line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _ALL_LINE_ITEM_KEYS]
     excluded: set[int] = set()
     hidden: list[tuple[int, str, bool]] = []
     if workbook_facts is not None and worksheet_path in workbook_facts.layouts:
