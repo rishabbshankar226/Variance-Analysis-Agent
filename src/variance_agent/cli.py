@@ -358,8 +358,9 @@ def _run(args: Arguments) -> int:
     assert args.period is not None
     assert args.dollar_threshold is not None
     assert args.percent_threshold is not None
-    if args.check_only and (args.output or args.audit_json or args.xlsx):
-        raise ValueError("--check-only cannot be combined with --output, --audit-json, or --xlsx.")
+    if args.check_only and (args.output or args.audit_json or args.xlsx or args.long_output or args.long_output_jsonl):
+        raise ValueError("--check-only cannot be combined with --output, --audit-json, --xlsx, --long-output or "
+                         "--long-output-jsonl.")
     _validate_output_paths(args)
     input_path = Path(args.input)
     is_pdf = input_path.suffix.lower() in {".pdf", ".htm", ".html"}  # filings: --sheet names a statement
