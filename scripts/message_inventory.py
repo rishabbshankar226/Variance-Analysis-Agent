@@ -220,12 +220,18 @@ def _handler_names(handler: ast.ExceptHandler) -> set[str]:
             for kind in kinds}
 
 
-def _messages(path: Path) -> list[Message]:
+def _constants(tree: ast.Module) -> dict[str, str]:
+    """A module's top-level text constants, by name."""
+    return {target.id: node.value.value for node in tree.body if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+            for target in node.targets if isinstance(target, ast.Name)}
+
+
+def _messages(path: Path, shared: dict[str, str] | None = None) -> list[Message]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     relative = path.relative_to(ROOT).as_posix()
-    constants = {target.id: node.value.value for node in tree.body if isinstance(node, ast.Assign)
-                 and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-                 for target in node.targets if isinstance(target, ast.Name)}
+    # A constant a sibling module defines and this one imports reads the same (the handlers package, S1).
+    constants = {**(shared or {}), **_constants(tree)}
     found: list[Message] = []
     # Text a function assigns to a local name before passing it on (message = f"..."; ...(message)).
     local_texts: dict[tuple[str, str], list[str]] = {}
@@ -305,7 +311,9 @@ def _messages(path: Path) -> list[Message]:
 def inventory() -> list[Message]:
     paths = [path for path in sorted(SOURCE.rglob("*.py"))
              if any(path.relative_to(SOURCE).as_posix().startswith(name) for name in INTAKE)]
-    return [m for path in paths for m in _messages(path)]
+    shared = {name: value for path in paths
+              for name, value in _constants(ast.parse(path.read_text(encoding="utf-8"))).items()}
+    return [m for path in paths for m in _messages(path, shared)]
 
 
 def failing(messages: list[Message] | None = None) -> list[Message]:
