@@ -279,6 +279,26 @@ def _document_record(document: Mapping[str, object] | None) -> JSONObject | None
     }
 
 
+# What each source kind records that only audit 1.9 can hold (X14).
+_SOURCE_NEEDS_19 = {"edgar_xlsx": "how the filing was read", "ixbrl": "how the filing was read", "ltm": "the LTM build",
+                    "join": "the two-file join", "metrics": "the derived metrics", "scorecard": "the holdings scorecard"}
+
+
+def needs_schema_19(result: AnalysisResult, transformations: Mapping[str, object] | None,
+                    source_document: Mapping[str, object] | None) -> str | None:
+    """What in this record only audit 1.9 can hold, in words, or None when 1.8 or older can (X14)."""
+    if transformations is not None and transformations.get("workbook") is not None:
+        return "what the workbook examination found"
+    if source_document is not None and (kind := source_document.get("kind")) in _SOURCE_NEEDS_19:
+        return _SOURCE_NEEDS_19[str(kind)]
+    if result.config.comparison_basis in OPT_IN_BASES:
+        return "a limit, benchmark or target comparison"
+    if any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
+            isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None):
+        return "a Multiple measure"
+    return None
+
+
 @financial_context()
 def build_audit_record(
     result: AnalysisResult,
@@ -304,8 +324,7 @@ def build_audit_record(
     headline = source_document is not None and "headline" in source_document
     multiple = any(row.measure is MeasureKind.MULTIPLE for row in result.rows) or (
         isinstance(result.config, AudienceConfig) and result.config.multiple_threshold is not None)
-    needs_19 = workbook is not None or opt_in or multiple or (
-        source_document is not None and source_document.get("kind") in {"edgar_xlsx", "ixbrl", "ltm", "join", "metrics", "scorecard"})
+    needs_19 = needs_schema_19(result, transformations, source_document) is not None
     if schema_version is None:
         schema_version = "1.9" if needs_19 else "1.8" if extended else CURRENT_SCHEMA_VERSION
     if extended and schema_version not in {"1.8", "1.9"}:
@@ -316,8 +335,8 @@ def build_audit_record(
         raise ValueError(f"Audit schema {schema_version} cannot record a limit, benchmark or target comparison; "
                          "use --audit-schema-version 1.9.")
     if needs_19 and schema_version != "1.9":
-        raise ValueError(f"Audit schema {schema_version} cannot record what the workbook examination found; "
-                         "use --audit-schema-version 1.9.")
+        raise ValueError(f"Audit schema {schema_version} cannot record "
+                         f"{needs_schema_19(result, transformations, source_document)}; use --audit-schema-version 1.9.")
     if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise ValueError(f"Unsupported audit schema version {schema_version!r}.")
     if schema_version == "1.0" and result.config.currency != "USD":

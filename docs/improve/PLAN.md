@@ -29,7 +29,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
 | X12 | 3 | done | see `fix(X12)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X13 | 3 | done | see `fix(X13)` | `src/variance_agent/cli.py`, `tests/test_cli_output_paths.py` (new) |
-| X14 | 3 | todo | | |
+| X14 | 3 | done | see `fix(X14)` | `src/variance_agent/audit.py`, `comparisons.py`, `tests/test_comparison_audit_versions.py` (new) |
 | X15 | 3 | todo | | |
 | X16 | 3 | todo | | |
 | X17 | 3 | todo | | |
@@ -304,6 +304,15 @@ Boundary cases:
 - `-o` equal to each of the four new inputs refuses.
 - `-o` to a fresh path reads, as before.
 
+**X14, a comparison audit that needs 1.9.** `audit.needs_schema_19` is the one test of whether a record needs audit 1.9. It covers a workbook examination; a filing, LTM, join, metrics or scorecard source; an opt-in basis; or a Multiple measure. `build_audit_record` uses it as before. A comparison set (`build_comparison_audit`) now uses it too: with no version asked, the set and every child are 1.9 when any comparison needs it, otherwise 1.8 as today, and an explicit 1.9 is accepted. Schema 1.9 already describes comparison sets, so no schema changes.
+
+The refusal names what needs 1.9 instead of always blaming a workbook examination: "how the filing was read", "the LTM build", "the two-file join", "the derived metrics", "the holdings scorecard". A workbook keeps "what the workbook examination found".
+
+Boundary cases:
+- A 10-K under `--preset earnings` with `--audit-json`: a 1.9 record that validates against `audit-1.9.schema.json`.
+- The same with `--audit-schema-version 1.8`: "Audit schema 1.8 cannot record how the filing was read; use --audit-schema-version 1.9."
+- A CSV earnings run: 1.8, as today.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -401,6 +410,7 @@ Items:
 | X10 | the `not args.no_browser` condition removed (`git apply -R`), test kept | `pytest tests/test_cli_hosted_detection.py` | 1 failed, 5 passed: with RENDER set, `--chat --no-browser` binds 0.0.0.0 |
 | X12 | the body deadline and chunked read removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "dripped or sent_whole"` | 1 failed, 1 passed: the deadline settings don't exist, and the server waits out the drip |
 | X13 | the four second files removed from `_validate_output_paths` (`git apply -R`), tests kept | `pytest tests/test_cli_output_paths.py` | 4 failed, 1 passed: `-o bud.csv` overwrites the compare file, and the other three reach later checks instead of the path refusal |
+| X14 | `needs_schema_19`, its use in `build_comparison_audit` and the worded refusal removed (`git apply -R`), tests kept | `pytest tests/test_comparison_audit_versions.py` | 2 failed, 1 passed: the 10-K earnings audit refuses (1.8 says use 1.9), and the 1.8 refusal still blames a workbook examination. The CSV 1.8 control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

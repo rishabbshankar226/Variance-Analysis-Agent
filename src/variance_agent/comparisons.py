@@ -7,7 +7,7 @@ from typing import Mapping
 
 from .analysis import analyze_rows, verify_result
 from .audience import AudienceConfig, audience_config, validate_audience_config, effective_layout
-from .audit import (build_audit_record, finalize_audience_record, audience_configuration,
+from .audit import (build_audit_record, needs_schema_19, finalize_audience_record, audience_configuration,
                     validate_source_identity, comparison_details_record)
 from .comparison import (basis_for_header, comparison_heading, display_outcome, extended_heading,
                          order_period_labels, parse_period_label, comparison_details)
@@ -285,8 +285,8 @@ def build_comparison_audit(
     transformations: Mapping[str, object] | None = None,
     source_document: Mapping[str, object] | None = None,
 ) -> JSONObject:
-    if schema_version not in {None, "1.8"}:
-        raise ValueError("Comparison sets and new comparisons require audit schema 1.8.")
+    if schema_version not in {None, "1.8", "1.9"}:
+        raise ValueError("Comparison sets and new comparisons require audit schema 1.8 or 1.9.")
     verify_comparisons(table)
     source_name = source_name if source_name is not None else table.source_name
     source_sha256 = source_sha256 if source_sha256 is not None else table.source_sha256
@@ -295,10 +295,14 @@ def build_comparison_audit(
     transformations = transformations if transformations is not None else table.source_transformations
     validate_source_identity(source_name, source_sha256)
     source_sha256 = source_sha256.lower() if source_sha256 is not None else None
+    # A set is 1.9 when any of its comparisons records what only 1.9 can hold; otherwise 1.8 as before (X14).
+    version = schema_version or ("1.9" if any(
+        needs_schema_19(c.result, transformations, source_document) is not None
+        for c in table.comparisons if c.result is not None) else "1.8")
     records: list[JSONValue] = []
     for comparison in table.comparisons:
         if comparison.result is not None:
-            child = build_audit_record(comparison.result, schema_version="1.8", source_name=source_name,
+            child = build_audit_record(comparison.result, schema_version=version, source_name=source_name,
                                        source_sha256=source_sha256, source_worksheet=source_worksheet,
                                        transformations=transformations, source_document=source_document)
             child["unavailable_comparisons"] = [_missing_record(row) for row in comparison.unavailable]
@@ -306,7 +310,7 @@ def build_comparison_audit(
             assert isinstance(inferences, list)
             inferences.extend(note for note in table.inferences if note not in inferences)
         else:
-            child = {"schema_version": "1.8", "kind": "comparison_unavailable", "period": table.config.period,
+            child = {"schema_version": version, "kind": "comparison_unavailable", "period": table.config.period,
                      "comparison": {"basis": str(comparison.basis), "label": comparison.label},
                      "source": {"name": source_name, "sha256": source_sha256},
                      "unavailable_comparisons": [_missing_record(row) for row in comparison.unavailable], "comparisons": [],
@@ -319,7 +323,7 @@ def build_comparison_audit(
         record = records[0]
         assert isinstance(record, dict)
         return record
-    root: JSONObject = {"schema_version": "1.8", "kind": "comparison_set", "period": table.config.period,
+    root: JSONObject = {"schema_version": version, "kind": "comparison_set", "period": table.config.period,
                         "source": {"name": source_name, "sha256": source_sha256}, "comparisons": records,
                         "comparison_order": [str(c.basis) for c in table.comparisons],
                         "estimate_vs_consensus": [_gap_record(gap) for gap in table.estimate_vs_consensus],
