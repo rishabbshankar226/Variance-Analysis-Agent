@@ -22,6 +22,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C1 | 2 | todo | | |
 | C3 | 2 | todo | | |
 | X30 | 2 | todo | | |
+| X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | todo | | |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
