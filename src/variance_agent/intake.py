@@ -3015,6 +3015,13 @@ def _process_raw_table(
 
     header_str_row = [str(c).strip() for c in header_row if c is not None]
     period_pairs = detect_period_pairs(header_str_row)
+    # A chosen period reads its own Budget/Actual pair, even beside "Budget YTD"/"Actual YTD" synonyms (X6).
+    chosen_pair = next((p for p in period_pairs if selected_period and p.period.lower() == selected_period.lower()), None)
+    if chosen_pair is not None and detection.basis is ComparisonBasis.BUDGET:
+        names = [None if c is None else str(c).strip() for c in header_row]
+        if chosen_pair.budget_column in names and chosen_pair.actual_column in names:
+            roles[CanonicalRole.BUDGET] = names.index(chosen_pair.budget_column)
+            roles[CanonicalRole.ACTUAL] = names.index(chosen_pair.actual_column)
 
     column_mapping: dict[CanonicalRole, str] = {}
     for role, col_idx in roles.items():

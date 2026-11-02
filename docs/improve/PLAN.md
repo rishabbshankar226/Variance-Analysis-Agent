@@ -16,7 +16,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C5 | 2 | done | see `fix(C5)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_zero_variance.py` (new) |
 | X4 | 2 | done | see `fix(X4)` | `src/variance_agent/intake.py`, `tests/test_unit_scaling.py` |
 | X5 | 2 | done | see `fix(X5, X30)` | `src/variance_agent/intake.py`, `ixbrl.py`, `join.py`, `ltm.py`, `metrics.py`, `cli.py`, `comparisons.py`, `api.py`, `chat/handlers.py`, `tests/test_currency_conflicts.py` (new) |
-| X6 | 2 | todo | | |
+| X6 | 2 | done | see `fix(X6)` | `src/variance_agent/intake.py`, `tests/test_period_choice.py` (new) |
 | X7 | 2 | todo | | |
 | X8 | 2 | todo | | |
 | C1 | 2 | todo | | |
@@ -221,6 +221,14 @@ Boundary cases:
 - A JPY filing refuses under every currency.
 - An EUR filing under EUR builds an LTM table in `€`.
 
+**X6, a chosen period reads that period's columns.** When the reader has chosen a period (the chat's period chips, `selected_period`) and the header row holds that period's Budget and Actual pair, those two columns are the ones read. That holds even when another pair's names ("Budget YTD", "Actual YTD") are also plain Budget and Actual synonyms. Without a chosen period, or when the row has no pair for it, the header is read as before. The summary's "Analyzed period" and "Columns mapped" then name the same columns.
+
+Boundary cases on one fictional file with Sep-26 and YTD pairs:
+- Choosing "Sep-26" reads 55,556 and 60,000.
+- Choosing "YTD" reads 500,000 and 540,000.
+- No choice keeps today's columns.
+- A file with only "Budget YTD" and "Actual YTD" reads them whatever the choice.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -288,6 +296,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | C5 | `_fu`, `_fu_between`, `_in_line`, the zero branches and the run-rate identities removed (`git apply -R`), tests kept | `pytest tests/test_chat_zero_variance.py` | 11 failed, 5 passed: zero totals show F in the compare, run-rate and what-if tables, the sensitivity baseline is F, and every "in line" sentence is missing. The one-cent controls and the run-rate oracle pass either way, as designed. |
 | X4 | `_unit_caption_re`, `_BILLIONS_RE` and the billions label removed; the old two patterns restored (`git apply -R`), tests kept | `pytest tests/test_unit_scaling.py` | 23 failed, 20 passed: the 20 missed forms read 1, "in M&A" and "in M." read 1,000,000, and the billions file is unscaled |
 | X5, X30 | `currency_conflict`, the marked-cell and statement-currency records, the CLI, API and chat checks, and the LTM and metrics currency removed across eight modules (`git apply -R`), tests kept | `pytest tests/test_currency_conflicts.py` | 9 failed, 4 passed: euro, pound and filing-currency runs all exit 0 under the wrong currency, the chat analyses EUR cells as USD, and the euro LTM table prints `$4,300,000,000.00`. The four that pass read in their own currency or are unmarked. |
+| X6 | the chosen-pair override after `detect_comparison_columns` removed (`git apply -R`), tests kept | `pytest tests/test_period_choice.py` | 2 failed, 3 passed: choosing Sep-26 reads 500,000 / 540,000 (the YTD cells), and the chat summary maps 'Budget YTD'. The no-choice and one-pair controls pass either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
