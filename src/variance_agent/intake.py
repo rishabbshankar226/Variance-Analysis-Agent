@@ -3692,7 +3692,8 @@ def plain_analysis_error(error_text: str) -> str:
 
     # 6. Unreconciled summaries
     m_reconcile = re.search(
-        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE
+        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+(\w+)\s+detail rows", text,
+        re.IGNORECASE,
     )
     if m_reconcile:
         summary_name = m_reconcile.group(1) or m_reconcile.group(2) or m_reconcile.group(3)

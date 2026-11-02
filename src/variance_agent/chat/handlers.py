@@ -229,6 +229,9 @@ def handle_message(session: Session, text: str, *, first_visit: bool | None = No
             phase=session.phase,
         )
     routing_key = normalize_for_routing(text).lower()
+    if session.pending_total_exclusion is not None and routing_key == (
+            f"leave {normalize_for_routing(session.pending_total_exclusion).lower()} out"):
+        return _leave_total_out(session)
     if intent.intent_id == "reset":
         return _handle_reset(session)
     if intent.intent_id == "greeting":
@@ -1329,6 +1332,56 @@ def _handle_currency(session: Session, text: str) -> Response:
     return _run_analysis(session)
 
 
+_UNRECONCILED_SUMMARY = re.compile(r"Summary (?:'([^']+)'|\"([^\"]+)\") does not reconcile to (\w+) detail rows")
+
+
+def _unreconciled_total_response(session: Session, technical: str, config: AnalysisConfig) -> Response | None:
+    """The engine refused a total that doesn't match its lines: name the figures and offer to leave it out (X22).
+
+    The lines' sum is the engine's own: the analysis of the rows without that total.
+    """
+    match = _UNRECONCILED_SUMMARY.search(technical)
+    if match is None or session.parsed_rows is None:
+        return None
+    name, line_type = match.group(1) or match.group(2), match.group(3)
+    total = next((row for row in session.parsed_rows if str(row.get("line_item", "")).strip() == name), None)
+    figures = ", but it doesn't match them"
+    try:
+        details = analyze_rows([row for row in session.parsed_rows if row is not total], config)
+        aggregate = details.expenses if line_type == LineType.EXPENSE.value else details.revenue
+        for field, shown, summed in (("Budget", total and total.get("budget"), aggregate.budget),
+                                     ("Actual", total and total.get("actual"), aggregate.actual)):
+            if isinstance(shown, Decimal) and shown != summed:
+                with financial_context():
+                    apart = abs(shown - summed)
+                figures = (f", but its {field} is {format_money(shown, config.currency, 2)} and those lines add up to "
+                           f"{format_money(summed, config.currency, 2)} ({format_money(apart, config.currency, 2)} apart)")
+                break
+    except (ValueError, RuntimeError):
+        pass  # the plain sentence, without figures
+    session.pending_total_exclusion = name
+    return Response(
+        text=(f"'{safe_inline(name)}' looks like the total of the {line_type} lines above it{figures}. A total that "
+              "doesn't match its lines can't be checked, so I stopped instead of guessing. Leave it out of the line "
+              "items, or upload a corrected file."),
+        chips=[f"Leave {name} out", "Upload a different file", "Show technical details"],
+        phase=session.phase, level="error")
+
+
+def _leave_total_out(session: Session) -> Response:
+    """Leave the refused total out of the line items, record it, and run the analysis (X22)."""
+    name = session.pending_total_exclusion
+    assert name is not None and session.parsed_rows is not None
+    session.pending_total_exclusion = None
+    session.parsed_rows = [row for row in session.parsed_rows if str(row.get("line_item", "")).strip() != name]
+    if session.intake_result is not None:
+        session.intake_result.rows = session.parsed_rows
+        session.intake_result.detected_totals.append(name)  # the audit's excluded totals
+        session.intake_result.visible_transformations.append(
+            f"Left out '{name}' at your request: it doesn't match the lines it totals.")
+    return with_lead(_run_analysis(session), f"Left out '{safe_inline(name)}'.\n\n")
+
+
 def _run_analysis(session: Session) -> Response:
     """Run the deterministic analysis engine and handle classification."""
     if session.parsed_rows is None:
@@ -1395,9 +1448,13 @@ def _run_analysis(session: Session) -> Response:
             else:
                 result = analyze_rows(session.parsed_rows, config)
     except (ValueError, RuntimeError) as exc:
-        session.phase = Phase.AWAITING_FILE
         technical = str(exc)
         session.last_technical_detail = technical
+        # On a first analysis only: a rerun after a new label rolls that label back instead.
+        if session.result is None and (
+                unreconciled := _unreconciled_total_response(session, technical, config)) is not None:
+            return unreconciled  # the file and the setup answers stay; the total can be left out (X22)
+        session.phase = Phase.AWAITING_FILE
         plain_err = plain_analysis_error(technical)
         chips = ["Upload a different file"]
         if session.available_sheets and len(session.available_sheets) > 1:

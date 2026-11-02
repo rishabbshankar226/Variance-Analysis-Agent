@@ -37,7 +37,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X19 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
 | X20 | 3 | done | see `fix(X20)` | `src/variance_agent/intake.py`, `tests/test_excel_zero_section.py` (new) |
 | X21 | 3 | done | see `fix(X21)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_two_files.py` (new) |
-| X22 | 3 | todo | | |
+| X22 | 3 | done | see `fix(X22)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `chat/session.py`, `tests/test_chat_unreconciled_total.py` (new) |
 | X23 | 3 | todo | | |
 | X24 | 3 | todo | | |
 | M1 | 3 | todo | | name the second document only (Decision 12) |
@@ -398,6 +398,19 @@ Boundary cases:
 - The chip "Not yet labeled" lists the same rows as typing "unclassified".
 - A CLI report keeps its warning text.
 
+**X22, a total that doesn't match its lines.** When the engine refuses a category total that does not reconcile (`analysis.py`: "Summary ... does not reconcile to ... detail rows"), the chat keeps the file and every setup answer. It no longer drops back to "upload a file". It says what is wrong with the arithmetic from intake's own record (`UnreconciledTotal`, figures already scaled): "'Total Opex' looks like the total of the Expense lines above it, but its Budget is $251,000.00 and those lines add up to $250,000.00 ($1,000.00 apart). A total that doesn't match its lines can't be checked, so I stopped instead of guessing." The chips are "Leave Total Opex out", "Upload a different file" and "Show technical details".
+
+"Leave Total Opex out" removes that one row. It records the exclusion like any excluded total (the audit's `excluded_totals`, and the summary's transformations: "Left out 'Total Opex' at your request: it doesn't match the lines it totals"). Then it runs the analysis. Without intake's record, the message falls back to the plain sentence without figures. The garbled "detail rows detail rows" in `plain_analysis_error` rule 6 is fixed, and the CLI keeps rule 6's corrected sentence.
+
+Fraction oracle: the apart figure is Fraction(total) - Fraction(sum of lines).
+
+This applies to a first analysis only. A rerun after a new label already rolls that label back when it breaks a total (`_rerun_after_classification`), and that stays.
+
+Boundary cases on a fictional thousands report:
+- Total Opex 251 against lines 250: refused with the figures and the chip.
+- The chip leaves it out, the analysis runs, and the Expense total is 250,000.
+- Total Opex 250 reconciles and is excluded silently, as today.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -508,6 +521,7 @@ Items:
 | X21 | the whole-file and same-half branches and `_half_wording` removed from `_load_other_half` (`git apply -R`), tests kept | `pytest tests/test_chat_two_files.py` | 3 failed, 2 passed: a whole file gets "...isn't the actuals half of a pair. Run it on its own, without --compare-file.", and the same budget again gets "Could not find a header row". The join and broken-file controls pass either way. |
 | X25 | the `expanduser` and the named landing path removed (`git apply -R`), tests kept | `pytest tests/test_chat_export_paths.py` | 1 failed, 1 passed: `~/r.md` creates `work/~/r.md`, and home stays empty. The relative-path control passes either way. |
 | X27 | the display words, the chip's intent words and the page's word removed across four files (`git apply -R`), tests kept | `pytest tests/test_chat_not_yet_labeled.py tests/test_interface_design.py` | 3 failed, 62 passed: "Unclassified" shows in the material table and the warnings, the "Not yet labeled" chip doesn't route, and the page's word map no longer mirrors the edited assertion |
+| X22 | the refusal response, the leave-out handler and route, the session field and the rule 6 pattern removed (`git apply -R`), tests kept | `pytest tests/test_chat_unreconciled_total.py` | 3 failed, 1 passed: "...Expense detail rows detail rows", the chat drops to "upload a file", and "Leave Total Opex out" does not route. The matching-total control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

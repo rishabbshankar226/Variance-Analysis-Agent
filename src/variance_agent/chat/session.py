@@ -98,6 +98,8 @@ class Session:
     # Contextual memory for multi-turn drill-down
     last_focused_item: str | None = None
     last_table_items: list[str] = field(default_factory=list)
+    # A total the engine refused as not matching its lines, offered to be left out (X22).
+    pending_total_exclusion: str | None = None
 
     # Deployment policy; survives reset(). False on hosted servers.
     path_exports_enabled: bool = True
@@ -115,6 +117,7 @@ class Session:
         self.available_sheets = []
         self.intake_result = None
         self.last_technical_detail = None
+        self.pending_total_exclusion = None
         self.detected_period_pairs = []
         self.period = None
         self.dollar_threshold = None
