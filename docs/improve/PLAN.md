@@ -23,7 +23,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C3 | 2 | done | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m |
 | C3m | 3 | done | see `fix(C3m)` | `src/variance_agent/statement_shape.py`, `intake.py`, `tests/test_statement_sign_ambiguity.py` |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
-| X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
+| X41 | 2 | todo (approved at STOP 2) | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | done | see `fix(X10)` | `src/variance_agent/cli.py`, `README.md`, `tests/test_cli_hosted_detection.py` |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
@@ -49,13 +49,13 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
 | X31 | 3 | done | see `fix(X31)` | `src/variance_agent/intake.py`, `comparisons.py`, `tests/test_percent_formats.py` |
-| M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
+| M4 | 3 | todo (approved at STOP 2) | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | M6 | 3 | done | `test(M6)` x2, `fix(M6)` | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py`, ten modules' messages |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
-| X42 | 3 | asked (STOP 2) | | `measures.py` or the measure path's notes, `tests/` |
+| X42 | 3 | todo (approved at STOP 2) | | `measures.py` or the measure path's notes, `tests/` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
@@ -291,6 +291,12 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
     - **After `fix(M6)`:** 235 seen, 0 with jargon, 0 of 86 errors with no fix, 0 failing. `tests/test_message_inventory.py` now asserts that no message a chat reader sees fails, so a new message that does fails the suite.
     - Two changes went beyond words. A Statement Kind column accepts "Balance Sheet" and "Cash Flow" as well as `balance_sheet` and `cash_flow`, since the message now names the plain forms. An oversized upload's reply names the 32 MiB limit, where it used to say "Request body is too large.".
     - Limits stay (constraint 10). Only the words change.
+16. **STOP 2 (2026-11-02): the owner answered "Approve as recommended".** That reply came to the report's questions 1 to 4, so it approves each as recommended there:
+    - Phase 4's S1 to S4, with `_handle_executive_memo` added to S4.
+    - Phase 5's N1 and N2.
+    - X42: intake's notes reach the measure report and the audit's `inferences`, and the bare-rate note appears only when a bare rate was read.
+    - The two open STOP-ASKs: X41 scales a Currency row's Buffer and Tolerance with the caption or declared unit, and M4 adds the duration as a display name only, keeping every key.
+    - The three behaviour changes (X42, X41, M4) land first, each with its own rule, test and revert proof, before Phase 4 starts, so no refactor commit shares a change of behaviour (constraint 8).
 
 ## Phase 3 rules
 
