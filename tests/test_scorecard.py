@@ -68,3 +68,61 @@ def test_scorecard_refusals_name_the_cause(tmp_path: Path, capsys: pytest.Captur
     with pytest.raises(SystemExit):
         cli.main(_argv(tmp_path, holdings, panel))
     assert message in capsys.readouterr().err.replace("\n", " ")
+
+
+# X2: a holdings workbook reads its weights as Excel prints them, from the stored decimals.
+def _holdings_book(path: Path, cells: list[tuple[str, float, str]]) -> None:
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    sheet.append(["Ticker", "Weight"])
+    for row, (ticker, weight, code) in enumerate(cells, start=2):
+        sheet.append([ticker, weight])
+        sheet.cell(row=row, column=2).number_format = code
+    book.save(path)
+
+
+def _run_book(tmp_path: Path, cells: list[tuple[str, float, str]]) -> list[str]:
+    _argv(tmp_path)  # writes the fictional panel.csv
+    _holdings_book(tmp_path / "holdings.xlsx", cells)
+    argv = _argv(tmp_path)
+    argv[0] = str(tmp_path / "holdings.xlsx")
+    return argv
+
+
+_PERCENT_BOOK = [("NORDVIK.FAKE", 0.124, "0.00%"), ("HALVORSEN.FAKE", 0.079, "0.00%"),
+                 ("OSTRAVA.FAKE", 0.05, "0.00%"), ("BRAVIK.FAKE", 0.03, "0.00%")]
+
+
+def test_percent_formatted_weights_read_as_printed(tmp_path: Path) -> None:
+    audit, report = tmp_path / "audit.json", tmp_path / "r.md"
+    assert cli.main([*_run_book(tmp_path, _PERCENT_BOOK), "--audit-json", str(audit), "-o", str(report)]) == 0
+    text = report.read_text(encoding="utf-8")
+    assert "| Beat | 12.4% | 43.8% | 49.0% |" in text
+    assert "Not covered by the panel for Diluted EPS: BRAVIK.FAKE (3%)" in text
+    holdings = json.loads(audit.read_text(encoding="utf-8"))["source"]["document"]["holdings"]
+    # Fraction oracle: each weight is the stored decimal times 100, exactly.
+    stored = {"NORDVIK.FAKE": "0.124", "HALVORSEN.FAKE": "0.079", "OSTRAVA.FAKE": "0.05", "BRAVIK.FAKE": "0.03"}
+    assert {h["key"]: Fraction(h["weight"]) for h in holdings} == {k: Fraction(v) * 100 for k, v in stored.items()}
+
+
+def test_general_formatted_weights_read_as_their_stored_value(tmp_path: Path) -> None:
+    report = tmp_path / "r.md"
+    cells = [(ticker, round(weight * 100, 2), "General") for ticker, weight, _ in _PERCENT_BOOK]
+    assert cli.main([*_run_book(tmp_path, cells), "-o", str(report)]) == 0
+    assert "| Beat | 12.4% | 43.8% | 49.0% |" in report.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(("cells", "message"), [
+    ([("NORDVIK.FAKE", 0.124, "0.00%"), ("HALVORSEN.FAKE", 7.9, "General")],
+     "'holdings.xlsx' mixes weights with and without %; give every weight the same way."),
+    ([("NORDVIK.FAKE", 12400, "#,##0,"), ("HALVORSEN.FAKE", 7900, "#,##0,")],
+     "Cell B2 of 'holdings.xlsx' is shown scaled by its number format ('#,##0,'); "
+     "give the figure as it should be read."),
+])
+def test_workbook_weights_that_cannot_be_read_as_printed_refuse(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str], cells: list[tuple[str, float, str]], message: str) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(_run_book(tmp_path, cells))
+    assert message in capsys.readouterr().err.replace("\n", " ")

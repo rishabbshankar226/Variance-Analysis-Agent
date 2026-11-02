@@ -10,7 +10,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 |---|---|---|---|---|
 | T1 | 0 (Phase 6 item) | done | `63162aa` | `tests/test_chat_hardening.py` |
 | X1 | 2 | done | see `fix(X1)` | `src/variance_agent/intake.py`, `tests/test_amount_forms.py` |
-| X2 | 2 | todo | | |
+| X2 | 2 | done | see `fix(X2)` | `src/variance_agent/scorecard.py`, `tests/test_scorecard.py` |
 | X3 | 2 | todo | | |
 | C2 | 2 | todo | | |
 | C5 | 2 | todo | | |
@@ -105,6 +105,20 @@ Boundary cases:
 - `950¹`, `¹950`, `9²50`, `950₁`, `①`, `⑩` (no digit value, but NFKC gives "10"), `950⑴` and `950⒈` are refused.
 - NBSP and other spaces fold as before.
 
+**X2, scorecard sheets from a workbook.** The contract says "weights read as printed". For a scorecard's holdings or panel sheet read from `.xlsx` or `.xlsm`:
+- Every numeric cell is its stored decimal text (`excel.cell_value`), never a binary float.
+- It is read as Excel prints it. A cell whose number format shows a percentage is its stored value times 100, followed by `%`, so 0.124 under `0.00%` reads `12.4%`, exactly what the CSV holds. Times 100 is an exact power-of-ten shift (`scaleb(2)`).
+- A cell whose format scales the display by a power of ten that is not a percentage (thousands, millions), or whose format this reader cannot interpret, is refused, naming the cell, since a weight or a per-share figure is never stated in thousands.
+- The existing mixing rule then sees a `%` per cell: a percentage-formatted weight beside a General one refuses, as the CSV does.
+
+Boundary cases:
+- `0.124` under `0.00%` reads 12.4 (with `%`).
+- `12.4` under General reads 12.4 (without `%`).
+- `0.124` under General reads 0.124.
+- A `#,##0,` weight is refused.
+- A sheet mixing percent and General weights is refused.
+- Fraction oracle: weight = Fraction(stored text) x 100.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -166,6 +180,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | T1 | The test checks `1fc32b8`'s fix, so the proof re-introduces that fix's two costs one at a time. (a) `_SUGGEST_MAX_ITEMS = 10**9`: the suggestion cap removed. | `pytest tests/test_chat_hardening.py -k stay_fast` | 3 failed, 4 passed: `assert 120000 == 30000`, difflib comparisons growing with the file |
 | T1 | (b) `_item_in_sentence` ignores the caller's `named` and recomputes the scan: an extra pass over the names. | same | 1 failed, 6 passed: `assert (80009 - 20009) <= (3 * (20000 - 5000))` |
 | X1 | `_footnote_marks` and its check in `parse_assisted_decimal` removed (git checkout of `intake.py`), tests kept | `pytest tests/test_amount_forms.py` | 9 failed: `Failed: DID NOT RAISE ValueError` for each mark, and the intake test's message assertion fails |
+| X2 | `_printed` and `_workbook_cells` removed (`git apply -R` of the scorecard diff), tests kept | `pytest tests/test_scorecard.py` | 3 failed: the report reads `In line \| 0.079%` instead of `12.4%`, and both refusals give `DID NOT RAISE SystemExit` |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
