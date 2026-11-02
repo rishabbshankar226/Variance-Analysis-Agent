@@ -40,7 +40,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X22 | 3 | done | see `fix(X22)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `chat/session.py`, `tests/test_chat_unreconciled_total.py` (new) |
 | X23 | 3 | done | see `fix(X23)` | `src/variance_agent/intake.py`, `tests/test_header_units.py` (new) |
 | X24 | 3 | done (date band open) | see `fix(X24)` | `src/variance_agent/intake.py`, `tests/test_two_row_headers.py` (new) |
-| M1 | 3 | todo | | name the second document only (Decision 12) |
+| M1 | 3 | done | see `fix(M1)` | `src/variance_agent/ixbrl.py`, `tests/test_ixbrl_statements_elsewhere.py` (new) |
 | M2 | 3 | todo | | |
 | M3 | 3 | done | see `fix(M3)` | `src/variance_agent/intake.py`, `tests/test_excel_bands_and_blocks.py` |
 | X25 | 3 | done | see `fix(X25)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_export_paths.py` (new) |
@@ -443,6 +443,14 @@ Boundary cases:
 
 Not covered: a date band merged over Budget and Actual ("Could not determine period order for Sep 2026, Sep 2026", Maya's f17) fails inside the single-row period path, before any header is tried. It stays `open` under X24 with this note.
 
+**M1, statements in another document.** When a filing holds no statement table, the refusal names the next step. If the document links to an exhibit 13 file (an `href` whose plain file name, letters, digits, `.`, `_` and `-` only, says ex13, ex-13 or exhibit13), it names that file: "The financial statements aren't in 'f.htm' itself: it points to Exhibit 13 ('fake-20261231ex13.htm'), the annual report that holds them. Upload that document from the same EDGAR filing, or the statements as Excel or CSV." If the text only mentions Exhibit 13, it says so without a file name. Otherwise it keeps today's cause and adds the step: "... If the filing puts them in another document (often Exhibit 13, the annual report), upload that document from the same EDGAR filing; otherwise upload the statements as Excel or CSV." The second document is not read (Decision 12). Only a plain file name from the untrusted HTML is quoted.
+
+Boundary cases:
+- A linked `...ex13.htm` is named.
+- A plain mention of "Exhibit 13" is named without a file.
+- Neither gives the generic next step.
+- A link with path characters is not quoted.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -558,6 +566,7 @@ Items:
 | C3m | `ShapedStatement.ambiguous` and the named-line refusal removed (`git apply -R`), test kept | `pytest tests/test_statement_sign_ambiguity.py` | 1 failed, 3 passed: the shaper has no `ambiguous` record, and the refusal says "couldn't tell which lines ... adds up". The C3 pins pass either way. |
 | M3 | `_BARE_YEAR_RE` and its two uses removed (`git apply -R`), tests kept | `pytest tests/test_excel_bands_and_blocks.py -k bare_year` | 3 failed: "Found more than one Actual column (Actual (column D), Actual (column F))" for both band shapes and the chosen year |
 | X24 | `_two_row_header` and its use in header detection removed (`git apply -R`), tests kept | `pytest tests/test_two_row_headers.py` | 2 failed, 1 passed: "Could not find a header row with Line Item, Budget, and Actual" for the merged and unmerged two-row headers. The no-amounts control refuses either way. |
+| M1 | `_statements_elsewhere` and both new refusal wordings removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl_statements_elsewhere.py` | 3 failed, 1 passed: the refusal names no document and no next step. The path-characters guard passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

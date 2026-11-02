@@ -436,6 +436,19 @@ def _measure(unit: str) -> str:
     return "Currency" if _monetary(unit) else ""
 
 
+# An exhibit 13 link with a plain file name: the HTML is untrusted, so nothing else of it is quoted (M1).
+_EXHIBIT_13_LINK = re.compile(rb'href\s*=\s*["\']([A-Za-z0-9._-]{1,80}?(?:ex-?13|exhibit-?13)[A-Za-z0-9._-]{0,40}\.html?)["\']',
+                              re.IGNORECASE)
+_EXHIBIT_13_TEXT = re.compile(rb"\bexhibit\s+13\b", re.IGNORECASE)
+
+
+def _statements_elsewhere(data: bytes) -> str | None:
+    """Where a filing without statement tables says its statements are: Exhibit 13, named if linked (M1)."""
+    if (link := _EXHIBIT_13_LINK.search(data)) is not None:
+        return f"Exhibit 13 ('{link.group(1).decode('ascii')}')"
+    return "Exhibit 13" if _EXHIBIT_13_TEXT.search(data) else None
+
+
 def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False) -> list[Statement]:
     """Every face statement the filing prints, first copy of each kind, in document order."""
     if _DECLARATION.search(data):
@@ -502,8 +515,14 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
     if pending is not None:
         statements.extend(_build(pending, reader, by_id, per_share_lines))
     if not statements:
+        if (elsewhere := _statements_elsewhere(data)) is not None:  # name the document to upload next (M1)
+            raise IxbrlError(f"The financial statements aren't in '{filename}' itself: it points to {elsewhere}, the "
+                             "annual report that holds them. Upload that document from the same EDGAR filing, or the "
+                             "statements as Excel or CSV.")
         raise IxbrlError(f"I could not find the financial statements in '{filename}': no table there is titled as an "
-                         "income statement, balance sheet or cash flow statement and holds their tagged figures.")
+                         "income statement, balance sheet or cash flow statement and holds their tagged figures. If the "
+                         "filing puts them in another document (often Exhibit 13, the annual report), upload that "
+                         "document from the same EDGAR filing; otherwise upload the statements as Excel or CSV.")
     return statements
 
 
