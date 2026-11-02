@@ -1,0 +1,791 @@
+[
+ {
+  "step": "upload sample_variance.csv",
+  "text": "Welcome to the Variance Analysis Agent. I compare each line's Actual against your budget, flag the gaps big enough to matter, and say whether each one helped or hurt profit. Type `help` for everything you can ask.\n\nLoaded 'sample\\_variance.csv' (5 data rows).\n\nWhat reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+  "table": null,
+  "chips": null,
+  "view": null,
+  "phase": "awaiting_period",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say Q3 2026",
+  "text": "Period set to: **Q3 2026**\n\nNow set the materiality thresholds. Enter a dollar amount and a percentage, for example: `$10,000 or 5%`\n\nOr choose a preset below:",
+  "table": null,
+  "chips": [
+   "$5,000 or 3%",
+   "$10,000 or 5%",
+   "$25,000 or 10%",
+   "$50,000 or 15%"
+  ],
+  "view": null,
+  "phase": "awaiting_thresholds",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say $10,000 or 5%",
+  "text": "Thresholds set: **$10,000.00** or **5.0%**\n\nWhat is the reporting currency?",
+  "table": null,
+  "chips": [
+   "USD",
+   "EUR",
+   "GBP"
+  ],
+  "view": null,
+  "phase": "awaiting_currency",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say USD",
+  "text": "**Analysis Complete**\n\n**Period:** Q3 2026\n**Currency:** USD\n**Thresholds:** $10,000.00 or 5.0%\n\n**Total Revenue:** $162,500.00 vs. $150,000.00 ($12,500.00, 8.3%, Favorable)\n**Total Expenses:** $116,000.00 vs. $95,000.00 ($21,000.00, 22.1%, Unfavorable)\n\n**Net Operating Impact:** -$8,500.00, below budget\n\n**4** material variances found.",
+  "table": [
+   {
+    "Line Item": "Subscription Revenue",
+    "Type": "Revenue",
+    "Budget": "$100,000.00",
+    "Actual": "$115,500.00",
+    "Var ($)": "$15,500.00",
+    "Var (%)": "15.5%",
+    "Status": "F"
+   },
+   {
+    "Line Item": "Marketing Expense",
+    "Type": "Expense",
+    "Budget": "$20,000.00",
+    "Actual": "$33,000.00",
+    "Var ($)": "$13,000.00",
+    "Var (%)": "65.0%",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Payroll Expense",
+    "Type": "Expense",
+    "Budget": "$60,000.00",
+    "Actual": "$68,000.00",
+    "Var ($)": "$8,000.00",
+    "Var (%)": "13.3%",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Services Revenue",
+    "Type": "Revenue",
+    "Budget": "$50,000.00",
+    "Actual": "$47,000.00",
+    "Var ($)": "-$3,000.00",
+    "Var (%)": "-6.0%",
+    "Status": "U"
+   }
+  ],
+  "chips": [
+   "Why Subscription Revenue?",
+   "Show unfavorable",
+   "Summary",
+   "Export report",
+   "Save layout mapping"
+  ],
+  "view": {
+   "kind": "figures",
+   "title": "Q3 2026 against budget",
+   "lead": null,
+   "context": [
+    {
+     "label": "Currency",
+     "value": "USD"
+    },
+    {
+     "label": "Material at",
+     "value": "$10,000.00 or 5.0%"
+    },
+    {
+     "label": "Lines read",
+     "value": "5"
+    }
+   ],
+   "figures": [
+    {
+     "label": "Revenue",
+     "value": "$162,500.00",
+     "compare": "Budget $150,000.00",
+     "change": "Variance $12,500.00, 8.3%",
+     "status": "Favorable",
+     "tone": "favorable"
+    },
+    {
+     "label": "Expenses",
+     "value": "$116,000.00",
+     "compare": "Budget $95,000.00",
+     "change": "Variance $21,000.00, 22.1%",
+     "status": "Unfavorable",
+     "tone": "unfavorable"
+    },
+    {
+     "label": "Net operating impact",
+     "value": "-$8,500.00",
+     "compare": "Below budget",
+     "change": null,
+     "status": null,
+     "tone": "unfavorable"
+    }
+   ],
+   "sections": [],
+   "notes": [],
+   "table_title": "4 material variances",
+   "column_groups": []
+  },
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say Why Subscription Revenue?",
+  "text": "**Driver Evidence: Subscription Revenue**\n\nBudget: $100,000.00\nActual: $115,500.00\nVariance: $15,500.00 (15.5%, Favorable)\n\n**Model:** volume / price decomposition reconciles.\n\n• **Volume effect:** $5,000.00\n• **Price effect:** $10,500.00\n\nStatus: **Supported driver.**",
+  "table": null,
+  "chips": [
+   "Why Marketing Expense?",
+   "Material",
+   "Summary"
+  ],
+  "view": {
+   "kind": "figures",
+   "title": "Driver evidence: Subscription Revenue",
+   "lead": null,
+   "context": [
+    {
+     "label": "Type",
+     "value": "Revenue"
+    }
+   ],
+   "figures": [
+    {
+     "label": "Budget",
+     "value": "$100,000.00",
+     "compare": null,
+     "change": null,
+     "status": null,
+     "tone": null
+    },
+    {
+     "label": "Actual",
+     "value": "$115,500.00",
+     "compare": null,
+     "change": null,
+     "status": null,
+     "tone": null
+    },
+    {
+     "label": "Variance",
+     "value": "$15,500.00",
+     "compare": null,
+     "change": "15.5%",
+     "status": "Favorable",
+     "tone": "favorable"
+    }
+   ],
+   "sections": [
+    {
+     "title": "Volume / price decomposition reconciles",
+     "rows": [
+      {
+       "label": "Volume effect",
+       "value": "$5,000.00"
+      },
+      {
+       "label": "Price effect",
+       "value": "$10,500.00"
+      }
+     ]
+    }
+   ],
+   "notes": [
+    "Supported driver."
+   ],
+   "table_title": null,
+   "column_groups": []
+  },
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say drivers",
+  "text": "**Causal Driver Models Overview**\n\n• **Lines with a reconciled driver model:** **1** of **5** (1 with driver data).\n• **Material variances covered:** **25.0%** have a reconciled driver breakdown.\n\nA driver model splits a variance from budget into its causes, such as price and volume, or rate and volume.",
+  "table": [
+   {
+    "Line Item": "Subscription Revenue",
+    "Variance": "$15,500.00",
+    "Model": "volume / price",
+    "Reconciliation": "Reconciled",
+    "Driver Components": "Volume effect: $5,000.00, Price effect: $10,500.00"
+   },
+   {
+    "Line Item": "Services Revenue",
+    "Variance": "-$3,000.00",
+    "Model": "None",
+    "Reconciliation": "No driver data",
+    "Driver Components": "—"
+   },
+   {
+    "Line Item": "Payroll Expense",
+    "Variance": "$8,000.00",
+    "Model": "None",
+    "Reconciliation": "No driver data",
+    "Driver Components": "—"
+   },
+   {
+    "Line Item": "Marketing Expense",
+    "Variance": "$13,000.00",
+    "Model": "None",
+    "Reconciliation": "No driver data",
+    "Driver Components": "—"
+   },
+   {
+    "Line Item": "Rent Expense",
+    "Variance": "$0.00",
+    "Model": "None",
+    "Reconciliation": "No driver data",
+    "Driver Components": "—"
+   }
+  ],
+  "chips": [
+   "Waterfall",
+   "Biggest risks",
+   "Summary",
+   "Export report"
+  ],
+  "view": {
+   "kind": "figures",
+   "title": "Driver data",
+   "lead": null,
+   "context": [],
+   "figures": [
+    {
+     "label": "Reconciled driver models",
+     "value": "1 of 5",
+     "compare": "1 with driver data",
+     "change": null,
+     "status": null,
+     "tone": null
+    },
+    {
+     "label": "Material variances covered",
+     "value": "25.0%",
+     "compare": null,
+     "change": null,
+     "status": null,
+     "tone": null
+    }
+   ],
+   "sections": [],
+   "notes": [
+    "A driver model splits a variance from budget into its causes, such as price and volume, or rate and volume."
+   ],
+   "table_title": "Driver data by line",
+   "column_groups": []
+  },
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say biggest risks",
+  "text": "**Top Financial Risks (3 material unfavorable items)**\n\nThese line items represent the most significant negative deviations from budget:\n\n**1. Marketing Expense** (Cost overrun)\n• Actual: $33,000.00 vs. Budget: $20,000.00\n• Variance: **$13,000.00** (65.0%)\n• Evidence: *No driver breakdown*\n\n**2. Payroll Expense** (Cost overrun)\n• Actual: $68,000.00 vs. Budget: $60,000.00\n• Variance: **$8,000.00** (13.3%)\n• Evidence: *No driver breakdown*\n\n**3. Services Revenue** (Revenue shortfall)\n• Actual: $47,000.00 vs. Budget: $50,000.00\n• Variance: **-$3,000.00** (-6.0%)\n• Evidence: *No driver breakdown*\n\nThe largest is **Marketing Expense**. Ask `why Marketing Expense` to see what drove it.",
+  "table": [
+   {
+    "Line Item": "Marketing Expense",
+    "Type": "Expense",
+    "Budget": "$20,000.00",
+    "Actual": "$33,000.00",
+    "Var ($)": "$13,000.00",
+    "Var (%)": "65.0%",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Payroll Expense",
+    "Type": "Expense",
+    "Budget": "$60,000.00",
+    "Actual": "$68,000.00",
+    "Var ($)": "$8,000.00",
+    "Var (%)": "13.3%",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Services Revenue",
+    "Type": "Revenue",
+    "Budget": "$50,000.00",
+    "Actual": "$47,000.00",
+    "Var ($)": "-$3,000.00",
+    "Var (%)": "-6.0%",
+    "Status": "U"
+   }
+  ],
+  "chips": [
+   "Why Marketing Expense?",
+   "Why Payroll Expense?",
+   "Drivers",
+   "Summary"
+  ],
+  "view": {
+   "kind": "figures",
+   "title": "Top financial risks",
+   "lead": null,
+   "context": [
+    {
+     "label": "Compared with",
+     "value": "Budget"
+    }
+   ],
+   "figures": [],
+   "sections": [],
+   "notes": [
+    "The largest is Marketing Expense. Ask “why Marketing Expense” to see what drove it."
+   ],
+   "table_title": "3 material unfavorable variances",
+   "column_groups": []
+  },
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say what if marketing is 10% lower",
+  "text": "**Scenario Analysis (\"What-If\" Simulation)**\n\n**Simulation Parameters:**\n• Target: **Marketing Expense** (Expense)\n• Baseline Actual: $33,000.00\n• Simulated Change: **-10.0%**\n• Simulated Target Value: **$29,700.00**\n\n**Projected Operating Profit Impact:**\n• **Baseline Operating Profit**: $46,500.00\n• **Simulated Operating Profit**: **$49,800.00**\n• **Profit Delta vs. Baseline**: **$3,300.00** (expansion)\n• **Simulated Operating Margin**: **30.6%** (vs. 28.6% baseline, +2.0 pts)\n• **Simulated vs. Budget**: **-$5,200.00** (shortfall vs. planned profit of $55,000.00)\n",
+  "table": [
+   {
+    "Metric": "Marketing Expense",
+    "Budget": "$20,000.00",
+    "Baseline Actual": "$33,000.00",
+    "Simulated Scenario": "$29,700.00",
+    "Delta vs Baseline": "-$3,300.00",
+    "Status": "F"
+   },
+   {
+    "Metric": "Total Revenue",
+    "Budget": "$150,000.00",
+    "Baseline Actual": "$162,500.00",
+    "Simulated Scenario": "$162,500.00",
+    "Delta vs Baseline": "$0.00",
+    "Status": "Neutral"
+   },
+   {
+    "Metric": "Total Expenses",
+    "Budget": "$95,000.00",
+    "Baseline Actual": "$116,000.00",
+    "Simulated Scenario": "$112,700.00",
+    "Delta vs Baseline": "-$3,300.00",
+    "Status": "F"
+   },
+   {
+    "Metric": "Operating Profit",
+    "Budget": "$55,000.00",
+    "Baseline Actual": "$46,500.00",
+    "Simulated Scenario": "$49,800.00",
+    "Delta vs Baseline": "$3,300.00",
+    "Status": "F"
+   }
+  ],
+  "chips": [
+   "Sensitivity analysis",
+   "Run rate",
+   "Waterfall",
+   "What if expenses drop 5%?"
+  ],
+  "view": {
+   "kind": "figures",
+   "title": "Scenario: Marketing Expense -10.0%",
+   "lead": null,
+   "context": [
+    {
+     "label": "Target",
+     "value": "Marketing Expense (Expense)"
+    },
+    {
+     "label": "Baseline actual",
+     "value": "$33,000.00"
+    },
+    {
+     "label": "Simulated value",
+     "value": "$29,700.00"
+    }
+   ],
+   "figures": [
+    {
+     "label": "Operating profit",
+     "value": "$49,800.00",
+     "compare": "Baseline $46,500.00",
+     "change": "$3,300.00 vs. baseline (expansion)",
+     "status": null,
+     "tone": "favorable"
+    },
+    {
+     "label": "Operating margin",
+     "value": "30.6%",
+     "compare": "Baseline 28.6%",
+     "change": "+2.0 pts",
+     "status": null,
+     "tone": null
+    },
+    {
+     "label": "Against budget",
+     "value": "-$5,200.00",
+     "compare": "Budget profit $55,000.00",
+     "change": "Shortfall",
+     "status": null,
+     "tone": "unfavorable"
+    }
+   ],
+   "sections": [],
+   "notes": [],
+   "table_title": "The scenario line by line",
+   "column_groups": []
+  },
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say waterfall",
+  "text": "**P&L Variance Bridge (Waterfall Walk)**\n\nReconciling baseline Budget Operating Profit to Actual Operating Profit for **Q3 2026**:\n\n• **Budget Operating Profit**: $55,000.00\n• **Revenue Bridge Impact**: $12,500.00 (beat)\n• **Expense Bridge Impact**: -$21,000.00 (overrun)\n• **Actual Operating Profit**: $46,500.00\n• **Net Profit Variance**: -$8,500.00 (unfavorable shortfall)\n\nEach line item's contribution to operating profit is displayed in the bridge table below (positive values expand profit; negative values contract profit):",
+  "table": [
+   {
+    "Line Item": "1. Budget Operating Profit",
+    "Type": "Baseline",
+    "Budget": "$55,000.00",
+    "Actual": "$55,000.00",
+    "Var ($)": "$0.00",
+    "Profit Impact ($)": "$0.00",
+    "Status": "Neutral"
+   },
+   {
+    "Line Item": "Subscription Revenue",
+    "Type": "Revenue",
+    "Budget": "$100,000.00",
+    "Actual": "$115,500.00",
+    "Var ($)": "$15,500.00",
+    "Profit Impact ($)": "$15,500.00",
+    "Status": "F"
+   },
+   {
+    "Line Item": "Marketing Expense",
+    "Type": "Expense",
+    "Budget": "$20,000.00",
+    "Actual": "$33,000.00",
+    "Var ($)": "$13,000.00",
+    "Profit Impact ($)": "-$13,000.00",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Payroll Expense",
+    "Type": "Expense",
+    "Budget": "$60,000.00",
+    "Actual": "$68,000.00",
+    "Var ($)": "$8,000.00",
+    "Profit Impact ($)": "-$8,000.00",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Services Revenue",
+    "Type": "Revenue",
+    "Budget": "$50,000.00",
+    "Actual": "$47,000.00",
+    "Var ($)": "-$3,000.00",
+    "Profit Impact ($)": "-$3,000.00",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Rent Expense",
+    "Type": "Expense",
+    "Budget": "$15,000.00",
+    "Actual": "$15,000.00",
+    "Var ($)": "$0.00",
+    "Profit Impact ($)": "$0.00",
+    "Status": "Neutral"
+   },
+   {
+    "Line Item": "Actual Operating Profit",
+    "Type": "Summary",
+    "Budget": "$55,000.00",
+    "Actual": "$46,500.00",
+    "Var ($)": "-$8,500.00",
+    "Profit Impact ($)": "-$8,500.00",
+    "Status": "U"
+   }
+  ],
+  "chips": [
+   "Why Subscription Revenue?",
+   "Biggest risks",
+   "Biggest wins",
+   "Export CSV",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say what is the full year run rate?",
+  "text": "**Note:** This analysis evaluates actual performance against the baseline budget for the closed reporting period. To project full-year outcomes based on current pace, ask for `run rate` or test scenarios with `what if revenue drops 5%?`.",
+  "table": null,
+  "chips": [
+   "Run rate",
+   "Sensitivity",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say executive memo",
+  "text": "# Executive Management Briefing & Variance Commentary\n**Reporting Period:** Q3 2026  \n**Currency:** USD  \n**Materiality Thresholds:** $10,000.00 or 5.0%  \n\n---\n### 1. Executive Summary\n**Strategic Takeaway:** Review Marketing Expense immediately. Its unfavorable variance reached $13,000.00, against a net operating shortfall of $8,500.00 across Q3 2026. Operating margin narrowed from 36.7% to 28.6%. Material cost pressure. Verify procurement logs to validate rate versus quantity drivers.\n\nFor **Q3 2026**, Operating Profit finished at **$46,500.00**, representing a **$8,500.00 shortfall** (-15.5%) against the planned budget of **$55,000.00**. Operating margin **contracted** from 36.7% to **28.6%** (-8.1 pts).\n\n### 2. Top-Line Performance (Revenue)\nTotal Revenue concluded at **$162,500.00** vs. Budget of **$150,000.00** ($12,500.00, +8.3%, Favorable).\n• **Key Outperformer:** **Subscription Revenue** generated $115,500.00 (+$15,500.00 above budget).\n• **Primary Drag:** **Services Revenue** delivered $47,000.00 (-$3,000.00 miss vs. budget).\n\n### 3. Cost Discipline & Overruns (Expenses)\nTotal Operating Expenses ended at **$116,000.00** vs. Budget of **$95,000.00** ($21,000.00, +22.1%, Unfavorable).\n• **Primary Cost Risk:** **Marketing Expense** overspent by $13,000.00 (+65.0%).\n\n### 4. Governance & Material Variances\n• **4** line items breached the materiality hurdle ($10,000.00 or 5.0%).\n• **Net Flow-Through:** -$8,500.00 retained in net operating profit.\n• **Driver Evidence Coverage:** 1 of 4 material items verified by mathematical driver decomposition.\n\n### 5. Prioritized Management Action Items\n1. **Cost Remediation:** Initiate immediate operational review on **Marketing Expense** to stabilize cost trajectory.\n2. **Revenue Scaling:** Protect and expand pipeline investments supporting **Subscription Revenue**.\n3. **Data Governance:** Procure granular driver components (rate/volume/mix) for Marketing Expense, Payroll Expense, Services Revenue.",
+  "table": [
+   {
+    "Section": "1. Top-Line (Revenue)",
+    "Budget": "$150,000.00",
+    "Actual": "$162,500.00",
+    "Variance ($)": "$12,500.00",
+    "Outcome": "Beat"
+   },
+   {
+    "Section": "2. Cost (Expenses)",
+    "Budget": "$95,000.00",
+    "Actual": "$116,000.00",
+    "Variance ($)": "$21,000.00",
+    "Outcome": "Overrun"
+   },
+   {
+    "Section": "3. Bottom-Line (Operating Profit)",
+    "Budget": "$55,000.00",
+    "Actual": "$46,500.00",
+    "Variance ($)": "-$8,500.00",
+    "Outcome": "Unfavorable"
+   }
+  ],
+  "chips": [
+   "Waterfall",
+   "Export report",
+   "Export csv",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": {
+   "executive_memo_q3_2026.md": "# Executive Management Briefing & Variance Commentary\n**Reporting Period:** Q3 2026  \n**Currency:** USD  \n**Materiality Thresholds:** $10,000.00 or 5.0%  \n\n---\n### 1. Executive Summary\n**Strategic Takeaway:** Review Marketing Expense immediately. Its unfavorable variance reached $13,000.00, against a net operating shortfall of $8,500.00 across Q3 2026. Operating margin narrowed from 36.7% to 28.6%. Material cost pressure. Verify procurement logs to validate rate versus quantity drivers.\n\nFor **Q3 2026**, Operating Profit finished at **$46,500.00**, representing a **$8,500.00 shortfall** (-15.5%) against the planned budget of **$55,000.00**. Operating margin **contracted** from 36.7% to **28.6%** (-8.1 pts).\n\n### 2. Top-Line Performance (Revenue)\nTotal Revenue concluded at **$162,500.00** vs. Budget of **$150,000.00** ($12,500.00, +8.3%, Favorable).\n• **Key Outperformer:** **Subscription Revenue** generated $115,500.00 (+$15,500.00 above budget).\n• **Primary Drag:** **Services Revenue** delivered $47,000.00 (-$3,000.00 miss vs. budget).\n\n### 3. Cost Discipline & Overruns (Expenses)\nTotal Operating Expenses ended at **$116,000.00** vs. Budget of **$95,000.00** ($21,000.00, +22.1%, Unfavorable).\n• **Primary Cost Risk:** **Marketing Expense** overspent by $13,000.00 (+65.0%).\n\n### 4. Governance & Material Variances\n• **4** line items breached the materiality hurdle ($10,000.00 or 5.0%).\n• **Net Flow-Through:** -$8,500.00 retained in net operating profit.\n• **Driver Evidence Coverage:** 1 of 4 material items verified by mathematical driver decomposition.\n\n### 5. Prioritized Management Action Items\n1. **Cost Remediation:** Initiate immediate operational review on **Marketing Expense** to stabilize cost trajectory.\n2. **Revenue Scaling:** Protect and expand pipeline investments supporting **Subscription Revenue**.\n3. **Data Governance:** Procure granular driver components (rate/volume/mix) for Marketing Expense, Payroll Expense, Services Revenue."
+  }
+ },
+ {
+  "step": "say revenue status",
+  "text": "**Revenue Target Achieved: Beat Budget by $12,500.00 (8.3%)**\n\n• **Budgeted Revenue:** $150,000.00\n• **Actual Revenue:** $162,500.00\n• **Achievement Rate:** 108.3% of budget\n• **Status:** Favorable\n\n**Revenue Breakdown:**\n• **Subscription Revenue:** $115,500.00 vs. $100,000.00 ($15,500.00, Favorable)\n• **Services Revenue:** $47,000.00 vs. $50,000.00 (-$3,000.00, Unfavorable)",
+  "table": null,
+  "chips": [
+   "Expenses",
+   "Summary",
+   "Show all revenue"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say top 3 variances",
+  "text": "**Top 3 Variances by Absolute Amount**",
+  "table": [
+   {
+    "Line Item": "Subscription Revenue",
+    "Type": "Revenue",
+    "Budget": "$100,000.00",
+    "Actual": "$115,500.00",
+    "Var ($)": "$15,500.00",
+    "Var (%)": "15.5%",
+    "Status": "F"
+   },
+   {
+    "Line Item": "Marketing Expense",
+    "Type": "Expense",
+    "Budget": "$20,000.00",
+    "Actual": "$33,000.00",
+    "Var ($)": "$13,000.00",
+    "Var (%)": "65.0%",
+    "Status": "U"
+   },
+   {
+    "Line Item": "Payroll Expense",
+    "Type": "Expense",
+    "Budget": "$60,000.00",
+    "Actual": "$68,000.00",
+    "Var ($)": "$8,000.00",
+    "Var (%)": "13.3%",
+    "Status": "U"
+   }
+  ],
+  "chips": [
+   "Why Subscription Revenue?",
+   "Material",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say warnings",
+  "text": "No data quality warnings.",
+  "table": null,
+  "chips": [
+   "Summary",
+   "Material"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say export report",
+  "text": "Markdown report ready for download.",
+  "table": null,
+  "chips": [
+   "Export excel",
+   "Export audit",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": {
+   "variance_report_q3_2026.md": "# FP&A Variance Report: Q3 2026\n\n## Executive Summary\n- Reporting Currency: USD\n- Total Revenue: $162,500.00 vs. $150,000.00 ($12,500.00, 8.3%, F)\n- Total Expenses: $116,000.00 vs. $95,000.00 ($21,000.00, 22.1%, U)\n- Bottom Line Impact: Revenue and expense variances imply a net operating variance of -$8,500.00, below budget on this simplified revenue-less-expense basis. The largest material variance is Subscription Revenue at $15,500.00 (F).\n\n## Material Variances\nThresholds: $10,000.00 or 5.0%\n\n| Line Item | Type | Budget | Actual | Var ($) | Var (%) | Status |\n|---|---|---:|---:|---:|---:|---|\n| Subscription Revenue | Revenue | $100,000.00 | $115,500.00 | $15,500.00 | 15.5% | F |\n| Marketing Expense | Expense | $20,000.00 | $33,000.00 | $13,000.00 | 65.0% | U |\n| Payroll Expense | Expense | $60,000.00 | $68,000.00 | $8,000.00 | 13.3% | U |\n| Services Revenue | Revenue | $50,000.00 | $47,000.00 | -$3,000.00 | -6.0% | U |\n\n## Root Cause Analysis\n- **Subscription Revenue (Supported driver):** volume / price decomposition reconciles; Volume effect: $5,000.00; Price effect: $10,500.00.\n- **Marketing Expense (Hypothesis):** No causal driver is asserted from the supplied data. To validate a cause, provide units/headcount, rate, vendor pricing, and timing.\n- **Payroll Expense (Hypothesis):** No causal driver is asserted from the supplied data. To validate a cause, provide units/headcount, rate, vendor pricing, and timing.\n- **Services Revenue (Hypothesis):** No causal driver is asserted from the supplied data. To validate a cause, provide volume/units, price/rate, customer count, and mix.\n\n## Strategic Recommendations\n- Mitigation: Marketing Expense is the largest material U variance, but the dataset does not support a causal corrective action; obtain the missing operating driver data before assigning a cause-specific intervention.\n- Optimization: Focus the action plan for Subscription Revenue on its price effect ($10,500.00), the largest reconciled component of the variance.\n- Data Request: Provide reconciled operating driver metrics for: Marketing Expense, Payroll Expense, Services Revenue.\n"
+  }
+ },
+ {
+  "step": "say thanks",
+  "text": "You're very welcome! Always glad to assist with institutional FP&A rigor. Feel free to test scenario simulations (e.g. `what if revenue drops 5%?`), inspect causal drivers, or export the executive commentary memo whenever you're ready.",
+  "table": null,
+  "chips": [
+   "Executive memo",
+   "Waterfall",
+   "Sensitivity",
+   "Summary"
+  ],
+  "view": null,
+  "phase": "exploring",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "upload fixture_e_wide_monthly.xlsx",
+  "text": "Found data for multiple periods in your file.\n\nWhich period would you like to analyze?",
+  "table": null,
+  "chips": [
+   "Jul-26",
+   "Aug-26",
+   "Sep-26",
+   "Q3"
+  ],
+  "view": null,
+  "phase": "awaiting_period_choice",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "upload fixture_f_budget_separate.csv",
+  "text": "'fixture\\_f\\_budget\\_separate.csv' has Budget figures but no Actual column. Upload the file with the actuals, and I'll join the two by 'GL Account'.",
+  "table": null,
+  "chips": null,
+  "view": null,
+  "phase": "awaiting_period_choice",
+  "level": null,
+  "ask_upload": true,
+  "download": null
+ },
+ {
+  "step": "upload fixture_f_actuals_separate.csv",
+  "text": "Here's how I read your file:\n\n- **Header row:** Row 1\n- **Columns mapped:** Line item from 'Account Name', Account ID from 'GL Account', Budget from 'Budget in fixture_f_budget_separate.csv', Actual from 'Actual'\n- **Rows read:** 5 data rows\n\n**Visible adjustments:**\n- Joined 'fixture_f_budget_separate.csv' to 'fixture_f_actuals_separate.csv' by 'GL Account': 5 lines, each in both files\n- Took Actual from 'fixture_f_actuals_separate.csv' and the comparison from 'fixture_f_budget_separate.csv'\n- Kept the actuals file's labels where the files differ: 'SaaS Subscriptions' is 'SaaS Subscription Revenue' in 'fixture_f_budget_separate.csv'; 'Professional Consulting Fees' is 'Professional Services' in 'fixture_f_budget_separate.csv'; 'Salaries and Wages' is 'Salaries & Wages' in 'fixture_f_budget_separate.csv'; 'Cloud Hosting & Bandwidth' is 'Cloud Hosting Infrastructure' in 'fixture_f_budget_separate.csv'; 'Marketing Campaigns' is 'Marketing & Advertising' in 'fixture_f_budget_separate.csv'\n\nDoes this look right?",
+  "table": null,
+  "chips": [
+   "Looks right",
+   "Change something"
+  ],
+  "view": {
+   "kind": "intake",
+   "title": "How I read your file",
+   "lead": null,
+   "rows": [
+    {
+     "label": "Header row",
+     "value": "Row 1"
+    },
+    {
+     "label": "Line items",
+     "value": "from 'Account Name'"
+    },
+    {
+     "label": "Account ID",
+     "value": "from 'GL Account'"
+    },
+    {
+     "label": "Budget",
+     "value": "from 'Budget in fixture_f_budget_separate.csv'"
+    },
+    {
+     "label": "Actual",
+     "value": "from 'Actual'"
+    },
+    {
+     "label": "Rows read",
+     "value": "5 data rows"
+    }
+   ],
+   "notes": [
+    {
+     "title": "Adjustments I made",
+     "items": [
+      "Joined 'fixture_f_budget_separate.csv' to 'fixture_f_actuals_separate.csv' by 'GL Account': 5 lines, each in both files",
+      "Took Actual from 'fixture_f_actuals_separate.csv' and the comparison from 'fixture_f_budget_separate.csv'",
+      "Kept the actuals file's labels where the files differ: 'SaaS Subscriptions' is 'SaaS Subscription Revenue' in 'fixture_f_budget_separate.csv'; 'Professional Consulting Fees' is 'Professional Services' in 'fixture_f_budget_separate.csv'; 'Salaries and Wages' is 'Salaries & Wages' in 'fixture_f_budget_separate.csv'; 'Cloud Hosting & Bandwidth' is 'Cloud Hosting Infrastructure' in 'fixture_f_budget_separate.csv'; 'Marketing Campaigns' is 'Marketing & Advertising' in 'fixture_f_budget_separate.csv'"
+     ],
+     "more": 0
+    }
+   ],
+   "question": "Does this look right?"
+  },
+  "phase": "awaiting_intake_confirmation",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ },
+ {
+  "step": "say Looks right",
+  "text": "What reporting period does this analysis cover? (e.g., Q3 2026, October 2026, FY2026)",
+  "table": null,
+  "chips": null,
+  "view": null,
+  "phase": "awaiting_period",
+  "level": null,
+  "ask_upload": false,
+  "download": null
+ }
+]
