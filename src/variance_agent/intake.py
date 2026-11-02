@@ -499,6 +499,9 @@ class IntakeResult:
     report_appendix: list[str] = field(default_factory=list)
     # A filing's income statement: its own printed totals, which head the report in place of computed ones (Decision 39).
     filing_headline: dict[str, object] | None = None
+    # A filing column label's display name where it names a duration ("3 months ended Mar 2026"); keys keep the
+    # label (M4).
+    period_names: dict[str, str] = field(default_factory=dict)
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
@@ -2555,7 +2558,7 @@ def _read_ixbrl_bytes(
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
         result = _read_ixbrl_position(chosen, filename, treat_blank_budgets_as_zero, selected_period, compare_to)
         result.candidate_sheets, result.available_sheets, result.comparable_sheets = ranked, names, comparable
-        return result
+        return _with_period_names(result, chosen.names)
     all_lines = chosen.lines
     # A comprehensive-income statement opens with net income, so only an income statement ends there. The
     # bottom line is found by its concept or printed label before repeated labels are told apart (Decision 39).
@@ -2675,6 +2678,19 @@ def _read_ixbrl_bytes(
     result.detected_totals[:0] = shaped.subtotals
     result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes,
                                           *blank_notes]
+    return _with_period_names(result, chosen.names)
+
+
+def _with_period_names(result: IntakeResult, names: dict[str, str]) -> IntakeResult:
+    """Each column label's display name ("3 months ended Mar 2026"), and the comparing note in those words (M4)."""
+    result.period_names = dict(names)
+    actual = str(result.column_mapping.get(CanonicalRole.ACTUAL, ""))
+    comparison = result.comparison_label or ""
+    said = f"Comparing {actual} against {comparison} ("
+    for at, note in enumerate(result.visible_transformations):
+        if names and note.startswith(said):
+            result.visible_transformations[at] = (f"Comparing {names.get(actual, actual)} against "
+                                                  f"{names.get(comparison, comparison)} (" + note[len(said):])
     return result
 
 
@@ -3797,10 +3813,11 @@ def format_intake_summary(result: IntakeResult) -> str:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         col_details.append(f"Account ID from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'")
     if CanonicalRole.BUDGET in result.column_mapping:
-        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        heading = comparison_heading(result.comparison_basis, result.period_names.get(result.comparison_label or "",
+                                                                                      result.comparison_label))
         col_details.append(f"{heading} from '{result.column_mapping[CanonicalRole.BUDGET]}'")
     if CanonicalRole.ACTUAL in result.column_mapping:
-        col_details.append(f"Actual from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
+        col_details.append(f"{_actual_heading(result)} from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
     lines.append(f"- **Columns mapped:** {', '.join(col_details)}")
 
     read_text = f"- **Rows read:** {result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
@@ -3866,10 +3883,11 @@ def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         rows.append(("Account ID", f"from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'"))
     if CanonicalRole.BUDGET in result.column_mapping:
-        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        heading = comparison_heading(result.comparison_basis, result.period_names.get(result.comparison_label or "",
+                                                                                      result.comparison_label))
         rows.append((heading, f"from '{result.column_mapping[CanonicalRole.BUDGET]}'"))
     if CanonicalRole.ACTUAL in result.column_mapping:
-        rows.append(("Actual", f"from '{result.column_mapping[CanonicalRole.ACTUAL]}'"))
+        rows.append((_actual_heading(result), f"from '{result.column_mapping[CanonicalRole.ACTUAL]}'"))
     read = f"{result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
     if result.rows_skipped_count > 0:
         skipped = result.rows_skipped_count
@@ -3885,6 +3903,12 @@ def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
 _INTERNAL_FIELD_NAMES = frozenset(_ROLE_ALIAS_KEYS | {
     "row_kind", "account_id", "budget_amount", "actual_amount", "line_type", "revenue_expense_type",
 })
+
+
+def _actual_heading(result: IntakeResult) -> str:
+    """"Actual", with the filing's duration where it names one: "Actual (3 months ended Mar 2026)" (M4)."""
+    name = result.period_names.get(str(result.column_mapping.get(CanonicalRole.ACTUAL, "")))
+    return f"Actual ({name})" if name else "Actual"
 
 
 def plain_analysis_error(error_text: str) -> str:

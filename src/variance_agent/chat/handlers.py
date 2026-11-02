@@ -1478,12 +1478,14 @@ def _run_analysis(session: Session) -> Response:
         currency=session.currency,
         comparison_basis=intake.comparison_basis if intake is not None else ComparisonBasis.BUDGET,
         comparison_label=intake.comparison_label if intake is not None else None,
+        comparison_name=intake.period_names.get(intake.comparison_label or "") if intake is not None else None,
     )
 
     if any("measure" in normalize_row(row) or "better" in normalize_row(row) for row in session.parsed_rows):
         config = AudienceConfig(
             config.period, config.dollar_threshold, config.percent_threshold, type_map=config.type_map,
             currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
+            comparison_name=config.comparison_name,
             per_share_threshold=session.per_share_threshold, count_threshold=session.count_threshold,
             bps_threshold=session.bps_threshold, percent_values=session.percent_values,
             multiple_threshold=session.multiple_threshold,

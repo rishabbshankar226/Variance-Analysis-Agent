@@ -171,6 +171,12 @@ class Statement:
     currency: str = ""  # the ISO code of its monetary facts ("EUR"), comma-joined if they disagree (X30)
     runs_on: bool = False  # an untitled table of other periods follows it, not joined (M2)
 
+    @property
+    def names(self) -> dict[str, str]:
+        """Each column label's display name, where it differs from the label: "3 months ended Mar 2026" (M4)."""
+        return {label: name for period, label in zip(self.periods, self.labels, strict=True)
+                if (name := period_name(period, label)) != label}
+
 
 def _transform(fmt: str, text: str) -> Decimal:
     """The figure an ixt transform reads from printed text; ValueError for anything else."""
@@ -406,6 +412,23 @@ def _period_labels(periods: list[tuple[str, ...]]) -> list[str]:
         for end, i in years:
             labels[i] = f"{_MONTHS[end.month - 1]} {end.year}"
     return labels
+
+
+def period_name(period: tuple[str, ...], label: str) -> str:
+    """How a column reads in display text: a duration labelled by its end month names its length (M4).
+
+    The label itself stays the key; a fiscal-year label and a balance sheet's instant are their own names.
+    """
+    if period[0] != "duration" or label.startswith("FY"):
+        return label
+    months = _months(period)
+    return f"{months} month{'s' if months != 1 else ''} ended {label}"
+
+
+def _column_note(period: tuple[str, ...], label: str) -> str:
+    name = period_name(period, label)
+    length = f"the {name.removesuffix(' ' + label)} " if name != label else ""
+    return f"Read the column for {length}{period[-1]} as {label}"
 
 
 def _months(period: tuple[str, ...]) -> int:
@@ -701,7 +724,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
     currencies: set[str] = set()
     if len(set(labels)) != len(labels):
         statement.notes.append("Two columns share a period label")
-    statement.notes.extend(f"Read the column for {p[-1]} as {label}" for p, label in zip(periods, labels, strict=True))
+    statement.notes.extend(_column_note(p, label) for p, label in zip(periods, labels, strict=True))
     breakdowns: list[str] = []
     for label, section, figures, dash in rows:
         keys: list[LineKey | None] = [None] * len(periods)

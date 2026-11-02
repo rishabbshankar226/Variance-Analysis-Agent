@@ -184,11 +184,13 @@ def analyze_comparisons(
         comparison_key = _one_column(keys, selected, comparison_heading(basis, None), required=False)
         label = cfg.comparison_label if basis is ComparisonBasis.PRIOR_PERIOD else None
         title = None
-        selected_cfg = replace(cfg, comparison_basis=basis, comparison_label=label, comparison_title=None)
+        selected_cfg = replace(cfg, comparison_basis=basis, comparison_label=label, comparison_title=None,
+                               comparison_name=cfg.comparison_name if basis is ComparisonBasis.PRIOR_PERIOD else None)
         if comparison_key is None and basis is ComparisonBasis.PRIOR_PERIOD and ordered:
             comparison_key, label = period_keys[ordered[1]], ordered[1]
             title = _title(ordered[0], ordered[1])
-            selected_cfg = replace(selected_cfg, comparison_label=label, actual_label=ordered[0], comparison_title=title)
+            selected_cfg = replace(selected_cfg, comparison_label=label, actual_label=ordered[0], comparison_title=title,
+                                   comparison_name=None)
             notes.append(f"Comparing {ordered[0]} against {label}; read periods newest first.")
         ranges = basis is ComparisonBasis.GUIDANCE and ("guidance_low" in keys or "guidance_high" in keys)
         if ranges and comparison_key is not None:
@@ -233,7 +235,7 @@ def analyze_comparisons(
             available.append(current)
         result = analyze_rows(available, selected_cfg) if available else None
         comparisons.append(ComparisonAnalysis(basis, result, tuple(unavailable), label))
-        notes.append(f"Comparing Actual against {comparison_heading(basis, label)}.")
+        notes.append(f"Comparing Actual against {comparison_heading(basis, selected_cfg.comparison_name or label)}.")
     gaps = _estimate_gaps(tuple(comparisons))
     metric_order = tuple((str(row.get(line_key, "")).strip().casefold(), str(row.get("segment", "")).strip().casefold(),
                           measure_kind(row.get("measure"), str(row.get(line_key, "Row")))) for row in canonical)
@@ -553,6 +555,7 @@ def read_comparison_input(
         if metadata is not None:
             metadata.update(intake_result=intake, document=intake.source_document(), transformations=audit_transformations(intake),
                             comparison_label=intake.comparison_label, comparison_basis=str(intake.comparison_basis),
+                            comparison_name=intake.period_names.get(intake.comparison_label or ""),
                             actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
         return rows, headers, intake.sheet_name, tuple([*intake.visible_transformations, *intake.reader_notes])
     notes: list[str] = []

@@ -49,7 +49,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
 | X31 | 3 | done | see `fix(X31)` | `src/variance_agent/intake.py`, `comparisons.py`, `tests/test_percent_formats.py` |
-| M4 | 3 | todo (approved at STOP 2) | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
+| M4 | 3 | done | see `fix(M4)` | `ixbrl.py`, `intake.py`, `models.py`, `comparison.py`, `comparisons.py`, `report.py`, `cli.py`, `chat/handlers.py`, `tests/test_period_names.py`; asked in [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | M6 | 3 | done | `test(M6)` x2, `fix(M6)` | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py`, ten modules' messages |
@@ -540,6 +540,21 @@ Boundary cases, at the scaled values, in thousands:
 - A Percent row's Tolerance of 1 under the same caption stays 1 percentage point.
 - Buffer 10.5 becomes exactly 10,500 (Fraction oracle).
 
+**M4, a filing column's duration in display text only.** An Inline XBRL column label names a duration by its end month ("Mar 2026"). That label is a key: it is the comparison label, the audit's `comparison.label` and the long outputs' label. So it stays as it is. The duration goes into a separate display name, "3 months ended Mar 2026", built by the reader for each duration column whose label names only its end month. A fiscal-year label ("FY2025") and a balance sheet's instant ("Mar 2026", as of that day) keep their label as their name, and a 12-month duration labelled by its end month (Decision 39's 52/53-week years) reads "12 months ended Jan 2026".
+
+Where the name shows:
+- the statement's note "Read the column for the 3 months ended 2026-03-28 as Mar 2026";
+- intake's "Comparing 3 months ended Mar 2026 against 3 months ended Mar 2025 (prior period).";
+- the chat's "How I read your file" rows "Prior Period (3 months ended Mar 2025)" and "Actual (3 months ended Mar 2026)";
+- the report headings, through a new display-only `AnalysisConfig.comparison_name`, which the CLI's paths and the chat set from intake and which defaults to `None`, so every contract run renders as before.
+
+The audit records `comparison.label` as "Mar 2025", as before. `comparison_name` is in no audit field and no fingerprint (the fingerprint hashes the record, not the config), and the long CSV and JSONL are unchanged; a test asserts all three.
+
+Boundary cases:
+- The 3-month and 6-month income statements of the same 10-Q show different names for the same label.
+- An annual filing's "FY2025" columns show no "months ended".
+- A strict or spreadsheet run has no names and renders exactly as before.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -549,6 +564,8 @@ Boundary cases, at the scaled values, in thousands:
 | `tests/test_ixbrl.py` (the declared-entity refusal, line 200) | the expected text "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. " becomes "'hal-20250927.htm' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. " | M6: "XML" is a forbidden word in the rules file; the refusal and its fix are otherwise unchanged |
 | `tests/test_excel_archive_hardening.py::test_a_dtd_after_a_long_prolog_comment_is_still_refused` and `::test_a_dtd_straddling_a_read_boundary_is_still_found` | `pytest.raises(ValueError, match="DTD")` becomes `match="declares entities of its own"`; each test still asserts the declaration is refused | M6: "DTD" is a forbidden word in the rules file |
 | `tests/test_pdf_intake.py::test_unknown_statement_lists_the_ones_found` | the expected refusal gains its last sentence, " Choose one of those statements." | M6: the refusal named the statements but gave no step; the same refusal for a filing already ends so (intake.py, the Inline XBRL path) |
+| `tests/test_filing_headlines.py::test_consecutive_52_53_week_years_are_named_by_their_end_month_not_as_a_gap` | "Read the column for 2026-01-03 as Jan 2026" becomes "Read the column for the 12 months ended 2026-01-03 as Jan 2026"; the label "Jan 2026" and the no-"FY2026" assertion stay | M4: the note names a duration labelled by its end month |
+| `tests/test_multi_audience_api.py::test_new_public_signatures_and_legacy_constructors` and `tests/test_multi_audience_measures.py::test_existing_public_constructors_and_functions_keep_their_parameters` | `AnalysisConfig`'s pinned parameters gain a trailing `"comparison_name"`; the seven existing names keep their order | M4: a trailing keyword with a default, so every existing call, positional or by name, works as before |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
 
@@ -694,6 +711,7 @@ Items:
 | M6 | every source rewording removed (`git apply -R` of the `src` diff), tests and script kept | `pytest tests/test_message_inventory.py`; `python scripts/message_inventory.py` | 1 failed, 5 passed: the gate lists 44 messages; the script prints 235 seen, 10 with jargon, 37 errors with no fix, 44 failing, matching the worktree's before |
 | X42 | `source_notes`, `_bare_rate` and their wiring removed (`git apply -R`), tests kept | `pytest tests/test_measure_source_notes.py` | 4 failed, 1 passed: the report and audit lack the format note and keep "Read bare Percent values as points."; the strict-run guard passes either way |
 | X41 | `UNIT_DECLARATIONS`, `scaled_declaration`, `scaling_note` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_caption_buffers.py` | 13 failed, 1 passed: Buffer and Tolerance stay $10.00, so the X41 file reads Within, and 110 against a benchmark of 100 reads Higher than benchmark; the Percent-row guard passes either way |
+| M4 | `period_name`, `Statement.names`, `period_names`, `comparison_name` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_period_names.py` | 7 failed: the notes say "Read the column for 2026-03-28 as Mar 2026", the chat reads "Prior Period (Mar 2025)" and the report heading has no duration |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

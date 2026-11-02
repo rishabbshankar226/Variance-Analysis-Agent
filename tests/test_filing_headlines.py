@@ -87,7 +87,7 @@ def test_consecutive_52_53_week_years_are_named_by_their_end_month_not_as_a_gap(
     result = _read(_fifty_three_week_filing())
     assert not result.has_fatal_errors, result.fatal_error_message
     assert result.comparison_label == "Dec 2024"
-    assert "Read the column for 2026-01-03 as Jan 2026" in result.reader_notes
+    assert "Read the column for the 12 months ended 2026-01-03 as Jan 2026" in result.reader_notes
     assert not any("FY2026" in note for note in result.reader_notes)
 
 

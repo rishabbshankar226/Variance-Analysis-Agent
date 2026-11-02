@@ -312,7 +312,7 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
     """A balance sheet or cash flow comparison: the checks the read passed, then each line's change (PLAN.md R7)."""
     cfg = result.config
     places = _report_places(result)
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     lines = [f"# Statement Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
              *("- " + _safe_inline(check) for check in checks),
              "- Lines marked (Total) are the statement's own subtotals.",
@@ -356,7 +356,7 @@ def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str
     by severity), and a limit run's count sentence. The report and the chat's results panel both show it."""
     cfg = result.config
     basis = cfg.comparison_basis.value
-    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_label)
+    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label)
     rows = [row for row in result.rows if row.basis_details is not None]
 
     def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
@@ -399,7 +399,7 @@ def render_basis_report(result: AnalysisResult) -> str:
     """A limit, benchmark or target comparison (PLAN.md R13-R15): outcomes in their own words, limits by severity."""
     cfg = result.config
     basis = cfg.comparison_basis.value
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     rows = [row for row in result.rows if row.basis_details is not None]
     currency = [f"Reporting currency: {cfg.currency}", ""] if any(currency_row(r) for r in rows) else []
     lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", *currency, "- " + _BASIS_NOTES[basis], ""]
@@ -440,7 +440,7 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
         return render_measure_report(result, filing_headline=filing_headline)
     cfg = result.config
     places = _report_places(result)
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     classification_incomplete = any(
         row.line_type == LineType.UNCLASSIFIED for row in result.rows
     )

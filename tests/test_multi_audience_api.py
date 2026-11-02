@@ -24,7 +24,7 @@ def test_new_public_signatures_and_legacy_constructors() -> None:
     assert list(inspect.signature(analyze_panel).parameters) == ["rows", "group_by", "options"]
     assert list(inspect.signature(AnalysisConfig).parameters) == ["period", "dollar_threshold", "percent_threshold",
                                                                              "type_map", "currency", "comparison_basis",
-                                                                             "comparison_label"]
+                                                                             "comparison_label", "comparison_name"]
     assert list(inspect.signature(AnalysisResult).parameters) == ["config", "rows", "material_rows", "revenue", "expenses", "warnings"]
     assert list(inspect.signature(analyze_rows).parameters) == ["rows", "config"]
     assert list(inspect.signature(build_audit_record).parameters) == ["result", "source_name", "source_sha256",

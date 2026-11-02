@@ -418,6 +418,7 @@ def _run(args: Arguments) -> int:
                          "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
 
     source_notes: tuple[str, ...] = ()  # assisted intake's notes, for a measure report and audit (X42)
+    period_names: dict[str, str] = {}  # a filing column's display name (M4)
     mapping_arg = getattr(args, "mapping", None)
     if isinstance(mapping_arg, str) and mapping_arg:
         from .intake import (
@@ -498,7 +499,7 @@ def _run(args: Arguments) -> int:
 
         _print_examination(intake_res)
         parsed_rows = rows
-        source_notes = tuple(intake_res.visible_transformations)
+        source_notes, period_names = tuple(intake_res.visible_transformations), intake_res.period_names
         parsed_worksheet = intake_res.sheet_name
         comparison_basis = intake_res.comparison_basis
         comparison_label = intake_res.comparison_label
@@ -552,7 +553,7 @@ def _run(args: Arguments) -> int:
         comparison_label = intake_res.comparison_label
         for transform in intake_res.visible_transformations:
             print(f"[assisted intake] {transform}", file=sys.stderr)
-        source_notes = tuple(intake_res.visible_transformations)
+        source_notes, period_names = tuple(intake_res.visible_transformations), intake_res.period_names
         _print_examination(intake_res)
     else:
         parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
@@ -603,11 +604,13 @@ def _run(args: Arguments) -> int:
         currency=args.currency,
         comparison_basis=comparison_basis,
         comparison_label=comparison_label,
+        comparison_name=period_names.get(comparison_label or ""),
     )
     if any(value is not None for value in audience_args.values()):
         config = AudienceConfig(
             config.period, config.dollar_threshold, config.percent_threshold, type_map=config.type_map,
             currency=config.currency, comparison_basis=config.comparison_basis, comparison_label=config.comparison_label,
+            comparison_name=config.comparison_name,
             per_share_threshold=cast(Decimal | None, audience_args["per_share_threshold"]),
             count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
             bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
@@ -838,6 +841,8 @@ def _run_comparisons(
                             headline_items=tuple(args.headline or ()))
     if isinstance(metadata.get("comparison_label"), str):
         config = replace(config, comparison_label=str(metadata["comparison_label"]))
+    if isinstance(metadata.get("comparison_name"), str):
+        config = replace(config, comparison_name=str(metadata["comparison_name"]))
     if isinstance(metadata.get("actual_label"), str):
         config = replace(config, actual_label=str(metadata["actual_label"]))
     table = analyze_comparisons(rows, config, bases, raw_headers=headers, extended_headers=extended)
