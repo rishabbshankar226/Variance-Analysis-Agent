@@ -28,7 +28,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X10 | 3 | done | see `fix(X10)` | `src/variance_agent/cli.py`, `README.md`, `tests/test_cli_hosted_detection.py` |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
 | X12 | 3 | done | see `fix(X12)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
-| X13 | 3 | todo | | |
+| X13 | 3 | done | see `fix(X13)` | `src/variance_agent/cli.py`, `tests/test_cli_output_paths.py` (new) |
 | X14 | 3 | todo | | |
 | X15 | 3 | todo | | |
 | X16 | 3 | todo | | |
@@ -298,6 +298,12 @@ Boundary cases, with the deadline narrowed in the test:
 
 A slow drip of the header lines is left as suspected and not fixed: the standard library reads headers itself, and the audit did not reproduce it.
 
+**X13, an output path over an input.** Every file a run reads is an input that no output may overwrite: the source, `--type-map`, `--mapping`, `--history`, and now also `--compare-file`, `--ltm-from`, `--metrics` and `--panel`. That includes symlink, hardlink and case aliases, through the existing `_same_path`. The refusal keeps its existing wording ("Input, type-map, report, audit, and workbook output paths must be distinct.") and the input stays untouched.
+
+Boundary cases:
+- `-o` equal to each of the four new inputs refuses.
+- `-o` to a fresh path reads, as before.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -394,6 +400,7 @@ Items:
 | C1 | the computed-column skip in strict's formula check removed (`git apply -R`), tests kept | `pytest tests/test_excel_unsaved_formulas_strict.py` | 1 failed, 4 passed: strict stops on "Var $" formulas that assisted reads. The amount-column and "Notes" stops hold either way. |
 | X10 | the `not args.no_browser` condition removed (`git apply -R`), test kept | `pytest tests/test_cli_hosted_detection.py` | 1 failed, 5 passed: with RENDER set, `--chat --no-browser` binds 0.0.0.0 |
 | X12 | the body deadline and chunked read removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "dripped or sent_whole"` | 1 failed, 1 passed: the deadline settings don't exist, and the server waits out the drip |
+| X13 | the four second files removed from `_validate_output_paths` (`git apply -R`), tests kept | `pytest tests/test_cli_output_paths.py` | 4 failed, 1 passed: `-o bud.csv` overwrites the compare file, and the other three reach later checks instead of the path refusal |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

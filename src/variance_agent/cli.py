@@ -310,6 +310,9 @@ def _validate_output_paths(args: Arguments) -> None:
     history_arg = getattr(args, "history", None)
     if isinstance(history_arg, str) and history_arg:
         inputs.append(Path(history_arg))
+    # The second files a run reads are inputs too, never overwritten by an output (X13).
+    inputs.extend(Path(value) for name in ("compare_file", "ltm_from", "metrics", "panel")
+                  if isinstance(value := getattr(args, name, None), str) and value)
     outputs = [Path(value) for value in (args.output, args.audit_json, args.xlsx,
                getattr(args, "long_output", None), getattr(args, "long_output_jsonl", None),
                getattr(args, "errors_output", None)) if value]
