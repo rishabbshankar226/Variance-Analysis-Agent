@@ -370,10 +370,13 @@ def load_input(
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded, strict=False) if h})
-                # A formula Excel never calculated reads as blank; name it instead (R4).
+                # A formula Excel never calculated reads as blank; name it instead (R4). A computed variance
+                # column ("Var $") is never read, here as in assisted intake, so it is not checked (C1).
+                from .intake import CanonicalRole, match_column_synonym
                 stop = None if not track_formulas else table_formulas_message(
                     facts, ws._worksheet_path, source_name, header_row=1,
-                    headers=["" if h is None else str(h) for h in raw_headers], rows=read_rows,
+                    headers=["" if h is None or match_column_synonym(str(h))[0] is CanonicalRole.IGNORED_COMPUTED
+                             else str(h) for h in raw_headers], rows=read_rows,
                     line_item_column=headers.index("line_item") if "line_item" in headers else None)
                 if stop is not None:
                     raise ValueError(stop)

@@ -19,7 +19,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X6 | 2 | done | see `fix(X6)` | `src/variance_agent/intake.py`, `tests/test_period_choice.py` (new) |
 | X7 | 2 | done | see `fix(X7)` | `src/variance_agent/intake.py`, `tests/test_signed_profit_lines.py` (new) |
 | X8 | 2 | done | see `fix(X8)` | `src/variance_agent/cli.py`, `comparisons.py`, `report.py`, `tests/test_comparison_path_guards.py` (new) |
-| C1 | 2 | todo | | |
+| C1 | 2 | done | see `fix(C1)` | `src/variance_agent/parsing.py`, `tests/test_excel_unsaved_formulas_strict.py` (new) |
 | C3 | 2 | todo | | |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | asked | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
@@ -260,6 +260,13 @@ Boundary cases:
 - A Multiple row with `--multiple-threshold 0.1 --long-output` reads.
 - The 10-K with `--long-output` heads the report with its printed totals, and with `--xlsx` refuses.
 
+**C1, uncached formulas in a computed column.** Assisted intake classes a "Var $", "Var %", "Variance" or "% of Budget" column as computed (`intake._IGNORED_COMPUTED_SYNONYMS`) and never reads it. An uncached formula there is noted, not a stop. Strict intake also never uses such a column, since the engine computes the variance itself, and it reads the same file with cached values. So its formula check (R4) now skips the computed columns too, and the two modes agree. Every other named column keeps the stop, as before. An uncached formula in Budget or Actual refuses in both modes, naming the cell.
+
+Boundary cases:
+- Uncached formulas only in "Var $": strict and assisted both read, with the same figures.
+- An uncached formula in Actual: both refuse.
+- An uncached formula in an unrecognised column ("Notes"): strict still refuses, as today.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -330,6 +337,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | X6 | the chosen-pair override after `detect_comparison_columns` removed (`git apply -R`), tests kept | `pytest tests/test_period_choice.py` | 2 failed, 3 passed: choosing Sep-26 reads 500,000 / 540,000 (the YTD cells), and the chat summary maps 'Budget YTD'. The no-choice and one-pair controls pass either way. |
 | X7 | `_signed_profit_lines` and its use in the flip removed (`git apply -R`), tests kept | `pytest tests/test_signed_profit_lines.py` | 4 failed, 1 passed: Gross Profit and Net Income stay among the lines with their credit sign, the chat totals are wrong, and the off-by-one line keeps -480,001. The presentation-signed control passes either way. |
 | X8 | `_refuse_main_path_inputs`, the comparison path's multiple threshold, `_refuse_filing_workbook` there, and the filing headline in `render_measure_report` removed (`git apply -R`), tests kept | `pytest tests/test_comparison_path_guards.py` | 7 failed, 1 passed: LTM plus `--layout` or `--long-output` exits 0 with quarter figures, the limit run gives "No Limit column found", `--multiple-threshold` is ignored, the 10-K report sums Total Revenue, and the filing workbook is written. The plain LTM control passes either way. |
+| C1 | the computed-column skip in strict's formula check removed (`git apply -R`), tests kept | `pytest tests/test_excel_unsaved_formulas_strict.py` | 1 failed, 4 passed: strict stops on "Var $" formulas that assisted reads. The amount-column and "Notes" stops hold either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
@@ -338,6 +346,7 @@ The repository has no release tag. Released 0.2.0 is taken as `5e288bb` (2026-10
 
 - **C2**: not in 0.2.0. `comparisons.read_comparison_input`, the earnings preset and `api.analyze_file` came later.
 - **C3**: not in 0.2.0. There was no filing reader.
+- **C1**: `parsing.py` existed at `5e288bb`, but the uncached-formula stop it relaxes (R4) came with 0.3.0, and the fix changes a refusal, not a figure.
 - A finding counts as on a 0.2.0 path only when the cause sits in one of the eleven modules above, on a CLI path that 0.2.0 already offered.
 
 Post-T1 suite: 2505 passed in 47.31s (count unchanged).
