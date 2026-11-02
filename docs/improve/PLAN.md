@@ -51,7 +51,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X31 | 3 | todo | | |
 | M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
-| C4 | 3 | todo | | |
+| C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | M6 | 3 | todo | | |
 | X35 | 3 | todo | | |
 | X36 | 3 | todo | | |
@@ -463,6 +463,13 @@ Boundary cases:
 - Two unnamed copies get the note.
 - Copies each in their own section keep their section names, with no note.
 
+**C4, a line among costs that is a credit in one year only.** A line outside the filing's revenue that adds to income is read among the costs with its sign turned, as before; the values and status are unchanged. The note calls it "a credit" only when it adds to income in every compared year it prints. When it reduces income in a compared year (a loss that year), the note names the years each way: "Read 'Other income, net' among costs with its sign turned: it adds to income in FY2025 and reduces it in FY2024, and the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part of." The check runs on the two compared values, after the comparison pair is chosen, so a third year the statement prints doesn't change it. The audit note becomes "Labeled ... as expense, among costs with its sign turned". The zero-line filter (Decision 41) recognises both wordings.
+
+Boundary cases:
+- +50 and +40 keep "a credit among costs" (the existing test).
+- +50 and -40 take the new wording.
+- A line that reduces income in both compared years says "it reduces income in FY2025 and FY2024".
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -581,6 +588,7 @@ Items:
 | M1 | `_statements_elsewhere` and both new refusal wordings removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl_statements_elsewhere.py` | 3 failed, 1 passed: the refusal names no document and no next step. The path-characters guard passes either way. |
 | M2 | `Statement.runs_on`, its marking and `_runs_on_refusal` removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k runs_on` | 1 failed: the statement has no `runs_on`, and the refusal is the balance-sheet check's own message |
 | M5 | `_numbered_notes` and its two uses removed (`git apply -R`), test kept | `pytest tests/test_ixbrl.py -k which_is_which` | 1 failed: the reader notes don't say which numbered copy is which |
+| C4 | `_credits_by_year` and its call removed (`git apply -R`), tests kept | `pytest tests/test_ixbrl.py -k "loss_in_one_year or only_in_a_year_not_compared or credit_on_the_cost_side"` | 2 failed, 1 passed: both new cases still say "as a credit among costs"; the same-sign credit test passes either way |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

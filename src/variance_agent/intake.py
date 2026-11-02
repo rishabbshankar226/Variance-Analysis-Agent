@@ -2561,6 +2561,7 @@ def _read_ixbrl_bytes(
             for name in zero:
                 if note == f"Labeled '{name}' as expense, a credit among costs":
                     shaped.audit_notes[at] = f"Labeled '{name}' as expense"
+        credits = _credits_by_year(credits, result, shaped)
     left_out = [f"Left out {item}" for item in chosen.left_out]
     if below and bottom is not None:
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
@@ -2752,6 +2753,39 @@ def _filing_headline(shaped: ShapedStatement, lines: list[IxLine], names: list[s
                       "actual": _key_record(labels[0], now), "comparison": _key_record(labels[1], before),
                       "change": format(change, "f"), "change_percent": None if percent is None else format(percent, "f")})
     return {"items": items, "notes": notes}
+
+
+def _credits_by_year(credits: list[str], result: IntakeResult, shaped: ShapedStatement) -> list[str]:
+    """Call a line among costs a credit only where it adds to income in every compared year it prints.
+
+    A line read among costs with its sign turned is a credit where its compared value comes out
+    negative; where one comes out positive, that year it reduced income (a loss), and the note names
+    the years each way instead (C4). Values and labels are unchanged.
+    """
+    years = (str(result.column_mapping.get(CanonicalRole.ACTUAL, "")),
+             str(result.column_mapping.get(CanonicalRole.BUDGET, "")))
+    rows = {str(row["line_item"]): row for row in result.rows}
+    reworded: list[str] = []
+    for note in credits:
+        name = next((n for n in rows if note.startswith(f"Read '{n}' as a credit among costs: ")), None)
+        if name is None:
+            reworded.append(note)
+            continue
+        values = (Decimal(str(rows[name].get("actual") or 0)), Decimal(str(rows[name].get("budget") or 0)))
+        adds = [year for year, value in zip(years, values, strict=True) if value < 0]
+        reduces = [year for year, value in zip(years, values, strict=True) if value > 0]
+        if not reduces:
+            reworded.append(note)
+            continue
+        revenue = note.split(": the filing's revenue is ", 1)[1].removesuffix(", and this line is not part of it")
+        ways = ([f"adds to income in {' and '.join(adds)}"] if adds else []) + \
+               [f"reduces {'it' if adds else 'income'} in {' and '.join(reduces)}"]
+        reworded.append(f"Read '{name}' among costs with its sign turned: it {' and '.join(ways)}, and the filing's "
+                        f"revenue is {revenue}, which it is not part of")
+        shaped.audit_notes = [f"Labeled '{name}' as expense, among costs with its sign turned"
+                              if audit == f"Labeled '{name}' as expense, a credit among costs" else audit
+                              for audit in shaped.audit_notes]
+    return reworded
 
 
 def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: list[str]) -> list[str]:

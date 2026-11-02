@@ -592,3 +592,39 @@ def test_numbered_copies_of_a_label_say_which_is_which() -> None:
     assert not result.has_fatal_errors, result.fatal_error_message
     assert ("'Deferred income taxes' is printed twice with no section to tell the copies apart: (1) is the one after "
             "'Depreciation', (2) the one after 'Other costs'.") in result.reader_notes
+
+
+def test_a_line_that_is_a_loss_in_one_year_is_not_called_a_credit() -> None:
+    """C4: +50 in FY25 and -40 in FY24 is read among costs as before, but its note doesn't call it a credit."""
+    rows = income_rows()
+    rows[4:6] = [row("Other income, net", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                     "(" + fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40", sign="-") + ")"),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,330"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    other = next(r for r in result.rows if r["line_item"] == "Other income, net")
+    assert (other["type"], Decimal(str(other["actual"])), Decimal(str(other["budget"]))) == ("Expense", -50 * M, 40 * M)
+    assert ("Read 'Other income, net' among costs with its sign turned: it adds to income in FY2025 and reduces it "
+            "in FY2024, and the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part "
+            "of") in result.visible_transformations
+    assert not any("'Other income, net' as a credit" in note for note in result.visible_transformations)
+
+
+def test_a_line_that_adds_to_income_only_in_a_year_not_compared_is_not_called_a_credit() -> None:
+    """C4: a credit only in the third year printed; in both compared years it reduces income."""
+    from tests.fixtures.ixbrl.build_ixbrl import quarter_filing
+    years = {"Y25": ("2025-01-01", "2025-12-31"), "Y24": ("2024-01-01", "2024-12-31"), "Y23": ("2023-01-01", "2023-12-31")}
+
+    def line(label: str, concept: str, *cells: str) -> str:
+        return row(label, *("(" + fact(concept, context, text.strip("()"), sign="-") + ")" if text.startswith("(")
+                            else fact(concept, context, text) for context, text in zip(years, cells, strict=True)))
+    rows = [line("Net sales", "us-gaap:Revenues", "1,004", "1,145", "1,412"),
+            line("Cost of sales", "us-gaap:CostOfRevenue", "500", "560", "700"),
+            line("Other income, net", "us-gaap:OtherNonoperatingIncomeExpense", "(30)", "(20)", "40"),
+            line("Net income", "us-gaap:NetIncomeLoss", "474", "565", "752")]
+    result = _read(quarter_filing(rows, title="CONSOLIDATED STATEMENTS OF INCOME", periods=years))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    other = next(r for r in result.rows if r["line_item"] == "Other income, net")
+    assert (other["type"], Decimal(str(other["actual"])), Decimal(str(other["budget"]))) == ("Expense", 30 * M, 20 * M)
+    assert ("Read 'Other income, net' among costs with its sign turned: it reduces income in FY2025 and FY2024, and "
+            "the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part of") in result.visible_transformations
