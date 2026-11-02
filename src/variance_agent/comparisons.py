@@ -391,6 +391,81 @@ def _render_comparisons(table: TableAnalysis) -> str:
 _LINE_ITEM_HEADERS = frozenset({"line_item", "account", "account_name", "account_description", "item", "category"})
 
 
+_ACTUAL_KEYS = frozenset({"actual", "actual_amount", "actuals", "act", "actual_ytd", "actual_amt"})
+_RANGE_KEYS = frozenset({"low", "high", "consensus_low", "consensus_high", "guide_low", "guide_high", "guidance_low",
+                         "guidance_high", "std_dev", "standard_deviation", "dispersion"})
+
+
+def _amount_columns(headers: tuple[str, ...]) -> list[int]:
+    """The columns holding a row's amounts: Actual, each comparison, each period, and range or spread bounds."""
+    return [index for index, header in enumerate(headers)
+            if header and not header.strip().startswith("#")  # "# Est" counts estimates
+            and (normalize_key(header) in _ACTUAL_KEYS | _RANGE_KEYS
+                 or basis_for_header(normalize_key(header), extended=True) is not None
+                 or parse_period_label(header, extended=True) is not None)]
+
+
+def _scaled_cell(value: object, multiplier: Decimal, *, field: str, line_item: str) -> object:
+    """A stored amount times the caption's multiplier, exactly; text keeps its currency symbol for the later check."""
+    from .parsing import parse_decimal
+    if isinstance(value, Decimal):
+        with financial_context():
+            return value * multiplier
+    if not isinstance(value, str) or not value.strip():
+        return value
+    try:
+        number = parse_decimal(value, field=field, line_item=line_item)
+    except ValueError:
+        return value  # the strict reader refuses it later, as without a caption
+    with financial_context():
+        scaled = number * multiplier
+    symbol = next((s for s in "$€£" if s in value), "")
+    return f"{'-' if scaled < 0 else ''}{symbol}{abs(scaled):f}"
+
+
+def _apply_unit_caption(
+    rows: list[dict[str, object]], positions: list[int], headers: tuple[str, ...], text: str,
+    display: dict[tuple[int, int], tuple[str, Decimal | None, bool]], filename: str, notes: list[str],
+) -> Decimal | None:
+    """Scale each Currency row's amounts once by the title's unit caption, as FP&A intake does (E1, C2).
+
+    Cells whose number format already shows them scaled are reconciled by FP&A's own rule. Returns the
+    multiplier applied, or None when nothing was scaled.
+    """
+    from .excel import column_letters, describe_cell
+    from .intake import DisplayScaledCell, _reconcile_display, _UNIT_WORDS, detect_unit_scale
+    caption = detect_unit_scale(text)
+    measure = next((h for h in headers if normalize_key(h) == "measure"), None)
+    line = next((h for h in headers if normalize_key(h) in _LINE_ITEM_HEADERS), None)
+    columns = _amount_columns(headers)
+    cells: list[tuple[dict[str, object], int, int, str, str]] = []  # row, sheet row, column, header, line item
+    for row, number in zip(rows, positions, strict=True):
+        name = str(row.get(line, "") if line else "")
+        try:
+            if measure_kind(row.get(measure) if measure else None, name) is not MeasureKind.CURRENCY:
+                continue
+        except ValueError:
+            continue  # the analysis names the unknown measure
+        cells.extend((row, number, index + 1, headers[index], name) for index in columns
+                     if row.get(headers[index]) not in (None, ""))
+    shown = [DisplayScaledCell(describe_cell(number, column, line_item=name, field=header),
+                               f"{column_letters(column)}{number}", *display[number, column])
+             for _, number, column, header, name in cells if (number, column) in display]
+    note, stop = _reconcile_display(filename, caption, shown, len(cells))
+    if stop is not None:
+        raise ValueError(stop)
+    if note is not None:
+        notes.append(note)
+        return None  # the cells already hold full amounts
+    if caption == Decimal(1):
+        return None
+    for row, _, _, header, name in cells:
+        row[header] = _scaled_cell(row[header], caption, field=header, line_item=name)
+    notes.append(f"Amounts scaled from {_UNIT_WORDS[caption]} (x{caption:,}). Thresholds stay in the reporting unit "
+                 "(full currency units, not thousands).")
+    return caption
+
+
 def read_comparison_input(
     data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
     column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
@@ -401,7 +476,7 @@ def read_comparison_input(
     from .parsing import load_input, load_json_value, _normalized_headers, _excel_loader
     from .excel import (HIDDEN_ROW_CHOICES, WorkbookFacts, cell_value, hidden_data_rows, hidden_rows_note,
                         hidden_rows_question, inspect_workbook, table_formulas_message)
-    from .intake import _decode_text, _sniff_delimiter, _delimited_rows
+    from .intake import _decode_text, _sniff_delimiter, _delimited_rows, _display_entry
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
@@ -442,6 +517,9 @@ def read_comparison_input(
     raw: list[list[object]] | None = None
     workbook_facts: WorkbookFacts | None = None
     worksheet_path = ""
+    # (row, column) -> how a cell's number format shows it scaled, as FP&A intake records it (E1).
+    display: dict[tuple[int, int], tuple[str, Decimal | None, bool]] = {}
+    format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
     if suffix.lower() == ".csv" and not assisted and not column_mapping:
         parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
         return parsed.rows, parsed.raw_headers, parsed.worksheet, ()
@@ -465,8 +543,13 @@ def read_comparison_input(
                     raise ValueError("Excel input has no active worksheet.")
                 ws.reset_dimensions()
                 numbers = stored.get(ws._worksheet_path, {})
-                raw = [[cell_value(cell, numbers=numbers, row=i, column=j) for j, cell in enumerate(cells, 1)]
-                       for i, cells in enumerate(ws.iter_rows(), 1)]
+                raw = []
+                for i, cells in enumerate(ws.iter_rows(), 1):
+                    record = [cell_value(cell, numbers=numbers, row=i, column=j) for j, cell in enumerate(cells, 1)]
+                    for j, (cell, value) in enumerate(zip(cells, record, strict=True), 1):
+                        if (entry := _display_entry(getattr(cell, "number_format", None), value, format_cache)) is not None:
+                            display[i, j] = entry
+                    raw.append(record)
                 worksheet = ws.title
                 worksheet_path = ws._worksheet_path
             finally:
@@ -536,9 +619,11 @@ def read_comparison_input(
     notes.extend(ignored)
     _normalized_headers(mapped_headers)  # collision, column, and header-text limits
     output = []
+    positions: list[int] = []  # the sheet row of each output row
     for index, record in enumerate(raw[header_at + 1:], header_at + 2):
         if not record or all(v is None or v == "" for v in record) or index in excluded:
             continue
+        positions.append(index)
         if len(record) > len(headers) and any(v is not None and v != "" for v in record[len(headers):]):
             raise ValueError(f"Row {index}: populated cells appear beyond the header.")
         if len(record) != len(headers) and suffix.lower() == ".csv":
@@ -547,6 +632,11 @@ def read_comparison_input(
         if any(not header and value is not None and value != "" for header, value in zip(headers, record, strict=False)):
             raise ValueError(f"Row {index}: data appears under a blank header.")
         output.append({header: value for header, value in zip(mapped_headers, record, strict=False) if header})
+    title = " ".join(str(v).strip() for r in raw[:header_at] for v in r if v is not None and str(v).strip())
+    scale = _apply_unit_caption(output, positions, mapped_headers, f"{title} {' '.join(headers)}", display, filename,
+                                notes)
+    if scale is not None and metadata is not None and isinstance(metadata.get("transformations"), dict):
+        metadata["transformations"]["unit_scale"] = str(scale)  # type: ignore[index]
     if header_at:
         notes.append(f"Read header row {header_at + 1}; skipped {header_at} title rows.")
     if column_mapping:
