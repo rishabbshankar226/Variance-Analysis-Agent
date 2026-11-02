@@ -64,7 +64,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X38 | — | open | | cost; not this run except where X17 or X18 touch it |
 | X39 | — | open | | memory on the hosted free plan; not this run |
 | X40 | — | open | | left to the owner: the deploy pins (Decision 12) |
-| S1 | 4 | todo | | |
+| S1 | 4 | done (reviewer pending) | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
 | S2 | 4 | todo | | |
 | S3 | 4 | todo | | |
 | S4 | 4 | todo | | |
@@ -298,6 +298,7 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
     - X42: intake's notes reach the measure report and the audit's `inferences`, and the bare-rate note appears only when a bare rate was read.
     - The two open STOP-ASKs: X41 scales a Currency row's Buffer and Tolerance with the caption or declared unit, and M4 adds the duration as a display name only, keeping every key.
     - The three behaviour changes (X42, X41, M4) land first, each with its own rule, test and revert proof, before Phase 4 starts, so no refactor commit shares a change of behaviour (constraint 8).
+17. **Phase 4's S2, S3 and S4 are prepared in worktrees and committed here, in S order.** Each implementer works in its own git worktree and returns patches. S2 touches `intake.py`, S3 touches `cli.py` (and writes S3's characterization first), and S4 touches the other seven files, so their patches never meet. `_read_excel_bytes` is also in `intake.py`, so S2's worker prepares it as a second patch on top of S2's. The main session applies each patch, checks it (suite count, characterization, contracts, mypy, ruff, size table), commits it, and gives its diff to a separate fresh-eyes reviewer. This keeps "only the main session edits the tree" and constraint 8.
 
 ## Phase 3 rules
 
@@ -554,6 +555,38 @@ Boundary cases:
 - The 3-month and 6-month income statements of the same 10-Q show different names for the same label.
 - An annual filing's "FY2025" columns show no "months ended".
 - A strict or spreadsheet run has no names and renders exactly as before.
+
+**N1, workbook sheets for the comparisons `--xlsx` refuses today.** `--xlsx` and the chat's Export Excel write a workbook for:
+- a limit, benchmark or target comparison;
+- a filing's covenant metrics against a schedule;
+- a filing's balance sheet or cash flow;
+- a filing's income statement.
+
+Today each refuses. Every existing workbook, sheet name and cell value stays as it is. Each new sheet matches the Markdown report for the same comparison word for word: its column headings, row order, status and outcome words, and notes.
+
+The sheets, with the report's own words:
+- **Limit** (and covenant metrics, which compare against limits): sheet "Limits", columns Line Item | Kind | Limit | Actual | Headroom | Headroom (% of limit) | Utilization | Buffer | Status, in the report's order ("Lines, by severity"). Status is Breach, At limit, Near or Within.
+- **Covenant metrics** also get a sheet "Metrics", which lists each metric's build as the report's "Metrics" section prints it.
+- **Benchmark**: sheet "Benchmark", columns Line Item | Benchmark | Actual | Difference | Tolerance | Outcome | Status. Outcome is In line, Higher than benchmark or Lower than benchmark; Status is Favorable, Unfavorable or Neutral.
+- **Target**: sheet "Targets", columns Line Item | Target | Actual | Difference | Tolerance | Outcome. Outcome is On target, Over or Under.
+- **Balance sheet or cash flow**: sheet "Lines", columns Line Item | {the comparison heading, e.g. "Prior Period (Sep 2024)"} | Actual | Change | Change (%) | Direction | Material. Direction is Increase, Decrease or No change, and the statement's own subtotals are marked "(Total)" as in the report. The report's check lines (the identity or roll-forward, the units) open the sheet as notes.
+- **A filing's income statement**: the FP&A workbook's sheets, except that its Summary is headed by the filing's own printed totals (the report's headline figures, each from its XBRL fact), never by totals added up from lines. That was the reason it refused (Decision 39). The material and all-lines sheets are as today.
+
+Figures:
+- A Currency figure is a number cell in the existing money format (`S_MONEY`).
+- A percentage (Headroom (% of limit), Utilization, Change (%)) is a number in the existing percent format (`S_PCT`), as the existing sheets store Var %.
+- A rate, basis points or a multiple stays formatted text right-aligned (`S_TEXT_RIGHT`), as the existing Measures sheet stores them.
+- NM, N/A, "none (exact)" and blanks stay as the report prints them.
+- Each sheet ends with the existing note that Excel stores numbers in double precision and the CSV or audit JSON holds the exact values. Labels are written as text, so a label starting with =, +, - or @ is never a formula.
+
+Tests read each sheet back with `openpyxl`:
+- every numeric cell equals `float()` of the audit's `Decimal` for that figure exactly, and its `number_format` equals the existing sheets' for the same kind of figure;
+- the headings and words equal the report's;
+- labels starting with =, +, - and @ read back as text.
+
+Boundary cases:
+- A zero limit's Utilization and Headroom (% of limit) are "NM" text, as in the report.
+- A row with no buffer leaves Buffer blank; a benchmark row with no tolerance reads "none (exact)".
 
 ## Existing assertions to edit
 
