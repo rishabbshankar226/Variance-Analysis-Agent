@@ -120,6 +120,23 @@ def _tone(value: Decimal) -> str:
     return "favorable" if value > 0 else "unfavorable" if value < 0 else "neutral"
 
 
+def _fu(variance: Decimal, *, higher_is_better: bool = True) -> str:
+    """A total's table status: F or U, and Neutral at exactly zero, as the engine has it (C5)."""
+    if variance == 0:
+        return "Neutral"
+    return "F" if (variance > 0) == higher_is_better else "U"
+
+
+def _fu_between(new: Decimal, old: Decimal, *, higher_is_better: bool = True) -> str:
+    """`_fu` for a move from `old` to `new`, by comparison only."""
+    return _fu(Decimal((new > old) - (new < old)), higher_is_better=higher_is_better)
+
+
+def _in_line(cfg: AnalysisConfig) -> str:
+    """'in line with budget' (or the basis noun): the words for a total that matches exactly (C5)."""
+    return f"in line with {'budget' if _is_budget(cfg) else _noun(cfg)}"
+
+
 def _planned(cfg: AnalysisConfig) -> str:
     """Label for a comparison amount: 'Budgeted Revenue', 'Forecast Revenue'."""
     return "Budgeted" if _is_budget(cfg) else _heading(cfg)
@@ -3119,7 +3136,8 @@ def _handle_budget_utilization(session: Session) -> Response:
     if result.revenue.budget > 0:
         achieve = ratio(result.revenue.actual, result.revenue.budget) * Decimal("100")
         diff = result.revenue.actual - result.revenue.budget
-        status_text = f"beat by {format_money(diff, cfg.currency, places)}" if diff >= 0 else f"shortfall of {format_money(abs(diff), cfg.currency, places)}"
+        status_text = (_in_line(cfg) if diff == 0 else f"beat by {format_money(diff, cfg.currency, places)}" if diff > 0
+                       else f"shortfall of {format_money(abs(diff), cfg.currency, places)}")
         achievement = "Revenue Target Achievement" if _is_budget(cfg) else f"Revenue vs. {_heading(cfg)}"
         lines.append(f"• **{achievement}:** **{achieve:.1f}%** ({status_text})")
 
@@ -3239,7 +3257,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "Actual": format_money(result.revenue.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(rev_var, cfg.currency, places),
                     "Variance (%)": _pct_text(_variance_percent(rev_var, result.revenue.budget), "+.1f"),
-                    "Status": "F" if rev_var >= 0 else "U",
+                    "Status": _fu(rev_var),
                 },
                 {
                     "Metric": "Total Expenses",
@@ -3247,7 +3265,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "Actual": format_money(result.expenses.actual, cfg.currency, places),
                     f"Variance ({sym})": format_money(exp_var, cfg.currency, places),
                     "Variance (%)": _pct_text(_variance_percent(exp_var, result.expenses.budget), "+.1f"),
-                    "Status": "F" if exp_var <= 0 else "U",
+                    "Status": _fu(exp_var, higher_is_better=False),
                 },
                 {
                     "Metric": "Operating Profit",
@@ -3255,7 +3273,7 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
                     "Actual": format_money(actual_profit, cfg.currency, places),
                     f"Variance ({sym})": format_money(net_impact, cfg.currency, places),
                     "Variance (%)": f"{(ratio(net_impact, abs(base_profit)) * 100):+.1f}%" if base_profit != 0 else "N/A",
-                    "Status": "F" if net_impact >= 0 else "U",
+                    "Status": _fu(net_impact),
                 },
             ]
         status_word = "beat" if net_impact >= 0 else "shortfall"
@@ -3263,9 +3281,10 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
         return Response(
             text=_with_unclassified_note(
                 f"**Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
-                f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, representing a "
-                f"**{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against the {target} of "
-                f"{format_money(base_profit, cfg.currency, places)}.", result),
+                f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, "
+                + ("**in line with**" if net_impact == 0 else
+                   f"representing a **{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against")
+                + f" the {target} of {format_money(base_profit, cfg.currency, places)}.", result),
             table=macro_table,
             chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
             phase=Phase.EXPLORING,
@@ -4143,7 +4162,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             "Baseline Actual": format_money(base_val, cur, places),
             "Simulated Scenario": format_money(sim_val, cur, places),
             "Delta vs Baseline": format_money(delta, cur, places),
-            "Status": "F" if (delta >= 0 if target_is_rev else delta <= 0) else "U",
+            "Status": _fu(delta, higher_is_better=target_is_rev),
         },
     ]
     # Aggregate targets are already the Total Revenue / Total Expenses rows below.
@@ -4154,7 +4173,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             "Baseline Actual": format_money(base_rev, cur, places),
             "Simulated Scenario": format_money(sim_rev, cur, places),
             "Delta vs Baseline": format_money(sim_rev - base_rev, cur, places),
-            "Status": "F" if sim_rev >= base_rev else "U",
+            "Status": _fu_between(sim_rev, base_rev),
         },
         {
             "Metric": "Total Expenses",
@@ -4162,7 +4181,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             "Baseline Actual": format_money(base_exp, cur, places),
             "Simulated Scenario": format_money(sim_exp, cur, places),
             "Delta vs Baseline": format_money(sim_exp - base_exp, cur, places),
-            "Status": "F" if sim_exp <= base_exp else "U",
+            "Status": _fu_between(sim_exp, base_exp, higher_is_better=False),
         },
         {
             "Metric": "Operating Profit",
@@ -4170,7 +4189,7 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             "Baseline Actual": format_money(base_profit, cur, places),
             "Simulated Scenario": format_money(sim_profit, cur, places),
             "Delta vs Baseline": format_money(profit_delta, cur, places),
-            "Status": "F" if profit_delta >= 0 else "U",
+            "Status": _fu(profit_delta),
         },
     ]
 
@@ -4232,7 +4251,7 @@ def _handle_sensitivity(session: Session) -> Response:
             s_profit = s_rev - s_exp
             s_var_budget = s_profit - budget_profit
             s_margin = (ratio(s_profit, s_rev) * Decimal(100)) if s_rev != 0 else None
-            status = "F" if s_var_budget >= 0 else "U"
+            status = _fu(s_var_budget)
 
             table_rows.append({
                 "Scenario": name,
@@ -4340,7 +4359,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         rr_exp = actual_exp * multiplier
         rr_profit = rr_rev - rr_exp
         annual_budget_profit = budget_profit * multiplier
-        rr_var = rr_profit - annual_budget_profit
+        rr_var = (actual_profit - budget_profit) * multiplier  # = rr_profit - annual_budget_profit, exactly
         rr_margin = (ratio(rr_profit, rr_rev) * Decimal(100)) if rr_rev != 0 else None
 
         # 2. Corporate FP&A Latest Estimate (LE = Actuals to Date + Remaining Budget)
@@ -4349,7 +4368,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         le_rev = actual_rev + remaining_budget_rev
         le_exp = actual_exp + remaining_budget_exp
         le_profit = le_rev - le_exp
-        le_var = le_profit - annual_budget_profit
+        le_var = actual_profit - budget_profit  # = le_profit - annual_budget_profit, since remaining/elapsed + 1 = multiplier
         le_margin = (ratio(le_profit, le_rev) * Decimal(100)) if le_rev != 0 else None
 
     rr_status = "beat" if rr_var >= 0 else "shortfall"
@@ -4366,10 +4385,14 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
         + "\n"
         f"• **Annualized Operating Profit (Run-Rate)**: **{format_money(rr_profit, cur, places)}**\n"
         f"  *If current operational velocity continues for the full year, profit is projected at {format_money(rr_profit, cur, places)} "
-        f"({format_money(rr_var, cur, places)} {rr_status} vs. annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n"
+        + (f"(in line with annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n" if rr_var == 0 else
+           f"({format_money(rr_var, cur, places)} {rr_status} vs. annual {_noun(cfg)} of {format_money(annual_budget_profit, cur, places)}).*\n\n")
+        +
         f"• **Corporate Latest Estimate (LE = Actuals + {remaining_label})**: **{format_money(le_profit, cur, places)}**\n"
         f"  *Assuming remaining {remaining} months perform strictly to {_noun(cfg)}, full-year profit finishes at {format_money(le_profit, cur, places)} "
-        f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n"
+        + (f"(in line with {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n" if le_var == 0 else
+           f"({format_money(le_var, cur, places)} {le_status} vs. {'plan' if _is_budget(cfg) else _noun(cfg)}).*\n\n")
+        +
         f"• **Annualized Revenue Run-Rate**: {format_money(rr_rev, cur, places)} (Operating Margin: {_pct_text(rr_margin)})\n"
         f"• **Annualized Expense Run-Rate**: {format_money(rr_exp, cur, places)}"
     )
@@ -4382,7 +4405,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Operating Profit": format_money(actual_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(actual_profit - budget_profit, cur, places),
             "Operating Margin": f"{(ratio(actual_profit, actual_rev) * 100):.1f}%" if actual_rev != 0 else "N/A",
-            "Status": "F" if (actual_profit - budget_profit) >= 0 else "U",
+            "Status": _fu(actual_profit - budget_profit),
         },
         {
             "Projection Model": "Annualized Run-Rate (Current Pace)",
@@ -4391,7 +4414,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Operating Profit": format_money(rr_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(rr_var, cur, places),
             "Operating Margin": _pct_text(rr_margin),
-            "Status": "F" if rr_var >= 0 else "U",
+            "Status": _fu(rr_var),
         },
         {
             "Projection Model": f"Latest Estimate (LE: Actuals + {remaining_label})",
@@ -4400,7 +4423,7 @@ def _handle_run_rate(session: Session, intent: ParsedIntent) -> Response:
             "Operating Profit": format_money(le_profit, cur, places),
             f"Var vs {_heading(cfg)} ({sym})": format_money(le_var, cur, places),
             "Operating Margin": _pct_text(le_margin),
-            "Status": "F" if le_var >= 0 else "U",
+            "Status": _fu(le_var),
         },
         {
             "Projection Model": f"Full-Year Baseline {_heading(cfg)}",
@@ -4461,7 +4484,7 @@ def _handle_executive_memo(session: Session) -> Response:
     reconciled_count = sum(1 for r in result.material_rows if r.driver_evidence and r.driver_evidence.reconciles)
 
     status_word = "beat" if net_impact >= 0 else "shortfall"
-    sign_word = "moved" if margin_delta is None else "expanded" if margin_delta >= 0 else "contracted"
+    sign_word = "moved" if margin_delta is None else "expanded" if margin_delta > 0 else "contracted"
 
     # Same fact-gated builder as the CLI --commentary report, so both surfaces agree;
     # it names the comparison basis (budget, forecast or prior period).
@@ -4477,13 +4500,17 @@ def _handle_executive_memo(session: Session) -> Response:
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
         *([f"{_unclassified_note(result)}\n"] if _unclassified_note(result) else []),
-        f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, representing a "
-        f"**{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) "
-        f"against the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(budget_profit, cur, places)}**. "
-        f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n",
+        f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, "
+        + ("**in line with**" if net_impact == 0 else
+           f"representing a **{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) against")
+        + f" the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(budget_profit, cur, places)}**. "
+        + (f"Operating margin **held** at **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n"
+           if margin_delta == 0 else
+           f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** "
+           f"({_pct_text(margin_delta, '+.1f', ' pts')}).\n"),
         "### 2. Top-Line Performance (Revenue)",
         f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(rev_budget, cur, places)}** "
-        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'Favorable' if rev_var >= 0 else 'Unfavorable'}).",
+        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, {'in line' if rev_var == 0 else 'Favorable' if rev_var > 0 else 'Unfavorable'}).",
     ]
 
     if top_rev_beat:
@@ -4494,7 +4521,7 @@ def _handle_executive_memo(session: Session) -> Response:
     memo_lines.extend([
         "\n### 3. Cost Discipline & Overruns (Expenses)",
         f"Total Operating Expenses ended at **{format_money(exp_actual, cur, places)}** vs. {_heading(cfg)} of **{format_money(exp_budget, cur, places)}** "
-        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, {'Unfavorable' if exp_var > 0 else 'Favorable'}).",
+        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, {'in line' if exp_var == 0 else 'Unfavorable' if exp_var > 0 else 'Favorable'}).",
     ])
 
     if top_exp_over:
@@ -4540,21 +4567,21 @@ def _handle_executive_memo(session: Session) -> Response:
             _heading(cfg): format_money(rev_budget, cur, places),
             "Actual": format_money(rev_actual, cur, places),
             f"Variance ({sym})": format_money(rev_var, cur, places),
-            "Outcome": "Beat" if rev_var >= 0 else "Miss",
+            "Outcome": "In line" if rev_var == 0 else "Beat" if rev_var > 0 else "Miss",
         },
         {
             "Section": "2. Cost (Expenses)",
             _heading(cfg): format_money(exp_budget, cur, places),
             "Actual": format_money(exp_actual, cur, places),
             f"Variance ({sym})": format_money(exp_var, cur, places),
-            "Outcome": "Overrun" if exp_var > 0 else "Savings",
+            "Outcome": "In line" if exp_var == 0 else "Overrun" if exp_var > 0 else "Savings",
         },
         {
             "Section": "3. Bottom-Line (Operating Profit)",
             _heading(cfg): format_money(budget_profit, cur, places),
             "Actual": format_money(actual_profit, cur, places),
             f"Variance ({sym})": format_money(net_impact, cur, places),
-            "Outcome": "Favorable" if net_impact >= 0 else "Unfavorable",
+            "Outcome": "Neutral" if net_impact == 0 else "Favorable" if net_impact > 0 else "Unfavorable",
         },
     ]
 
@@ -4639,7 +4666,9 @@ def _handle_greeting(session: Session) -> Response:
         text = (
             f"I am ready to explore your **{cfg.period}** financial results.\n\n"
             f"Currently tracking **{cur}** with materiality set at **{format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}**. "
-            f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n"
+            + (f"Overall net operating impact is **in line with** {_noun(cfg)}.\n\n" if net_impact == 0 else
+               f"Overall net operating impact is a **{format_money(abs(net_impact), cur, places)} {status}** against {_noun(cfg)}.\n\n")
+            +
             f"What would you like to review? You can ask for an `executive memo`, a `waterfall` walk, `run rate` projections, or drill down into any account (e.g. `why {safe_inline(session.result.rows[0].line_item)}`)."
         )
         chips = ["Executive memo", "Waterfall", "Biggest risks", "Sensitivity"]
@@ -4806,7 +4835,7 @@ def _handle_profitability(session: Session) -> Response:
 
     is_black = actual_profit >= 0
     stance = "firmly **in the black** (profitable)" if is_black else "currently **in the red** (operating loss)"
-    status = "favorable beat" if net_impact >= 0 else "unfavorable shortfall"
+    status = _in_line(cfg) if net_impact == 0 else "favorable beat" if net_impact > 0 else "unfavorable shortfall"
 
     text = (
         f"**Profitability Standing: {cfg.period}**\n\n"

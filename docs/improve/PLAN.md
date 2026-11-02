@@ -13,7 +13,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X2 | 2 | done | see `fix(X2)` | `src/variance_agent/scorecard.py`, `tests/test_scorecard.py` |
 | X3 | 2 | done | see `fix(X3)` | `src/variance_agent/pdf_tables.py`, `tests/test_pdf_intake.py` |
 | C2 | 2 | done | see `fix(C2)` | `src/variance_agent/comparisons.py`, `tests/test_comparison_captions.py` (new) |
-| C5 | 2 | todo | | |
+| C5 | 2 | done | see `fix(C5)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_zero_variance.py` (new) |
 | X4 | 2 | todo | | |
 | X5 | 2 | todo | | |
 | X6 | 2 | todo | | |
@@ -155,6 +155,26 @@ The note is FP&A's wording: "Amounts scaled from thousands (x1,000). ...". The a
 
 Boundary cases: caption alone, scaling format alone, both, and caption with a mix of formats, each on FP&A, earnings and `api.analyze_file`. Also: a Per Share row under a caption stays unscaled; "# Est" stays unscaled; Consensus Low and High scale. Fraction oracle: scaled = Fraction(stored) x 1000.
 
+**C5, a zero variance in the chat.** The engine's rule gives Neutral at exactly zero (`analysis.py`). The chat's totals now follow it. Strictly above or below zero, nothing changes.
+
+**Tables.** A Status cell of F or U reads `Neutral` at zero. This covers the compare macro table's three rows, the what-if table, each sensitivity scenario and the run-rate table's three rows. The memo's Outcome column reads `In line` where it says Beat or Miss and Overrun or Savings, and `Neutral` where it says Favorable or Unfavorable.
+
+**Text.** A zero total is "in line with" the comparison:
+- Utilization: "(in line with budget)".
+- Compare: "Operating profit finished at A, **in line with** the budget target of B."
+- Run-rate: "(in line with annual budget of B)" and "(in line with plan)".
+- Memo: "Operating Profit finished at A, **in line with** the planned budget of **B**"; revenue and expense say "in line"; a zero margin change says "Operating margin **held** at **M**".
+- Greeting: "Overall net operating impact is **in line with** budget".
+- Profitability: "(in line with budget; ...)".
+
+For a basis other than Budget, the basis noun replaces "budget", as these handlers already do. The what-if and sensitivity text already handle zero ("neutral", "on track") and is unchanged.
+
+Two zero cases came out in testing:
+- **What-if.** The table's target row and its two total rows compare with `>=` and `<=`. They now go through the same Neutral-at-zero status, by comparison only, with no new arithmetic.
+- **Run-rate.** At Q3 the multiplier 12/9 rounds at 50 digits, so the run-rate and Latest Estimate variances came out a hair off zero (F, shown as $0.00). Both are now computed from their exact identities: run-rate variance = (Actual profit - Budget profit) x 12/elapsed; LE variance = LE profit - annualised budget = Actual profit - Budget profit, since remaining/elapsed + 1 = 12/elapsed. The displayed figures are unchanged except at an exact half-cent. Fraction oracle on a nonzero file: the run-rate variance shown is Fraction(Actual - Budget profit) x 12/9, rounded half-even to the cent, and LE's is Fraction(Actual - Budget profit).
+
+Boundary cases: a fictional file whose every line has Actual = Budget gives zero totals and zero for every projection; the same file with one revenue line one cent up gives F and the old words. Both the table cells and the sentences are tested.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -219,6 +239,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | X2 | `_printed` and `_workbook_cells` removed (`git apply -R` of the scorecard diff), tests kept | `pytest tests/test_scorecard.py` | 3 failed: the report reads `In line \| 0.079%` instead of `12.4%`, and both refusals give `DID NOT RAISE SystemExit` |
 | X3 | `_UNIT_CAPTION_RE`, `_TITLE_UNIT_RE` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_pdf_intake.py -k unit_caption` | 3 failed, 3 passed: on-title and unparenthesised read `1250.4`; the long title caption gives "We couldn't find an income statement" |
 | C2 | `_apply_unit_caption` and the display capture removed from `comparisons.py` (`git apply -R`), tests kept | `pytest tests/test_comparison_captions.py` | 6 failed, 4 passed: caption-alone earnings reads `$1,234.00`, no scale note or audit `unit_scale`, no "not scaled again" note, the mixed-format earnings run does not refuse, and CSV cells stay unscaled. The passing four are the format-alone and both cases and the FP&A refusal, which held before. |
+| C5 | `_fu`, `_fu_between`, `_in_line`, the zero branches and the run-rate identities removed (`git apply -R`), tests kept | `pytest tests/test_chat_zero_variance.py` | 11 failed, 5 passed: zero totals show F in the compare, run-rate and what-if tables, the sensitivity baseline is F, and every "in line" sentence is missing. The one-cent controls and the run-rate oracle pass either way, as designed. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
