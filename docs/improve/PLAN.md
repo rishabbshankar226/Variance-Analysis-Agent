@@ -52,7 +52,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M4 | 3 | asked | | STOP-ASK: [evidence/stop-ask-m4-period-labels/ASK.md](evidence/stop-ask-m4-period-labels/ASK.md) |
 | M5 | 3 | done | see `fix(M5)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
 | C4 | 3 | done | see `fix(C4)` | `src/variance_agent/intake.py`, `tests/test_ixbrl.py` |
-| M6 | 3 | in progress | `test(M6)`: script and before-inventory | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py` |
+| M6 | 3 | done | `test(M6)` x2, `fix(M6)` | `scripts/message_inventory.py`, `docs/intake-message-inventory.md`, `tests/test_message_inventory.py`, ten modules' messages |
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
@@ -286,6 +286,9 @@ The $1M gap is not even the cause. On a synthetic statement of the same shape, t
     - Only errors and refusals are scored for a fix; a confirmation or a question is not.
     - Engine errors are checked as `plain_analysis_error` shows them.
     - The scanner was frozen before any message changed. One refinement followed on the same source, before any edit: it now recognises a fix given after a condition ("If the filing puts them in another document, upload that document"). **Before, at `ff8abcb`'s source:** 228 messages seen, 17 with jargon, 34 of 82 errors with no fix, 48 failing either check. The first run, without the refinement, gave 35 and 49. The hand-written count at `a3ce6bb` (113 messages, 32 jargon, 70 no fix) used other scope and rules, so it is not comparable.
+    - Fixing showed two more gaps in the scanner. It now reads text a function assigns to a local name before passing it on (the workbook refusal "could not be opened safely" was missed). It also knows that assisted intake puts its own refusal in place of the workbook check's errors (`excel.inspect_workbook`), which the chat therefore never shows. **The final scanner on the pre-fix source** (`d8542ff`, run in a temporary worktree with that tree's package first on the path, then removed): 235 messages seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing either check. The revert proof reproduces these exactly.
+    - **After `fix(M6)`:** 235 seen, 0 with jargon, 0 of 86 errors with no fix, 0 failing. `tests/test_message_inventory.py` now asserts that no message a chat reader sees fails, so a new message that does fails the suite.
+    - Two changes went beyond words. A Statement Kind column accepts "Balance Sheet" and "Cash Flow" as well as `balance_sheet` and `cash_flow`, since the message now names the plain forms. An oversized upload's reply names the 32 MiB limit, where it used to say "Request body is too large.".
     - Limits stay (constraint 10). Only the words change.
 
 ## Phase 3 rules
@@ -634,6 +637,7 @@ Items:
 | X31 | `percent_shown`, its use in `_process_raw_table` and `_percent_as_shown` removed (`git apply -R`), tests kept | `pytest tests/test_percent_formats.py` | 14 failed: `points` reads 0.4% and 0.425%, no flag stops with "bare rate in Budget needs --percent-values", and the cells stay Decimal 0.4 |
 | X35 | `title_periods`, `_ask_period` and the cleaner's look-ahead removed (`git apply -R`), tests kept | `pytest tests/test_chat_period_chips.py` | 16 failed, 3 passed: no chips, no "title says" line; the 3 that pass are the no-period and lead-in guards |
 | X36 | `unbudgeted_as_zero`, `ZERO_OFFERED`, the session field and the chat offer removed (`git apply -R`), tests kept | `pytest tests/test_join_unbudgeted.py` | 6 failed, 2 passed: `join_files` takes no such option, and the chat refuses with "run again" and no chip; the 2 that pass are the unchanged-refusal guards |
+| M6 | every source rewording removed (`git apply -R` of the `src` diff), tests and script kept | `pytest tests/test_message_inventory.py`; `python scripts/message_inventory.py` | 1 failed, 5 passed: the gate lists 44 messages; the script prints 235 seen, 10 with jargon, 37 errors with no fix, 44 failing, matching the worktree's before |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
