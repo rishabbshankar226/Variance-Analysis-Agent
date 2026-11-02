@@ -77,8 +77,12 @@ from .responses import (
     format_threshold_pct,
     report_places,
     row_to_table_dict,
+    NOT_YET_LABELED,
+    NOT_YET_LABELED_PHRASE,
     safe_inline,
+    status_cell,
     status_label,
+    type_label,
 )
 from .session import Phase, Session
 from .views import CONFIRM_QUESTION, figure, figures_view, intake_view, pair, with_lead
@@ -1571,7 +1575,7 @@ def _rerun_after_classification(session: Session) -> Response:
     names = ", ".join(f"'{safe_inline(item)}'" for item in added)
     return with_lead(replace(summary, phase=Phase.EXPLORING),
                      f"{response.text}\n\nThe classification of {names} was not applied; "
-                     "those items stay Unclassified.\n\n")
+                     f"those items stay {NOT_YET_LABELED_PHRASE}.\n\n")
 
 
 def _basis_summary(result: AnalysisResult) -> Response:
@@ -2172,7 +2176,7 @@ def _handle_filter_type(session: Session, line_type: LineType) -> Response:
 
     if not filtered:
         return Response(
-            text=f"No {line_type.value} rows found.",
+            text=f"No {type_label(line_type)} rows found.",
             chips=["Material", "Summary"],
             phase=Phase.EXPLORING,
         )
@@ -2185,7 +2189,7 @@ def _handle_filter_type(session: Session, line_type: LineType) -> Response:
     table = [row_to_table_dict(row, cfg.currency, places, _heading(cfg)) for row in filtered]
 
     return Response(
-        text=f"**{line_type.value} Items** ({len(filtered)} row{'s' if len(filtered) != 1 else ''})",
+        text=f"**{type_label(line_type)} Items** ({len(filtered)} row{'s' if len(filtered) != 1 else ''})",
         table=table,
         chips=["Material", "Summary", "Export report"],
         phase=Phase.EXPLORING,
@@ -2405,7 +2409,7 @@ def _handle_detail(session: Session, intent: ParsedIntent) -> Response:
 
     lines = [
         f"**{safe_inline(row.line_item)}**\n",
-        f"• Type: {row.line_type}",
+        f"• Type: {type_label(row.line_type)}",
         f"• {_heading(cfg)}: {format_money(row.budget, cfg.currency, places)}",
         f"• Actual: {format_money(row.actual, cfg.currency, places)}",
         f"• Variance: {format_money(row.variance_dollars, cfg.currency, places)}",
@@ -2486,8 +2490,8 @@ def _handle_warnings(session: Session) -> Response:
         )
 
     lines = ["**Data Quality Warnings:**\n"]
-    for warning in result.warnings:
-        lines.append(f"• {safe_inline(warning)}")
+    for warning in result.warnings:  # the engine's words, with its term for an unlabeled line made plain (X27)
+        lines.append(f"• {safe_inline(warning.replace('Unclassified', NOT_YET_LABELED_PHRASE))}")
 
     return Response(
         text="\n".join(lines),
@@ -3021,7 +3025,7 @@ def _handle_revenue_status(session: Session) -> Response:
     if any(r.line_type == LineType.UNCLASSIFIED for r in result.rows):
         return Response(
             text="Total revenue cannot be certified because there are still unclassified line items. Classify them first.",
-            chips=["Unclassified", "Summary"],
+            chips=[NOT_YET_LABELED, "Summary"],
             phase=Phase.EXPLORING,
             level="error",
         )
@@ -3087,7 +3091,7 @@ def _handle_expense_status(session: Session) -> Response:
     if any(r.line_type == LineType.UNCLASSIFIED for r in result.rows):
         return Response(
             text="Total expenses cannot be certified because there are still unclassified line items.",
-            chips=["Unclassified", "Summary"],
+            chips=[NOT_YET_LABELED, "Summary"],
             phase=Phase.EXPLORING,
             level="error",
         )
@@ -3248,7 +3252,7 @@ def _handle_metrics_count(session: Session) -> Response:
         f"• **Total Line Items:** {total_rows}",
         f"• **Material Variances:** {mat_rows} ({mat_pct:.1f}% of total items)",
         f"• **Direction:** {f_count} Favorable, {u_count} Unfavorable, {n_count} Neutral",
-        f"• **Classification:** {rev_count} Revenue, {exp_count} Expense, {unc_count} Unclassified",
+        f"• **Classification:** {rev_count} Revenue, {exp_count} Expense, {unc_count} {NOT_YET_LABELED_PHRASE}",
         f"• **Data Warnings:** {len(result.warnings)} issue{'s' if len(result.warnings) != 1 else ''}",
     ]
 
@@ -3519,7 +3523,7 @@ def _handle_unbudgeted(session: Session) -> Response:
         for row in spending:
             lines.append(
                 f"• **{safe_inline(row.line_item)}:** {format_money(row.actual, cfg.currency, places)} realized "
-                f"({status_label(row.status)}, Type: {row.line_type})"
+                f"({status_label(row.status)}, Type: {type_label(row.line_type)})"
             )
         lines.append(f"\n**Note:** {wording.note}")
     if revenue and not spending and not _is_budget(cfg):
@@ -3697,7 +3701,7 @@ def _handle_waterfall(session: Session) -> Response:
             "Actual": format_money(row.actual, cur, places),
             f"Var ({sym})": format_money(row.variance_dollars, cur, places),
             f"Profit Impact ({sym})": format_money(impact, cur, places),
-            "Status": (str(row.status) if row.line_type == LineType.UNCLASSIFIED
+            "Status": (status_cell(row.status) if row.line_type == LineType.UNCLASSIFIED
                        else "F" if impact > 0 else ("U" if impact < 0 else "Neutral")),
         })
 

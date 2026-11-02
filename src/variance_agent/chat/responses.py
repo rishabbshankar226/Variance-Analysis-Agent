@@ -80,18 +80,18 @@ def row_to_table_dict(
             comparison: format_measure(row.budget, row.measure, currency),
             "Actual": format_measure(row.actual, row.measure, currency),
             "Variance": format_measure(variance, row.measure, currency, variance=True),
-            "Var (%)": format_pct(row.budget, row.variance_dollars, row.percent_label), "Status": str(row.status),
+            "Var (%)": format_pct(row.budget, row.variance_dollars, row.percent_label), "Status": status_cell(row.status),
         }
     return {
         "Line Item": safe_inline(row.line_item),
-        "Type": str(row.line_type),
+        "Type": type_label(row.line_type),
         comparison: format_money(row.budget, currency, places),
         "Actual": format_money(row.actual, currency, places),
         f"Var ({CURRENCY_SYMBOLS.get(currency, '$')})": format_money(
             row.variance_dollars, currency, places,
         ),
         "Var (%)": format_pct(row.budget, row.variance_dollars, row.percent_label),
-        "Status": str(row.status),
+        "Status": status_cell(row.status),
     }
 
 
@@ -101,6 +101,21 @@ def status_label(status: Status) -> str:
         Status.FAVORABLE: "Favorable",
         Status.UNFAVORABLE: "Unfavorable",
         Status.NEUTRAL: "Neutral",
-        Status.UNCLASSIFIED: "Unclassified",
+        Status.UNCLASSIFIED: NOT_YET_LABELED,
     }
     return labels.get(status, str(status))
+
+
+# "Unclassified" is jargon to the reader; the chat says this instead (X27). Reports and audits keep the term.
+NOT_YET_LABELED = "Not yet labeled"
+NOT_YET_LABELED_PHRASE = "not yet labeled revenue or expense"
+
+
+def status_cell(status: Status) -> str:
+    """A table's Status cell: F, U or Neutral as the engine writes it; an unclassified row says so plainly."""
+    return NOT_YET_LABELED if status is Status.UNCLASSIFIED else str(status)
+
+
+def type_label(line_type: object) -> str:
+    """A line's Type as the chat shows it: Revenue, Expense, or Not yet labeled."""
+    return NOT_YET_LABELED if str(line_type) == "Unclassified" else str(line_type)

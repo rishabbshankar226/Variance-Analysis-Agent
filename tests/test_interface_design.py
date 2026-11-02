@@ -405,7 +405,7 @@ def test_status_words_mirror_the_servers_map(run_js: Callable[[str], object]) ->
     assert run_js("return m.STATUS_WORDS;") == {str(s): status_label(s) for s in Status}
     shown = run_js("return ['F', 'U', 'Neutral', 'Unclassified', 'Beat', 'Miss', 'In line', 'Other'].map(m.statusWord);")
     assert shown == [{"word": "Favorable", "tone": "favorable"}, {"word": "Unfavorable", "tone": "unfavorable"},
-                     {"word": "Neutral", "tone": "neutral"}, {"word": "Unclassified", "tone": None},
+                     {"word": "Neutral", "tone": "neutral"}, {"word": "Not yet labeled", "tone": None},
                      {"word": "Beat", "tone": "favorable"}, {"word": "Miss", "tone": "unfavorable"},
                      {"word": "In line", "tone": "neutral"}, {"word": "Other", "tone": None}]
     # The outcome words are the ones the engine's display_outcome returns.

@@ -45,7 +45,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | M3 | 3 | todo | | |
 | X25 | 3 | done | see `fix(X25)` | `src/variance_agent/chat/handlers.py`, `tests/test_chat_export_paths.py` (new) |
 | X26 | 3 | done | see `fix(X19, X26)` | `src/variance_agent/chat/server.py`, `tests/test_server_hardening.py` |
-| X27 | 3 | todo | | |
+| X27 | 3 | done | see `fix(X27)` | `src/variance_agent/chat/responses.py`, `chat/handlers.py`, `chat/intent.py`, `tests/test_chat_not_yet_labeled.py` (new) |
 | X28 | 3 | done | see `fix(X28)` | `src/variance_agent/mapping.py`, `tests/test_cli_small_refusals.py` (new) |
 | X29 | 3 | done | see `fix(X29)` | `src/variance_agent/cli.py`, `tests/test_cli_small_refusals.py` |
 | X31 | 3 | todo | | |
@@ -387,11 +387,23 @@ Boundary cases:
 - `~/r.md` lands in home.
 - `out/r.md` lands under the working folder, as before.
 
+**X27, "Unclassified" in the chat.** The rules file names "Unclassified" as jargon and gives the words to use. In everything the chat shows, an unclassified line is:
+- "Not yet labeled" in a table's Type or Status cell, the filter chip and the filter heading;
+- "not yet labeled revenue or expense" in a sentence, which covers the summary's classification count, the skip notice, the type and status in a line's details, and each engine warning as the chat displays it.
+
+The "Not yet labeled" chip routes to the same filter as the word "unclassified", which still works. The engine, the reports, the audit and the CSV export, which are data with contracts, are unchanged.
+
+Boundary cases:
+- After "Skip all", the material table's cells, the warnings reply and the chips hold no "Unclassified".
+- The chip "Not yet labeled" lists the same rows as typing "unclassified".
+- A CLI report keeps its warning text.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
 |---|---|---|
 | `tests/test_chat_hardening.py::test_unmatched_questions_on_a_big_file_stay_fast` (7 cases) | `assert time.perf_counter() - start < 0.5` is replaced by the work counts of Decision 7. `assert response.text` stays. | T1. The bound failed under load. Measured here: 5 of 7 cases failed on each of two runs beside 64 CPU-bound processes. The work counts pin the same fix without a clock. |
+| `tests/test_interface_design.py::test_status_words_mirror_the_servers_map` | the page shows `'Unclassified'` as `{"word": "Unclassified", "tone": None}`; it becomes `{"word": "Not yet labeled", "tone": None}` | X27 (approved at STOP 1). The test checks that the page's word map mirrors the server's `status_label`, and X27 changes that label. Its mirror check stays as it is. |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
 
@@ -495,6 +507,7 @@ Items:
 | X19, X26 | the replaced-file condition and both `initial_response` clears removed (`git apply -R`), tests kept | `pytest tests/test_server_hardening.py -k "refused_upload or start_up_reply"` | 3 failed: a refused upload gives the download a 404, and `/status` still serves the start-up reply after a new upload and after a reset |
 | X21 | the whole-file and same-half branches and `_half_wording` removed from `_load_other_half` (`git apply -R`), tests kept | `pytest tests/test_chat_two_files.py` | 3 failed, 2 passed: a whole file gets "...isn't the actuals half of a pair. Run it on its own, without --compare-file.", and the same budget again gets "Could not find a header row". The join and broken-file controls pass either way. |
 | X25 | the `expanduser` and the named landing path removed (`git apply -R`), tests kept | `pytest tests/test_chat_export_paths.py` | 1 failed, 1 passed: `~/r.md` creates `work/~/r.md`, and home stays empty. The relative-path control passes either way. |
+| X27 | the display words, the chip's intent words and the page's word removed across four files (`git apply -R`), tests kept | `pytest tests/test_chat_not_yet_labeled.py tests/test_interface_design.py` | 3 failed, 62 passed: "Unclassified" shows in the material table and the warnings, the "Not yet labeled" chip doesn't route, and the page's word map no longer mirrors the edited assertion |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

@@ -442,7 +442,7 @@ _INTENT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ), "filter_type_exp"),
 
     (re.compile(
-        r"^(?:show\s+)?(?:all\s+)?unclassified"
+        r"^(?:show\s+)?(?:all\s+)?(?:unclassified|not\s+yet\s+labell?ed)"  # the chip says the plain words (X27)
         r"(?:\s+(?:variances?|items?|lines?|rows?))?$",
         re.IGNORECASE,
     ), "filter_type_unc"),
