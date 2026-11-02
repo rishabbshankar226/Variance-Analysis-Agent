@@ -17,7 +17,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X4 | 2 | done | see `fix(X4)` | `src/variance_agent/intake.py`, `tests/test_unit_scaling.py` |
 | X5 | 2 | done | see `fix(X5, X30)` | `src/variance_agent/intake.py`, `ixbrl.py`, `join.py`, `ltm.py`, `metrics.py`, `cli.py`, `comparisons.py`, `api.py`, `chat/handlers.py`, `tests/test_currency_conflicts.py` (new) |
 | X6 | 2 | done | see `fix(X6)` | `src/variance_agent/intake.py`, `tests/test_period_choice.py` (new) |
-| X7 | 2 | todo | | |
+| X7 | 2 | done | see `fix(X7)` | `src/variance_agent/intake.py`, `tests/test_signed_profit_lines.py` (new) |
 | X8 | 2 | todo | | |
 | C1 | 2 | todo | | |
 | C3 | 2 | todo | | |
@@ -229,6 +229,19 @@ Boundary cases on one fictional file with Sep-26 and YTD pairs:
 - No choice keeps today's columns.
 - A file with only "Budget YTD" and "Actual YTD" reads them whatever the choice.
 
+**X7, profit lines in a signed ledger.** When intake reads a ledger as signed (revenue stored as negative credits) and turns revenue's sign, the profit lines are decided too. A profit line is any label `classification.is_profit_measure` names: gross, operating or net income, profit, earnings, loss or margin; income before or after anything; pre-tax income; income from operations. For each Currency profit line:
+- Turn it when turning makes it add up as a subtotal of the lines above.
+- Keep it as stored when only the stored sign adds up, as in an export that prints profit presentation-signed.
+- Turn it when neither adds up, since that is the ledger's own convention, and leave it among the line items as today.
+
+The turned profit lines join the flip note ("... for 2 revenue lines and 2 profit lines (Gross Profit, Net Income)") and the audit's `flipped_line_items`. Subtotal detection then excludes the ones that add up, as it does for any subtotal.
+
+Boundary cases:
+- A profitable signed ledger (Gross Profit -480,000, Net Income -300,000) turns both, and both are excluded as subtotals.
+- A loss-making one (Gross Profit +50 with revenue -100 and costs 150) turns it to -50, which adds up.
+- A presentation-signed Gross Profit (+480,000 in a signed ledger) is kept.
+- A Gross Profit off by one dollar adds up neither way: it is turned and stays a line.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -297,6 +310,7 @@ T1 under load: `pytest tests/test_chat_hardening.py::test_unmatched_questions_on
 | X4 | `_unit_caption_re`, `_BILLIONS_RE` and the billions label removed; the old two patterns restored (`git apply -R`), tests kept | `pytest tests/test_unit_scaling.py` | 23 failed, 20 passed: the 20 missed forms read 1, "in M&A" and "in M." read 1,000,000, and the billions file is unscaled |
 | X5, X30 | `currency_conflict`, the marked-cell and statement-currency records, the CLI, API and chat checks, and the LTM and metrics currency removed across eight modules (`git apply -R`), tests kept | `pytest tests/test_currency_conflicts.py` | 9 failed, 4 passed: euro, pound and filing-currency runs all exit 0 under the wrong currency, the chat analyses EUR cells as USD, and the euro LTM table prints `$4,300,000,000.00`. The four that pass read in their own currency or are unmarked. |
 | X6 | the chosen-pair override after `detect_comparison_columns` removed (`git apply -R`), tests kept | `pytest tests/test_period_choice.py` | 2 failed, 3 passed: choosing Sep-26 reads 500,000 / 540,000 (the YTD cells), and the chat summary maps 'Budget YTD'. The no-choice and one-pair controls pass either way. |
+| X7 | `_signed_profit_lines` and its use in the flip removed (`git apply -R`), tests kept | `pytest tests/test_signed_profit_lines.py` | 4 failed, 1 passed: Gross Profit and Net Income stay among the lines with their credit sign, the chat totals are wrong, and the off-by-one line keeps -480,001. The presentation-signed control passes either way. |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0

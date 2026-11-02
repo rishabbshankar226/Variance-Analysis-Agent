@@ -26,7 +26,7 @@ from enum import StrEnum
 from typing import cast
 from collections.abc import Callable
 
-from .classification import infer_line_type
+from .classification import infer_line_type, is_profit_measure
 from .currencies import CURRENCY_SYMBOLS, SYMBOL_CURRENCIES
 from .excel import (
     SheetLayout,
@@ -864,6 +864,22 @@ def flip_ledger_signs(
                 rc["actual"] = rc["actual"].copy_negate()
         flipped.append(rc)
     return flipped, affected
+
+
+def _signed_profit_lines(rows: list[dict[str, object]]) -> list[str]:
+    """The profit lines of a signed ledger whose sign turns with revenue's (X7).
+
+    A profit line turns when turning it makes it add up as a subtotal, or when it adds up neither
+    way (the ledger's own convention); it keeps its stored sign when only that sign adds up.
+    """
+    money = [r for r in rows if _row_measure(r) is MeasureKind.CURRENCY]
+    profit = [name for r in money if is_profit_measure(name := str(r.get("line_item", "")).strip())]
+    if not profit:
+        return []
+    turned, _ = flip_ledger_signs(money, profit)
+    adds_up_turned = {t.line_item for t in detect_subtotals_and_totals(turned).reconciled_totals}
+    adds_up_stored = {t.line_item for t in detect_subtotals_and_totals(money).reconciled_totals}
+    return [name for name in profit if name in adds_up_turned or name not in adds_up_stored]
 
 
 class _ToleranceIndex:
@@ -3325,10 +3341,15 @@ def _process_raw_table(
     flipped_items: list[str] = []
     if signed_det.is_signed_ledger:
         output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
+        output_rows, profit_items = flip_ledger_signs(output_rows, _signed_profit_lines(output_rows))
+        revenue_lines = f"{len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}"
+        profit_lines = (f" and {len(profit_items)} profit line{'s' if len(profit_items) != 1 else ''} "
+                        f"({', '.join(profit_items)})" if profit_items else "")
         visible_transformations.append(
             "Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost "
-            f"convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
+            f"convention for {revenue_lines}{profit_lines}."
         )
+        flipped_items = [*flipped_items, *profit_items]
 
     # 3. Subtotals and totals detection. An explicit Row Kind column already marks totals,
     # and the analysis reconciles and excludes those rows itself, so they are kept.
