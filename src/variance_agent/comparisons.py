@@ -469,12 +469,15 @@ def _apply_unit_caption(
     multiplier applied, or None when nothing was scaled.
     """
     from .excel import column_letters, describe_cell
-    from .intake import DisplayScaledCell, _reconcile_display, _UNIT_WORDS, detect_unit_scale
+    from .intake import (UNIT_DECLARATIONS, DisplayScaledCell, _reconcile_display, _UNIT_WORDS, detect_unit_scale,
+                         scaled_declaration, scaling_note)
     caption = detect_unit_scale(text)
     measure = next((h for h in headers if normalize_key(h) == "measure"), None)
     line = next((h for h in headers if normalize_key(h) in _ALL_LINE_ITEM_KEYS), None)
     columns = _amount_columns(headers)
     cells: list[tuple[dict[str, object], int, int, str, str]] = []  # row, sheet row, column, header, line item
+    declared: list[tuple[dict[str, object], str, str]] = []  # a Buffer or Tolerance in the row's unit (X41)
+    declaration_headers = [h for h in headers if normalize_key(h) in UNIT_DECLARATIONS]
     for row, number in zip(rows, positions, strict=True):
         name = str(row.get(line, "") if line else "")
         try:
@@ -484,6 +487,7 @@ def _apply_unit_caption(
             continue  # the analysis names the unknown measure
         cells.extend((row, number, index + 1, headers[index], name) for index in columns
                      if row.get(headers[index]) not in (None, ""))
+        declared.extend((row, header, name) for header in declaration_headers if row.get(header) not in (None, ""))
     shown = [DisplayScaledCell(describe_cell(number, column, line_item=name, field=header),
                                f"{column_letters(column)}{number}", *display[number, column])
              for _, number, column, header, name in cells if (number, column) in display]
@@ -497,8 +501,11 @@ def _apply_unit_caption(
         return None
     for row, _, _, header, name in cells:
         row[header] = _scaled_cell(row[header], caption, field=header, line_item=name)
-    notes.append(f"Amounts scaled from {_UNIT_WORDS[caption]} (x{caption:,}). Thresholds stay in the reporting unit "
-                 "(full currency units, not thousands).")
+    for row, header, name in declared:
+        row[header] = scaled_declaration(row[header], caption, field=header, line_item=name)
+    labels = [label for key, label in UNIT_DECLARATIONS.items()
+              if any(normalize_key(header) == key for _, header, _ in declared)]
+    notes.append(scaling_note(f"{_UNIT_WORDS[caption]} (x{caption:,})", labels))
     return caption
 
 

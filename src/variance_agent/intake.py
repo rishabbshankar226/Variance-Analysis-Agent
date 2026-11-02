@@ -850,8 +850,33 @@ def detect_unit_scale(text: str) -> Decimal:
     return Decimal("1")
 
 
+# Declared in the row's unit (docs/financial-rules.md), so a unit caption scales them with its amounts (X41).
+UNIT_DECLARATIONS = {"buffer": "Buffer", "tolerance": "Tolerance"}
+
+
+def scaled_declaration(value: object, multiplier: Decimal, *, field: str, line_item: str) -> object:
+    """A Buffer or Tolerance times the unit, exactly; a cell the engine can't read is left for it to refuse (X41)."""
+    from .parsing import is_missing, parse_decimal
+    if is_missing(value):
+        return value
+    try:
+        amount = parse_decimal(value, field=field, line_item=line_item)
+    except ValueError:
+        return value
+    with financial_context():
+        return amount * multiplier
+
+
+def unit_declarations(rows: list[dict[str, object]]) -> list[str]:
+    """The declarations a unit scales in these rows, as headings ("Buffer", "Tolerance"), in that order."""
+    from .parsing import is_missing
+    present = {normalize_key(str(key)) for row in rows if _row_measure(row) is MeasureKind.CURRENCY
+               for key, value in row.items() if not is_missing(value)}
+    return [label for key, label in UNIT_DECLARATIONS.items() if key in present]
+
+
 def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> list[dict[str, object]]:
-    """Scale budget and actual amounts by exact Decimal multiplication."""
+    """Scale budget and actual amounts, and each Buffer and Tolerance (X41), by exact Decimal multiplication."""
     if multiplier == Decimal("1"):
         return rows
     scaled: list[dict[str, object]] = []
@@ -864,8 +889,17 @@ def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> li
             rc["budget"] = rc["budget"] * multiplier
         if "actual" in rc and isinstance(rc["actual"], Decimal):
             rc["actual"] = rc["actual"] * multiplier
+        for key in [key for key in rc if normalize_key(str(key)) in UNIT_DECLARATIONS]:
+            rc[key] = scaled_declaration(rc[key], multiplier, field=str(key), line_item=str(rc.get("line_item", "Row")))
         scaled.append(rc)
     return scaled
+
+
+def scaling_note(unit_label: str, declarations: list[str]) -> str:
+    """The note for amounts scaled by a unit, naming the declarations scaled with them (X41)."""
+    included = f", {' and '.join(declarations)} included" if declarations else ""
+    return (f"Amounts scaled from {unit_label}{included}. Thresholds stay in the reporting unit "
+            "(full currency units, not thousands).")
 
 
 def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection:
@@ -3534,12 +3568,10 @@ def _process_raw_table(
         visible_transformations.append(display_note)
         layout_notes.append(display_note)
     if detected_mult != Decimal("1"):
+        declarations = unit_declarations(output_rows)
         output_rows = scale_rows_by_unit(output_rows, detected_mult)
         unit_label = f"{_UNIT_WORDS[detected_mult]} (x{detected_mult:,})"
-        visible_transformations.append(
-            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit "
-            "(full currency units, not thousands)."
-        )
+        visible_transformations.append(scaling_note(unit_label, declarations))
 
     # 2. Signed ledger check
     signed_det = (SignedLedgerDetection(False, 0, [])

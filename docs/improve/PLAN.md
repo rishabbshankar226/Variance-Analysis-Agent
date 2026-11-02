@@ -23,7 +23,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | C3 | 2 | done | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m |
 | C3m | 3 | done | see `fix(C3m)` | `src/variance_agent/statement_shape.py`, `intake.py`, `tests/test_statement_sign_ambiguity.py` |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
-| X41 | 2 | todo (approved at STOP 2) | | STOP-ASK: [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
+| X41 | 2 | done | see `fix(X41)` | `intake.py`, `comparisons.py`, `tests/test_caption_buffers.py`; asked in [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
 | X9 | — | open | | owned by `claude/per-visitor-sessions-d54fc9` (Decision 12) |
 | X10 | 3 | done | see `fix(X10)` | `src/variance_agent/cli.py`, `README.md`, `tests/test_cli_hosted_detection.py` |
 | X11 | — | open | | owned by the per-visitor-sessions work (Decision 12) |
@@ -56,6 +56,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
+| X43 | — | open | | found in X41's tests: a limit, benchmark or target table prints a scaled amount with three decimal places as it holds them ("$89,999.000" from 89.999 in thousands); the value is right, so it is a display finding for the final STOP, not changed here |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
 | X37 | 4 | todo | | |
 | X33 | 7 | todo | | |
@@ -530,6 +531,15 @@ Boundary cases:
 - The same file with Budget left in General keeps the bare-rate line, since that one cell is bare.
 - A run with no assisted intake (strict input) adds nothing.
 
+**X41, Buffer and Tolerance under a unit caption.** `docs/financial-rules.md` states a Buffer and a Tolerance "in the row's unit". So when a caption (or a mapping's declared unit) scales a Currency row's amounts, its Buffer and Tolerance are scaled by the same exact multiplication, in the same place, on both readers: intake's `scale_rows_by_unit` and the comparison path's `_apply_unit_caption`. The cell is read with the engine's own `parse_decimal`; one it can't read is left as it was, for the engine to refuse as before. The scaling note names them: "Amounts scaled from thousands (x1,000), Buffer included." (or "Tolerance included", or "Buffer and Tolerance included"); a file with neither keeps the note word for word. Percent, Per Share, Count and Multiple rows stay unscaled, as their amounts do. When the cells already hold full amounts (R2's display check), nothing is scaled, Buffer and Tolerance included. Every financial rule is unchanged: the values now reach the rules in the unit the rules assume.
+
+Boundary cases, at the scaled values, in thousands:
+- Limit 100, Max, Buffer 10: Actual 90 leaves headroom $10,000.00, equal to the buffer, so Near; Actual 89.999 leaves $10,001.00, so Within; the X41 file (Actual 95) is Near.
+- Benchmark 100, Higher, Tolerance 10: Actual 110 is In line; 110.001 is Higher than benchmark.
+- Target 100, Tolerance 10: Actual 110 is On target; 110.001 is Over.
+- A Percent row's Tolerance of 1 under the same caption stays 1 percentage point.
+- Buffer 10.5 becomes exactly 10,500 (Fraction oracle).
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -683,6 +693,7 @@ Items:
 | X36 | `unbudgeted_as_zero`, `ZERO_OFFERED`, the session field and the chat offer removed (`git apply -R`), tests kept | `pytest tests/test_join_unbudgeted.py` | 6 failed, 2 passed: `join_files` takes no such option, and the chat refuses with "run again" and no chip; the 2 that pass are the unchanged-refusal guards |
 | M6 | every source rewording removed (`git apply -R` of the `src` diff), tests and script kept | `pytest tests/test_message_inventory.py`; `python scripts/message_inventory.py` | 1 failed, 5 passed: the gate lists 44 messages; the script prints 235 seen, 10 with jargon, 37 errors with no fix, 44 failing, matching the worktree's before |
 | X42 | `source_notes`, `_bare_rate` and their wiring removed (`git apply -R`), tests kept | `pytest tests/test_measure_source_notes.py` | 4 failed, 1 passed: the report and audit lack the format note and keep "Read bare Percent values as points."; the strict-run guard passes either way |
+| X41 | `UNIT_DECLARATIONS`, `scaled_declaration`, `scaling_note` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_caption_buffers.py` | 13 failed, 1 passed: Buffer and Tolerance stay $10.00, so the X41 file reads Within, and 110 against a benchmark of 100 reads Higher than benchmark; the Percent-row guard passes either way |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 
 ## Path existed in 0.2.0
