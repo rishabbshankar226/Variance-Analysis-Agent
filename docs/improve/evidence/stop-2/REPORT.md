@@ -1,6 +1,6 @@
 # STOP 2: what Phases 2 and 3 changed
 
-Branch `improve/depth-pass`, in the main clone. Nothing is pushed. To review everything since STOP 1's evidence, run `git log -p a80f81f..improve/depth-pass` (50 commits before this report). Status, Decisions, rules and figures are in [`docs/improve/PLAN.md`](../../PLAN.md).
+Branch `improve/depth-pass`, in the main clone. Nothing is pushed. To review everything since STOP 1's evidence, run `git log -p a80f81f..improve/depth-pass` (49 commits, this report included). Status, Decisions, rules and figures are in [`docs/improve/PLAN.md`](../../PLAN.md).
 
 ## Phase 2: wrong numbers
 
