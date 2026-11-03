@@ -8,7 +8,7 @@ import unicodedata
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Callable, Protocol, cast
 from zipfile import BadZipFile
 
 from .audience import AudienceConfig, NEW_BASES, OPT_IN_BASES, is_audience_result
@@ -62,6 +62,23 @@ def _intake_error(intake_res: IntakeResult) -> str:
     if intake_res.needs_hidden_rows_choice:
         message = f"{message} {HIDDEN_ROWS_HINT}"
     return message
+
+
+def _named_pair_read(intake_res: IntakeResult, period: str | None, filename: str,
+                     reread: Callable[[str], IntakeResult]) -> IntakeResult:
+    """A file with a Budget and Actual pair per period reads the pair --period names, as the chat reads the period
+    a reader picks; else intake's newest. Refuse when nothing names a pair and the labels give no order (X48)."""
+    pairs = [pair.period for pair in intake_res.detected_period_pairs]
+    if intake_res.has_fatal_errors or len(pairs) < 2:
+        return intake_res
+    named = next((label for label in pairs if period is not None and label.lower() == period.strip().lower()), None)
+    if named is not None:
+        return reread(named)
+    if order_period_labels(pairs) is None:
+        listed = ", ".join(f"for {label}" for label in pairs[:-1]) + f" and for {pairs[-1]}"
+        raise ValueError(f"'{filename}' has a Budget and Actual pair {listed}, and their order isn't clear. Rerun with "
+                         f"--period set to the one to read: {', '.join(pairs[:-1])} or {pairs[-1]}.")
+    return intake_res
 
 
 def _print_examination(intake_res: IntakeResult) -> None:
@@ -498,17 +515,22 @@ def _read_mapped(args: Arguments, capture: _Capture, compare_to_basis: Compariso
     mapping_obj, input_path = capture.mapping_obj, capture.input_path
     assert mapping_obj is not None
 
-    intake_res = read_input_assisted(
-        capture.source_bytes,
-        input_path.suffix,
-        filename=input_path.name,
-        sheet=args.sheet,
-        treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
-        selected_period=mapping_obj.period_column_selection,
-        # An explicit --compare-to wins over the basis saved in the mapping.
-        compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
-        hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
-    )
+    def read_with(period: str | None) -> IntakeResult:
+        return read_input_assisted(
+            capture.source_bytes,
+            input_path.suffix,
+            filename=input_path.name,
+            sheet=args.sheet,
+            treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
+            selected_period=period,
+            # An explicit --compare-to wins over the basis saved in the mapping.
+            compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
+            hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
+        )
+
+    intake_res = read_with(mapping_obj.period_column_selection)
+    if mapping_obj.period_column_selection is None:  # the mapping's period wins over --period (X48)
+        intake_res = _named_pair_read(intake_res, args.period, input_path.name, read_with)
     if intake_res.has_fatal_errors:
         raise ValueError(_intake_error(intake_res))
     _refuse_other_currency(intake_res, args.currency, input_path.name)
@@ -610,15 +632,19 @@ def _read_assisted(args: Arguments, capture: _Capture, compare_to_basis: Compari
         intake_res = build_ltm(source_bytes, input_path.name, read_input_bytes(annual_path), annual_path.name,
                                sheet=args.sheet)
     else:
-        intake_res = read_input_assisted(
-            source_bytes,
-            input_path.suffix,
-            filename=input_path.name,
-            sheet=args.sheet,
-            treat_blank_budgets_as_zero=True,
-            compare_to=compare_to_basis,
-            hidden_rows=getattr(args, "hidden_rows", None),
-        )
+        def read_with(period: str | None) -> IntakeResult:
+            return read_input_assisted(
+                source_bytes,
+                input_path.suffix,
+                filename=input_path.name,
+                sheet=args.sheet,
+                treat_blank_budgets_as_zero=True,
+                selected_period=period,
+                compare_to=compare_to_basis,
+                hidden_rows=getattr(args, "hidden_rows", None),
+            )
+
+        intake_res = _named_pair_read(read_with(None), args.period, input_path.name, read_with)
     if intake_res.has_fatal_errors:
         raise ValueError(_intake_error(intake_res))
     _refuse_other_currency(intake_res, args.currency, input_path.name)

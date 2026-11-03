@@ -816,6 +816,16 @@ def title_periods(text: str, limit: int = 3) -> list[str]:
     return found[:limit]
 
 
+def chosen_period_pair(pairs: list[PeriodColumnPair], selected_period: str | None) -> PeriodColumnPair:
+    """The pair a chosen period names; else the newest by period order, whatever the column order; else, when the
+    labels give no order, the last pair, as before (X48)."""
+    named = next((p for p in pairs if selected_period is not None and p.period.lower() == selected_period.lower()), None)
+    if named is not None:
+        return named
+    newest = order_period_labels([p.period for p in pairs])
+    return next(p for p in pairs if p.period == newest[0]) if newest else pairs[-1]
+
+
 def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
     """Scan column headers to detect paired Budget and Actual columns by period."""
     budget_cols: dict[str, str] = {}
@@ -1263,11 +1273,7 @@ def detect_header_row(
                             roles[CanonicalRole.LINE_ITEM] = col_idx
                             break
             if CanonicalRole.LINE_ITEM in roles:
-                chosen_pair = None
-                if selected_period is not None:
-                    chosen_pair = next((p for p in pairs if p.period.lower() == selected_period.lower()), None)
-                if chosen_pair is None:
-                    chosen_pair = pairs[-1]
+                chosen_pair = chosen_period_pair(pairs, selected_period)
                 for col_idx, cell in enumerate(row):
                     if cell is not None and str(cell).strip():
                         cs = str(cell).strip()
@@ -3474,11 +3480,7 @@ def _map_columns(table: _TableRead) -> None:
         visible_transformations.append(detection.message)
 
     if period_pairs:
-        chosen_pair = None
-        if selected_period is not None:
-            chosen_pair = next((p for p in period_pairs if p.period.lower() == selected_period.lower()), None)
-        if chosen_pair is None:
-            chosen_pair = period_pairs[-1]
+        chosen_pair = chosen_period_pair(period_pairs, selected_period)
         visible_transformations.append(
             f"Analyzed period: {chosen_pair.period} (Budget from '{chosen_pair.budget_column}', Actual from '{chosen_pair.actual_column}')"
         )
