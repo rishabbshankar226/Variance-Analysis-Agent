@@ -2,6 +2,38 @@
 
 ## 0.3.0 — Unreleased
 
+### Improvement pass: behavior changes first
+
+Record in `docs/improve/REPORT.md`; plan, rules and decisions in `docs/improve/PLAN.md`. The 19
+contract fixtures, audit schemas 1.0 to 1.9 and the financial rules are unchanged.
+
+- Figures the file does not support now refuse plainly or read right: a footnote mark beside an
+  amount refuses instead of reading as a digit; amounts marked in another currency refuse; more unit
+  captions are read (a PDF's on its title line, "($000)" in a heading), applied once on every path,
+  and scale a row's Buffer and Tolerance with its amounts; a chosen period reads its own columns; a
+  signed ledger's profit lines turn with revenue when that adds up; scorecard workbook weights read
+  as printed; strict and assisted reads agree on uncalculated formulas.
+- `--xlsx` and the chat's Export Excel write a workbook for limit, benchmark, target, balance sheet,
+  cash flow, covenant metric and filing income comparisons, where they refused. Sheets that hold
+  percentages gain a note on how a tie rounds; no existing cell value changes.
+- A filing's 10-Q columns show their duration in headings ("3 months ended Mar 2026"); every key,
+  label and audit field keeps the end-month label. A measure report and audit now list how assisted
+  intake read the file. A comparison audit that needs 1.9 is written at 1.9.
+- The command line refuses what the comparison path cannot do, refuses an output that would
+  overwrite `--compare-file`, `--ltm-from`, `--metrics` or `--panel`, refuses `--long-output` with
+  `--check-only`, reads `.tsv` on `--assisted`, and keeps `--chat --no-browser` local where `RENDER`
+  is set.
+- New, opt-in: `--batch FOLDER --long-output FILE --manifest FILE` reads every filing in a folder as a
+  single run reads one, with a `file` column and one manifest row per filing; exit 2 if any refuses.
+- Chat: every intake message a reader sees names the next step. Merged and two-row headers, section
+  headings, bare-year bands, a zero under a scaled format, `.xls` sheets, unreconciled totals (now
+  offered to leave out) and lines missing from one file of a pair (offered as 0) no longer end the
+  session. A zero total reads Neutral; unlabeled lines are "not yet labeled", never "Unclassified".
+- The chat server cuts off a request body that arrives too slowly, and only an upload that replaces
+  the file discards what belonged to it.
+- `chat/handlers.py` is now the package `chat/handlers/`; every import path the repository used still
+  works. The sdist leaves out `docs/improve/evidence`.
+
 ### Analyst coverage (filings, Excel, five new readers) — behavior changes first
 
 Record in `docs/analysts/REPORT.md`; plan and every decision in `docs/analysts/PLAN.md`. The 19
