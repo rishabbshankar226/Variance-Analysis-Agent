@@ -9,11 +9,16 @@ Each scenario starts a fresh `variance-agent --chat --no-browser` server and a f
 context, because the server holds one shared session and the page remembers its visitor in
 localStorage. Replies are typed into #input, never clicked by chip text. Every file used here is
 fictional: the repository's examples and fixtures, plus untyped_fictional.csv in this folder.
+
+VAA_SHOTS_ENGINE picks Playwright's engine: chromium (the default), webkit or firefox. After each shot
+the run prints how many pixels the page, a reply, a results section or a facts grid runs wider than
+its own box; a table inside its scrolling wrapper does not count, since it scrolls by design.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -26,6 +31,15 @@ SAMPLE = "examples/sample_variance.csv"
 MA = "tests/fixtures/multi_audience/"
 RW = "tests/fixtures/realworld/"
 SETUP = [("Q3 2026", "thresholds"), ("$10,000 or 5%", "currency"), ("USD", "results")]
+ENGINE = os.environ.get("VAA_SHOTS_ENGINE", "chromium")
+OVERFLOW = """() => {
+  let worst = Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  for (const el of document.querySelectorAll('.message.agent, .view-section, .facts')) {
+    if (el.closest('.data-table-wrapper, .md-tablewrap')) continue;
+    worst = Math.max(worst, el.scrollWidth - el.clientWidth);
+  }
+  return worst;
+}"""
 
 # A step is ("upload", path, label), ("say", text, label) or ("shot", "", label).
 # label "" means take no screenshot after the step.
@@ -89,7 +103,7 @@ def settle(page: Page) -> None:
 def run(out: Path, themes: list[str], sizes: list[str], only: list[str]) -> list[Path]:
     written: list[Path] = []
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = getattr(p, ENGINE).launch()
         for scenario, steps in SCENARIOS.items():
             if only and scenario not in only:
                 continue
@@ -100,11 +114,13 @@ def run(out: Path, themes: list[str], sizes: list[str], only: list[str]) -> list
                     context = browser.new_context(viewport={"width": w, "height": h}, color_scheme=theme)
                     page = context.new_page()
                     n = 0
+                    overflow = 0
 
                     stem = f"{scenario}_{theme}_{size}"
 
                     def shot(label: str, page: Page = page, stem: str = stem) -> None:
-                        nonlocal n
+                        nonlocal n, overflow
+                        overflow = max(overflow, page.evaluate(OVERFLOW))
                         # The log scrolls inside #messages: show the newest reply from its first line, and
                         # when it is taller than the log, its last line too. Smooth scrolling is turned off
                         # first so the page's own scroll-to-bottom cannot land after ours.
@@ -141,7 +157,7 @@ def run(out: Path, themes: list[str], sizes: list[str], only: list[str]) -> list
                                 settle(page)
                             if label:
                                 shot(label)
-                        print(f"{stem}: {n} screenshots", flush=True)
+                        print(f"{stem}: {n} screenshots, {ENGINE}, widest overflow {overflow}px", flush=True)
                     finally:
                         context.close()
                         proc.terminate()

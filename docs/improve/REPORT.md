@@ -267,8 +267,9 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
   - **X49** (`evidence/stop-ask-other-heading-units/`): a "Headcount (000s)" heading scales a $250,000 budget to $250,000,000, on the branch and on `main`.
   - **X50** (`evidence/stop-ask-eps-lines/`): a statement's "Basic EPS" of 6.10 under "$ in Millions" shows as $6,100,000.00, on the branch and on `main`.
 - **STOP-ASK X53** (`evidence/stop-ask-fpa-eps-rows/`), found while checking X50's reach. In a budget CSV with no Measure column, a "Basic EPS" row under "(in millions, except per share data)" reads 5.50 as $5,500,000.00, on the branch and on `main`. With `--per-share-lines` it is the same on the branch, where C2 now applies the caption on the comparison path. The owner answered "Approve X53" (Decision 21).
+- **After the second final STOP**, the owner answered "do what you recommend" (Decision 22). It was read as closing the "Not verified" items this Mac can check without a push. CI's test job passed on Python 3.12, 3.13 and 3.14, and the changed chat screens measured no overflow in Playwright's WebKit and Firefox (`evidence/verify-local/`). The owner declined computer-use access to Excel, so real Excel stays not verified. Nothing in `src/` or `tests/` changed.
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
-- The decisions taken along the way are PLAN.md's Decisions 1 to 21.
+- The decisions taken along the way are PLAN.md's Decisions 1 to 22.
 
 ## Gates at `d914676`
 
@@ -300,6 +301,7 @@ D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except t
 - Phase 5: 16 screenshots of the three export replies N1 changed (a limit run, a balance sheet and a filing's income statement), in `evidence/phase-5/`.
 - Phase 8: 7 screenshots of the three chat screens X45, X46 and X47 changed (the mixed-unit refusal, a target row's 25 bps tolerance, and a limit row's headroom and buffer in basis points), in `evidence/phase-8/`. X48 leaves the chat's screens as they were: the chat asks which period when a file has more than one pair.
 - After the final STOP: 5 screenshots of the same two results screens with X51's chip and X52's wrapped notes, in `evidence/phase-8/x51-x52/`. Then 8 of X49's and X53's refusals and X50's statement read with its EPS lines left out, in `evidence/phase-8/x49-x53/`.
+- After the second final STOP: 62 of Phase 8's and Phase 5's screens in Playwright's WebKit and Firefox, in `evidence/verify-local/webkit/` and `firefox/`, with the overflow each measured in that folder's README.
 
 ## Draw G
 
@@ -307,9 +309,9 @@ Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AG
 
 ## Not verified
 
-- The Windows output-contract job, and Python 3.12 to 3.14 (apart from T3's measurement on a local 3.14): not run. CI runs them, but the branch has never been pushed, so CI has not run on it.
-- Real Excel. The workbooks were read back with openpyxl, and X32's tie was rendered in LibreOffice 26.8.1, not Excel.
-- Safari and Firefox. The screenshots are Playwright's Chromium.
+- The Windows output-contract job: not run. CI runs it, but the branch has never been pushed, so CI has not run on it. CI's Ubuntu jobs have not run either. Their test job's steps did pass on this Mac, on Python 3.12.14, 3.13.15 and 3.14.0: ruff, mypy --strict, compileall, 2906 tests and pip check each (`evidence/verify-local/ci-test-job.txt`).
+- Real Excel. The workbooks were read back with openpyxl, and X32's tie was rendered in LibreOffice 26.8.1. Excel 16.114.3 is installed here, but the owner declined computer-use access to it, so no workbook was opened in Excel.
+- Safari and Firefox as shipped, and a real phone. Phase 8's and Phase 5's chat screens were shot in Playwright's WebKit 26.4 and Firefox 150.0.2 as well as Chromium, at desktop and phone sizes: 62 screenshots, and no page, reply, results section or facts grid wider than its box in any engine (`evidence/verify-local/`). With X52's fix reversed, the same measure reads 210 to 322 px in all three.
 - Real analysts. The scorecard is a scripted policy over fictional files.
 - Draw G, above.
 - Hosted mode on Render: not exercised by this run.
@@ -334,7 +336,9 @@ What changed:
 
 Unchanged: the 19 contract fixtures (9 reports, 5 audits and their inputs), audit schemas 1.0 to 1.9, the financial rules and every default. No dependency was added.
 
-Not verified: the Windows CI job, real Excel, Safari and Firefox, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
+Checked on macOS without CI: the test job's steps on Python 3.12, 3.13 and 3.14, and the changed chat screens in Playwright's WebKit and Firefox.
+
+Not verified: the Windows CI job (and CI itself), real Excel, Safari and Firefox as shipped, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
 
 Details, revert proofs and every edited assertion: `docs/improve/REPORT.md`.
 
