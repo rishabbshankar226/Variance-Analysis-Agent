@@ -1,6 +1,6 @@
 # Intake Message Inventory
 
-This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `c70c5ac`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
+This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `28147f9`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
 
 Per the definitions in [`.agents/rules/variance-intake.md`](../.agents/rules/variance-intake.md), which apply to a message Maya sees:
 - **Jargon**: a snake_case key or `repr()` quoting, an exception name, CLI flag syntax (unless the message says it is optional), one of the words "normalize," "alias," "schema," "OOXML," "archive," "XML," "DTD," "payload," "Row Kind," "Unclassified", or an exit code.
@@ -541,9 +541,9 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 
 | Source | Message Text | Jargon? | Offers Fix? | Notes / Jargon Rationale |
 |---|---|---|---|---|
-| `pdf_tables.py:197` | `PDF files require the optional PDF tools. Please install with: pip install 'variance-analysis-agent[pdf]'` | No | Yes | a clause another message completes |
-| `pdf_tables.py:215` | `Reading '{filename}' took too long. Save just the financial statement pages as a new PDF and upload that.` | No | Yes |  |
-| `pdf_tables.py:234` | `'{filename}' has {page_count} pages, more than the {max_pages} we can read at once. Save just the financial statement pages as a new PDF and upload that.` | No | Yes |  |
-| `pdf_tables.py:254` | `'{filename}' looks like a scanned image, so there is no text to read. Export the statement to Excel or CSV, or use a PDF saved from the filing itself, not a scan.` | No | Yes |  |
-| `pdf_tables.py:295` | `We couldn't find an income statement, balance sheet or cash flow statement in '{filename}'. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |
-| `pdf_tables.py:305` | `The PDF reader returned a word without a position. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |
+| `pdf_tables.py:198` | `PDF files require the optional PDF tools. Please install with: pip install 'variance-analysis-agent[pdf]'` | No | Yes | a clause another message completes |
+| `pdf_tables.py:216` | `Reading '{filename}' took too long. Save just the financial statement pages as a new PDF and upload that.` | No | Yes |  |
+| `pdf_tables.py:235` | `'{filename}' has {page_count} pages, more than the {max_pages} we can read at once. Save just the financial statement pages as a new PDF and upload that.` | No | Yes |  |
+| `pdf_tables.py:255` | `'{filename}' looks like a scanned image, so there is no text to read. Export the statement to Excel or CSV, or use a PDF saved from the filing itself, not a scan.` | No | Yes |  |
+| `pdf_tables.py:296` | `We couldn't find an income statement, balance sheet or cash flow statement in '{filename}'. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |
+| `pdf_tables.py:306` | `The PDF reader returned a word without a position. Export the statement to Excel or CSV and upload that instead.` | No | Yes |  |
