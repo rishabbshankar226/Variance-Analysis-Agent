@@ -332,7 +332,7 @@ def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
     reply = handle_message(session, "USD")
     assert reply.text.startswith("# Statement Comparison: Sep 2025")
     assert IDENTITY in reply.text
-    assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export audit"]
+    assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export excel", "Export audit"]
     assert handle_message(session, "waterfall").text.startswith("# Statement Comparison")
     assert handle_message(session, "export excel").text == "Excel workbook ready for download: Lines sheet."
 

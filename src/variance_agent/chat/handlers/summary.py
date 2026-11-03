@@ -45,7 +45,7 @@ def _basis_summary(result: AnalysisResult) -> Response:
                                              for note in result.warnings])] if result.warnings else (),
         table_title="Lines, by severity" if cfg.comparison_basis.value == "limit" else "Lines",
     )
-    return Response(text=render_markdown(result), table=table, chips=["Export report", "Export audit"],
+    return Response(text=render_markdown(result), table=table, chips=["Export report", "Export excel", "Export audit"],
                     phase=Phase.EXPLORING, view=view)
 
 
@@ -104,7 +104,7 @@ def _audience_summary(result: AnalysisResult) -> Response:
                     phase=Phase.EXPLORING, view=view)
 
 
-_STATEMENT_CHIPS = ["Export report", "Export audit"]
+_STATEMENT_CHIPS = ["Export report", "Export excel", "Export audit"]  # N1 writes each its workbook (X51)
 
 
 def _statement_checks(session: Session) -> list[str]:
@@ -296,5 +296,5 @@ def _filing_summary(session: Session, headline: dict[str, object]) -> Response:
         table_title=material_text.capitalize() if table else f"No {material_text[2:]}",
     )
     chips = [f"Why {result.material_rows[0].line_item}?"] if result.material_rows else []
-    chips.extend(["Show unfavorable", "Export report", "Export audit"])
+    chips.extend(["Show unfavorable", "Export report", "Export excel", "Export audit"])
     return Response(text="\n".join(lines), table=table, chips=chips, phase=Phase.EXPLORING, view=view)
