@@ -481,7 +481,7 @@ def _apply_unit_caption(
     """
     from .excel import column_letters, describe_cell
     from .intake import (UNIT_DECLARATIONS, DisplayScaledCell, _reconcile_display, _UNIT_WORDS, detect_unit_scale,
-                         scaled_declaration, scaling_note)
+                         per_share_rows_stop, scaled_declaration, scaling_note)
     caption = detect_unit_scale(text)
     measure = next((h for h in headers if normalize_key(h) == "measure"), None)
     line = next((h for h in headers if normalize_key(h) in _ALL_LINE_ITEM_KEYS), None)
@@ -510,6 +510,9 @@ def _apply_unit_caption(
         return None  # the cells already hold full amounts
     if caption == Decimal(1):
         return None
+    undeclared = [name for row, _, _, _, name in cells if not (measure and str(row.get(measure) or "").strip())]
+    if (per_share := per_share_rows_stop(undeclared, caption)) is not None:
+        raise ValueError(per_share)  # a per-share row the caption would scale as money (X53)
     for row, _, _, header, name in cells:
         row[header] = _scaled_cell(row[header], caption, field=header, line_item=name)
     for row, header, name in declared:

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field, replace
 from decimal import ROUND_FLOOR, Decimal, Inexact, InvalidOperation
 from enum import StrEnum
 from typing import cast
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from .classification import infer_line_type, is_profit_measure
 from .currencies import CURRENCY_SYMBOLS, SYMBOL_CURRENCIES
@@ -58,7 +58,8 @@ from .limits import (
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context, ratio
-from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
+from .pdf_tables import (_EPS_RE, _PER_SHARE_RE, PdfReadError, StatementTable, extract_statement_tables,
+                         statement_tables_from_grid, statement_title)
 from .ixbrl import BOTTOM_LINE, BOTTOM_LINE_LABEL, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
@@ -3870,6 +3871,11 @@ def _unit_scale(table: _TableRead) -> IntakeResult | None:
         table.visible_transformations.append(display_note)
         table.layout_notes.append(display_note)
     if detected_mult != Decimal("1"):
+        undeclared = [str(row.get("line_item", "")) for row in table.output_rows
+                      if not _declares_measure(row) and _row_measure(row) is MeasureKind.CURRENCY]
+        if (per_share := per_share_rows_stop(undeclared, detected_mult)) is not None:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=per_share, sheet_name=table.call.sheet_name,
+                                header_row_number=table.header_row_number, column_mapping=table.column_mapping)
         declarations = unit_declarations(table.output_rows)
         table.output_rows = scale_rows_by_unit(table.output_rows, detected_mult)
         unit_label = f"{_UNIT_WORDS[detected_mult]} (x{detected_mult:,})"
@@ -3882,6 +3888,33 @@ _HeadingUnit = tuple[str, Decimal | None, str]  # a heading, its unit, and where
 
 
 _UNIT_EXAMPLES = {Decimal("1000"): "($000)", Decimal("1000000"): "($M)", Decimal("1000000000"): "($bn)"}
+# A per-share figure, as against a share count, among the statement readers' per-share labels (X53).
+_PER_SHARE_FIGURE_RE = re.compile(r"\beps\b|per\s+(?:common\s+|basic\s+|diluted\s+)?share", re.IGNORECASE)
+
+
+def _declares_measure(row: dict[str, object]) -> bool:
+    return any(normalize_key(str(key)) == "measure" and str(value).strip() for key, value in row.items() if value is not None)
+
+
+def per_share_rows_stop(lines: Sequence[str], multiplier: Decimal) -> str | None:
+    """The refusal when a unit would scale, as money, rows that declare no Measure but whose labels name a per-share
+    figure or a share count, as the statement readers read them (X53); None when there are none."""
+    found = [line for line in dict.fromkeys(lines) if _PER_SHARE_RE.search(line) or _EPS_RE.search(line)]
+    if not found:
+        return None
+    figures, one = sum(1 for line in found if _PER_SHARE_FIGURE_RE.search(line)), len(found) == 1
+    if figures == len(found):
+        kind, measure = ("a per-share figure" if one else "per-share figures"), "Per Share"
+    elif figures == 0:
+        kind, measure = ("a share count" if one else "share counts"), "Count"
+    else:
+        kind, measure = "per-share figures or share counts", "Per Share or Count"
+    named = [f"'{line}'" for line in found[:3]]
+    listed = (named[0] if one else f"{', '.join(named[:-1])} and {named[-1]}" if len(found) <= 3
+              else f"{', '.join(named)} and {len(found) - 3} more")
+    return (f"{listed} {'looks' if one else 'look'} like {kind}, which the caption's {_UNIT_WORDS[multiplier]} would "
+            f"scale as money. Add a Measure column that says {measure} for {'it' if one else 'them'}, or leave "
+            f"{'the line' if one else 'those lines'} out, then upload the file again.")
 
 
 def _unit_only_elsewhere(table: _TableRead) -> str | None:
