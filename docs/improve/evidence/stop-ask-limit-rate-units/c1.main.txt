@@ -1,0 +1,17 @@
+[assisted intake] Comparing Actual against the limit.
+[assisted intake] Fictional margin: read % values as percentage points.
+[assisted intake] Fictional margin: read Measure as Percent.
+[measure intake] Fictional margin: read Measure as Percent.
+[measure intake] Fictional margin: read % values as percentage points.
+# Limit Comparison: Q3 2026
+
+- Breach is strictly beyond a limit; a row exactly at its limit is At limit. Near appears only where a row declares a buffer. Headroom is limit minus actual for a Max and actual minus limit for a Min, so a negative headroom is a Breach for either kind. Utilization is actual over limit: above 100% is beyond a Max, and below 100% is short of a Min.
+
+**0 Breach, 0 At limit, 0 Near, 1 Within.**
+
+## Lines, by severity
+
+| Line Item | Kind | Limit | Actual | Headroom | Headroom (% of limit) | Utilization | Buffer | Status |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| Fictional margin | Min | 40% | 41% | 1 bps | 2.5% | 102.5% | 0.5 bps | Within |
+
