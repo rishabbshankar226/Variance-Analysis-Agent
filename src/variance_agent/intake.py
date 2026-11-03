@@ -594,6 +594,23 @@ _HEADER_QUALIFIER = re.compile(
     rf"\s*(?:\(\s*(?:{_HEADER_CURRENCY}\s*)?(?:in\s+)?(?:{_HEADER_CURRENCY}\s*)?{_HEADER_UNIT}?\s*\)"
     rf"|{_HEADER_CURRENCY}\s*'?{_HEADER_UNIT}?|'?000'?s)\s*$", re.IGNORECASE)
 _HEADER_CURRENCY_CODE = re.compile(r"[$€£]|\b(?:usd|eur|gbp)\b", re.IGNORECASE)
+# The unit word inside a qualifier; "m" and "mm" are millions, as "$M" is in a caption (X45).
+_QUALIFIER_UNIT = re.compile(rf"(?<![a-z]){_HEADER_UNIT}(?![a-z])", re.IGNORECASE)
+
+
+def heading_unit(heading: str) -> Decimal | None:
+    """The unit an amount heading's own qualifier names: "Budget ($000)" thousands, "Actual (USD m)" millions. None
+    when it names none, "($)" and "(USD)" included (X45)."""
+    qualifier = _HEADER_QUALIFIER.search(heading)
+    word = _QUALIFIER_UNIT.search(qualifier.group()) if qualifier is not None else None
+    if word is None:
+        return None
+    token = word.group().strip("'").lower()
+    if token.startswith(("000", "thousand")) or token == "k":
+        return Decimal("1000")
+    if token.startswith("billion") or token == "bn":
+        return Decimal("1000000000")
+    return Decimal("1000000")
 
 
 def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
@@ -3813,7 +3830,15 @@ def _unit_scale(table: _TableRead) -> IntakeResult | None:
     table.raw_title_text = raw_title_text = " ".join(
         str(c).strip() for r in table.raw_rows[:table.header_idx] for c in r if c is not None and str(c).strip()
     )
-    detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(table.header_str_row))
+    sides = _heading_units(table, raw_title_text)
+    if sides is None:
+        detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(table.header_str_row))
+    elif sides[0][1] != sides[1][1]:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=_heading_units_differ(sides),
+                            sheet_name=table.call.sheet_name, header_row_number=table.header_row_number,
+                            column_mapping=table.column_mapping)
+    else:
+        detected_mult = cast(Decimal, sides[0][1])
     table.display_cells = display_cells = _display_scaled_cells(excel, currency_cells)
     display_note, display_stop = _reconcile_display(filename, detected_mult, display_cells, len(currency_cells))
     if display_stop is not None:
@@ -3831,6 +3856,52 @@ def _unit_scale(table: _TableRead) -> IntakeResult | None:
         table.visible_transformations.append(scaling_note(unit_label, declarations))
     table.detected_mult = detected_mult
     return None
+
+
+_HeadingUnit = tuple[str, Decimal | None, str]  # a heading, its unit, and where a unit not its own comes from
+
+
+def _heading_units(table: _TableRead, title: str) -> tuple[_HeadingUnit, _HeadingUnit] | None:
+    """Budget's (or the comparison's) and Actual's units when either heading names its own (X45): each its own, else
+    the caption the title and the other headings give, else none. None when neither names one, to scale as before."""
+    half = _HALF.get()
+    placeholder = half["missing"] if half is not None and half["filled"] else None
+    headings = [(role, table.column_mapping.get(role)) for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL)]
+    own = {role: heading_unit(heading) for role, heading in headings if heading is not None and role is not placeholder}
+    if len(own) < 2:  # a half file's placeholder column takes its partner's unit
+        unit = next(iter(own.values()), None)
+        return None if unit is None else (("", unit, ""), ("", unit, ""))
+    if all(unit is None for unit in own.values()):
+        return None
+    others = " ".join(h for h in table.header_str_row if h not in {heading for _, heading in headings})
+    caption, source = detect_unit_scale(title), "the title says"
+    if caption == 1:
+        caption, source = detect_unit_scale(others), "another heading says"
+    found = caption if caption != 1 else None
+
+    def side(role: CanonicalRole, heading: str | None) -> _HeadingUnit:
+        unit = own[role]
+        if unit is not None:
+            return cast(str, heading), unit, ""
+        return cast(str, heading), found, source if found is not None else ""
+    return side(*headings[0]), side(*headings[1])
+
+
+def _heading_units_differ(sides: tuple[_HeadingUnit, _HeadingUnit]) -> str:
+    """The refusal for amount headings in different units, or a unit beside none, naming both (X45)."""
+    def said(heading: str, unit: Decimal | None, source: str) -> str:
+        if unit is None:
+            return f"'{heading}' names no unit"
+        return f"'{heading}' is in {_UNIT_WORDS[unit]}" + (f", as {source}" if source else "")
+    first, second = sides
+    if first[1] is not None and second[1] is not None:
+        return (f"{said(*first)}{', and ' if first[2] else ' and '}{said(*second)}. Change one column so both use "
+                "the same unit, then upload the file again.")
+    named, unnamed = (first, second) if first[1] is not None else (second, first)
+    qualifier = _HEADER_QUALIFIER.search(named[0])
+    assert qualifier is not None  # a unit beside none is always the heading's own
+    return (f"{said(*first)}, but {said(*second)}, so I can't tell what '{unnamed[0]}' is in. Give both headings the "
+            f"same unit, such as {qualifier.group().strip()}, then upload the file again.")
 
 
 def _signs_and_totals(table: _TableRead) -> None:
