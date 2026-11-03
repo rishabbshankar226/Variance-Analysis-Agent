@@ -74,7 +74,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | T3 | 6 | done | `test(T3)` | `tests/test_excel_archive_hardening.py` (the one test over 5 seconds: 21.94s, now 2.87s alone) |
 | D1 | 7 | done | `docs(D1)` | the eight records to `docs/history/` with `README.md`; links in `README.md`, `CHANGELOG.md`, `docs/roadmap.md`, `docs/superpowers/plans/2026-10-21-multi-audience.md`, `tests/test_characterization_s3.py` (docstring) and the two records that link out of `docs/`. A grep for `docs/<NAME>.md` and for relative links to each old path finds hits only inside `docs/history/`, and 39 relative links in the touched files resolve. `docs/analysts/PLAN.md:474` keeps a backticked file name in a past plan's reading list, which is no link |
 | D2 | 7 | done | `docs(D2)` | `docs/roadmap.md`: an Improvement pass section, what closed by area and what stays open (X9, X11, X24's date band, X43, X38, X39, X40) |
-| D3 | 7 | todo | | |
+| D3 | 7 | done | `docs(D3)` | nothing to fix. A `git clone` of `5e8a0fc` into `.scratch/d3/clone`, with `python` on PATH as Python 3.11.16, ran all 25 commands of the README's 12 `sh` blocks in order (`.scratch/d3/run.sh`, log in `.scratch/d3/log.txt`). Every command exits 0 except the panel run's documented 3 (one error row in `errors.csv`). The clone's own gates: "2810 passed in 51.82s", ruff "All checks passed!", mypy "Success: no issues found in 90 source files", `pip check` clean, both distributions PASSED, `check_distribution.py` verified, and the minimal install "Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified". The batch run wrote both CSVs, two filings `ok` with 4 rows each |
 
 ## Decisions
 
