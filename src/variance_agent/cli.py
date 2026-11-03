@@ -124,6 +124,8 @@ class Arguments(Protocol):
     long_output: str | None
     long_output_jsonl: str | None
     errors_output: str | None
+    batch: str | None
+    manifest: str | None
     history: str | None
     surprise_window: int
     entity: str | None
@@ -268,6 +270,10 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--long-output", help="Write deterministic exact-number CSV.")
     history.add_argument("--long-output-jsonl", help="Write deterministic exact-number JSON Lines.")
     history.add_argument("--errors-output", help="Write one CSV error row per failed panel group (required with --group-by).")
+    history.add_argument("--batch", metavar="FOLDER",
+                         help="Read every .htm, .html and .pdf filing in FOLDER as a single --assisted run reads one; "
+                              "needs --long-output and --manifest. Exit 0 when all read, 2 when any refuses.")
+    history.add_argument("--manifest", help="With --batch: write one CSV row per filing with its outcome and message.")
 
     chat = parser.add_argument_group("Chat", "The browser interface instead of a one-off report.")
     chat.add_argument(
@@ -769,7 +775,13 @@ def _write_outputs(args: Arguments, capture: _Capture, read: _Read, result: Anal
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = cast(Arguments, parser.parse_args(argv))
+    raw = list(sys.argv[1:] if argv is None else argv)
+    args = cast(Arguments, parser.parse_args(raw))
+    if args.batch:
+        try:
+            return _run_batch(args, parser, raw)
+        except (OSError, ValueError, csv.Error, DecimalException, BadZipFile, RuntimeError) as exc:
+            parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
     if args.chat and (args.group_by or args.long_output or args.long_output_jsonl or args.errors_output or args.history or args.entity):
         parser.error("panel/long-output flags cannot be combined with --chat.")
     if args.hosted and not args.chat:
@@ -795,6 +807,54 @@ def main(argv: list[str] | None = None) -> int:
         parser.exit(2, f"{parser.prog}: error: {display_text(str(exc))}\n")
 
 
+
+
+# Options a single filing run takes that a batch can't pass on: an input, a single run's outputs, other readers' inputs.
+_NOT_IN_A_BATCH = ("input", "-o", "--xlsx", "--audit-json", "--long-output-jsonl", "--errors-output", "--compare-file",
+                   "--ltm-from", "--metrics", "--panel", "--mapping", "--group-by", "--chat", "--check-only", "--history",
+                   "--commentary", "--type-map")
+_BATCH_OWN = ("--batch", "--long-output", "--manifest")
+
+
+def _run_batch(args: Arguments, parser: argparse.ArgumentParser, raw: list[str]) -> int:
+    """Wei's batch run over a folder of filings (N2): each filing read as a single run reads one."""
+    from .batch import run_batch
+    given = {"input": bool(args.input), "-o": bool(args.output), "--xlsx": bool(args.xlsx),
+             "--audit-json": bool(args.audit_json), "--long-output-jsonl": bool(args.long_output_jsonl),
+             "--errors-output": bool(args.errors_output), "--compare-file": bool(getattr(args, "compare_file", None)),
+             "--ltm-from": bool(getattr(args, "ltm_from", None)), "--metrics": bool(getattr(args, "metrics", None)),
+             "--panel": bool(getattr(args, "panel", None)), "--mapping": bool(getattr(args, "mapping", None)),
+             "--group-by": bool(args.group_by), "--chat": bool(args.chat), "--check-only": bool(args.check_only),
+             "--history": bool(args.history), "--commentary": bool(args.commentary),
+             "--type-map": bool(getattr(args, "type_map", None))}
+    for flag in _NOT_IN_A_BATCH:
+        if given[flag]:
+            parser.error(f"--batch can't be combined with {'an input file' if flag == 'input' else flag}: it reads every "
+                         "filing in the folder and writes one --long-output and one --manifest.")
+    missing = [flag for flag, value in (("--long-output", args.long_output), ("--manifest", args.manifest),
+                                        ("--period", args.period), ("--dollar-threshold", args.dollar_threshold),
+                                        ("--percent-threshold", args.percent_threshold)) if value is None]
+    if missing:
+        parser.error(f"--batch needs {', '.join(missing)}.")
+    assert args.batch is not None and args.long_output is not None and args.manifest is not None
+    folder = Path(args.batch)
+    if not folder.is_dir():
+        raise ValueError(f"--batch '{folder}' is not a folder. Give the folder that holds the filings.")
+    single: list[str] = []
+    skip = False
+    for token in raw:  # every option the run was given, less the batch's own, passes to each filing's run
+        if skip:
+            skip = False
+            continue
+        if token in _BATCH_OWN:
+            skip = True
+            continue
+        if token.startswith(tuple(f"{flag}=" for flag in _BATCH_OWN)):
+            continue
+        single.append(token)
+    code = run_batch(folder, single, Path(args.long_output), Path(args.manifest))
+    print(f"Read {args.batch}: wrote {args.long_output} and {args.manifest}.")
+    return code
 
 
 def _comparison_argument(value: str) -> str:

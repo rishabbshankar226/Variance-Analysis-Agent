@@ -69,7 +69,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | S3 | 4 | done | `test(S3)` `c46dd7e`, `refactor(S3)` `eefa968` | `cli.py` (`_run` 42 lines over 12 stages, longest 66), `tests/test_characterization_s3.py` |
 | S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
 | N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
-| N2 | 5 | todo | | |
+| N2 | 5 | done | see `feat(N2)` | `batch.py` (new), `cli.py` (`--batch`, `--manifest`, `_run_batch`), `tests/test_batch.py` |
 | T2 | 6 | todo | | |
 | T3 | 6 | todo | | |
 | D1 | 7 | todo | | |
@@ -588,6 +588,27 @@ Boundary cases:
 - A zero limit's Utilization and Headroom (% of limit) are "NM" text, as in the report.
 - A row with no buffer leaves Buffer blank; a benchmark row with no tolerance reads "none (exact)".
 
+**N2, Wei's batch run over a folder of filings.** A new opt-in flag runs:
+
+`variance-agent --batch FOLDER --period P --dollar-threshold N --percent-threshold N --long-output batch.csv --manifest manifest.csv`
+
+It reads every `.htm`, `.html` and `.pdf` file directly in FOLDER, in name order. Hidden files, subfolders and other files are left alone. Each filing gets the existing single-filing read, the public `analyze_file` with assisted intake: the same read a single `--assisted` run with `--long-output` gives it.
+
+Outputs:
+- For each success, the existing long rows (`long_rows` over the one-group wrap, with that filing's own `source_sha256`) go into the batch's long CSV, with a leading `file` column. The text columns, `file` among them, keep the existing formula protection.
+- One manifest row per filing: `file`, `source_sha256`, `outcome` (`ok`, `refused` or `error`), `rows` and `message`.
+- A refusal (any error a single run turns into its exit-2 message) records that message. Any other exception records `error` with its type and message, and the batch goes on.
+- Both files are staged and published by the CLI's `write_text_outputs`, and neither may be one of the filings read.
+
+Exit codes: 0 when every filing reads, 2 when any refuses or errors (the CLI's input-failure code). An empty folder exits 2, naming the folder and the file kinds it reads.
+
+Options: the batch takes the options a single filing run takes (`--compare-to`, `--currency`, the measure thresholds, `--sheet` for the statement to read). It refuses an input file and the single-run outputs (`-o`, `--xlsx`, `--audit-json`, `--long-output-jsonl`), and the other readers' inputs (`--compare-file`, `--ltm-from`, `--metrics`, `--panel`, `--mapping`, `--group-by`, `--chat`, `--check-only`). No new arithmetic.
+
+Boundary cases:
+- A folder of two readable filings and one that refuses exits 2. The manifest has three rows, and the long CSV holds the two successes' rows, each set equal to that filing's own single-run long CSV plus the `file` column.
+- An unexpected exception in one filing is `error` with its type, and the next filing still reads.
+- A filing named `=x.htm` appears as `'=x.htm` in both CSVs.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -705,6 +726,13 @@ Items:
 - Message inventory: 235 seen, 0 failing, unchanged by the moves.
 - Each of S2, S3 and S4 was prepared by a worker in its own worktree and checked by it against wider before/after comparisons, beyond the characterizations. S2's worker compared whole results: 1,467 suite calls, 3,672 fixture reads under varied options, 1,656 synthetic tables, 118 Excel edge reads. S4's worker compared comparison reads, analysis errors, direct audit calls across schema versions, CLI runs, statement shapes and chat sessions against a `git archive` baseline. The patches were applied here and committed, and the worktrees removed (Decision 17).
 - `test(M4)` (`a00ddf0`) closes a gap S3's worker found: setting `comparison_name` to None on the CLI's main path left the suite green.
+
+## Phase 5 figures
+
+- Suite: 2799 passed (2781 at the end of Phase 4, plus 9 for N1 and 9 for N2; six refusal tests were converted, none deleted). mypy --strict: no issues in 90 source files. ruff clean. Contracts and schemas: identical to `main`.
+- Message inventory: 233 seen, 0 failing. The two "A workbook isn't available ..." refusal replies are gone.
+- N2 runs each filing through the CLI's own single-filing run, rather than `api.analyze_file`, whose basis choice and header handling differ in detail from the comparison path. So a filing's batch rows are its single run's rows by construction, and the test asserts it.
+- Looking at the outputs: the limit workbook's "Limits" sheet holds the report's five rows in severity order. Limit, Actual, Headroom and Buffer are money cells (`#,##0.00;[Red]-#,##0.00`), Headroom (% of limit) and Utilization percent cells (`0.0%`), and the count line, rule note and doubles note sit under the table. A batch over two fictional filings and one without statements exits 2, with a three-row manifest whose third row carries the single run's refusal message.
 
 ## Phase 4 reviews
 
