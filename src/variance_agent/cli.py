@@ -5,7 +5,7 @@ import csv
 import os
 import sys
 import unicodedata
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -36,6 +36,8 @@ from .limits import display_text
 
 if TYPE_CHECKING:
     from .intake import IntakeResult
+    from .mapping import LayoutMapping
+    from .models import AnalysisResult
 
 
 COMPARE_TO_HINT = "Rerun with --compare-to budget|forecast|prior-period."
@@ -325,26 +327,9 @@ def _validate_output_paths(args: Arguments) -> None:
 
 @financial_context()
 def _run(args: Arguments) -> int:
+    """One run, stage by stage: parse the flags, read the input, analyse it, write what was asked for (S3)."""
     if args.chat:
-        if args.check_only or args.output or args.audit_json or args.xlsx:
-            raise ValueError(
-                "--chat cannot be combined with --check-only, --output, --audit-json, or --xlsx."
-            )
-        from .chat.server import run_chat_server
-        # Hosting is asked for (--hosted) or announced by the platform (Render sets RENDER). A
-        # stray PORT variable alone must not expose a local chat on every network interface.
-        # A hosting platform announces itself with RENDER; an explicit --no-browser still means local (X10).
-        if args.hosted or ("RENDER" in os.environ and not args.no_browser):
-            port_text = os.environ.get("PORT", "10000")
-            if not (port_text.isascii() and port_text.isdigit() and 0 < int(port_text) < 65536):
-                raise ValueError(f"PORT must be a port number between 1 and 65535, not {port_text!r}.")
-            return run_chat_server(
-                host="0.0.0.0", port=int(port_text),
-                initial_input=args.input, initial_sheet=args.sheet,
-                open_browser=False, hosted=True,
-            )
-        return run_chat_server(initial_input=args.input, initial_sheet=args.sheet,
-                               open_browser=not args.no_browser)
+        return _run_chat(args)
 
     assert args.input is not None
     if args.preset == "quant" and not (args.long_output or args.long_output_jsonl):
@@ -355,6 +340,61 @@ def _run(args: Arguments) -> int:
         return run_panel(args)
     if args.errors_output:
         raise ValueError("--errors-output requires --group-by.")
+    input_path = _check_single_file_args(args)
+
+    capture = _capture(args, input_path)
+    requested, mapped_segment = capture.requested, capture.mapped_segment
+    if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
+            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
+            or args.layout is not None or args.headline or args.per_share_lines is True):
+        _refuse_main_path_inputs(args, requested, mapped_segment)
+        return _run_comparisons(args, capture.source_bytes, capture.type_map_bytes, requested, capture.mapping_obj)
+    compare_to_basis = requested[0] if requested else None
+    if compare_to_basis in OPT_IN_BASES and not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
+        raise ValueError(f"--compare-to {compare_to_basis.value} needs --assisted, which reads each row's declarations "
+                         "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
+
+    mapping_arg = getattr(args, "mapping", None)
+    if isinstance(mapping_arg, str) and mapping_arg:
+        read = _read_mapped(args, capture, compare_to_basis)
+    elif getattr(args, "assisted", False):
+        read = _read_assisted(args, capture, compare_to_basis)
+    else:
+        read = _read_strict(args, capture, compare_to_basis)
+
+    config, parsed_rows = _build_config(args, capture, read)
+    result = _analyse(parsed_rows, config, read.strict_without_basis)
+    if args.check_only:
+        return _check_only(result, config)
+    return _write_outputs(args, capture, read, result)
+
+
+def _run_chat(args: Arguments) -> int:
+    """--chat: the local chatbot, or the hosted one when asked for or announced by the platform."""
+    if args.check_only or args.output or args.audit_json or args.xlsx:
+        raise ValueError(
+            "--chat cannot be combined with --check-only, --output, --audit-json, or --xlsx."
+        )
+    from .chat.server import run_chat_server
+    # Hosting is asked for (--hosted) or announced by the platform (Render sets RENDER). A
+    # stray PORT variable alone must not expose a local chat on every network interface.
+    # A hosting platform announces itself with RENDER; an explicit --no-browser still means local (X10).
+    if args.hosted or ("RENDER" in os.environ and not args.no_browser):
+        port_text = os.environ.get("PORT", "10000")
+        if not (port_text.isascii() and port_text.isdigit() and 0 < int(port_text) < 65536):
+            raise ValueError(f"PORT must be a port number between 1 and 65535, not {port_text!r}.")
+        return run_chat_server(
+            host="0.0.0.0", port=int(port_text),
+            initial_input=args.input, initial_sheet=args.sheet,
+            open_browser=False, hosted=True,
+        )
+    return run_chat_server(initial_input=args.input, initial_sheet=args.sheet,
+                           open_browser=not args.no_browser)
+
+
+def _check_single_file_args(args: Arguments) -> Path:
+    """Parse stage: refuse the flag combinations a single-file run can't honour, before reading; the input's path."""
+    assert args.input is not None
     assert args.period is not None
     assert args.dollar_threshold is not None
     assert args.percent_threshold is not None
@@ -387,14 +427,31 @@ def _run(args: Arguments) -> int:
             not getattr(args, "assisted", False) or getattr(args, "mapping", None) or args.ltm_from):
         raise ValueError("--compare-file needs --assisted (and no --mapping or --ltm-from): each file is read on its own, "
                          "then the two are joined.")
+    return input_path
+
+
+@dataclass(frozen=True)
+class _Capture:
+    """Read stage: each input's bytes, captured once, and the comparisons the run asks for."""
+
+    input_path: Path
+    source_bytes: bytes
+    type_map_bytes: bytes | None
+    source_hash: str | None
+    mapping_obj: LayoutMapping | None
+    requested: tuple[ComparisonBasis, ...]
+    mapped_segment: bool
+
+
+def _capture(args: Arguments, input_path: Path) -> _Capture:
+    """Read stage: check the format, capture every input once, and settle which comparisons are asked for."""
     validate_input_format(input_path.suffix, assisted=bool(getattr(args, "assisted", False)), filename=input_path.name)
     # Capture each input once, then use exactly those bytes for parsing and hashes.
     source_bytes = read_input_bytes(input_path)
     type_map_bytes = read_input_bytes(args.type_map) if args.type_map else None
     source_hash = sha256_bytes(source_bytes) if args.audit_json else None
 
-    mapping_obj = None
-    intake_res = None
+    mapping_obj: LayoutMapping | None = None
 
     requested = tuple(parse_compare_to(value) for value in args.compare_to.split(",")) if args.compare_to else ()
     mapping_arg = getattr(args, "mapping", None)
@@ -406,173 +463,193 @@ def _run(args: Arguments) -> int:
     if not requested and mapping_obj is not None and mapping_obj.comparison_basis is not None:
         requested = (mapping_obj.comparison_basis,)
     mapped_segment = mapping_obj is not None and "segment" in mapping_obj.column_mapping
-    if (len(requested) > 1 or any(b in NEW_BASES for b in requested) or mapped_segment
-            or getattr(args, "preset", "fpa") != "fpa" or args.long_output or args.long_output_jsonl or args.history
-            or args.layout is not None or args.headline or args.per_share_lines is True):
-        _refuse_main_path_inputs(args, requested, mapped_segment)
-        return _run_comparisons(args, source_bytes, type_map_bytes, requested, mapping_obj)
-    compare_to_basis = requested[0] if requested else None
-    strict_without_basis = False
-    if compare_to_basis in OPT_IN_BASES and not (getattr(args, "assisted", False) or getattr(args, "mapping", None)):
-        raise ValueError(f"--compare-to {compare_to_basis.value} needs --assisted, which reads each row's declarations "
-                         "(Limit Kind, Buffer, Better, Tolerance) beside its figures.")
+    return _Capture(input_path, source_bytes, type_map_bytes, source_hash, mapping_obj, requested, mapped_segment)
 
+
+@dataclass(frozen=True)
+class _Read:
+    """Read stage: the rows for the analysis, and what intake said about them."""
+
+    rows: list[dict[str, object]]
+    worksheet: str | None
+    comparison_basis: ComparisonBasis
+    comparison_label: str | None
+    intake_res: IntakeResult | None = None
     source_notes: tuple[str, ...] = ()  # assisted intake's notes, for a measure report and audit (X42)
-    period_names: dict[str, str] = {}  # a filing column's display name (M4)
-    mapping_arg = getattr(args, "mapping", None)
-    if isinstance(mapping_arg, str) and mapping_arg:
-        from .intake import (
-            GLRangeRule,
-            apply_classification_rules,
-            detect_signed_ledger,
-            flip_ledger_signs,
-            read_input_assisted,
-            reconcile_declared_unit,
-        )
-        assert mapping_obj is not None
+    period_names: dict[str, str] = field(default_factory=dict)  # a filing column's display name (M4)
+    type_map: dict[str, LineType] = field(default_factory=dict)  # a --mapping run's own; others parse --type-map later
+    strict_without_basis: bool = False
 
+
+def _read_mapped(args: Arguments, capture: _Capture, compare_to_basis: ComparisonBasis | None) -> _Read:
+    """--mapping: assisted intake as the saved mapping directs, then what the mapping adds to it."""
+    from .intake import (
+        detect_signed_ledger,
+        flip_ledger_signs,
+        read_input_assisted,
+        reconcile_declared_unit,
+    )
+    mapping_obj, input_path = capture.mapping_obj, capture.input_path
+    assert mapping_obj is not None
+
+    intake_res = read_input_assisted(
+        capture.source_bytes,
+        input_path.suffix,
+        filename=input_path.name,
+        sheet=args.sheet,
+        treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
+        selected_period=mapping_obj.period_column_selection,
+        # An explicit --compare-to wins over the basis saved in the mapping.
+        compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
+        hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
+    )
+    if intake_res.has_fatal_errors:
+        raise ValueError(_intake_error(intake_res))
+    _refuse_other_currency(intake_res, args.currency, input_path.name)
+    rows = list(intake_res.rows)
+    if mapping_obj.exclude_totals:
+        to_exclude = set(mapping_obj.exclude_totals)
+        rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
+        # The audit records every exclusion that was applied, the mapping's included.
+        intake_res.detected_totals = [
+            *intake_res.detected_totals,
+            *(name for name in mapping_obj.exclude_totals if name not in intake_res.detected_totals),
+        ]
+    # Intake already applied any unit scale and revenue sign flip it detected (as the chat
+    # does), so the mapping only adds what the file itself did not say.
+    if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
+        target_scale = Decimal(mapping_obj.unit_scale)
+        detected_scale = intake_res.detected_unit_multiplier
+        if detected_scale == Decimal("1"):
+            # Reconciled with the amounts' number formats, as a caption would be (E1).
+            rows = reconcile_declared_unit(intake_res, rows, target_scale, input_path.name)
+        elif detected_scale != target_scale:
+            raise ValueError(
+                f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
+                f"mapping says {_unit_name(target_scale)}. Check the file, or update unit_scale "
+                "in the mapping."
+            )
+    if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
+        rows, flipped = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
+        intake_res.negative_revenue_items = flipped
+        intake_res.detected_signed_ledger = bool(flipped)
+
+    type_map: dict[str, LineType] = {}
+    if capture.type_map_bytes is not None:
+        type_map = _parse_type_map(capture.type_map_bytes)
+        if mapping_obj.classification_rules:
+            print("[mapping] --type-map is used; the mapping's classification_rules were not applied.",
+                  file=sys.stderr)
+    elif mapping_obj.classification_rules:
+        type_map = _mapping_type_map(mapping_obj.classification_rules, rows)
+
+    _print_examination(intake_res)
+    return _Read(rows, intake_res.sheet_name, intake_res.comparison_basis, intake_res.comparison_label,
+                 intake_res=intake_res, source_notes=tuple(intake_res.visible_transformations),
+                 period_names=intake_res.period_names, type_map=type_map)
+
+
+def _mapping_type_map(rules: dict[str, object], rows: list[dict[str, object]]) -> dict[str, LineType]:
+    """A mapping's classification_rules (GL ranges, keywords, a bulk default) applied to the rows' line items."""
+    from .intake import GLRangeRule, apply_classification_rules
+    gl_rules_data = cast(list[dict[str, object]], rules.get("gl_ranges", []))
+    gl_rules = [
+        GLRangeRule(
+            min_account=int(str(r["min"])),
+            max_account=int(str(r["max"])),
+            line_type=LineType[str(r["type"]).upper()],
+            match_count=0,
+        )
+        for r in gl_rules_data
+    ]
+    keywords_data = cast(dict[str, str], rules.get("keywords", {}))
+    keywords = {kw: LineType[t.upper()] for kw, t in keywords_data.items()}
+    bulk_def_str = rules.get("bulk_default")
+    bulk_def = LineType[str(bulk_def_str).upper()] if bulk_def_str else None
+    items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
+    return apply_classification_rules(items, gl_rules, keywords=keywords, bulk_default=bulk_def)
+
+
+def _read_assisted(args: Arguments, capture: _Capture, compare_to_basis: ComparisonBasis | None) -> _Read:
+    """--assisted: the reader the flags name (scorecard, metrics, join or LTM), else assisted intake."""
+    from .intake import read_input_assisted
+    input_path, source_bytes = capture.input_path, capture.source_bytes
+    if args.panel:
+        from .scorecard import build_scorecard
+        assert args.join_key is not None and args.deciding_metric is not None
+        panel = Path(args.panel)
+        intake_res = build_scorecard(source_bytes, input_path.name, read_input_bytes(panel), panel.name,
+                                     args.join_key, args.deciding_metric)
+    elif args.metrics:
+        from .metrics import compare_metrics
+        assert args.compare_file is not None  # checked with the other flags above
+        other, annual_path = Path(args.compare_file), Path(args.ltm_from) if args.ltm_from else None
+        intake_res = compare_metrics(read_input_bytes(Path(args.metrics)), source_bytes, input_path.name,
+                                     read_input_bytes(other), other.name,
+                                     annual=read_input_bytes(annual_path) if annual_path else None,
+                                     annual_name=annual_path.name if annual_path else None, compare_to=compare_to_basis)
+    elif args.compare_file:
+        from .join import join_files
+        other = Path(args.compare_file)
+        intake_res = join_files(source_bytes, input_path.name, read_input_bytes(other), other.name, sheet=args.sheet,
+                                compare_to=compare_to_basis, hidden_rows=getattr(args, "hidden_rows", None))
+    elif args.ltm_from:
+        from .ltm import build_ltm
+        annual_path = Path(args.ltm_from)
+        if compare_to_basis is not None:
+            raise ValueError("--ltm-from compares LTM with the 10-K's fiscal year; leave out --compare-to.")
+        if input_path.suffix.lower() not in {".htm", ".html"} or annual_path.suffix.lower() not in {".htm", ".html"}:
+            raise ValueError("--ltm-from builds LTM from two Inline XBRL filings: give the 10-Q's and the 10-K's "
+                             ".htm documents from EDGAR.")
+        intake_res = build_ltm(source_bytes, input_path.name, read_input_bytes(annual_path), annual_path.name,
+                               sheet=args.sheet)
+    else:
         intake_res = read_input_assisted(
             source_bytes,
             input_path.suffix,
             filename=input_path.name,
             sheet=args.sheet,
-            treat_blank_budgets_as_zero=mapping_obj.treat_blank_budgets_as_zero,
-            selected_period=mapping_obj.period_column_selection,
-            # An explicit --compare-to wins over the basis saved in the mapping.
-            compare_to=compare_to_basis if compare_to_basis is not None else mapping_obj.comparison_basis,
-            hidden_rows=getattr(args, "hidden_rows", None) or mapping_obj.hidden_rows,
+            treat_blank_budgets_as_zero=True,
+            compare_to=compare_to_basis,
+            hidden_rows=getattr(args, "hidden_rows", None),
         )
-        if intake_res.has_fatal_errors:
-            raise ValueError(_intake_error(intake_res))
-        _refuse_other_currency(intake_res, args.currency, input_path.name)
-        rows = list(intake_res.rows)
-        if mapping_obj.exclude_totals:
-            to_exclude = set(mapping_obj.exclude_totals)
-            rows = [r for r in rows if str(r.get("line_item", "")).strip() not in to_exclude]
-            # The audit records every exclusion that was applied, the mapping's included.
-            intake_res.detected_totals = [
-                *intake_res.detected_totals,
-                *(name for name in mapping_obj.exclude_totals if name not in intake_res.detected_totals),
-            ]
-        # Intake already applied any unit scale and revenue sign flip it detected (as the chat
-        # does), so the mapping only adds what the file itself did not say.
-        if mapping_obj.unit_scale and mapping_obj.unit_scale != "1":
-            target_scale = Decimal(mapping_obj.unit_scale)
-            detected_scale = intake_res.detected_unit_multiplier
-            if detected_scale == Decimal("1"):
-                # Reconciled with the amounts' number formats, as a caption would be (E1).
-                rows = reconcile_declared_unit(intake_res, rows, target_scale, input_path.name)
-            elif detected_scale != target_scale:
-                raise ValueError(
-                    f"The file's title says amounts are in {_unit_name(detected_scale)}, but the "
-                    f"mapping says {_unit_name(target_scale)}. Check the file, or update unit_scale "
-                    "in the mapping."
-                )
-        if mapping_obj.flip_signs and not intake_res.detected_signed_ledger:
-            rows, flipped = flip_ledger_signs(rows, detect_signed_ledger(rows).negative_revenue_items)
-            intake_res.negative_revenue_items = flipped
-            intake_res.detected_signed_ledger = bool(flipped)
+    if intake_res.has_fatal_errors:
+        raise ValueError(_intake_error(intake_res))
+    _refuse_other_currency(intake_res, args.currency, input_path.name)
+    for transform in intake_res.visible_transformations:
+        print(f"[assisted intake] {transform}", file=sys.stderr)
+    read = _Read(intake_res.rows, intake_res.sheet_name, intake_res.comparison_basis, intake_res.comparison_label,
+                 intake_res=intake_res, source_notes=tuple(intake_res.visible_transformations),
+                 period_names=intake_res.period_names)
+    _print_examination(intake_res)
+    return read
 
-        type_map: dict[str, LineType] = {}
-        if type_map_bytes is not None:
-            type_map = _parse_type_map(type_map_bytes)
-            if mapping_obj.classification_rules:
-                print("[mapping] --type-map is used; the mapping's classification_rules were not applied.",
-                      file=sys.stderr)
-        elif mapping_obj.classification_rules:
-            gl_rules_data = cast(list[dict[str, object]], mapping_obj.classification_rules.get("gl_ranges", []))
-            gl_rules = [
-                GLRangeRule(
-                    min_account=int(str(r["min"])),
-                    max_account=int(str(r["max"])),
-                    line_type=LineType[str(r["type"]).upper()],
-                    match_count=0,
-                )
-                for r in gl_rules_data
-            ]
-            keywords_data = cast(dict[str, str], mapping_obj.classification_rules.get("keywords", {}))
-            keywords = {kw: LineType[t.upper()] for kw, t in keywords_data.items()}
-            bulk_def_str = mapping_obj.classification_rules.get("bulk_default")
-            bulk_def = LineType[str(bulk_def_str).upper()] if bulk_def_str else None
-            items = [str(r.get("line_item", "")).strip() for r in rows if r.get("line_item")]
-            type_map = apply_classification_rules(items, gl_rules, keywords=keywords, bulk_default=bulk_def)
 
-        _print_examination(intake_res)
-        parsed_rows = rows
-        source_notes, period_names = tuple(intake_res.visible_transformations), intake_res.period_names
-        parsed_worksheet = intake_res.sheet_name
-        comparison_basis = intake_res.comparison_basis
-        comparison_label = intake_res.comparison_label
-    elif getattr(args, "assisted", False):
-        from .intake import read_input_assisted
-        if args.panel:
-            from .scorecard import build_scorecard
-            assert args.join_key is not None and args.deciding_metric is not None
-            panel = Path(args.panel)
-            intake_res = build_scorecard(source_bytes, input_path.name, read_input_bytes(panel), panel.name,
-                                         args.join_key, args.deciding_metric)
-        elif args.metrics:
-            from .metrics import compare_metrics
-            assert args.compare_file is not None  # checked with the other flags above
-            other, annual_path = Path(args.compare_file), Path(args.ltm_from) if args.ltm_from else None
-            intake_res = compare_metrics(read_input_bytes(Path(args.metrics)), source_bytes, input_path.name,
-                                         read_input_bytes(other), other.name,
-                                         annual=read_input_bytes(annual_path) if annual_path else None,
-                                         annual_name=annual_path.name if annual_path else None, compare_to=compare_to_basis)
-        elif args.compare_file:
-            from .join import join_files
-            other = Path(args.compare_file)
-            intake_res = join_files(source_bytes, input_path.name, read_input_bytes(other), other.name, sheet=args.sheet,
-                                    compare_to=compare_to_basis, hidden_rows=getattr(args, "hidden_rows", None))
-        elif args.ltm_from:
-            from .ltm import build_ltm
-            annual_path = Path(args.ltm_from)
-            if compare_to_basis is not None:
-                raise ValueError("--ltm-from compares LTM with the 10-K's fiscal year; leave out --compare-to.")
-            if input_path.suffix.lower() not in {".htm", ".html"} or annual_path.suffix.lower() not in {".htm", ".html"}:
-                raise ValueError("--ltm-from builds LTM from two Inline XBRL filings: give the 10-Q's and the 10-K's "
-                                 ".htm documents from EDGAR.")
-            intake_res = build_ltm(source_bytes, input_path.name, read_input_bytes(annual_path), annual_path.name,
-                                   sheet=args.sheet)
-        else:
-            intake_res = read_input_assisted(
-                source_bytes,
-                input_path.suffix,
-                filename=input_path.name,
-                sheet=args.sheet,
-                treat_blank_budgets_as_zero=True,
-                compare_to=compare_to_basis,
-                hidden_rows=getattr(args, "hidden_rows", None),
-            )
-        if intake_res.has_fatal_errors:
-            raise ValueError(_intake_error(intake_res))
-        _refuse_other_currency(intake_res, args.currency, input_path.name)
-        parsed_rows = intake_res.rows
-        parsed_worksheet = intake_res.sheet_name
-        comparison_basis = intake_res.comparison_basis
-        comparison_label = intake_res.comparison_label
-        for transform in intake_res.visible_transformations:
-            print(f"[assisted intake] {transform}", file=sys.stderr)
-        source_notes, period_names = tuple(intake_res.visible_transformations), intake_res.period_names
-        _print_examination(intake_res)
-    else:
-        parsed = load_input(source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
-        parsed_rows = parsed.rows
-        parsed_worksheet = parsed.worksheet
-        comparison_basis = ComparisonBasis.BUDGET
-        comparison_label = None
-        strict_without_basis = compare_to_basis is None
-        if compare_to_basis is not None:
-            try:
-                parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
-            except ValueError as exc:
-                year_hint = _year_columns_hint(parsed_rows)
-                if compare_to_basis is ComparisonBasis.PRIOR_PERIOD and year_hint is not None:
-                    raise ValueError(f"{exc} {year_hint}") from exc
-                raise
-            comparison_basis = compare_to_basis
+def _read_strict(args: Arguments, capture: _Capture, compare_to_basis: ComparisonBasis | None) -> _Read:
+    """Strict intake: the rows as given, with --compare-to's column, when named, as the comparison."""
+    input_path = capture.input_path
+    parsed = load_input(capture.source_bytes, input_path.suffix, source_name=input_path.name, sheet=args.sheet)
+    parsed_rows = parsed.rows
+    parsed_worksheet = parsed.worksheet
+    comparison_basis = ComparisonBasis.BUDGET
+    strict_without_basis = compare_to_basis is None
+    if compare_to_basis is not None:
+        try:
+            parsed_rows = select_strict_comparison(parsed_rows, compare_to_basis)
+        except ValueError as exc:
+            year_hint = _year_columns_hint(parsed_rows)
+            if compare_to_basis is ComparisonBasis.PRIOR_PERIOD and year_hint is not None:
+                raise ValueError(f"{exc} {year_hint}") from exc
+            raise
+        comparison_basis = compare_to_basis
+    return _Read(parsed_rows, parsed_worksheet, comparison_basis, None, strict_without_basis=strict_without_basis)
 
-    type_map_final = type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
+
+def _build_config(args: Arguments, capture: _Capture, read: _Read) -> tuple[AnalysisConfig, list[dict[str, object]]]:
+    """Analyse stage: the configuration, and the rows with a mapping's Better directions applied."""
+    assert args.period is not None and args.dollar_threshold is not None and args.percent_threshold is not None
+    mapping_obj, type_map_bytes, parsed_rows = capture.mapping_obj, capture.type_map_bytes, read.rows
+    type_map_final = read.type_map if mapping_obj is not None else (_parse_type_map(type_map_bytes) if type_map_bytes is not None else {})
     audience_args = {
         "per_share_threshold": getattr(args, "per_share_threshold", None),
         "count_threshold": getattr(args, "count_threshold", None),
@@ -602,9 +679,9 @@ def _run(args: Arguments) -> int:
         percent_threshold=args.percent_threshold / Decimal("100"),
         type_map=type_map_final,
         currency=args.currency,
-        comparison_basis=comparison_basis,
-        comparison_label=comparison_label,
-        comparison_name=period_names.get(comparison_label or ""),
+        comparison_basis=read.comparison_basis,
+        comparison_label=read.comparison_label,
+        comparison_name=read.period_names.get(read.comparison_label or ""),
     )
     if any(value is not None for value in audience_args.values()):
         config = AudienceConfig(
@@ -615,8 +692,13 @@ def _run(args: Arguments) -> int:
             count_threshold=cast(Decimal | None, audience_args["count_threshold"]),
             bps_threshold=cast(Decimal | None, audience_args["bps_threshold"]),
             multiple_threshold=cast(Decimal | None, audience_args["multiple_threshold"]),
-            percent_values=cast(str | None, audience_args["percent_values"]), source_notes=source_notes,
+            percent_values=cast(str | None, audience_args["percent_values"]), source_notes=read.source_notes,
         )
+    return config, parsed_rows
+
+
+def _analyse(parsed_rows: list[dict[str, object]], config: AnalysisConfig, strict_without_basis: bool) -> AnalysisResult:
+    """Analyse stage: the analysis, a strict run's missing Budget naming what would fix it, and measure notes."""
     try:
         result = analyze_rows(parsed_rows, config)
     except ValueError as exc:
@@ -631,12 +713,21 @@ def _run(args: Arguments) -> int:
     if is_audience_result(result):
         for note in metric_inferences(result.rows, result.config):
             print("[measure intake] " + display_text(note), file=sys.stderr)
-    if args.check_only:
-        unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
-        print(f"Validation passed: {_count(len(result.rows), 'row')}, "
-              f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
-              f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
-        return 0
+    return result
+
+
+def _check_only(result: AnalysisResult, config: AnalysisConfig) -> int:
+    """--check-only: one validation line on stdout, and no files."""
+    unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
+    print(f"Validation passed: {_count(len(result.rows), 'row')}, "
+          f"{_count(len(result.material_rows), 'material variance')}, {unclassified} Unclassified, "
+          f"{_count(len(result.warnings), 'warning')}; reporting currency {config.currency}.")
+    return 0
+
+
+def _write_outputs(args: Arguments, capture: _Capture, read: _Read, result: AnalysisResult) -> int:
+    """Write stage: the report, workbook and audit file asked for; the report on stdout without --output."""
+    intake_res = read.intake_res
     if intake_res is not None and intake_res.scorecard is not None:
         from .scorecard import finish_scorecard
         finish_scorecard(intake_res, result)
@@ -664,12 +755,12 @@ def _run(args: Arguments) -> int:
         transformations: dict[str, object] | None = None
         if intake_res is not None:
             from .intake import audit_transformations
-            transformations = audit_transformations(intake_res, mapping_obj)
+            transformations = audit_transformations(intake_res, capture.mapping_obj)
         record = build_audit_record(
-            result, source_name=input_path.name, source_sha256=source_hash,
+            result, source_name=capture.input_path.name, source_sha256=capture.source_hash,
             schema_version=args.audit_schema_version,
-            type_map_sha256=(sha256_bytes(type_map_bytes) if type_map_bytes is not None else None),
-            source_worksheet=parsed_worksheet,
+            type_map_sha256=(sha256_bytes(capture.type_map_bytes) if capture.type_map_bytes is not None else None),
+            source_worksheet=read.worksheet,
             transformations=transformations,
             source_document=intake_res.source_document() if intake_res is not None else None,
         )
