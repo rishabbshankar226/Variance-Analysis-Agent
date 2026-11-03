@@ -58,7 +58,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
 | X43 | — | open | | found in X41's tests: a limit, benchmark or target table prints a scaled amount with three decimal places as it holds them ("$89,999.000" from 89.999 in thousands); the value is right, so it is a display finding for the final STOP, not changed here |
 | X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
-| X37 | 4 | todo | | |
+| X37 | 4 (done in 7) | done | `refactor(X37)` | `intake.py` (`_MISSING_MARKERS`, referenced nowhere in `src`, tests, scripts or `deterministic_conditioning`), `chat/handlers/scenarios.py` (`_simulate`'s last `else` had the Expense branch's body, and `_what_if_target` answers an Unclassified line before any simulation, so the two branches merge). Missed in Phase 4 and found while writing D2; suite 2804 before and after, ruff and mypy clean. No test can fail on its revert, since both removals are behaviour-neutral by construction |
 | X33 | 7 | todo | | |
 | X34 | 7 | todo | | |
 | X38 | — | open | | cost; not this run except where X17 or X18 touch it |

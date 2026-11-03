@@ -316,10 +316,7 @@ def _simulate(
             if matched_row.line_type == LineType.REVENUE:
                 sim_rev = base_rev + delta
                 sim_exp = base_exp
-            elif matched_row.line_type == LineType.EXPENSE:
-                sim_rev = base_rev
-                sim_exp = base_exp + delta
-            else:
+            else:  # an Expense: _what_if_target answers an Unclassified line before any simulation
                 sim_rev = base_rev
                 sim_exp = base_exp + delta
 

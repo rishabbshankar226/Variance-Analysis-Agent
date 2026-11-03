@@ -190,7 +190,6 @@ _CURRENCY_SYNONYMS = {"currency", "ccy"}
 _TYPE_SYNONYMS = {"type", "line_type", "classification"}
 
 _ACCOUNTING_DASHES = {"-", "–", "—"}
-_MISSING_MARKERS = {"", "na", "n/a", "none", "null"}
 
 _NUMBER_RE = re.compile(
     r"(?P<prefix>[+-]?[$€£]?|[$€£][+-]?)\s*"
