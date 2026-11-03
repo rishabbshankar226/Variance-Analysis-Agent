@@ -34,6 +34,28 @@ Metric definitions, vendor mappings and fiscal/calendar alignment remain explici
 user choices. No live vendor integration, model call or runtime dependency was
 added. Larger panels must be split to retain existing capture/table limits.
 
+## Improvement pass (November 2026)
+
+Branch `improve/depth-pass`; the plan and evidence are in `docs/improve/`.
+
+| Area | Closed |
+|---|---|
+| Wrong numbers | X1 to X8, X30, X41, C1, C2, C5: paths that could show a figure the source does not support, each with a failing test first. C3 was investigated and left the rule as it is |
+| Refusals and friction | X10, X12 to X29, X31, X35, X36, X42, M1 to M6, C3m, C4: refusals that named no cause or fix, and replies that stranded a reader |
+| Structure | S1 to S4, X37: `chat/handlers` is a package of 17 modules, and no function in `src/` runs over 150 lines |
+| Not built before | N1: workbook sheets for limit, benchmark, target, statement, metric and filing income comparisons. N2: `--batch` over a folder of filings, with a manifest |
+| Tests | T1: a timing test load cannot break. T2: 0 of 25 seeded mutants survive (3 before). T3: the one test over 5 s, from 22 s in the suite to under 3 s alone |
+| Docs | D1: earlier records in `docs/history/`. X32, X33, X34: workbook rounding, audit 1.9 and `--mapping` described as they behave |
+
+Left open:
+
+- **X9, X11, the shared hosted session.** Hosted mode gives every visitor one session, and staged downloads sit under guessable names. The per-visitor-sessions branches own this.
+- **X24's merged date band.** A date band merged over Budget and Actual still fails with "Could not determine period order"; two-row headers otherwise read.
+- **X43.** A limit, benchmark or target table prints a scaled amount with the three decimal places it holds ("$89,999.000"). The value is right; only the display is.
+- **X38.** Four copies of the number grammar and workbook helpers, with drifted messages.
+- **X39.** `export excel` on a 4.28 MiB CSV takes the hosted server from 49 to 559 MiB on the free plan.
+- **X40.** The hosted build installs the newest reader dependencies; pinning them is the owner's call.
+
 ## Next focused work
 
 - **I09 / Optional consumers:** an offline, bounded, schema-validated LLM commentary
