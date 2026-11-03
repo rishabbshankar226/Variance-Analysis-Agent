@@ -479,6 +479,7 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
         "when exact decimal values are required.",
         S_NOTE, span,
     )
+    sheet.add_paragraph(_ROUNDING_NOTE, S_NOTE, span)
     return sheet
 
 
@@ -856,6 +857,9 @@ def _statistics_sheet(table: "TableAnalysis") -> _Sheet:
 # the report's text, as the Measures sheet holds them.
 _DOUBLES_NOTE = ("Excel stores numbers in double precision; use the CSV or audit JSON export when exact decimal values "
                  "are required.")
+# A percentage cell keeps the whole ratio under 0.0%, while the report rounds tenths half to even (X32).
+_ROUNDING_NOTE = ("A percentage cell holds the whole ratio and is rounded only for display, so a tie such as 12.25% may "
+                  "show as 12.3% here while the report rounds it to even, 12.2%. The audit JSON holds the exact value.")
 _BASIS_SHEETS = {"limit": "Limits", "benchmark": "Benchmark", "target": "Targets"}
 _PERCENT_COLUMNS = {"Headroom (% of limit)", "Utilization"}
 
@@ -898,7 +902,8 @@ def _basis_sheet(result: AnalysisResult) -> _Sheet:
             else:
                 out.append(_Cell(text or None, S_TEXT if column in words else S_TEXT_RIGHT))
         sheet.add(*out)
-    _notes_block(sheet, [*([counts] if counts else []), _BASIS_NOTES[basis], _DOUBLES_NOTE])
+    _notes_block(sheet, [*([counts] if counts else []), _BASIS_NOTES[basis],
+                         *([_ROUNDING_NOTE] if _PERCENT_COLUMNS & set(columns) else []), _DOUBLES_NOTE])
     return sheet
 
 
@@ -933,7 +938,8 @@ def _statement_sheet(result: AnalysisResult, checks: list[str]) -> _Sheet:
                   _Cell(row.actual, S_MONEY), _Cell(row.variance_dollars, S_MONEY),
                   _pct_cell(row.variance_percent, row.percent_label),
                   _Cell(display_outcome(row, cfg.comparison_basis), S_TEXT), _Cell("Yes" if row.material else "No", S_TEXT))
-    _notes_block(sheet, [*checks, "Lines marked (Total) are the statement's own subtotals.", _DOUBLES_NOTE])
+    _notes_block(sheet, [*checks, "Lines marked (Total) are the statement's own subtotals.", _ROUNDING_NOTE,
+                         _DOUBLES_NOTE])
     return sheet
 
 
@@ -963,7 +969,7 @@ def _filing_summary_sheet(result: AnalysisResult, headline: Mapping[str, object]
     said = [line.removeprefix("- ")
             for line in _filing_headline_lines(headline, cfg.currency, _report_places(result))[len(items):]]
     unit = headline.get("unit")
-    _notes_block(sheet, [*([str(unit)] if unit else []), *said, _DOUBLES_NOTE])
+    _notes_block(sheet, [*([str(unit)] if unit else []), *said, _ROUNDING_NOTE, _DOUBLES_NOTE])
     return sheet
 
 

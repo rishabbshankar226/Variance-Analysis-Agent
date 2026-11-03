@@ -57,7 +57,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
 | X43 | — | open | | found in X41's tests: a limit, benchmark or target table prints a scaled amount with three decimal places as it holds them ("$89,999.000" from 89.999 in thousands); the value is right, so it is a display finding for the final STOP, not changed here |
-| X32 | 5 | todo | | state the rounding on the sheet (Decision 12) |
+| X32 | 5 (done in 7) | done | `fix(X32)` | `xlsx.py` (`_ROUNDING_NOTE` on the FP&A Summary, Limits, Lines and filing Summary sheets), `tests/test_workbook_rounding_note.py` (new), `tests/fixtures/xlsx_values/sample.json` (+1 cell), `tests/fixtures/characterization/s3_cli.json` (1 digest). No cell value changes. LibreOffice 26.8.1 shows the 12.25% and 2.45% ties as 12.3% and 2.5%, the report 12.2% and 2.4%; Excel not checked |
 | X37 | 4 (done in 7) | done | `refactor(X37)` | `intake.py` (`_MISSING_MARKERS`, referenced nowhere in `src`, tests, scripts or `deterministic_conditioning`), `chat/handlers/scenarios.py` (`_simulate`'s last `else` had the Expense branch's body, and `_what_if_target` answers an Unclassified line before any simulation, so the two branches merge). Missed in Phase 4 and found while writing D2; suite 2804 before and after, ruff and mypy clean. No test can fail on its revert, since both removals are behaviour-neutral by construction |
 | X33 | 7 | todo | | |
 | X34 | 7 | todo | | |
@@ -609,6 +609,13 @@ Boundary cases:
 - An unexpected exception in one filing is `error` with its type, and the next filing still reads.
 - A filing named `=x.htm` appears as `'=x.htm` in both CSVs.
 
+**X32, how a percentage cell rounds (approved at STOP 1: state it, change no cell value).** A percentage cell holds the exact ratio under `0.0%`, and the spreadsheet rounds it only to show it. The report rounds to tenths half to even. At an exact tie (12.25%) the two can show different tenths. Every sheet that writes a percentage as a number gains one note, in a row of its own after the sheet's existing notes, and no existing cell changes:
+
+> A percentage cell holds the whole ratio and is rounded only for display, so a tie such as 12.25% may show as 12.3% here while the report rounds it to even, 12.2%. The audit JSON holds the exact value.
+
+- Sheets that get it: the FP&A Summary (for its Summary, Material Variances and All Rows), a limit run's Limits sheet, the statement Lines sheet and a filing's Summary. The Benchmark and Targets sheets write no percentage as a number, and the comparison workbook writes Var % as the report's text, so neither gets it.
+- Boundary cases: a tie run (Licence Revenue 800 against 898, 12.25%) keeps its cell at `float(Decimal("0.1225"))` under `0.0%`, and its report reads 12.2%. The FP&A Summary's existing note cell keeps its text word for word, and the new note is the next row. A benchmark sheet carries no such note.
+
 ## Existing assertions to edit
 
 | Test | Assertion | Reason |
@@ -626,6 +633,8 @@ Boundary cases:
 | `tests/test_filing_headlines.py::test_the_chat_offers_no_workbook_for_a_filing`, renamed `test_the_chat_exports_a_filings_workbook` | the refusal text becomes "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets."; the chips assertion stays | N1 |
 | `tests/test_ixbrl_statements.py::test_the_cli_refuses_a_workbook_for_a_statement_comparison`, renamed `test_the_cli_writes_a_statement_workbook` | the refusal becomes exit 0 and a workbook whose only sheet is "Lines" | N1 |
 | `tests/test_ixbrl_statements.py::test_the_chat_compares_a_balance_sheet_without_asking_for_labels` | its last assertion, the refusal text, becomes "Excel workbook ready for download: Lines sheet."; every other assertion stays | N1 |
+| `tests/test_xlsx.py::test_every_value_and_address_is_unchanged_by_the_redesign[sample]` (its golden `tests/fixtures/xlsx_values/sample.json`) | the Summary sheet gains one entry, the X32 note in the row after the existing note; every other address and value stays | X32 (approved at STOP 1, BACKLOG question 5): the golden pins every cell of the sample workbook, so a new note row is a new entry. `consensus.json` and `comparison_set.json` are comparison workbooks and do not change |
+| `tests/test_characterization_s3.py::test_every_documented_command_runs_as_before_the_split` (its snapshot `tests/fixtures/characterization/s3_cli.json`) | one value: the README quick start's `reports/q3-2026.xlsx` part `xl/worksheets/sheet1.xml` (the Summary sheet) takes its new digest; every other command, file and part stays | X32: the snapshot pins each written workbook part's digest, and the Summary gains the note's row. Found by the full suite after the fix, and listed here before the snapshot was edited |
 | `tests/test_excel_archive_hardening.py::test_the_worksheet_scan_keeps_little_beyond_the_numbers_it_returns` | no assertion changes: `peak < 1.3 * budget` stays. Its sheet shrinks from 10,000 rows of 10 to 4,000 rows of 10, and the comment records why that size still pins the bound | T3: 21.94s in the suite, the only test over 5 seconds, almost all of it tracemalloc tracing 100,000 cells. `.scratch/t3_probe.py` puts back the two regressions the test guards (the per-cell coordinate set `405b2fd` removed, and the worksheet read whole before parsing) and measures peak over kept. Python 3.11, 10,000 rows: clean 1.108, set 1.398, whole read 1.352. 4,000 rows: 1.128, 1.527, 1.390. Python 3.14, 4,000 rows: 1.135, 1.589, 1.559. At 4,000 rows both regressions miss the 1.3 bound by more than at 10,000, and the clean scan stays under it. At 1,000 rows the clean scan reaches 1.307 and fails, so the sheet stops at 4,000 |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
@@ -832,6 +841,7 @@ Items:
 | X41 | `UNIT_DECLARATIONS`, `scaled_declaration`, `scaling_note` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_caption_buffers.py` | 13 failed, 1 passed: Buffer and Tolerance stay $10.00, so the X41 file reads Within, and 110 against a benchmark of 100 reads Higher than benchmark; the Percent-row guard passes either way |
 | M4 | `period_name`, `Statement.names`, `period_names`, `comparison_name` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_period_names.py` | 7 failed: the notes say "Read the column for 2026-03-28 as Mar 2026", the chat reads "Prior Period (Mar 2025)" and the report heading has no duration |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
+| X32 | `_ROUNDING_NOTE` and its four uses in `xlsx.py` removed (`git apply -R` of the `src` diff), tests and goldens kept | `pytest tests/test_workbook_rounding_note.py tests/test_xlsx.py` | 5 failed, 21 passed: the four sheets that should carry the note do not (the Summary's last two cells are `[None, ...the existing note]`), and the sample golden lacks Summary A18. The benchmark and target cases pass either way, as they should |
 
 ## Path existed in 0.2.0
 

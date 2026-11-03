@@ -153,6 +153,7 @@
   "A14": "'Bottom Line'",
   "A15": "'Revenue and expense variances imply a net operating variance of -$8,500.00, below budget on this simplified revenue-less-expense basis. The largest material variance is Subscription Revenue at $15,500.00 (Favorable).'",
   "A17": "'Amounts are in USD. Var % is variance divided by the absolute budget. Favorable means revenue above budget or expenses below budget. Excel stores numbers in double precision; use the CSV or audit JSON export when exact decimal values are required.'",
+  "A18": "'A percentage cell holds the whole ratio and is rounded only for display, so a tie such as 12.25% may show as 12.3% here while the report rounds it to even, 12.2%. The audit JSON holds the exact value.'",
   "A2": "'Period'",
   "A3": "'Reporting Currency'",
   "A4": "'Materiality Thresholds'",
