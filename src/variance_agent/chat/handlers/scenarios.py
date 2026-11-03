@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal, Inexact, InvalidOperation
+from typing import NamedTuple
 from variance_agent.currencies import CURRENCY_SYMBOLS
-from variance_agent.models import AnalyzedRow, LineType
+from variance_agent.models import AnalysisConfig, AnalysisResult, AnalyzedRow, LineType
 from variance_agent.numeric import financial_context, ratio
 from variance_agent.parsing import parse_decimal
 from ..intent import ParsedIntent, find_line_item, normalize_for_routing
@@ -138,17 +139,8 @@ def _handle_waterfall(session: Session) -> Response:
     return Response(text=text, table=table_rows, chips=chips, phase=Phase.EXPLORING)
 
 
-def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
-    """Simulate scenario impact on revenue, expenses, and operating profit."""
-    result = session.result
-    assert result is not None
-    cfg = result.config
-    places = report_places(result)
-    cur = cfg.currency
-    sym = CURRENCY_SYMBOLS.get(cur, "$")
-
-    raw_target = intent.captures.get("target", "").strip()
-    target_clean = re.sub(r"^(?:our|the|line\s+item)\s+", "", raw_target, flags=re.IGNORECASE).strip()
+def _what_if_amount(intent: ParsedIntent, target_clean: str, sym: str) -> Response | tuple[Decimal, bool, bool]:
+    """The scenario's amount, whether it is a percentage and whether it lowers the target; or the reply refusing it."""
     raw_amount = intent.captures.get("amount", "").strip()
     direction = (intent.captures.get("direction") or "").lower()
     suffix = (intent.captures.get("suffix") or "").lower()
@@ -205,7 +197,13 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             chips=["What if revenue drops 5%?", "What if expenses drop 10%?", "Sensitivity analysis"],
             phase=Phase.EXPLORING,
         )
+    return amount_dec, is_percent, is_negative
 
+
+def _what_if_target(
+    session: Session, result: AnalysisResult, target_clean: str,
+) -> Response | tuple[bool, bool, AnalyzedRow | None]:
+    """Whether the target is total revenue or total expenses, else its line; or the reply refusing it."""
     # Identify target: aggregate revenue, aggregate expense, or specific line item
     is_rev_agg = target_clean.lower() in ("revenue", "revenues", "sales", "topline", "top line")
     is_exp_agg = target_clean.lower() in ("expense", "expenses", "costs", "spend", "opex")
@@ -236,7 +234,40 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
             chips=["What if revenue drops 5%?", "What if expenses increase 10%?", "Summary"],
             phase=Phase.EXPLORING,
         )
+    return is_rev_agg, is_exp_agg, matched_row
 
+
+class _Simulation(NamedTuple):
+    """The what-if scenario's baseline and simulated figures, computed in the financial context."""
+
+    base_rev: Decimal
+    base_exp: Decimal
+    base_profit: Decimal
+    budget_rev: Decimal
+    budget_exp: Decimal
+    budget_profit: Decimal
+    target_label: str
+    target_type: str
+    target_budget: Decimal
+    target_is_rev: bool
+    base_val: Decimal
+    delta: Decimal
+    sim_rev: Decimal
+    sim_exp: Decimal
+    sim_val: Decimal
+    sim_profit: Decimal
+    profit_delta: Decimal
+    sim_vs_budget: Decimal
+    base_margin: Decimal | None
+    sim_margin: Decimal | None
+    margin_delta: Decimal | None
+
+
+def _simulate(
+    result: AnalysisResult, matched_row: AnalyzedRow | None, *, is_rev_agg: bool, is_exp_agg: bool, amount_dec: Decimal,
+    is_percent: bool, is_negative: bool,
+) -> _Simulation:
+    """Apply the change to its target and recompute revenue, expenses, profit and margin."""
     with financial_context() as context:
         context.traps[Inexact] = False
         base_rev = result.revenue.actual
@@ -300,89 +331,143 @@ def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
         sim_margin = (ratio(sim_profit, sim_rev) * Decimal(100)) if sim_rev != 0 else None
         margin_delta = _pct_change(sim_margin, base_margin)
 
-    sign_str = "-" if delta < 0 else "+"
-    change_desc = f"{sign_str}{amount_dec:.1f}%" if is_percent else f"{sign_str}{sym}{abs(delta):,.2f}"
-    profit_status = "expansion" if profit_delta > 0 else ("contraction" if profit_delta < 0 else "neutral")
-    budget_status = "beat" if sim_vs_budget > 0 else ("shortfall" if sim_vs_budget < 0 else "on track")
+    return _Simulation(base_rev, base_exp, base_profit, budget_rev, budget_exp, budget_profit, target_label, target_type,
+                       target_budget, target_is_rev, base_val, delta, sim_rev, sim_exp, sim_val, sim_profit, profit_delta,
+                       sim_vs_budget, base_margin, sim_margin, margin_delta)
 
-    text = (
+
+def _what_if_text(
+    cfg: AnalysisConfig, sim: _Simulation, change_desc: str, profit_status: str, budget_status: str, places: int,
+) -> str:
+    """The scenario's parameters and its projected operating profit impact, as the reply text."""
+    cur = cfg.currency
+    return (
         f"**Scenario Analysis (\"What-If\" Simulation)**\n\n"
         f"**Simulation Parameters:**\n"
-        f"• {'Target' if _is_budget(cfg) else 'Line'}: **{target_label}** ({target_type})\n"
-        f"• Baseline Actual: {format_money(base_val, cur, places)}\n"
+        f"• {'Target' if _is_budget(cfg) else 'Line'}: **{sim.target_label}** ({sim.target_type})\n"
+        f"• Baseline Actual: {format_money(sim.base_val, cur, places)}\n"
         f"• Simulated Change: **{change_desc}**\n"
-        f"• Simulated {'Target ' if _is_budget(cfg) else ''}Value: **{format_money(sim_val, cur, places)}**\n\n"
+        f"• Simulated {'Target ' if _is_budget(cfg) else ''}Value: **{format_money(sim.sim_val, cur, places)}**\n\n"
         f"**Projected Operating Profit Impact:**\n"
-        f"• **Baseline Operating Profit**: {format_money(base_profit, cur, places)}\n"
-        f"• **Simulated Operating Profit**: **{format_money(sim_profit, cur, places)}**\n"
-        f"• **Profit Delta vs. Baseline**: **{format_money(profit_delta, cur, places)}** ({profit_status})\n"
-        f"• **Simulated Operating Margin**: **{_pct_text(sim_margin)}** (vs. {_pct_text(base_margin)} baseline, "
-        f"{_pct_text(margin_delta, '+.1f', ' pts')})\n"
-        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim_vs_budget, cur, places)}** ({budget_status} vs. "
-        f"{'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(budget_profit, cur, places)})\n"
+        f"• **Baseline Operating Profit**: {format_money(sim.base_profit, cur, places)}\n"
+        f"• **Simulated Operating Profit**: **{format_money(sim.sim_profit, cur, places)}**\n"
+        f"• **Profit Delta vs. Baseline**: **{format_money(sim.profit_delta, cur, places)}** ({profit_status})\n"
+        f"• **Simulated Operating Margin**: **{_pct_text(sim.sim_margin)}** (vs. {_pct_text(sim.base_margin)} baseline, "
+        f"{_pct_text(sim.margin_delta, '+.1f', ' pts')})\n"
+        f"• **Simulated vs. {_heading(cfg)}**: **{format_money(sim.sim_vs_budget, cur, places)}** ({budget_status} vs. "
+        f"{'planned' if _is_budget(cfg) else _noun(cfg)} profit of {format_money(sim.budget_profit, cur, places)})\n"
     )
 
+
+def _what_if_table(
+    cfg: AnalysisConfig, sim: _Simulation, matched_row: AnalyzedRow | None, places: int,
+) -> list[dict[str, str]]:
+    """The scenario line by line: the target line, if one, then revenue, expenses and operating profit."""
+    cur = cfg.currency
     target_row = [] if matched_row is None else [
         {
-            "Metric": target_label,
-            _heading(cfg): format_money(target_budget, cur, places),
-            "Baseline Actual": format_money(base_val, cur, places),
-            "Simulated Scenario": format_money(sim_val, cur, places),
-            "Delta vs Baseline": format_money(delta, cur, places),
-            "Status": _fu(delta, higher_is_better=target_is_rev),
+            "Metric": sim.target_label,
+            _heading(cfg): format_money(sim.target_budget, cur, places),
+            "Baseline Actual": format_money(sim.base_val, cur, places),
+            "Simulated Scenario": format_money(sim.sim_val, cur, places),
+            "Delta vs Baseline": format_money(sim.delta, cur, places),
+            "Status": _fu(sim.delta, higher_is_better=sim.target_is_rev),
         },
     ]
     # Aggregate targets are already the Total Revenue / Total Expenses rows below.
-    table = target_row + [
+    return target_row + [
         {
             "Metric": "Total Revenue",
-            _heading(cfg): format_money(budget_rev, cur, places),
-            "Baseline Actual": format_money(base_rev, cur, places),
-            "Simulated Scenario": format_money(sim_rev, cur, places),
-            "Delta vs Baseline": format_money(sim_rev - base_rev, cur, places),
-            "Status": _fu_between(sim_rev, base_rev),
+            _heading(cfg): format_money(sim.budget_rev, cur, places),
+            "Baseline Actual": format_money(sim.base_rev, cur, places),
+            "Simulated Scenario": format_money(sim.sim_rev, cur, places),
+            "Delta vs Baseline": format_money(sim.sim_rev - sim.base_rev, cur, places),
+            "Status": _fu_between(sim.sim_rev, sim.base_rev),
         },
         {
             "Metric": "Total Expenses",
-            _heading(cfg): format_money(budget_exp, cur, places),
-            "Baseline Actual": format_money(base_exp, cur, places),
-            "Simulated Scenario": format_money(sim_exp, cur, places),
-            "Delta vs Baseline": format_money(sim_exp - base_exp, cur, places),
-            "Status": _fu_between(sim_exp, base_exp, higher_is_better=False),
+            _heading(cfg): format_money(sim.budget_exp, cur, places),
+            "Baseline Actual": format_money(sim.base_exp, cur, places),
+            "Simulated Scenario": format_money(sim.sim_exp, cur, places),
+            "Delta vs Baseline": format_money(sim.sim_exp - sim.base_exp, cur, places),
+            "Status": _fu_between(sim.sim_exp, sim.base_exp, higher_is_better=False),
         },
         {
             "Metric": "Operating Profit",
-            _heading(cfg): format_money(budget_profit, cur, places),
-            "Baseline Actual": format_money(base_profit, cur, places),
-            "Simulated Scenario": format_money(sim_profit, cur, places),
-            "Delta vs Baseline": format_money(profit_delta, cur, places),
-            "Status": _fu(profit_delta),
+            _heading(cfg): format_money(sim.budget_profit, cur, places),
+            "Baseline Actual": format_money(sim.base_profit, cur, places),
+            "Simulated Scenario": format_money(sim.sim_profit, cur, places),
+            "Delta vs Baseline": format_money(sim.profit_delta, cur, places),
+            "Status": _fu(sim.profit_delta),
         },
     ]
 
-    chips = ["Sensitivity analysis", "Run rate", "Waterfall", "What if expenses drop 5%?"]
-    raw_label = matched_row.line_item if matched_row is not None else target_label
+
+def _what_if_view(
+    result: AnalysisResult, sim: _Simulation, matched_row: AnalyzedRow | None, change_desc: str, profit_status: str,
+    budget_status: str, places: int,
+) -> dict[str, object]:
+    """The scenario's figures view: the target, then operating profit, margin and the comparison."""
+    cfg = result.config
+    cur = cfg.currency
+    raw_label = matched_row.line_item if matched_row is not None else sim.target_label
     heading = _plain_heading(cfg)
-    view = figures_view(
+    return figures_view(
         f"Scenario: {raw_label} {change_desc}",
-        context=[pair("Line" if not _is_budget(cfg) else "Target", f"{raw_label} ({target_type})"),
-                 pair("Baseline actual", format_money(base_val, cur, places)),
-                 pair("Simulated value", format_money(sim_val, cur, places))],
+        context=[pair("Line" if not _is_budget(cfg) else "Target", f"{raw_label} ({sim.target_type})"),
+                 pair("Baseline actual", format_money(sim.base_val, cur, places)),
+                 pair("Simulated value", format_money(sim.sim_val, cur, places))],
         figures=[
-            figure("Operating profit", format_money(sim_profit, cur, places),
-                   f"Baseline {format_money(base_profit, cur, places)}",
-                   f"{format_money(profit_delta, cur, places)} vs. baseline ({profit_status})", tone=_tone(profit_delta)),
-            figure("Operating margin", _pct_text(sim_margin), f"Baseline {_pct_text(base_margin)}",
-                   _pct_text(margin_delta, "+.1f", " pts")),
-            figure(f"Against {heading.lower() if _is_budget(cfg) else heading}", format_money(sim_vs_budget, cur, places),
-                   f"{heading} profit {format_money(budget_profit, cur, places)}", budget_status.capitalize(),
-                   tone=_tone(sim_vs_budget)),
+            figure("Operating profit", format_money(sim.sim_profit, cur, places),
+                   f"Baseline {format_money(sim.base_profit, cur, places)}",
+                   f"{format_money(sim.profit_delta, cur, places)} vs. baseline ({profit_status})", tone=_tone(sim.profit_delta)),
+            figure("Operating margin", _pct_text(sim.sim_margin), f"Baseline {_pct_text(sim.base_margin)}",
+                   _pct_text(sim.margin_delta, "+.1f", " pts")),
+            figure(f"Against {heading.lower() if _is_budget(cfg) else heading}", format_money(sim.sim_vs_budget, cur, places),
+                   f"{heading} profit {format_money(sim.budget_profit, cur, places)}", budget_status.capitalize(),
+                   tone=_tone(sim.sim_vs_budget)),
         ],
         notes=[note for note in (_unclassified_note(result).replace("unclassified line item",
                                                                     "line item not yet labeled revenue or expense"),)
                if note],
         table_title="The scenario line by line",
     )
+
+
+def _handle_what_if(session: Session, intent: ParsedIntent) -> Response:
+    """Simulate scenario impact on revenue, expenses, and operating profit."""
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+    cur = cfg.currency
+    sym = CURRENCY_SYMBOLS.get(cur, "$")
+
+    raw_target = intent.captures.get("target", "").strip()
+    target_clean = re.sub(r"^(?:our|the|line\s+item)\s+", "", raw_target, flags=re.IGNORECASE).strip()
+    amount = _what_if_amount(intent, target_clean, sym)
+    if isinstance(amount, Response):
+        return amount
+    amount_dec, is_percent, is_negative = amount
+
+    target = _what_if_target(session, result, target_clean)
+    if isinstance(target, Response):
+        return target
+    is_rev_agg, is_exp_agg, matched_row = target
+
+    sim = _simulate(result, matched_row, is_rev_agg=is_rev_agg, is_exp_agg=is_exp_agg, amount_dec=amount_dec,
+                    is_percent=is_percent, is_negative=is_negative)
+
+    # These run outside the financial context, as they did before the split.
+    sign_str = "-" if sim.delta < 0 else "+"
+    change_desc = f"{sign_str}{amount_dec:.1f}%" if is_percent else f"{sign_str}{sym}{abs(sim.delta):,.2f}"
+    profit_status = "expansion" if sim.profit_delta > 0 else ("contraction" if sim.profit_delta < 0 else "neutral")
+    budget_status = "beat" if sim.sim_vs_budget > 0 else ("shortfall" if sim.sim_vs_budget < 0 else "on track")
+
+    text = _what_if_text(cfg, sim, change_desc, profit_status, budget_status, places)
+    table = _what_if_table(cfg, sim, matched_row, places)
+    chips = ["Sensitivity analysis", "Run rate", "Waterfall", "What if expenses drop 5%?"]
+    view = _what_if_view(result, sim, matched_row, change_desc, profit_status, budget_status, places)
     return Response(text=_with_unclassified_note(text, result), table=table, chips=chips, phase=Phase.EXPLORING,
                     view=view)
 
