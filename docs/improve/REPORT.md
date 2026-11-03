@@ -273,7 +273,7 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 
 ## Gates at `d914676`
 
-The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commit after `d914676` changes only REPORT.md, the CHANGELOG, the input contract and the final STOP's evidence.
+The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commits after `d914676` change only docs: REPORT.md, PLAN.md, the CHANGELOG, the input contract, the final STOP's evidence, the screenshot harness (`docs/ui/evidence/shots.py`, an engine choice and an overflow measure) and `evidence/verify-local/`. Ruff and the full suite (2906 passed) ran again on them.
 
 ```
 ruff check .                     All checks passed!

@@ -4,7 +4,7 @@ The owner answered "do what you recommend". This folder holds the checks of the 
 
 ## CI's test job on Python 3.12, 3.13 and 3.14
 
-`ci_test_job.sh` runs the steps of `.github/workflows/ci.yml`'s `test` job in a scratch venv per Python: ruff, `mypy --strict src/variance_agent scripts deterministic_conditioning`, compileall, pytest and `pip check`. Each venv was installed with `-c requirements-typecheck.txt -e ".[dev,excel,pdf]"`. 3.13 and 3.14 came from uv's cache. 3.12 needed one wheel the cache lacked (cffi 2.1.1, from PyPI). The tree was `2682603` plus this folder's uncommitted docs. Output, verbatim, in `ci-test-job.txt`:
+`ci_test_job.sh` runs the steps of `.github/workflows/ci.yml`'s `test` job in a scratch venv per Python: ruff, `mypy --strict src/variance_agent scripts deterministic_conditioning`, compileall, pytest and `pip check`. Each venv was installed with `-c requirements-typecheck.txt -e ".[dev,excel,pdf]"`. 3.13 and 3.14 came from uv's cache. 3.12 needed one wheel the cache lacked (cffi 2.1.1, from PyPI). The tree was `2682603` plus two uncommitted docs edits (PLAN.md's Decision 22 and the screenshot harness), so `src/` and `tests/` were `2682603`'s. Output, verbatim, in `ci-test-job.txt`:
 
 | Python | ruff | mypy --strict | compileall | pytest | pip check |
 |---|---|---|---|---|---|
