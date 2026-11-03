@@ -29,6 +29,8 @@ from collections.abc import Callable
 from .classification import infer_line_type, is_profit_measure
 from .currencies import CURRENCY_SYMBOLS, SYMBOL_CURRENCIES
 from .excel import (
+    ExcelWorkbook,
+    ExcelWorksheet,
     SheetLayout,
     WorkbookFacts,
     WorkbookLoader,
@@ -1986,6 +1988,19 @@ def _hidden_sheets_last(ranked: list[SheetScore], hidden: set[str]) -> list[Shee
     return sorted(marked, key=lambda s: s.name in hidden)
 
 
+@dataclass(frozen=True)
+class _SheetChoice:
+    """A workbook's sheets, ranked on their first rows, and the one a read uses (with the duration its name chose)."""
+
+    sheetnames: list[str]
+    all_sheets_raw: list[tuple[str, list[list[object]]]]
+    ranked: list[SheetScore]
+    sheet_states: list[tuple[str, str]]
+    hidden: set[str]
+    chosen_sheet: str
+    duration: str | None
+
+
 def _read_excel_bytes(
     data: bytes,
     filename: str,
@@ -2018,138 +2033,14 @@ def _read_excel_bytes(
         wb = None
         try:
             wb = loader(src, read_only=True, data_only=True)
-            sheetnames = list(wb.sheetnames)
-            if not sheetnames:
-                return IntakeResult(
-                    has_fatal_errors=True,
-                    fatal_error_message=(f"The Excel workbook '{filename}' contains no worksheets. Open it in "
-                                         "Excel, check that it holds the statement, then save it and upload it again."),
-                )
-
-            # Pre-extract rows for ranking if multiple sheets
-            all_sheets_raw: list[tuple[str, list[list[object]]]] = []
-            for name in sheetnames:
-                ws = wb[name]
-                ws.reset_dimensions()
-                sheet_rows: list[list[object]] = []
-                numbers = stored_numbers.get(ws._worksheet_path, {})
-                for r_idx, cells in enumerate(ws.iter_rows(), start=1):
-                    if r_idx > 30:  # Scan up to 30 rows for ranking
-                        break
-                    row_vals = [
-                        cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
-                        for c_idx, c in enumerate(cells, start=1)
-                    ]
-                    if any(v is not None and str(v).strip() != "" for v in row_vals):
-                        sheet_rows.append(row_vals)
-                all_sheets_raw.append((name, sheet_rows))
-
-            ranked = rank_workbook_sheets(all_sheets_raw)
-            sheet_states = [(n, str(getattr(wb[n], "sheet_state", "visible"))) for n in sheetnames]
-            hidden = {n for n, state in sheet_states if state != "visible"}
-            if hidden:
-                ranked = _hidden_sheets_last(ranked, hidden)
-
-            # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
-            chosen_sheet = sheet
-            duration = None
-            band = re.fullmatch(r"(?P<sheet>.+) \((?P<duration>[^()]+)\)", chosen_sheet or "")
-            if chosen_sheet not in sheetnames and band is not None and band["sheet"] in sheetnames:
-                # "Sheet (9 Months Ended)" names one duration of an EDGAR-style statement sheet.
-                chosen_sheet, duration = band["sheet"], band["duration"]
-            if chosen_sheet is None:
-                chosen_sheet = ranked[0].name if ranked else sheetnames[0]
-            elif chosen_sheet not in sheetnames:
-                return IntakeResult(
-                    has_fatal_errors=True,
-                    fatal_error_message=(
-                        f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
-                        f"Available sheets: {', '.join(sheetnames)}. Choose one of those sheets."
-                    ),
-                    available_sheets=sheetnames,
-                )
-
-            target_ws = wb[chosen_sheet]
-            target_ws.reset_dimensions()
-            numbers = stored_numbers.get(target_ws._worksheet_path, {})
-
-            full_raw_rows: list[list[object]] = []
-            display: dict[int, tuple[str, Decimal | None, bool]] = {}
-            format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
-            places: dict[int, int] = {}
-            edgar_like = False
-            for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
-                row_vals = [
-                    cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
-                    for c_idx, c in enumerate(cells, start=1)
-                ]
-                if r_idx == 1:
-                    edgar_like = bool(row_vals) and _looks_like_edgar_title(row_vals[0])
-                for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
-                    code = getattr(c, "number_format", None)
-                    entry = _display_entry(code, value, format_cache)
-                    if entry is not None:
-                        display[cell_key(r_idx, c_idx)] = entry
-                    if edgar_like and isinstance(value, Decimal) and isinstance(code, str):
-                        shown = shown_places(code, value)
-                        if shown is not None:
-                            places[cell_key(r_idx, c_idx)] = shown
-                full_raw_rows.append(row_vals)
-
-            excel = _ExcelSheet(
-                layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
-                recalculate_on_open=facts.recalculate_on_open,
-                display=display,
-                hidden_rows=hidden_rows,
-                shown_places=places,
-            )
-            statement_notes: list[str] = []
-            statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
-                          else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines,
-                                                       shown_places=excel.shown_places, notes=statement_notes))
-            if statements:
-                # Only a sheet today's read can't find a header on: files that read today read the same.
-                statement = _read_edgar_statement(
-                    statements, duration, full_raw_rows, filename, chosen_sheet, excel,
-                    treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
-                    compare_to=compare_to, sheet_notes=statement_notes)
-                statement.available_sheets = sheetnames
-                if not statement.has_fatal_errors:
-                    statement.workbook_examination = _examine(
-                        statement, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
-                return statement
-            if duration is not None:
-                excel = replace(excel, block=duration)
-            result = _process_raw_table(
-                full_raw_rows,
-                filename,
-                sheet_name=chosen_sheet,
-                treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
-                selected_period=selected_period,
-                compare_to=compare_to,
-                excel=excel,
-            )
-            if result.comparison_basis is not ComparisonBasis.BUDGET:
-                # Same scores; the rationale names the comparison this file was read against.
-                ranked = rank_workbook_sheets(
-                    all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
-                )
-                if hidden:
-                    ranked = _hidden_sheets_last(ranked, hidden)
-            result.candidate_sheets = ranked
-            result.available_sheets = sheetnames
-            if not result.has_fatal_errors:
-                result.workbook_examination = _examine(
-                    result, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
-            if chosen_sheet != sheetnames[0] and ranked:
-                rationale = (
-                    ranked[0].rationale if ranked[0].name == chosen_sheet
-                    else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
-                )
-                result.visible_transformations.insert(
-                    0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
-                )
-            return result
+            choice = _choose_sheet(wb, filename, sheet, stored_numbers)
+            if isinstance(choice, IntakeResult):
+                return choice
+            target_ws, full_raw_rows, excel = _sheet_rows(wb, choice.chosen_sheet, facts, stored_numbers, hidden_rows)
+            return _read_chosen_sheet(choice, target_ws, full_raw_rows, excel, facts, filename,
+                                      treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                      selected_period=selected_period, compare_to=compare_to,
+                                      per_share_lines=per_share_lines)
         except Exception as exc:
             return IntakeResult(
                 has_fatal_errors=True,
@@ -2159,6 +2050,162 @@ def _read_excel_bytes(
         finally:
             if wb is not None:
                 wb.close()
+
+
+def _choose_sheet(
+    wb: ExcelWorkbook, filename: str, sheet: str | None, stored_numbers: dict[str, dict[str, str]],
+) -> IntakeResult | _SheetChoice:
+    """Rank the workbook's sheets on their first rows, then choose the one named, else the best ranked."""
+    sheetnames = list(wb.sheetnames)
+    if not sheetnames:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(f"The Excel workbook '{filename}' contains no worksheets. Open it in "
+                                 "Excel, check that it holds the statement, then save it and upload it again."),
+        )
+
+    # Pre-extract rows for ranking if multiple sheets
+    all_sheets_raw: list[tuple[str, list[list[object]]]] = []
+    for name in sheetnames:
+        ws = wb[name]
+        ws.reset_dimensions()
+        sheet_rows: list[list[object]] = []
+        numbers = stored_numbers.get(ws._worksheet_path, {})
+        for r_idx, cells in enumerate(ws.iter_rows(), start=1):
+            if r_idx > 30:  # Scan up to 30 rows for ranking
+                break
+            row_vals = [
+                cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
+                for c_idx, c in enumerate(cells, start=1)
+            ]
+            if any(v is not None and str(v).strip() != "" for v in row_vals):
+                sheet_rows.append(row_vals)
+        all_sheets_raw.append((name, sheet_rows))
+
+    ranked = rank_workbook_sheets(all_sheets_raw)
+    sheet_states = [(n, str(getattr(wb[n], "sheet_state", "visible"))) for n in sheetnames]
+    hidden = {n for n, state in sheet_states if state != "visible"}
+    if hidden:
+        ranked = _hidden_sheets_last(ranked, hidden)
+
+    # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
+    chosen_sheet = sheet
+    duration = None
+    band = re.fullmatch(r"(?P<sheet>.+) \((?P<duration>[^()]+)\)", chosen_sheet or "")
+    if chosen_sheet not in sheetnames and band is not None and band["sheet"] in sheetnames:
+        # "Sheet (9 Months Ended)" names one duration of an EDGAR-style statement sheet.
+        chosen_sheet, duration = band["sheet"], band["duration"]
+    if chosen_sheet is None:
+        chosen_sheet = ranked[0].name if ranked else sheetnames[0]
+    elif chosen_sheet not in sheetnames:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(
+                f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
+                f"Available sheets: {', '.join(sheetnames)}. Choose one of those sheets."
+            ),
+            available_sheets=sheetnames,
+        )
+    return _SheetChoice(sheetnames, all_sheets_raw, ranked, sheet_states, hidden, chosen_sheet, duration)
+
+
+def _sheet_rows(
+    wb: ExcelWorkbook, chosen_sheet: str, facts: WorkbookFacts, stored_numbers: dict[str, dict[str, str]],
+    hidden_rows: str | None,
+) -> tuple[ExcelWorksheet, list[list[object]], _ExcelSheet]:
+    """Every row of the chosen sheet, and what the preflight and the cells' number formats say about it (R2, E3)."""
+    target_ws = wb[chosen_sheet]
+    target_ws.reset_dimensions()
+    numbers = stored_numbers.get(target_ws._worksheet_path, {})
+
+    full_raw_rows: list[list[object]] = []
+    display: dict[int, tuple[str, Decimal | None, bool]] = {}
+    format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
+    places: dict[int, int] = {}
+    edgar_like = False
+    for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
+        row_vals = [
+            cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
+            for c_idx, c in enumerate(cells, start=1)
+        ]
+        if r_idx == 1:
+            edgar_like = bool(row_vals) and _looks_like_edgar_title(row_vals[0])
+        for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
+            code = getattr(c, "number_format", None)
+            entry = _display_entry(code, value, format_cache)
+            if entry is not None:
+                display[cell_key(r_idx, c_idx)] = entry
+            if edgar_like and isinstance(value, Decimal) and isinstance(code, str):
+                shown = shown_places(code, value)
+                if shown is not None:
+                    places[cell_key(r_idx, c_idx)] = shown
+        full_raw_rows.append(row_vals)
+
+    excel = _ExcelSheet(
+        layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
+        recalculate_on_open=facts.recalculate_on_open,
+        display=display,
+        hidden_rows=hidden_rows,
+        shown_places=places,
+    )
+    return target_ws, full_raw_rows, excel
+
+
+def _read_chosen_sheet(
+    choice: _SheetChoice, target_ws: ExcelWorksheet, full_raw_rows: list[list[object]], excel: _ExcelSheet,
+    facts: WorkbookFacts, filename: str, *, treat_blank_budgets_as_zero: bool, selected_period: str | None,
+    compare_to: ComparisonBasis | None, per_share_lines: bool,
+) -> IntakeResult:
+    """Read the chosen sheet as an EDGAR-style statement or as a table, and say which sheet was read and why."""
+    sheetnames, all_sheets_raw, hidden, sheet_states = choice.sheetnames, choice.all_sheets_raw, choice.hidden, choice.sheet_states
+    ranked, chosen_sheet, duration = choice.ranked, choice.chosen_sheet, choice.duration
+    statement_notes: list[str] = []
+    statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
+                  else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines,
+                                               shown_places=excel.shown_places, notes=statement_notes))
+    if statements:
+        # Only a sheet today's read can't find a header on: files that read today read the same.
+        statement = _read_edgar_statement(
+            statements, duration, full_raw_rows, filename, chosen_sheet, excel,
+            treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
+            compare_to=compare_to, sheet_notes=statement_notes)
+        statement.available_sheets = sheetnames
+        if not statement.has_fatal_errors:
+            statement.workbook_examination = _examine(
+                statement, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
+        return statement
+    if duration is not None:
+        excel = replace(excel, block=duration)
+    result = _process_raw_table(
+        full_raw_rows,
+        filename,
+        sheet_name=chosen_sheet,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+        excel=excel,
+    )
+    if result.comparison_basis is not ComparisonBasis.BUDGET:
+        # Same scores; the rationale names the comparison this file was read against.
+        ranked = rank_workbook_sheets(
+            all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
+        )
+        if hidden:
+            ranked = _hidden_sheets_last(ranked, hidden)
+    result.candidate_sheets = ranked
+    result.available_sheets = sheetnames
+    if not result.has_fatal_errors:
+        result.workbook_examination = _examine(
+            result, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
+    if chosen_sheet != sheetnames[0] and ranked:
+        rationale = (
+            ranked[0].rationale if ranked[0].name == chosen_sheet
+            else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
+        )
+        result.visible_transformations.insert(
+            0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
+        )
+    return result
 
 
 def _two_row_header(rows: list[list[object]], max_scan: int = 25) -> tuple[int, list[object], str] | None:
