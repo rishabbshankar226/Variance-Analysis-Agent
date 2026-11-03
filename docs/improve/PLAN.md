@@ -65,9 +65,9 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X39 | — | open | | memory on the hosted free plan; not this run |
 | X40 | — | open | | left to the owner: the deploy pins (Decision 12) |
 | S1 | 4 | done | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
-| S2 | 4 | todo | | |
-| S3 | 4 | todo | | |
-| S4 | 4 | todo | | |
+| S2 | 4 | done (reviewer pending) | `test(S2)` `6dfcc95`, `refactor(S2)` `dba3a7b` | `intake.py` (`_process_raw_table` 48 lines over 19 stages, longest 58), `tests/test_characterization_s2.py` |
+| S3 | 4 | done (reviewer pending) | `test(S3)` `c46dd7e`, `refactor(S3)` `eefa968` | `cli.py` (`_run` 42 lines over 12 stages, longest 66), `tests/test_characterization_s3.py` |
+| S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
 | N1 | 5 | todo | | |
 | N2 | 5 | todo | | |
 | T2 | 6 | todo | | |
@@ -690,6 +690,15 @@ Items:
 - Done in Phase 3: X10, X12 to X29 (X24 with its merged date band left open), M1, M2, M3, M5, M6, C3m, C4, X31, X35, X36.
 - Asked: M4 (STOP-ASK). New at STOP 2: X42.
 - Screenshots: 91, in `docs/improve/evidence/phase-3/`, 26 scenarios, light theme, desktop and mobile. The harness `shots_phase3.py` dry-runs each scenario through the handlers first (`--check`). The chat servers it started were stopped.
+
+## Phase 4 figures (end of phase, `4c74e90`)
+
+- Suite: 2781 passed, the same count before and after each S item. The count moved only with the characterization tests and `test(M4)`.
+- Contracts and schemas: identical to `main`. mypy --strict: no issues in 89 source files. ruff: clean, with the E501 exemption for the handler files gone.
+- Size table: 849 functions in `src/`, 27 over 80 lines and **none over 150** (Phase 0: 732, 36 and 9; Phase 3: 768, 37 and 10). The longest are now `_read_ixbrl_bytes` (149), `build_ltm` (141), `render_markdown` (133), `detect_comparison_columns` (131) and `_run_analysis` (131). `chat/handlers` is a package of 17 modules.
+- Message inventory: 235 seen, 0 failing, unchanged by the moves.
+- Each of S2, S3 and S4 was prepared by a worker in its own worktree and checked by it against wider before/after comparisons, beyond the characterizations. S2's worker compared whole results: 1,467 suite calls, 3,672 fixture reads under varied options, 1,656 synthetic tables, 118 Excel edge reads. S4's worker compared comparison reads, analysis errors, direct audit calls across schema versions, CLI runs, statement shapes and chat sessions against a `git archive` baseline. The patches were applied here and committed, and the worktrees removed (Decision 17).
+- `test(M4)` (`a00ddf0`) closes a gap S3's worker found: setting `comparison_name` to None on the CLI's main path left the suite green.
 
 ## Phase 4 reviews
 
