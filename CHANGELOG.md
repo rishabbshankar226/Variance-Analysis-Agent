@@ -12,7 +12,11 @@ contract fixtures, audit schemas 1.0 to 1.9 and the financial rules are unchange
   captions are read (a PDF's on its title line, "($000)" in a heading), applied once on every path,
   and scale a row's Buffer and Tolerance with its amounts; a chosen period reads its own columns; a
   signed ledger's profit lines turn with revenue when that adds up; scorecard workbook weights read
-  as printed; strict and assisted reads agree on uncalculated formulas.
+  as printed; strict and assisted reads agree on uncalculated formulas. Budget and Actual headings
+  that name different units ("($000)" beside "($M)") refuse, naming both. A file with a Budget and
+  Actual pair per period reads the pair `--period` names, else the newest, and the command line
+  refuses pairs whose order it can't tell. A Percent row's Tolerance or Buffer that Excel shows as a
+  percentage reads as that percentage, and a rate limit's headroom and buffer show in basis points.
 - `--xlsx` and the chat's Export Excel write a workbook for limit, benchmark, target, balance sheet,
   cash flow, covenant metric and filing income comparisons, where they refused. Sheets that hold
   percentages gain a note on how a tie rounds; no existing cell value changes.
