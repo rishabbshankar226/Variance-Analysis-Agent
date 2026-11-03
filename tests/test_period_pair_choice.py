@@ -90,3 +90,32 @@ def test_a_mappings_period_wins_over_the_period_flag(tmp_path: Path, capsys: pyt
     code, out, err = _run(tmp_path, capsys, _pairs("2025", "2026"), "--period", "2026", "--mapping", str(mapping))
     assert code == 0, err
     assert "$200.00" in _sales(out) and "$230.00" in _sales(out)
+
+
+@pytest.mark.parametrize(("period", "budget", "actual"), [
+    ("Q2 2026", "$95.00", "$97.00"),  # names the older band
+    ("Q3 2026", "$100.00", "$110.00"),  # names the newer band
+    ("Oct 2026", "$100.00", "$110.00"),  # names no band: the newest
+])
+def test_the_command_line_reads_the_band_period_names(tmp_path: Path, capsys: pytest.CaptureFixture[str], period: str,
+                                                      budget: str, actual: str) -> None:
+    import io
+
+    from openpyxl import Workbook
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    for row in (["", "Q3 2026", "", "Q2 2026", ""], ["Line Item", "Budget", "Actual", "Budget", "Actual"],
+                ["Revenue", 100, 110, 95, 97]):
+        sheet.append(row)
+    sheet.merge_cells("B1:C1")
+    sheet.merge_cells("D1:E1")
+    capture = io.BytesIO()
+    workbook.save(capture)
+    source = tmp_path / "plan.xlsx"
+    source.write_bytes(capture.getvalue())
+    code = cli.main([str(source), "--assisted", "--dollar-threshold", "1", "--percent-threshold", "1", "--period", period])
+    out, err = capsys.readouterr()
+    assert code == 0, err
+    line = next(row for row in out.splitlines() if row.startswith("| Revenue"))
+    assert budget in line and actual in line
