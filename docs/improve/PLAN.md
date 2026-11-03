@@ -20,7 +20,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X7 | 2 | done | see `fix(X7)` | `src/variance_agent/intake.py`, `tests/test_signed_profit_lines.py` (new) |
 | X8 | 2 | done | see `fix(X8)` | `src/variance_agent/cli.py`, `comparisons.py`, `report.py`, `tests/test_comparison_path_guards.py` (new) |
 | C1 | 2 | done | see `fix(C1)` | `src/variance_agent/parsing.py`, `tests/test_excel_unsaved_formulas_strict.py` (new) |
-| C3 | 2 | done | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m |
+| C3 | 2 | closed | see `test(C3)` | investigated: no change to R5 or the reading; the message part is C3m; did not reproduce as a tolerance defect: the subtotal holds under R5, and a one-unit line beside a zero fits either sign, so the refusal is right (`pytest tests/test_statement_sign_ambiguity.py`) |
 | C3m | 3 | done | see `fix(C3m)` | `src/variance_agent/statement_shape.py`, `intake.py`, `tests/test_statement_sign_ambiguity.py` |
 | X30 | 2 | done | see `fix(X5, X30)` | with X5 (one rule, one commit) |
 | X41 | 2 | done | see `fix(X41)` | `intake.py`, `comparisons.py`, `tests/test_caption_buffers.py`; asked in [evidence/stop-ask-buffer-scale/ASK.md](evidence/stop-ask-buffer-scale/ASK.md) |
@@ -56,6 +56,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X35 | 3 | done | see `fix(X35)` | `src/variance_agent/intake.py`, `chat/handlers.py`, `tests/test_chat_period_chips.py` |
 | X36 | 3 | done | see `fix(X36)` | `src/variance_agent/join.py`, `chat/handlers.py`, `chat/session.py`, `docs/audit-contract.md`, `tests/test_join_unbudgeted.py` |
 | X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
+| X44 | 8 | done | `fix(X44)` | `pyproject.toml` excludes `/docs/improve/evidence` from the sdist, as it does the UI and analysts evidence, and `scripts/check_distribution.py` asserts it. The sdist goes from 6,627,852 to 1,946,420 bytes; the wheel is unchanged (445,465 bytes); `docs/improve/PLAN.md` still ships |
 | X43 | — | open | | found in X41's tests: a limit, benchmark or target table prints a scaled amount with three decimal places as it holds them ("$89,999.000" from 89.999 in thousands); the value is right, so it is a display finding for the final STOP, not changed here |
 | X32 | 5 (done in 7) | done | `fix(X32)` | `xlsx.py` (`_ROUNDING_NOTE` on the FP&A Summary, Limits, Lines and filing Summary sheets), `tests/test_workbook_rounding_note.py` (new), `tests/fixtures/xlsx_values/sample.json` (+1 cell), `tests/fixtures/characterization/s3_cli.json` (1 digest). No cell value changes. LibreOffice 26.8.1 shows the 12.25% and 2.45% ties as 12.3% and 2.5%, the report 12.2% and 2.4%; Excel not checked |
 | X37 | 4 (done in 7) | done | `refactor(X37)` | `intake.py` (`_MISSING_MARKERS`, referenced nowhere in `src`, tests, scripts or `deterministic_conditioning`), `chat/handlers/scenarios.py` (`_simulate`'s last `else` had the Expense branch's body, and `_what_if_target` answers an Unclassified line before any simulation, so the two branches merge). Missed in Phase 4 and found while writing D2; suite 2804 before and after, ruff and mypy clean. No test can fail on its revert, since both removals are behaviour-neutral by construction |
@@ -842,6 +843,7 @@ Items:
 | M4 | `period_name`, `Statement.names`, `period_names`, `comparison_name` and their uses removed (`git apply -R`), tests kept | `pytest tests/test_period_names.py` | 7 failed: the notes say "Read the column for 2026-03-28 as Mar 2026", the chat reads "Prior Period (Mar 2025)" and the report heading has no duration |
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 | X32 | `_ROUNDING_NOTE` and its four uses in `xlsx.py` removed (`git apply -R` of the `src` diff), tests and goldens kept | `pytest tests/test_workbook_rounding_note.py tests/test_xlsx.py` | 5 failed, 21 passed: the four sheets that should carry the note do not (the Summary's last two cells are `[None, ...the existing note]`), and the sample golden lacks Summary A18. The benchmark and target cases pass either way, as they should |
+| X44 | the sdist exclude not yet added (the sdist built at `7049fac`), with the gate's new assertion | `python scripts/check_distribution.py .scratch/dist-final` | `AssertionError: docs/improve/evidence in the sdist`; with the exclude, the rebuilt sdist passes |
 
 ## Path existed in 0.2.0
 
