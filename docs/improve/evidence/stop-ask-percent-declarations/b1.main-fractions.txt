@@ -1,0 +1,17 @@
+[assisted intake] Comparing Actual against the target.
+[assisted intake] Fictional yield: read Measure as Percent.
+[measure intake] Fictional yield: read Measure as Percent.
+[measure intake] Read bare Percent values as fractions.
+# Target Comparison: Q3 2026
+
+- Difference is actual minus target (basis points for rates). A row is On target when the difference is within its declared tolerance, edge included, or exactly zero without one. A target is neutral: no F or U.
+
+## Lines
+
+| Line Item | Target | Actual | Difference | Tolerance | Outcome |
+|---|---:|---:|---:|---:|---|
+| Fictional yield | 40% | 40.2% | 20 bps | 0.25 bps | Over |
+
+## How the file was read
+- Read bare Percent values as fractions.
+

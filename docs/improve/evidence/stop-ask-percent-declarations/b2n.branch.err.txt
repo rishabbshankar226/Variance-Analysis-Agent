@@ -1,0 +1,8 @@
+[assisted intake] Comparing Actual against the limit.
+[assisted intake] Fictional margin: read Limit and Actual as the percentages Excel shows (number format '0.0%').
+[assisted intake] Fictional margin: read % values as percentage points.
+[assisted intake] Fictional margin: read Measure as Percent.
+[measure intake] Comparing Actual against the limit.
+[measure intake] Fictional margin: read Limit and Actual as the percentages Excel shows (number format '0.0%').
+[measure intake] Fictional margin: read Measure as Percent.
+[measure intake] Fictional margin: read % values as percentage points.
