@@ -44,7 +44,9 @@ def title_block(ws, *extra: str) -> int:
 
 
 def f01_title_block() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     title_block(ws, "For the period ended September 30, 2026")
     ws.append(["GL Account", "Account Description", "Budget YTD", "Actual YTD"])
     for gl, d, _t, b, a in LINES:
@@ -54,7 +56,9 @@ def f01_title_block() -> None:
 
 def f02_signed_ledger() -> None:
     """Signed trial-balance style: revenue (credits) negative, expenses positive, no Type column."""
-    wb = Workbook(); ws = wb.active; ws.title = "Ledger"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Ledger"
     ws.append(["GL Account", "Account Description", "Budget", "Actual"])
     for gl, d, t, b, a in LINES:
         s = -1 if t == "Revenue" else 1
@@ -63,7 +67,9 @@ def f02_signed_ledger() -> None:
 
 
 def f03_thousands_caption() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "Summary"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
     title_block(ws, "Q3 2026", "($ in thousands)")
     ws.append(["Account Description", "Type", "Budget", "Actual"])
     for _gl, d, t, b, a in LINES:
@@ -73,7 +79,9 @@ def f03_thousands_caption() -> None:
 
 def f04_dashes() -> None:
     """Dashes for zero, typed as text the way exported reports show them."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual"])
     ws.append(["Product Revenue", "Revenue", 500000, 540000])
     ws.append(["Grant Income", "Revenue", "-", 12000])
@@ -85,7 +93,9 @@ def f04_dashes() -> None:
 
 
 def f05_blank_budgets() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual"])
     ws.append(["Product Revenue", "Revenue", 500000, 540000])
     ws.append(["Salaries & Wages", "Expense", 180000, 191000])
@@ -96,12 +106,16 @@ def f05_blank_budgets() -> None:
 
 
 def f06_two_files() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "Budget"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Budget"
     ws.append(["GL Account", "Account Description", "Budget"])
     for gl, d, _t, b, _a in LINES:
         ws.append([gl, d, b])
     save(wb, "f06a_budget_only.xlsx")
-    wb = Workbook(); ws = wb.active; ws.title = "Actuals"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Actuals"
     ws.append(["GL Account", "Account Description", "Actual"])
     for gl, d, _t, _b, a in LINES:
         ws.append([gl, d, a])
@@ -109,7 +123,9 @@ def f06_two_files() -> None:
 
 
 def f07_hidden_row() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual"])
     for _gl, d, t, b, a in LINES:
         ws.append([d, t, b, a])
@@ -120,7 +136,9 @@ def f07_hidden_row() -> None:
 
 def f08_formula_no_cache() -> None:
     """openpyxl writes formulas with no cached value, like a file built by a script or never recalculated."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual"])
     ws.append(["Product Revenue", "Revenue", 500000, 540000])
     ws.append(["Service Revenue", "Revenue", 200000, "=C3*0.925"])
@@ -131,10 +149,14 @@ def f08_formula_no_cache() -> None:
 
 def f09_merged_header() -> None:
     """Two-row header: a merged 'Year to Date' band over Budget/Actual, merged 'Account' cell."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account", "Type", "Year to Date", None])
     ws.append([None, None, "Budget", "Actual"])
-    ws.merge_cells("A1:A2"); ws.merge_cells("B1:B2"); ws.merge_cells("C1:D1")
+    ws.merge_cells("A1:A2")
+    ws.merge_cells("B1:B2")
+    ws.merge_cells("C1:D1")
     for _gl, d, t, b, a in LINES:
         ws.append([d, t, b, a])
     save(wb, "f09_merged_header.xlsx")
@@ -155,7 +177,9 @@ def f10_bom_csv() -> None:
 
 def f11_period_columns() -> None:
     """Month and quarter columns side by side, as a planning tool exports them."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["GL Account", "Account Description", "Sep-26 Actual", "Sep-26 Budget", "Q3 Actual", "Q3 Budget"])
     for gl, d, _t, b, a in LINES:
         ws.append([gl, d, round(a / 3), round(b / 3), a, b])
@@ -163,7 +187,9 @@ def f11_period_columns() -> None:
 
 
 def f12_nested_subtotals() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "P&L"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "P&L"
     ws.append(["Account Description", "Budget", "Actual"])
     ws.append(["Product Revenue", 500000, 540000])
     ws.append(["Service Revenue", 200000, 185000])
@@ -180,7 +206,9 @@ def f12_nested_subtotals() -> None:
 
 
 def f13_var_columns() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual", "Var $", "Var %"])
     for _gl, d, t, b, a in LINES:
         v = (a - b) if t == "Revenue" else (b - a)
@@ -191,7 +219,9 @@ def f13_var_columns() -> None:
 def f14_realistic_combo() -> None:
     """What a controller actually sends: title block, $000s caption, signed ledger, dashes,
     nested subtotals, Var $ / Var % columns, a blank unbudgeted line. No Type column."""
-    wb = Workbook(); ws = wb.active; ws.title = "Sep-26 BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sep-26 BvA"
     title_block(ws, "Income Statement - Budget vs Actual", "Nine months ended September 30, 2026", "(in thousands)")
     ws.append(["GL Account", "Account Description", "Budget YTD", "Actual YTD", "Var $", "Var %"])
     data = [
@@ -231,8 +261,12 @@ def f15_parens_csv() -> None:
 
 def f16_cover_sheet() -> None:
     """Workbook whose first sheet is a cover/notes page and the data is on the second."""
-    wb = Workbook(); ws = wb.active; ws.title = "Cover"
-    ws.append([TITLE]); ws.append(["Q3 2026 Board Pack"]); ws.append(["Prepared by FP&A"])
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cover"
+    ws.append([TITLE])
+    ws.append(["Q3 2026 Board Pack"])
+    ws.append(["Prepared by FP&A"])
     ws2 = wb.create_sheet("BvA Detail")
     ws2.append(["Account Description", "Type", "Budget", "Actual"])
     for _gl, d, t, b, a in LINES:
@@ -243,10 +277,14 @@ def f16_cover_sheet() -> None:
 def f17_date_headers() -> None:
     """Header cells that are real Excel dates (Sep-26) with Budget/Actual on a second header row."""
     import datetime as dt
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", dt.datetime(2026, 9, 1), dt.datetime(2026, 9, 1)])
     ws.append([None, "Budget", "Actual"])
-    ws["B1"].number_format = "mmm-yy"; ws["C1"].number_format = "mmm-yy"
+    ws["B1"].number_format = "mmm-yy"
+    ws["C1"].number_format = "mmm-yy"
     for _gl, d, _t, b, a in LINES:
         ws.append([d, b, a])
     save(wb, "f17_date_headers.xlsx")
@@ -254,7 +292,9 @@ def f17_date_headers() -> None:
 
 def f18_no_type_unsigned() -> None:
     """Plain unsigned file with no Type column and no GL numbers: every line needs a label."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Budget", "Actual"])
     for _gl, d, _t, b, a in LINES:
         ws.append([d, b, a])
@@ -263,42 +303,68 @@ def f18_no_type_unsigned() -> None:
 
 def f19_signed_subtotals() -> None:
     """Signed ledger P&L with profit subtotals (credits negative), no title block, no GL column."""
-    wb = Workbook(); ws = wb.active; ws.title = "P&L"
-    for row in [["Account Description", "Budget", "Actual"],
-                ["Product Revenue", -500000, -540000], ["Service Revenue", -200000, -185000],
-                ["Total Revenue", -700000, -725000], ["Cost of Goods Sold", 220000, 236000],
-                ["Gross Profit", -480000, -489000], ["Salaries & Wages", 180000, 191000],
-                ["Rent", 30000, 30000], ["Total Opex", 210000, 221000], ["Net Income", -270000, -268000]]:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "P&L"
+    for row in [
+        ["Account Description", "Budget", "Actual"],
+        ["Product Revenue", -500000, -540000],
+        ["Service Revenue", -200000, -185000],
+        ["Total Revenue", -700000, -725000],
+        ["Cost of Goods Sold", 220000, 236000],
+        ["Gross Profit", -480000, -489000],
+        ["Salaries & Wages", 180000, 191000],
+        ["Rent", 30000, 30000],
+        ["Total Opex", 210000, 221000],
+        ["Net Income", -270000, -268000],
+    ]:
         ws.append(row)
     save(wb, "f19_signed_subtotals.xlsx")
 
 
 def f20_rounded_thousands() -> None:
     """$000s report: details rounded, subtotal computed from unrounded figures (off by 1)."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     title_block(ws, "Q3 2026", "($000s)")
     ws.append(["Account Description", "Type", "Budget", "Actual"])
-    for row in [["Product Revenue", "Revenue", 500, 540], ["Service Revenue", "Revenue", 200, 185],
-                ["Total Revenue", None, 700, 725],
-                ["Salaries & Wages", "Expense", 180, 191], ["Marketing - Digital", "Expense", 40, 52],
-                ["Rent", "Expense", 30, 30], ["Total Opex", None, 251, 273]]:
+    for row in [
+        ["Product Revenue", "Revenue", 500, 540],
+        ["Service Revenue", "Revenue", 200, 185],
+        ["Total Revenue", None, 700, 725],
+        ["Salaries & Wages", "Expense", 180, 191],
+        ["Marketing - Digital", "Expense", 40, 52],
+        ["Rent", "Expense", 30, 30],
+        ["Total Opex", None, 251, 273],
+    ]:
         ws.append(row)
     save(wb, "f20_rounded_thousands.xlsx")
 
 
 def f21_section_headers() -> None:
     """Section caption rows with no amounts inside the table, and blank spacer rows."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Budget", "Actual"])
-    for row in [["REVENUE", None, None], ["Product Revenue", 500000, 540000], ["Service Revenue", 200000, 185000],
-                [None, None, None], ["OPERATING EXPENSES", None, None], ["Salaries & Wages", 180000, 191000],
-                ["Rent", 30000, 30000]]:
+    for row in [
+        ["REVENUE", None, None],
+        ["Product Revenue", 500000, 540000],
+        ["Service Revenue", 200000, 185000],
+        [None, None, None],
+        ["OPERATING EXPENSES", None, None],
+        ["Salaries & Wages", 180000, 191000],
+        ["Rent", 30000, 30000],
+    ]:
         ws.append(row)
     save(wb, "f21_section_headers.xlsx")
 
 
 def f22_budget_actual_prior() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget", "Actual", "Prior Year"])
     for _gl, d, t, b, a in LINES:
         ws.append([d, t, b, a, round(a * 0.9)])
@@ -306,7 +372,9 @@ def f22_budget_actual_prior() -> None:
 
 
 def f23_month_and_ytd() -> None:
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["GL Account", "Account Description", "Sep-26 Actual", "Sep-26 Budget", "Actual YTD", "Budget YTD"])
     for gl, d, _t, b, a in LINES:
         ws.append([gl, d, round(a / 9), round(b / 9), a, b])
@@ -315,7 +383,9 @@ def f23_month_and_ytd() -> None:
 
 def f24_header_000() -> None:
     """Unit only in the column headers, no caption."""
-    wb = Workbook(); ws = wb.active; ws.title = "BvA"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BvA"
     ws.append(["Account Description", "Type", "Budget ($000)", "Actual ($000)"])
     for _gl, d, t, b, a in LINES:
         ws.append([d, t, b / 1000, a / 1000])
@@ -323,11 +393,31 @@ def f24_header_000() -> None:
 
 
 if __name__ == "__main__":
-    for fn in [f01_title_block, f02_signed_ledger, f03_thousands_caption, f04_dashes, f05_blank_budgets,
-               f06_two_files, f07_hidden_row, f08_formula_no_cache, f09_merged_header, f10_bom_csv,
-               f11_period_columns, f12_nested_subtotals, f13_var_columns, f14_realistic_combo,
-               f15_parens_csv, f16_cover_sheet, f17_date_headers, f18_no_type_unsigned,
-               f19_signed_subtotals, f20_rounded_thousands, f21_section_headers, f22_budget_actual_prior,
-               f23_month_and_ytd, f24_header_000]:
+    for fn in [
+        f01_title_block,
+        f02_signed_ledger,
+        f03_thousands_caption,
+        f04_dashes,
+        f05_blank_budgets,
+        f06_two_files,
+        f07_hidden_row,
+        f08_formula_no_cache,
+        f09_merged_header,
+        f10_bom_csv,
+        f11_period_columns,
+        f12_nested_subtotals,
+        f13_var_columns,
+        f14_realistic_combo,
+        f15_parens_csv,
+        f16_cover_sheet,
+        f17_date_headers,
+        f18_no_type_unsigned,
+        f19_signed_subtotals,
+        f20_rounded_thousands,
+        f21_section_headers,
+        f22_budget_actual_prior,
+        f23_month_and_ytd,
+        f24_header_000,
+    ]:
         fn()
     print(sorted(p.name for p in OUT.iterdir()))

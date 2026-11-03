@@ -35,10 +35,18 @@ JARGON = [
     (r"\b[a-z]+_[a-z_]+\b", "snake_case"),
     (r"\b\w*(Error|Exception)\b", "exception"),
     (r"(?<![\w-])--[a-z][a-z0-9-]+", "cli flag"),
-    (r"\bnormaliz\w*", "normalize"), (r"\balias\w*", "alias"), (r"\bschema\w*", "schema"),
-    (r"\bOOXML\b", "OOXML"), (r"\barchive\b", "archive"), (r"\bXML\b", "XML"), (r"\bDTD\b", "DTD"),
-    (r"\bpayload\b", "payload"), (r"\bRow Kind\b", "Row Kind"), (r"\bUnclassified\b", "Unclassified"),
-    (r"\bexit code\b", "exit code"), (r"`[^`]*<[^`]*>[^`]*`", "command syntax"),
+    (r"\bnormaliz\w*", "normalize"),
+    (r"\balias\w*", "alias"),
+    (r"\bschema\w*", "schema"),
+    (r"\bOOXML\b", "OOXML"),
+    (r"\barchive\b", "archive"),
+    (r"\bXML\b", "XML"),
+    (r"\bDTD\b", "DTD"),
+    (r"\bpayload\b", "payload"),
+    (r"\bRow Kind\b", "Row Kind"),
+    (r"\bUnclassified\b", "Unclassified"),
+    (r"\bexit code\b", "exit code"),
+    (r"`[^`]*<[^`]*>[^`]*`", "command syntax"),
 ]
 
 
@@ -107,7 +115,6 @@ def run(name: str) -> dict[str, object]:
     first = resp.text
     turns = 0
     outcome = "stuck"
-    log = []
 
     def record(who: str, msg: str, r=None) -> None:
         lines.append(f"--- {who}: {msg}")
@@ -127,7 +134,7 @@ def run(name: str) -> dict[str, object]:
         if session.phase == Phase.EXPLORING and session.result is not None:
             outcome = "analysis"
             for q in ("show material variances", "Warnings"):  # what Maya reads next (not counted as steps)
-                record(f"MAYA (reads, +0)", q, handle_message(session, q))
+                record("MAYA (reads, +0)", q, handle_message(session, q))
             break
         if resp.ask_upload and name in PAIRS:
             other = PAIRS[name]
@@ -144,10 +151,15 @@ def run(name: str) -> dict[str, object]:
         record(f"MAYA ({kind}, +{cost})", msg, resp)
     res = session.result
     summary = {
-        "file": name, "outcome": outcome, "steps": steps, "turns": turns,
-        "jargon": sorted(set(jargon)), "first": first.replace("\n", " ")[:300],
-        "rows": None if res is None else [(r.line_item, str(r.line_type), str(r.budget), str(r.actual),
-                                           str(r.variance_dollars), str(r.status)) for r in res.rows],
+        "file": name,
+        "outcome": outcome,
+        "steps": steps,
+        "turns": turns,
+        "jargon": sorted(set(jargon)),
+        "first": first.replace("\n", " ")[:300],
+        "rows": None
+        if res is None
+        else [(r.line_item, str(r.line_type), str(r.budget), str(r.actual), str(r.variance_dollars), str(r.status)) for r in res.rows],
     }
     lines.append("=== SUMMARY ===")
     lines.append(json.dumps(summary, indent=1, ensure_ascii=False))
