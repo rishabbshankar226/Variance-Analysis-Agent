@@ -12,7 +12,7 @@ The owner answered "do what you recommend". This folder holds the checks of the 
 | 3.13.15 | All checks passed! | no issues found in 90 source files | exit 0 | 2906 passed in 133.25s | No broken requirements found. |
 | 3.14.0 | All checks passed! | no issues found in 90 source files | exit 0 | 2906 passed in 102.87s | No broken requirements found. |
 
-The suite ran while the browser shots below were taken, at load averages of 10 to 61, so the durations are not comparable with the gates' 47 seconds. This is macOS, not CI's Ubuntu, and the Windows job (`windows_smoke`) is still not run.
+The suite ran while the browser shots below were taken, at load averages of 10 to 61, so the durations are not comparable with the gates' 47 seconds. This is macOS, not CI's Ubuntu. CI's own run on draft PR #28 later passed every job at `be28fe4`, the Windows output-contract job included (REPORT.md, "CI on draft PR #28").
 
 ## The chat screens in WebKit and Firefox
 

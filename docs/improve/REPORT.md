@@ -269,7 +269,7 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - **STOP-ASK X53** (`evidence/stop-ask-fpa-eps-rows/`), found while checking X50's reach. In a budget CSV with no Measure column, a "Basic EPS" row under "(in millions, except per share data)" reads 5.50 as $5,500,000.00, on the branch and on `main`. With `--per-share-lines` it is the same on the branch, where C2 now applies the caption on the comparison path. The owner answered "Approve X53" (Decision 21).
 - **After the second final STOP**, the owner answered "do what you recommend" (Decision 22). It was read as closing the "Not verified" items this Mac can check without a push. CI's test job passed on Python 3.12, 3.13 and 3.14, and the changed chat screens measured no overflow in Playwright's WebKit and Firefox (`evidence/verify-local/`). The owner declined computer-use access to Excel, so real Excel stays not verified. Nothing in `src/` or `tests/` changed.
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
-- **Draft PR #28 (2026-11-03):** asked whether to push the branch and open a draft PR against `main` so CI runs, the owner answered "Open draft PR" (Decision 23). It is <https://github.com/rishabbshankar226/Variance-Analysis-Agent/pull/28>, with the description below set in the repository's PR template headings.
+- **Draft PR #28 (2026-11-03):** asked whether to push the branch and open a draft PR against `main` so CI runs, the owner answered "Open draft PR" (Decision 23). It is <https://github.com/rishabbshankar226/Variance-Analysis-Agent/pull/28>, with the description below set in the repository's PR template headings. CI passed all 8 checks at `be28fe4` (below); on the owner's "Yes, record it", this report and the PR description say so.
 - The decisions taken along the way are PLAN.md's Decisions 1 to 23.
 
 ## Gates at `d914676`
@@ -304,13 +304,16 @@ D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except t
 - After the final STOP: 5 screenshots of the same two results screens with X51's chip and X52's wrapped notes, in `evidence/phase-8/x51-x52/`. Then 8 of X49's and X53's refusals and X50's statement read with its EPS lines left out, in `evidence/phase-8/x49-x53/`.
 - After the second final STOP: 62 of Phase 8's and Phase 5's screens in Playwright's WebKit and Firefox, in `evidence/verify-local/webkit/` and `firefox/`, with the overflow each measured in that folder's README.
 
+## CI on draft PR #28
+
+At `be28fe4`, read on 2026-11-03, all 8 checks of `.github/workflows/ci.yml` passed: Python 3.11, 3.12, 3.13 and 3.14 (Ubuntu), Minimal installation, Distribution installation, Windows output contracts, and Required checks. An earlier run, on `eb0aea3`, shows "cancelled": the PR's concurrency rule cancelled it when `be28fe4` was pushed. The commit that records this changes docs only; its own CI run is the PR's to show.
+
 ## Draw G
 
 Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AGENT` is unset, and it is the owner's to set; no SEC request was made.
 
 ## Not verified
 
-- The Windows output-contract job: not run here. The branch was pushed for draft PR #28 at the owner's request (Decision 23), so CI's first run on it, Windows included, is that PR's and is not recorded in this report. Their test job's steps did pass on this Mac, on Python 3.12.14, 3.13.15 and 3.14.0: ruff, mypy --strict, compileall, 2906 tests and pip check each (`evidence/verify-local/ci-test-job.txt`).
 - Real Excel. The workbooks were read back with openpyxl, and X32's tie was rendered in LibreOffice 26.8.1. Excel 16.114.3 is installed here, but the owner declined computer-use access to it, so no workbook was opened in Excel.
 - Safari and Firefox as shipped, and a real phone. Phase 8's and Phase 5's chat screens were shot in Playwright's WebKit 26.4 and Firefox 150.0.2 as well as Chromium, at desktop and phone sizes: 62 screenshots, and no page, reply, results section or facts grid wider than its box in any engine (`evidence/verify-local/`). With X52's fix reversed, the same measure reads 210 to 322 px in all three.
 - Real analysts. The scorecard is a scripted policy over fictional files.
@@ -337,9 +340,9 @@ What changed:
 
 Unchanged: the 19 contract fixtures (9 reports, 5 audits and their inputs), audit schemas 1.0 to 1.9, the financial rules and every default. No dependency was added.
 
-Checked on macOS without CI: the test job's steps on Python 3.12, 3.13 and 3.14, and the changed chat screens in Playwright's WebKit and Firefox.
+Checked: CI on this PR passed all 8 checks at `be28fe4`, the Windows output-contract job included. The changed chat screens were also shot in Playwright's WebKit and Firefox, with nothing wider than its box.
 
-Not verified: the Windows CI job (and CI itself), real Excel, Safari and Firefox as shipped, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
+Not verified: real Excel, Safari and Firefox as shipped, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
 
 Details, revert proofs and every edited assertion: `docs/improve/REPORT.md`.
 
