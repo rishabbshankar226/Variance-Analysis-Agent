@@ -1,0 +1,1 @@
+[assisted intake] Amounts scaled from thousands (x1,000). Thresholds stay in the reporting unit (full currency units, not thousands).
