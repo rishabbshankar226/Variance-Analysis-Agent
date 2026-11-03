@@ -67,3 +67,12 @@ def test_the_report_names_the_duration_and_every_key_keeps_the_label(
     assert audit["comparison"]["label"] == "Mar 2025"
     for name in ("long.csv", "long.jsonl"):
         assert "months ended" not in out[name].read_text(encoding="utf-8")
+
+
+def test_the_main_paths_report_names_the_duration(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A run with no export flag takes the CLI's main path, which sets the display name itself."""
+    report = tmp_path / "r.md"
+    code = cli.main([str(QUARTER), "--assisted", "--period", "Q2 FY2026", "--dollar-threshold", "1",
+                     "--percent-threshold", "1", "-o", str(report)])
+    assert code == 0, capsys.readouterr().err
+    assert "Prior Period (3 months ended Mar 2025)" in report.read_text(encoding="utf-8")
