@@ -6,8 +6,9 @@ Moved from chat/handlers.py in Phase 4 of the improvement pass (S1); the code is
 from __future__ import annotations
 
 from decimal import Decimal, Inexact
+from typing import NamedTuple
 from variance_agent.currencies import CURRENCY_SYMBOLS
-from variance_agent.models import AnalyzedRow, LineType, Status
+from variance_agent.models import AnalysisConfig, AnalysisResult, AnalyzedRow, LineType, Status
 from variance_agent.numeric import financial_context, ratio
 from ..responses import (
     Response,
@@ -36,15 +37,27 @@ from ._common import (
 )
 
 
-def _handle_executive_memo(session: Session) -> Response:
-    """Generate an executive-ready variance briefing memo suitable for CFO and board reporting."""
-    result = session.result
-    assert result is not None
-    cfg = result.config
-    places = report_places(result)
-    cur = cfg.currency
-    sym = CURRENCY_SYMBOLS.get(cur, "$")
+class _MemoFigures(NamedTuple):
+    """The memo's revenue, expense, profit and margin figures, computed in the financial context."""
 
+    rev_budget: Decimal
+    rev_actual: Decimal
+    rev_var: Decimal
+    rev_pct: Decimal | None
+    exp_budget: Decimal
+    exp_actual: Decimal
+    exp_var: Decimal
+    exp_pct: Decimal | None
+    budget_profit: Decimal
+    actual_profit: Decimal
+    net_impact: Decimal
+    net_pct: Decimal | None
+    budget_margin: Decimal | None
+    actual_margin: Decimal | None
+    margin_delta: Decimal | None
+
+
+def _memo_figures(result: AnalysisResult) -> _MemoFigures:
     with financial_context() as context:
         context.traps[Inexact] = False
         rev_budget = result.revenue.budget
@@ -66,21 +79,19 @@ def _handle_executive_memo(session: Session) -> Response:
         actual_margin = (ratio(actual_profit, rev_actual) * Decimal(100)) if rev_actual != 0 else None
         margin_delta = _pct_change(actual_margin, budget_margin)
 
-    # Find top revenue driver & drag
-    rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
-    top_rev_beat = max((r for r in rev_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
-    top_rev_miss = min((r for r in rev_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
+    return _MemoFigures(rev_budget, rev_actual, rev_var, rev_pct, exp_budget, exp_actual, exp_var, exp_pct, budget_profit,
+                        actual_profit, net_impact, net_pct, budget_margin, actual_margin, margin_delta)
 
-    # Find largest cost overrun & largest saving
-    exp_rows = [r for r in _detail_rows(result) if r.line_type == LineType.EXPENSE]
-    top_exp_over = max((r for r in exp_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
-    top_exp_save = min((r for r in exp_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
 
-    # Reconciled driver count
-    reconciled_count = sum(1 for r in result.material_rows if r.driver_evidence and r.driver_evidence.reconciles)
-
-    status_word = "beat" if net_impact >= 0 else "shortfall"
-    sign_word = "moved" if margin_delta is None else "expanded" if margin_delta > 0 else "contracted"
+def _memo_overview(
+    result: AnalysisResult, figs: _MemoFigures, places: int, *, top_rev_beat: AnalyzedRow | None,
+    top_rev_miss: AnalyzedRow | None,
+) -> list[str]:
+    """The memo's heading, executive summary and top-line (revenue) section."""
+    cfg = result.config
+    cur = cfg.currency
+    status_word = "beat" if figs.net_impact >= 0 else "shortfall"
+    sign_word = "moved" if figs.margin_delta is None else "expanded" if figs.margin_delta > 0 else "contracted"
 
     # Same fact-gated builder as the CLI --commentary report, so both surfaces agree;
     # it names the comparison basis (budget, forecast or prior period).
@@ -97,19 +108,20 @@ def _handle_executive_memo(session: Session) -> Response:
         "### 1. Executive Summary",
         f"**Strategic Takeaway:** {narrative_takeaway}\n",
         *([f"{_unclassified_note(result)}\n"] if _unclassified_note(result) else []),
-        f"For **{cfg.period}**, Operating Profit finished at **{format_money(actual_profit, cur, places)}**, "
-        + ("**in line with**" if net_impact == 0 else
-           f"representing a **{format_money(abs(net_impact), cur, places)} {status_word}** ({_pct_text(net_pct, '+.1f')}) against")
-        + f" the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(budget_profit, cur, places)}**. "
-        + (f"Operating margin **held** at **{_pct_text(actual_margin)}** ({_pct_text(margin_delta, '+.1f', ' pts')}).\n"
-           if margin_delta == 0 else
-           f"Operating margin **{sign_word}** from {_pct_text(budget_margin)} to **{_pct_text(actual_margin)}** "
-           f"({_pct_text(margin_delta, '+.1f', ' pts')}).\n"),
+        f"For **{cfg.period}**, Operating Profit finished at **{format_money(figs.actual_profit, cur, places)}**, "
+        + ("**in line with**" if figs.net_impact == 0 else
+           f"representing a **{format_money(abs(figs.net_impact), cur, places)} {status_word}** ({_pct_text(figs.net_pct, '+.1f')}) "
+           "against")
+        + f" the {'planned budget' if _is_budget(cfg) else _noun(cfg)} of **{format_money(figs.budget_profit, cur, places)}**. "
+        + (f"Operating margin **held** at **{_pct_text(figs.actual_margin)}** ({_pct_text(figs.margin_delta, '+.1f', ' pts')}).\n"
+           if figs.margin_delta == 0 else
+           f"Operating margin **{sign_word}** from {_pct_text(figs.budget_margin)} to **{_pct_text(figs.actual_margin)}** "
+           f"({_pct_text(figs.margin_delta, '+.1f', ' pts')}).\n"),
         "### 2. Top-Line Performance (Revenue)",
-        f"Total Revenue concluded at **{format_money(rev_actual, cur, places)}** vs. {_heading(cfg)} of "
-        f"**{format_money(rev_budget, cur, places)}** "
-        f"({format_money(rev_var, cur, places)}, {_pct_text(rev_pct, '+.1f')}, "
-        f"{'in line' if rev_var == 0 else 'Favorable' if rev_var > 0 else 'Unfavorable'}).",
+        f"Total Revenue concluded at **{format_money(figs.rev_actual, cur, places)}** vs. {_heading(cfg)} of "
+        f"**{format_money(figs.rev_budget, cur, places)}** "
+        f"({format_money(figs.rev_var, cur, places)}, {_pct_text(figs.rev_pct, '+.1f')}, "
+        f"{'in line' if figs.rev_var == 0 else 'Favorable' if figs.rev_var > 0 else 'Unfavorable'}).",
     ]
 
     if top_rev_beat:
@@ -120,13 +132,26 @@ def _handle_executive_memo(session: Session) -> Response:
         memo_lines.append(f"• **Primary Drag:** **{safe_inline(top_rev_miss.line_item)}** delivered "
                           f"{format_money(top_rev_miss.actual, cur, places)} ({format_money(top_rev_miss.variance_dollars, cur, places)} "
                           f"miss vs. {_noun(cfg)}).")
+    return memo_lines
+
+
+def _add_memo_costs_and_governance(
+    memo_lines: list[str], result: AnalysisResult, figs: _MemoFigures, places: int, *, top_exp_over: AnalyzedRow | None,
+    top_exp_save: AnalyzedRow | None,
+) -> None:
+    """Add the memo's cost (expenses) and governance sections, and the action items' heading."""
+    cfg = result.config
+    cur = cfg.currency
+
+    # Reconciled driver count
+    reconciled_count = sum(1 for r in result.material_rows if r.driver_evidence and r.driver_evidence.reconciles)
 
     memo_lines.extend([
         "\n### 3. Cost Discipline & Overruns (Expenses)",
-        f"Total Operating Expenses ended at **{format_money(exp_actual, cur, places)}** vs. {_heading(cfg)} of "
-        f"**{format_money(exp_budget, cur, places)}** "
-        f"({format_money(exp_var, cur, places)}, {_pct_text(exp_pct, '+.1f')}, "
-        f"{'in line' if exp_var == 0 else 'Unfavorable' if exp_var > 0 else 'Favorable'}).",
+        f"Total Operating Expenses ended at **{format_money(figs.exp_actual, cur, places)}** vs. {_heading(cfg)} of "
+        f"**{format_money(figs.exp_budget, cur, places)}** "
+        f"({format_money(figs.exp_var, cur, places)}, {_pct_text(figs.exp_pct, '+.1f')}, "
+        f"{'in line' if figs.exp_var == 0 else 'Unfavorable' if figs.exp_var > 0 else 'Favorable'}).",
     ])
 
     if top_exp_over:
@@ -143,12 +168,18 @@ def _handle_executive_memo(session: Session) -> Response:
         "\n### 4. Governance & Material Variances",
         f"• **{len(result.material_rows)}** line items breached the materiality hurdle "
         f"({format_threshold_amount(cfg.dollar_threshold, cur)} or {format_threshold_pct(cfg.percent_threshold)}).",
-        f"• **Net Flow-Through:** {format_money(net_impact, cur, places)} retained in net operating profit.",
+        f"• **Net Flow-Through:** {format_money(figs.net_impact, cur, places)} retained in net operating profit.",
         f"• **Driver Evidence Coverage:** {reconciled_count} of {len(result.material_rows)} material items verified by mathematical driver "
         "decomposition.",
         "\n### 5. Prioritized Management Action Items",
     ])
 
+
+def _add_memo_actions(
+    memo_lines: list[str], result: AnalysisResult, *, top_exp_over: AnalyzedRow | None, top_rev_beat: AnalyzedRow | None,
+) -> None:
+    """Add the memo's three prioritized management action items."""
+    cfg = result.config
     if top_exp_over:
         memo_lines.append(f"1. **Cost Remediation:** Initiate immediate operational review on **{safe_inline(top_exp_over.line_item)}** to "
                           "stabilize cost trajectory.")
@@ -171,37 +202,66 @@ def _handle_executive_memo(session: Session) -> Response:
     else:
         memo_lines.append("3. **Audit Verification:** All material drivers mathematically reconciled and signed off.")
 
+
+def _memo_table(cfg: AnalysisConfig, figs: _MemoFigures, places: int) -> list[dict[str, str]]:
+    """The memo's overview table: revenue, expenses and operating profit against the comparison."""
+    cur = cfg.currency
+    sym = CURRENCY_SYMBOLS.get(cur, "$")
+    return [
+        {
+            "Section": "1. Top-Line (Revenue)",
+            _heading(cfg): format_money(figs.rev_budget, cur, places),
+            "Actual": format_money(figs.rev_actual, cur, places),
+            f"Variance ({sym})": format_money(figs.rev_var, cur, places),
+            "Outcome": "In line" if figs.rev_var == 0 else "Beat" if figs.rev_var > 0 else "Miss",
+        },
+        {
+            "Section": "2. Cost (Expenses)",
+            _heading(cfg): format_money(figs.exp_budget, cur, places),
+            "Actual": format_money(figs.exp_actual, cur, places),
+            f"Variance ({sym})": format_money(figs.exp_var, cur, places),
+            "Outcome": "In line" if figs.exp_var == 0 else "Overrun" if figs.exp_var > 0 else "Savings",
+        },
+        {
+            "Section": "3. Bottom-Line (Operating Profit)",
+            _heading(cfg): format_money(figs.budget_profit, cur, places),
+            "Actual": format_money(figs.actual_profit, cur, places),
+            f"Variance ({sym})": format_money(figs.net_impact, cur, places),
+            "Outcome": "Neutral" if figs.net_impact == 0 else "Favorable" if figs.net_impact > 0 else "Unfavorable",
+        },
+    ]
+
+
+def _handle_executive_memo(session: Session) -> Response:
+    """Generate an executive-ready variance briefing memo suitable for CFO and board reporting."""
+    result = session.result
+    assert result is not None
+    cfg = result.config
+    places = report_places(result)
+
+    figs = _memo_figures(result)
+
+    # Find top revenue driver & drag
+    rev_rows = [r for r in _detail_rows(result) if r.line_type == LineType.REVENUE]
+    top_rev_beat = max((r for r in rev_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
+    top_rev_miss = min((r for r in rev_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
+
+    # Find largest cost overrun & largest saving
+    exp_rows = [r for r in _detail_rows(result) if r.line_type == LineType.EXPENSE]
+    top_exp_over = max((r for r in exp_rows if r.variance_dollars > 0), key=lambda r: r.variance_dollars, default=None)
+    top_exp_save = min((r for r in exp_rows if r.variance_dollars < 0), key=lambda r: r.variance_dollars, default=None)
+
+    memo_lines = _memo_overview(result, figs, places, top_rev_beat=top_rev_beat, top_rev_miss=top_rev_miss)
+    _add_memo_costs_and_governance(memo_lines, result, figs, places, top_exp_over=top_exp_over, top_exp_save=top_exp_save)
+    _add_memo_actions(memo_lines, result, top_exp_over=top_exp_over, top_rev_beat=top_rev_beat)
+
     memo_text = "\n".join(memo_lines)
     period_slug = _period_slug(cfg.period)
     filename = f"executive_memo_{period_slug}.md"
 
-    table_overview = [
-        {
-            "Section": "1. Top-Line (Revenue)",
-            _heading(cfg): format_money(rev_budget, cur, places),
-            "Actual": format_money(rev_actual, cur, places),
-            f"Variance ({sym})": format_money(rev_var, cur, places),
-            "Outcome": "In line" if rev_var == 0 else "Beat" if rev_var > 0 else "Miss",
-        },
-        {
-            "Section": "2. Cost (Expenses)",
-            _heading(cfg): format_money(exp_budget, cur, places),
-            "Actual": format_money(exp_actual, cur, places),
-            f"Variance ({sym})": format_money(exp_var, cur, places),
-            "Outcome": "In line" if exp_var == 0 else "Overrun" if exp_var > 0 else "Savings",
-        },
-        {
-            "Section": "3. Bottom-Line (Operating Profit)",
-            _heading(cfg): format_money(budget_profit, cur, places),
-            "Actual": format_money(actual_profit, cur, places),
-            f"Variance ({sym})": format_money(net_impact, cur, places),
-            "Outcome": "Neutral" if net_impact == 0 else "Favorable" if net_impact > 0 else "Unfavorable",
-        },
-    ]
-
     return Response(
         text=memo_text,
-        table=table_overview,
+        table=_memo_table(cfg, figs, places),
         chips=["Waterfall", "Export report", "Export csv", "Summary"],
         download={filename: memo_text},
         phase=Phase.EXPLORING,
