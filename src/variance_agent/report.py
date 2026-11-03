@@ -350,6 +350,14 @@ _BASIS_NOTES = {
 }
 
 
+def basis_rows(result: AnalysisResult) -> list[AnalyzedRow]:
+    """A limit, benchmark or target comparison's rows in the report's order: limits by severity, then headroom."""
+    rows = [row for row in result.rows if row.basis_details is not None]
+    if result.config.comparison_basis.value == "limit":
+        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
+    return rows
+
+
 @financial_context()
 def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str | None]:
     """A limit, benchmark or target comparison's table (PLAN.md R13-R15): its columns, its rows as plain text (limits
@@ -357,14 +365,13 @@ def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str
     cfg = result.config
     basis = cfg.comparison_basis.value
     heading = comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label)
-    rows = [row for row in result.rows if row.basis_details is not None]
+    rows = basis_rows(result)
 
     def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
         return format_measure(value, row.measure, cfg.currency, variance=variance)
 
     table: list[list[str]] = []
     if basis == "limit":
-        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
         counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
                   for word in ("Breach", "At limit", "Near", "Within")]
         for row in rows:

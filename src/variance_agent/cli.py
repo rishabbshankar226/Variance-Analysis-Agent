@@ -31,7 +31,7 @@ from .parsing import normalize_key, normalize_row, load_input, load_json_value, 
 from .output import write_text_outputs
 from .numeric import financial_context
 from .report import _safe_inline, render_markdown
-from .xlsx import render_xlsx
+from .xlsx import build_workbook
 from .limits import display_text
 
 if TYPE_CHECKING:
@@ -732,11 +732,6 @@ def _write_outputs(args: Arguments, capture: _Capture, read: _Read, result: Anal
         from .scorecard import finish_scorecard
         finish_scorecard(intake_res, result)
     statement_checks = intake_res.statement_checks if intake_res is not None else []
-    if result.config.comparison_basis in OPT_IN_BASES and args.xlsx:
-        raise ValueError("--xlsx isn't available for a limit, benchmark or target comparison yet. Leave out --xlsx; "
-                         "the report and the audit file hold every outcome.")
-    if args.xlsx:
-        _refuse_filing_workbook(intake_res, bool(statement_checks))
     appendix = intake_res.report_appendix if intake_res is not None else []
     headline = intake_res.filing_headline if intake_res is not None else None
     report = (render_markdown(result, statement_checks=statement_checks or None, appendix=appendix or None,
@@ -749,8 +744,9 @@ def _write_outputs(args: Arguments, capture: _Capture, read: _Read, result: Anal
     outputs: dict[Path, str | bytes] = {}
     if args.output:
         outputs[Path(args.output)] = report
-    if args.xlsx:
-        outputs[Path(args.xlsx)] = render_xlsx(result)
+    if args.xlsx:  # each comparison gets the sheets its report describes (N1)
+        outputs[Path(args.xlsx)] = build_workbook(result, statement_checks=statement_checks or None,
+                                                  appendix=appendix or None, filing_headline=headline)[0]
     if args.audit_json:
         transformations: dict[str, object] | None = None
         if intake_res is not None:
@@ -842,17 +838,6 @@ def _refuse_main_path_inputs(args: Arguments, requested: tuple[ComparisonBasis, 
                      f"Leave out {named}, or leave out {flag}.")
 
 
-def _refuse_filing_workbook(intake_res: IntakeResult | None, statement: bool) -> None:
-    """--xlsx refuses for a filing's statements, on either path (Decision 39, X8)."""
-    if statement:
-        raise ValueError("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; "
-                         "the report and the audit file hold every figure.")
-    if intake_res is not None and intake_res.filing_headline is not None:
-        # The workbook adds up revenue and expense totals of its own; a filing is headed by its printed ones (Decision 39).
-        raise ValueError("--xlsx isn't available for a filing's income statement yet: the workbook adds up revenue and "
-                         "expense totals of its own. Leave out --xlsx; the report and the audit file hold every figure.")
-
-
 def _refuse_other_currency(intake_res: object, currency: str, filename: str) -> None:
     """Refuse amounts marked in another currency than --currency; none is converted (X5, X30)."""
     from .intake import IntakeResult, currency_conflict
@@ -893,8 +878,6 @@ def _run_comparisons(
         hidden_rows=getattr(args, "hidden_rows", None) or (layout.hidden_rows if layout is not None else None),
     )
     _refuse_other_currency(metadata.get("intake_result"), args.currency, path.name)
-    if args.xlsx and isinstance(read := metadata.get("intake_result"), IntakeResult):
-        _refuse_filing_workbook(read, bool(read.statement_kind))
     bases = requested
     extended = args.preset != "fpa" or any(basis in NEW_BASES for basis in bases) or layout is not None
     if not bases and not extended:
@@ -966,7 +949,15 @@ def _run_comparisons(
     if args.output:
         outputs[Path(args.output)] = report
     if args.xlsx:
-        outputs[Path(args.xlsx)] = render_comparison_xlsx(table)
+        read = metadata.get("intake_result")
+        single = table.comparisons[0].result if len(table.comparisons) == 1 else None
+        if isinstance(read, IntakeResult) and single is not None and (read.statement_kind or read.filing_headline is not None):
+            # A filing's statement gets the sheets its report describes, as on the main path (N1).
+            outputs[Path(args.xlsx)] = build_workbook(single, statement_checks=read.statement_checks or None,
+                                                      appendix=read.report_appendix or None,
+                                                      filing_headline=read.filing_headline)[0]
+        else:
+            outputs[Path(args.xlsx)] = render_comparison_xlsx(table)
     if args.audit_json:
         record = build_comparison_audit(table, source_name=path.name, source_sha256=sha256_bytes(source_bytes),
                                         schema_version=args.audit_schema_version, source_worksheet=worksheet)

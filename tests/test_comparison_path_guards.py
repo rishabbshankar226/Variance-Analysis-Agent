@@ -71,8 +71,11 @@ def test_a_filing_on_the_comparison_path_is_headed_by_its_printed_totals(tmp_pat
     assert "- Net sales: $4,100,000,000.00 vs. $3,900,000,000.00" in text
 
 
-def test_a_filing_workbook_refuses_on_the_comparison_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    err = _refusal([str(TEN_K), "--assisted", "--period", "FY2025", *NUMBERS, "--layout", "standard",
-                    "--xlsx", str(tmp_path / "w.xlsx"), "-o", str(tmp_path / "r.md")], capsys)
-    assert "--xlsx isn't available for a filing's income statement yet" in err
-    assert not (tmp_path / "w.xlsx").exists()
+def test_a_filing_workbook_on_the_comparison_path_has_its_own_sheets(tmp_path: Path,
+                                                                    capsys: pytest.CaptureFixture[str]) -> None:
+    from openpyxl import load_workbook
+    assert cli.main([str(TEN_K), "--assisted", "--period", "FY2025", *NUMBERS, "--layout", "standard",
+                     "--xlsx", str(tmp_path / "w.xlsx"), "-o", str(tmp_path / "r.md")]) == 0, capsys.readouterr().err
+    book = load_workbook(tmp_path / "w.xlsx")  # N1: headed by the filing's own printed totals
+    assert book.sheetnames == ["Summary", "Material Variances", "Root Causes & Actions", "All Rows"]
+    assert "Total Revenue" not in [row[0].value for row in book["Summary"].iter_rows()]

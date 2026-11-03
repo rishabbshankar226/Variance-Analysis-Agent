@@ -13,7 +13,7 @@ from ..intent import KNOWLEDGE_INTENTS, MAX_ROUTING_CHARS, ParsedIntent, normali
 from ..responses import Response
 from ..session import Phase, Session
 from ._common import _file_is_gone
-from .summary import _COMPUTED_TOTALS, _STATEMENT_CHIPS, _STATEMENT_WORKBOOK, _filing_summary, _report_text
+from .summary import _COMPUTED_TOTALS, _STATEMENT_CHIPS, _filing_summary, _report_text
 from .upload import _handle_build_ltm, _handle_covenant_headroom, _join_unbudgeted, _load_file, _looks_like_pasted_table
 from .run import _handle_classify, _leave_total_out
 from .workbook import _handle_hidden_rows, _handle_list_sheets, _handle_set_comparison, _handle_switch_sheet
@@ -239,14 +239,10 @@ def _handle_exploring(session: Session, text: str) -> Response:
     if session.result is None:
         return _file_is_gone(session)
 
-    filing = session.intake_result is not None and session.intake_result.filing_headline is not None
-    if filing and intent.intent_id == "export_xlsx":  # the workbook adds up totals of its own (Decision 39)
-        return Response(text=_STATEMENT_WORKBOOK, chips=["Export report", "Export audit"], phase=Phase.EXPLORING)
     if any(row.statement_kind or row.basis_details is not None or row.classification_source == "metric"
            for row in session.result.rows):
-        if intent.intent_id == "export_xlsx":
-            return Response(text=_STATEMENT_WORKBOOK, chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
-        if intent.intent_id not in {"export_report", "export_audit", "help", "reset"}:
+        # Each comparison's workbook has the sheets its report describes (N1).
+        if intent.intent_id not in {"export_report", "export_audit", "export_xlsx", "help", "reset"}:
             return Response(text=_report_text(session), chips=list(_STATEMENT_CHIPS), phase=Phase.EXPLORING)
     if is_audience_result(session.result) and intent.intent_id not in {
         "summary", "material", "filter_favorable", "filter_unfavorable", "export_report", "export_audit", "export_xlsx",

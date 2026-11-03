@@ -105,8 +105,6 @@ def _audience_summary(result: AnalysisResult) -> Response:
 
 
 _STATEMENT_CHIPS = ["Export report", "Export audit"]
-_STATEMENT_WORKBOOK = ("A workbook isn't available for this comparison yet. The report and the audit file are; type "
-                       "`export report` or `export audit`.")
 
 
 def _statement_checks(session: Session) -> list[str]:

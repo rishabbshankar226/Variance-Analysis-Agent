@@ -317,30 +317,29 @@ def test_questions_about_computed_totals_answer_with_the_filings_own() -> None:
     assert "net operating impact" not in greeting.lower()
 
 
-def test_the_workbook_refuses_for_a_filings_income_statement() -> None:
+def test_the_workbook_for_a_filings_income_statement_is_written() -> None:
     import tempfile
     from pathlib import Path
 
-    import pytest
+    from openpyxl import load_workbook
 
     from tests.fixtures.ixbrl.build_ixbrl import income_filing
     from variance_agent.cli import main
     with tempfile.TemporaryDirectory() as folder:
         source = Path(folder, "hal-20250927.htm")
         source.write_bytes(income_filing())
-        with pytest.raises(SystemExit):
-            main([str(source), "--assisted", "--period", "FY2025", "--dollar-threshold", "1", "--percent-threshold", "1",
-                  "--xlsx", str(Path(folder, "out.xlsx"))])
-        assert not Path(folder, "out.xlsx").exists()
+        assert main([str(source), "--assisted", "--period", "FY2025", "--dollar-threshold", "1", "--percent-threshold",
+                     "1", "--xlsx", str(Path(folder, "out.xlsx"))]) == 0
+        assert load_workbook(Path(folder, "out.xlsx")).sheetnames == [  # N1
+            "Summary", "Material Variances", "Root Causes & Actions", "All Rows"]
 
 
-def test_the_chat_offers_no_workbook_for_a_filing() -> None:
+def test_the_chat_exports_a_filings_workbook() -> None:
     from variance_agent.chat.handlers import handle_message
     session, reply = _filing_session()
     assert "Export Excel" not in (reply.chips or [])
-    assert handle_message(session, "export excel").text == (
-        "A workbook isn't available for this comparison yet. The report and the audit file are; type "
-        "`export report` or `export audit`.")
+    assert handle_message(session, "export excel").text.startswith(  # N1
+        "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets.")
 
 
 # Decision 40: a filing report states the unit the filing prints in, and how label amounts are quoted.

@@ -68,7 +68,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | S2 | 4 | done (reviewer pending) | `test(S2)` `6dfcc95`, `refactor(S2)` `dba3a7b` | `intake.py` (`_process_raw_table` 48 lines over 19 stages, longest 58), `tests/test_characterization_s2.py` |
 | S3 | 4 | done (reviewer pending) | `test(S3)` `c46dd7e`, `refactor(S3)` `eefa968` | `cli.py` (`_run` 42 lines over 12 stages, longest 66), `tests/test_characterization_s3.py` |
 | S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
-| N1 | 5 | todo | | |
+| N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
 | N2 | 5 | todo | | |
 | T2 | 6 | todo | | |
 | T3 | 6 | todo | | |
@@ -569,7 +569,7 @@ The sheets, with the report's own words:
 - **Covenant metrics** also get a sheet "Metrics", which lists each metric's build as the report's "Metrics" section prints it.
 - **Benchmark**: sheet "Benchmark", columns Line Item | Benchmark | Actual | Difference | Tolerance | Outcome | Status. Outcome is In line, Higher than benchmark or Lower than benchmark; Status is Favorable, Unfavorable or Neutral.
 - **Target**: sheet "Targets", columns Line Item | Target | Actual | Difference | Tolerance | Outcome. Outcome is On target, Over or Under.
-- **Balance sheet or cash flow**: sheet "Lines", columns Line Item | {the comparison heading, e.g. "Prior Period (Sep 2024)"} | Actual | Change | Change (%) | Direction | Material. Direction is Increase, Decrease or No change, and the statement's own subtotals are marked "(Total)" as in the report. The report's check lines (the identity or roll-forward, the units) open the sheet as notes.
+- **Balance sheet or cash flow**: sheet "Lines", columns Line Item | {the comparison heading, e.g. "Prior Period (Sep 2024)"} | Actual | Change | Change (%) | Direction | Material. Direction is Increase, Decrease or No change, and the statement's own subtotals are marked "(Total)" as in the report. The report's check lines (the identity or roll-forward, the units) are notes under the table.
 - **A filing's income statement**: the FP&A workbook's sheets, except that its Summary is headed by the filing's own printed totals (the report's headline figures, each from its XBRL fact), never by totals added up from lines. That was the reason it refused (Decision 39). The material and all-lines sheets are as today.
 
 Figures:
@@ -577,7 +577,7 @@ Figures:
 - A percentage (Headroom (% of limit), Utilization, Change (%)) is a number in the existing percent format (`S_PCT`), as the existing sheets store Var %.
 - A rate, basis points or a multiple stays formatted text right-aligned (`S_TEXT_RIGHT`), as the existing Measures sheet stores them.
 - NM, N/A, "none (exact)" and blanks stay as the report prints them.
-- Each sheet ends with the existing note that Excel stores numbers in double precision and the CSV or audit JSON holds the exact values. Labels are written as text, so a label starting with =, +, - or @ is never a formula.
+- Each sheet ends with the existing note that Excel stores numbers in double precision and the CSV or audit JSON holds the exact values. A statement's check lines and a basis comparison's rule note close the sheet with it, after the table, so the header stays the sheet's first row for the frozen pane and filter. Labels are written as text, so a label starting with =, +, - or @ is never a formula.
 
 Tests read each sheet back with `openpyxl`:
 - every numeric cell equals `float()` of the audit's `Decimal` for that figure exactly, and its `number_format` equals the existing sheets' for the same kind of figure;
@@ -599,6 +599,12 @@ Boundary cases:
 | `tests/test_pdf_intake.py::test_unknown_statement_lists_the_ones_found` | the expected refusal gains its last sentence, " Choose one of those statements." | M6: the refusal named the statements but gave no step; the same refusal for a filing already ends so (intake.py, the Inline XBRL path) |
 | `tests/test_filing_headlines.py::test_consecutive_52_53_week_years_are_named_by_their_end_month_not_as_a_gap` | "Read the column for 2026-01-03 as Jan 2026" becomes "Read the column for the 12 months ended 2026-01-03 as Jan 2026"; the label "Jan 2026" and the no-"FY2026" assertion stay | M4: the note names a duration labelled by its end month |
 | `tests/test_multi_audience_api.py::test_new_public_signatures_and_legacy_constructors` and `tests/test_multi_audience_measures.py::test_existing_public_constructors_and_functions_keep_their_parameters` | `AnalysisConfig`'s pinned parameters gain a trailing `"comparison_name"`; the seven existing names keep their order | M4: a trailing keyword with a default, so every existing call, positional or by name, works as before |
+| `tests/test_bases.py::test_a_limit_run_refuses_a_workbook`, renamed `test_a_limit_run_writes_its_workbook` | the refusal (`SystemExit`, "--xlsx isn't available for a limit ...") becomes exit 0 and a workbook whose only sheet is "Limits" | N1: the workbook this comparison now gets |
+| `tests/test_comparison_path_guards.py::test_a_filing_workbook_refuses_on_the_comparison_path`, renamed `test_a_filing_workbook_on_the_comparison_path_has_its_own_sheets` | the refusal and "no workbook written" become exit 0 and the FP&A sheets with a Summary headed by the filing's totals | N1, on the comparison path too |
+| `tests/test_filing_headlines.py::test_the_workbook_refuses_for_a_filings_income_statement`, renamed `test_the_workbook_for_a_filings_income_statement_is_written` | `SystemExit` and "no workbook" become exit 0 and the four sheets | N1 |
+| `tests/test_filing_headlines.py::test_the_chat_offers_no_workbook_for_a_filing`, renamed `test_the_chat_exports_a_filings_workbook` | the refusal text becomes "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets."; the chips assertion stays | N1 |
+| `tests/test_ixbrl_statements.py::test_the_cli_refuses_a_workbook_for_a_statement_comparison`, renamed `test_the_cli_writes_a_statement_workbook` | the refusal becomes exit 0 and a workbook whose only sheet is "Lines" | N1 |
+| `tests/test_ixbrl_statements.py::test_the_chat_compares_a_balance_sheet_without_asking_for_labels` | its last assertion, the refusal text, becomes "Excel workbook ready for download: Lines sheet."; every other assertion stays | N1 |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
 

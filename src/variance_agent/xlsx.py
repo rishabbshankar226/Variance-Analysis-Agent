@@ -16,6 +16,7 @@ import io
 import math
 import re
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Context, Decimal
 from xml.sax.saxutils import escape
@@ -407,7 +408,6 @@ def _unavailable_cells(label: str, *, total: bool = False) -> tuple[_Cell, ...]:
 
 def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
     cfg = result.config
-    symbol = CURRENCY_SYMBOLS[cfg.currency]
     unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
     classification_incomplete = unclassified > 0
     has_revenue = any(row.line_type == LineType.REVENUE and not row.excluded_from_aggregation
@@ -416,23 +416,7 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
                        for row in result.rows)
 
     sheet = _Sheet("Summary", (34, 18, 18, 18, 12, 14), gridlines=False)
-    sheet.add(_Cell(f"FP&A Variance Report: {cfg.period}", S_TITLE), height=26)
-    sheet.add(_Cell("Period", S_LABEL), _Cell(cfg.period))
-    sheet.add(_Cell("Reporting Currency", S_LABEL), _Cell(cfg.currency))
-    sheet.add(_Cell("Materiality Thresholds", S_LABEL), _Cell(
-        f"{symbol}{_threshold_number(cfg.dollar_threshold, 2)} or "
-        f"{_threshold_number(cfg.percent_threshold, 1, scale=2)}% of {_against(cfg)}"
-    ))
-    if cfg.comparison_basis is not ComparisonBasis.BUDGET:
-        sheet.add(_Cell("Compared Against", S_LABEL), _Cell(_heading(cfg)))
-    sheet.add(_Cell("Rows Analysed", S_LABEL), _Cell(Decimal(len(result.rows)), S_VALUE_LEFT))
-    sheet.add(_Cell("Material Variances", S_LABEL),
-              _Cell(Decimal(len(result.material_rows)), S_VALUE_LEFT))
-    sheet.add(_Cell("Classification", S_LABEL), _Cell(
-        f"Incomplete: {unclassified} Unclassified row(s)" if classification_incomplete
-        else "Complete"
-    ))
-    sheet.blank()
+    _summary_head(sheet, result)
 
     sheet.add(
         _Cell("Metric", S_HEADER), _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_NUM),
@@ -496,6 +480,30 @@ def _summary_sheet(result: AnalysisResult, places: int) -> _Sheet:
         S_NOTE, span,
     )
     return sheet
+
+
+def _summary_head(sheet: _Sheet, result: AnalysisResult) -> None:
+    """The Summary's title and its period, currency, materiality, basis, counts and classification rows."""
+    cfg = result.config
+    symbol = CURRENCY_SYMBOLS[cfg.currency]
+    unclassified = sum(row.line_type == LineType.UNCLASSIFIED for row in result.rows)
+    sheet.add(_Cell(f"FP&A Variance Report: {cfg.period}", S_TITLE), height=26)
+    sheet.add(_Cell("Period", S_LABEL), _Cell(cfg.period))
+    sheet.add(_Cell("Reporting Currency", S_LABEL), _Cell(cfg.currency))
+    sheet.add(_Cell("Materiality Thresholds", S_LABEL), _Cell(
+        f"{symbol}{_threshold_number(cfg.dollar_threshold, 2)} or "
+        f"{_threshold_number(cfg.percent_threshold, 1, scale=2)}% of {_against(cfg)}"
+    ))
+    if cfg.comparison_basis is not ComparisonBasis.BUDGET:
+        sheet.add(_Cell("Compared Against", S_LABEL), _Cell(_heading(cfg)))
+    sheet.add(_Cell("Rows Analysed", S_LABEL), _Cell(Decimal(len(result.rows)), S_VALUE_LEFT))
+    sheet.add(_Cell("Material Variances", S_LABEL),
+              _Cell(Decimal(len(result.material_rows)), S_VALUE_LEFT))
+    sheet.add(_Cell("Classification", S_LABEL), _Cell(
+        f"Incomplete: {unclassified} Unclassified row(s)" if unclassified > 0
+        else "Complete"
+    ))
+    sheet.blank()
 
 
 def _materiality_text(row: AnalyzedRow, result: AnalysisResult) -> str:
@@ -841,3 +849,146 @@ def _statistics_sheet(table: "TableAnalysis") -> _Sheet:
         record = statistic_record(statistic)
         sheet.add(*(_Cell(str(record[column]) if record[column] is not None else "", S_TEXT) for column in columns))
     return sheet
+
+
+# The comparisons the FP&A workbook can't hold (N1): each sheet takes the report's own words and order, and writes a
+# Currency figure or a percentage as a number in the existing sheets' formats; rates, basis points and multiples stay
+# the report's text, as the Measures sheet holds them.
+_DOUBLES_NOTE = ("Excel stores numbers in double precision; use the CSV or audit JSON export when exact decimal values "
+                 "are required.")
+_BASIS_SHEETS = {"limit": "Limits", "benchmark": "Benchmark", "target": "Targets"}
+_PERCENT_COLUMNS = {"Headroom (% of limit)", "Utilization"}
+
+
+def _basis_figures(row: AnalyzedRow) -> list[Decimal | None]:
+    """The number behind each column of a basis row, where the sheet writes a number; None where it keeps the text."""
+    d = row.basis_details
+    assert d is not None
+    money = row.measure is MeasureKind.CURRENCY
+    if d.basis == "limit":
+        return [None, None, row.budget if money else None, row.actual if money else None,
+                d.headroom if money else None, d.headroom_percent, d.utilization,
+                d.buffer if money else None, None]
+    figures = [None, row.budget if money else None, row.actual if money else None,
+               d.difference if money else None, d.tolerance if money else None, None]
+    return figures + ([None] if d.basis == "benchmark" else [])
+
+
+def _notes_block(sheet: _Sheet, notes: list[str]) -> None:
+    sheet.blank()
+    for note in notes:
+        sheet.add_paragraph(note, S_NOTE, len(sheet.widths))
+
+
+@financial_context()
+def _basis_sheet(result: AnalysisResult) -> _Sheet:
+    from .report import _BASIS_NOTES, basis_rows, basis_table
+    basis = result.config.comparison_basis.value
+    columns, table, counts = basis_table(result)
+    sheet = _Sheet(_BASIS_SHEETS[basis], (34,) + (18,) * (len(columns) - 1), freeze_header=True, autofilter=True)
+    words = {"Line Item", "Kind", "Status", "Outcome"}
+    sheet.add(*(_Cell(column, S_HEADER if column in words else S_HEADER_NUM) for column in columns))
+    for row, cells in zip(basis_rows(result), table, strict=True):
+        out = []
+        for column, text, figure in zip(columns, cells, _basis_figures(row), strict=True):
+            if figure is not None:
+                out.append(_Cell(figure, S_PCT if column in _PERCENT_COLUMNS else S_MONEY))
+            elif column == "Status" and basis == "benchmark":
+                out.append(_Cell(text, _STATUS_STYLE[row.status]))
+            else:
+                out.append(_Cell(text or None, S_TEXT if column in words else S_TEXT_RIGHT))
+        sheet.add(*out)
+    _notes_block(sheet, [*([counts] if counts else []), _BASIS_NOTES[basis], _DOUBLES_NOTE])
+    return sheet
+
+
+def _metrics_sheet(appendix: list[str]) -> _Sheet | None:
+    """A covenant run's metric build, as the report's Metrics section prints it, without Markdown escapes."""
+    if "## Metrics" not in appendix:
+        return None
+    sheet = _Sheet("Metrics", (120,), gridlines=False)
+    for line in appendix[appendix.index("## Metrics") + 1:]:
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            text = re.sub(r"\\(.)", r"\1", stripped[2:])
+            sheet.add(_Cell(("    " if line.startswith("  ") else "") + text, S_TEXT))
+    _notes_block(sheet, [_DOUBLES_NOTE])
+    return sheet
+
+
+@financial_context()
+def _statement_sheet(result: AnalysisResult, checks: list[str]) -> _Sheet:
+    """A balance sheet or cash flow comparison's lines, as the report's Lines table, with its checks as notes."""
+    cfg = result.config
+    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label)
+    sheet = _Sheet("Lines", (44, 20, 20, 20, 12, 14, 10), freeze_header=True, autofilter=True)
+    sheet.add(_Cell("Line Item", S_HEADER), _Cell(heading, S_HEADER_NUM), _Cell("Actual", S_HEADER_NUM),
+              _Cell("Change", S_HEADER_NUM), _Cell("Change (%)", S_HEADER_NUM), _Cell("Direction", S_HEADER),
+              _Cell("Material", S_HEADER))
+    for row in result.rows:
+        total = str(row.raw.get("row_kind", "")).casefold() == "total"
+        sheet.add(_Cell(row.line_item + (" (Total)" if total else ""), S_TEXT), _Cell(row.budget, S_MONEY),
+                  _Cell(row.actual, S_MONEY), _Cell(row.variance_dollars, S_MONEY),
+                  _pct_cell(row.variance_percent, row.percent_label),
+                  _Cell(display_outcome(row, cfg.comparison_basis), S_TEXT), _Cell("Yes" if row.material else "No", S_TEXT))
+    _notes_block(sheet, [*checks, "Lines marked (Total) are the statement's own subtotals.", _DOUBLES_NOTE])
+    return sheet
+
+
+@financial_context()
+def _filing_summary_sheet(result: AnalysisResult, headline: Mapping[str, object]) -> _Sheet:
+    """A filing's Summary, headed by its own printed totals, never by totals added up from lines (Decision 39)."""
+    cfg = result.config
+    sheet = _Sheet("Summary", (34, 18, 18, 18, 12, 14), gridlines=False)
+    _summary_head(sheet, result)
+    sheet.add(_Cell("Headline figure", S_HEADER), _Cell(f"{_heading(cfg)} ({cfg.currency})", S_HEADER_NUM),
+              _Cell(f"Actual ({cfg.currency})", S_HEADER_NUM), _Cell(f"Change ({cfg.currency})", S_HEADER_NUM),
+              _Cell("Change %", S_HEADER_NUM), height=20)
+    items, notes = headline.get("items"), headline.get("notes")
+    assert isinstance(items, list) and isinstance(notes, list)
+    for item in items:
+        assert isinstance(item, Mapping)
+        if "ltm" in item:  # an LTM item: each figure built from the filings' facts (PLAN.md R11)
+            actual, comparison = Decimal(str(item["ltm"])), Decimal(str(item["comparison"]))
+        else:
+            actual_key, comparison_key = item["actual"], item["comparison"]
+            assert isinstance(actual_key, Mapping) and isinstance(comparison_key, Mapping)
+            actual, comparison = Decimal(str(actual_key["displayed"])), Decimal(str(comparison_key["displayed"]))
+        change = Decimal(str(item["change"]))
+        sheet.add(_Cell(str(item["line_item"]), S_TEXT), _Cell(comparison, S_MONEY), _Cell(actual, S_MONEY),
+                  _Cell(change, S_MONEY), _pct_cell(ratio(change, abs(comparison)) if comparison != 0 else None, None))
+    from .report import _filing_headline_lines
+    said = [line.removeprefix("- ")
+            for line in _filing_headline_lines(headline, cfg.currency, _report_places(result))[len(items):]]
+    unit = headline.get("unit")
+    _notes_block(sheet, [*([str(unit)] if unit else []), *said, _DOUBLES_NOTE])
+    return sheet
+
+
+def build_workbook(result: AnalysisResult, *, statement_checks: list[str] | None = None,
+                   appendix: list[str] | None = None, filing_headline: Mapping[str, object] | None = None,
+                   top_root_causes: int = 5) -> tuple[bytes, tuple[str, ...]]:
+    """The workbook for any comparison the report covers, and the names of the sheets N1 adds (empty for the existing workbook).
+
+    A limit, benchmark or target comparison, a filing's balance sheet or cash flow, and a filing's income statement
+    each get the sheets their report describes; any other result gets the existing workbook, unchanged.
+    """
+    places = _report_places(result)
+    title = f"Variance report: {display_text(result.config.period)}"
+    if any(row.basis_details is not None for row in result.rows):
+        verify_result(result)
+        sheets = [_basis_sheet(result)]
+        if (metrics := _metrics_sheet(appendix or [])) is not None:
+            sheets.append(metrics)
+    elif statement_checks:
+        verify_result(result)
+        sheets = [_statement_sheet(result, statement_checks)]
+    elif filing_headline is not None:
+        verify_result(result)
+        sheets = [_filing_summary_sheet(result, filing_headline), _material_sheet(result),
+                  _actions_sheet(result, places, top_root_causes), _all_rows_sheet(result, places)]
+    else:
+        return render_xlsx(result, top_root_causes=top_root_causes), ()  # the existing workbook, its sheets as before
+    return _package(sheets, places, title), tuple(sheet.name for sheet in sheets)

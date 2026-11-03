@@ -18,7 +18,7 @@ from variance_agent.models import ComparisonBasis
 from variance_agent.output import write_text_outputs
 from variance_agent.intake import audit_transformations
 from variance_agent.mapping import LayoutMapping, compute_layout_fingerprint, save_mapping
-from variance_agent.xlsx import render_xlsx
+from variance_agent.xlsx import build_workbook
 from ..intent import ParsedIntent
 from ..responses import Response, format_money, format_pct, report_places, safe_inline
 from ..session import Phase, Session
@@ -293,13 +293,19 @@ def _handle_export_xlsx(session: Session, intent: ParsedIntent) -> Response:
     result = session.result
     assert result is not None
 
-    workbook = render_xlsx(result)
+    intake = session.intake_result
+    workbook, sheets = build_workbook(
+        result, statement_checks=(intake.statement_checks or None) if intake is not None else None,
+        appendix=(intake.report_appendix or None) if intake is not None else None,
+        filing_headline=intake.filing_headline if intake is not None else None)
     period_slug = _period_slug(result.config.period)
     filename = f"variance_workbook_{period_slug}.xlsx"
+    named = ("Summary, Material Variances, Root Causes & Actions, and All Rows sheets" if not sheets
+             else f"{sheets[0]} sheet" if len(sheets) == 1 else f"{sheets[0]} and {sheets[1]} sheets" if len(sheets) == 2
+             else f"{', '.join(sheets[:-1])}, and {sheets[-1]} sheets")
 
     return _export_response(
         session, intent, workbook, filename,
-        written="Excel workbook", ready=("Excel workbook ready for download: Summary, Material Variances, "
-              "Root Causes & Actions, and All Rows sheets."), retry_chip="Export excel",
+        written="Excel workbook", ready=f"Excel workbook ready for download: {named}.", retry_chip="Export excel",
         written_chips=["Export report", "Export audit", "Summary"], ready_chips=["Export report", "Export audit", "Summary"],
     )
