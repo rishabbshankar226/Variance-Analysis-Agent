@@ -65,7 +65,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X39 | — | open | | memory on the hosted free plan; not this run |
 | X40 | — | open | | left to the owner: the deploy pins (Decision 12) |
 | S1 | 4 | done | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
-| S2 | 4 | done (reviewer pending) | `test(S2)` `6dfcc95`, `refactor(S2)` `dba3a7b` | `intake.py` (`_process_raw_table` 48 lines over 19 stages, longest 58), `tests/test_characterization_s2.py` |
+| S2 | 4 | done | `test(S2)` `6dfcc95`, `refactor(S2)` `dba3a7b` | `intake.py` (`_process_raw_table` 48 lines over 19 stages, longest 58), `tests/test_characterization_s2.py` |
 | S3 | 4 | done | `test(S3)` `c46dd7e`, `refactor(S3)` `eefa968` | `cli.py` (`_run` 42 lines over 12 stages, longest 66), `tests/test_characterization_s3.py` |
 | S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
 | N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
@@ -751,6 +751,13 @@ Items:
   - Wrapping every cli global (`load_input`, `analyze_rows`, `render_markdown`, `_run`) gives the same call sequence on 9 commands.
   - The two new asserts repeat checks already passed, and none can fire through `main`.
   - The reviewer notes it may have overwritten another agent's scratch copy in the shared scratchpad (`scratchpad/old/src`); nothing in the repository is affected.
+
+- **S2** (`dba3a7b`). The fresh-eyes reviewer found no behaviour change.
+  - It ran the parent tree and `dba3a7b` side by side with PYTHONHASHSEED=0, each probe checking that `variance_agent.__file__` lay in the tree under test, and compared every `IntakeResult` field by `repr` (so Decimal precision counts), shared lists and dicts between fields, mutation of the input rows, and the `_HALF` holder afterwards.
+  - The cases: all 89 fixtures through `read_input_assisted` under about 30 option sets (blanks as 0, every `compare_to`, hidden rows, `missing_column`, 14 `selected_period` values, `per_share_lines`, every sheet and named or missing blocks); about 150 hand-built tables straight into `_process_raw_table` (period bands, side-by-side blocks, two-row and dated headers, hidden rows and columns, unsaved formulas, display scaling, percent cells, signed ledgers, subtotals, Row Kind, every Measure kind and the measure-kind refusal, unreadable cells, dashes and currency symbols); 40,000 seeded random tables; and 2,185 odd cell values (NaN, huge exponents, bytes, lists, bools, objects). 0 of 42,565 cases differ, and the 215 that raise give the same type and message in both trees.
+  - Six injected mutations to the new code (note order in `layout_notes` and `visible_transformations`, the dash and minus notes swapped, a `sheet_name` on the measure-kind refusal, `_reread` dropping its note, the `_HALF` fill skipped on a reread) were each caught within 3,000 fuzz cases.
+  - It read the stages for in-place mutation of `roles`, the rebinding of `raw_rows`, `_reread`'s arguments, note and problem order, the early returns, each `continue` that became `return None`, the two `field(init=False)` fields and names bound by `:=`, and found no difference.
+  - Limit it noted: exceptions were compared at the `_process_raw_table` boundary, not through `_read_excel_bytes`, whose handlers use only `str(exc)`.
 
 ## Looking at the outputs, Phase 3
 
