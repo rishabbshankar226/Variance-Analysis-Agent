@@ -265,6 +265,18 @@ measure cutoffs and ambiguous choices. With Period as a group key, omit
 256-column and 1,000,000-cell caps across the whole panel. Split larger universes
 into several files.
 
+A folder of filings runs as a batch. Each `.htm`, `.html` or `.pdf` file directly in
+the folder is read as a single `--assisted` run reads one, and its long rows gain a
+`file` column. The manifest has one row per filing: its name, sha256, outcome (`ok`,
+`refused` or `error`), row count and message. A filing that refuses never stops the
+rest; the batch exits 0 when every filing reads and 2 when any does not.
+
+```sh
+variance-agent --batch tests/fixtures/analysts --period FY2025 \
+  --dollar-threshold 1 --percent-threshold 1 \
+  --long-output filings.csv --manifest manifest.csv
+```
+
 ## Earnings and quant presets
 
 Presets supply presentation/intake defaults; every explicit option wins and no
