@@ -76,7 +76,7 @@ Every item in the approved backlog, with its final state. "What it became" is th
 | X43 | none | open | Found in X41's tests: a basis table prints a scaled amount with three decimals ("$89,999.000"); the value is right. | none |
 | X44 | 8 | done | The sdist leaves out this run's review evidence, as it does the others' (found in Phase 8) | `226a82e` |
 | X45 | 8 | done | Amount headings in different units refuse instead of sharing one multiplier (found in Phase 8, STOP-ASK) | `6c87e91` |
-| X48 | 8 | done | A file with a pair per period reads the pair named, else the newest (found in Phase 8, STOP-ASK) | `6c935e3` |
+| X48 | 8 | done | A file with a pair per period reads the pair named, else the newest (found in Phase 8, STOP-ASK); on the command line, `--period` also picks a band workbook's band | `6c935e3`, `6dd312a` |
 | X46 | 8 | done | A percent-formatted Tolerance or Buffer reads as the percentage Excel shows (found in Phase 8, STOP-ASK) | `88fa7c5` |
 | X47 | 8 | done | A Percent limit row shows its headroom and buffer in basis points (found in Phase 8, STOP-ASK) | `27a9bf4` |
 | X32 | 5 (done in 7) | done | Sheets with percentage cells say how a tie rounds; no cell value changes (done in Phase 7) | `6c13d36` |
@@ -163,6 +163,7 @@ Each proof ran when its fix landed. Phase 4 moved the code around X6, X10 and X4
 | X44 | the sdist exclude not yet added (the sdist built at `7049fac`), with the gate's new assertion | `python scripts/check_distribution.py .scratch/dist-final` | `AssertionError: docs/improve/evidence in the sdist`; with the exclude, the rebuilt sdist passes |
 | X45 | `heading_unit`, `_heading_units`, `_heading_units_differ` and their use in `_unit_scale` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_header_unit_conflicts.py` | 9 failed, 7 passed: the five mixed-unit files and the title-against-heading file read with one multiplier and don't refuse; two "(USD m)" headings read 250 and 275 unscaled; "($ in millions)" over two "($000)" headings reads millions; and the command line writes the report. The 7 that pass are the same-unit, title-over-bare, "($)" beside a bare heading, "(USD)" and half-file controls |
 | X48 | `chosen_period_pair` and its two uses in `intake.py`, and `_named_pair_read` and its two uses in `cli.py`, removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_period_pair_choice.py tests/test_intake_comparison.py::test_wide_fiscal_year_layout_stays_budget` | 8 failed, 6 passed: newest-first 2026, Sep 2026 and FY2026 files read the older pair, under the `--period` heading too; `--period jan-26` reads Feb-26; Jan-26 and Feb-26 under `--period "Feb 2026"` exit 0 with Feb-26's figures; and the edited FY test reads FY2024. The 6 that pass are the ascending, unordered and chosen-period controls, `--period 2025` and `Feb-26` (each already the last pair), and the mapping's period |
+| X48, bands | `_named_pair_read` made to return what intake read (a hand edit, reversed from its saved diff), test kept | `pytest tests/test_period_pair_choice.py -k band` | 1 failed, 2 passed: `--period "Q2 2026"` on a band workbook reads Q3's $100.00 and $110.00 under the Q2 heading. `Q3 2026` and a `--period` that names no band read Q3 either way |
 | X46 | `percent_points` and the declared-cell reads in `_apply_measure` and `_percent_as_shown` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_percent_declarations.py` | 13 failed, 4 passed: both readers keep 0.0025 and 0.005 as stored; the Fraction oracle fails for every nonzero value; every target row shows a tolerance a hundredth of its size ("0.25 bps" for 25 bps); and the two Near limit rows read Within. The 4 that pass are the General-cell and Currency-row controls, the zero value, and the 0.0029 row, which is Within either way |
 | X47 | `spread` and its two uses in `basis_table` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_limit_rate_units.py` | 4 failed, 1 passed: the three Percent rows show "1 bps", "-0.5 bps" and "-0.25 bps" of headroom and "0.5 bps" buffers, and the Limits sheet reads "1 bps" and "0.5 bps". The Currency row passes either way |
 
@@ -174,13 +175,13 @@ Each proof ran when its fix landed. Phase 4 moved the code around X6, X10 and X4
 | Functions over 80 lines | 36 | 26 |
 | Functions over 150 lines | 9 (longest `_process_raw_table`, 477) | 0 (longest `_read_ixbrl_bytes`, 149) |
 | `chat/handlers.py` | one module of 5,082 lines | the package `chat/handlers/`, 17 modules |
-| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing, at `ebd1912`. The scanner does not see X45's refusal, which a helper builds; its three forms were checked with the scanner's own rules and pass. X48's refusal is the command line's own |
+| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing, at `ebd1912` (no message changed after it). The scanner does not see X45's refusal, which a helper builds; its three forms were checked with the scanner's own rules and pass. X48's refusal is the command line's own |
 | Test strength: Phase 1's 25 seeded mutants | 3 survive (`63162aa`) | 0 survive |
-| Suite | 2505 passed in 48.53s (Phase 0) | 2865 passed in 46.88s at `ebd1912`, at load average 8.6 to 7.1 from processes not this run's; 2810 passed in 51.82s in D3's clean clone |
+| Suite | 2505 passed in 48.53s (Phase 0) | 2868 passed in 49.05s at `6dd312a`, at load average 13.6 to 13.5 from processes not this run's; 2810 passed in 51.82s in D3's clean clone |
 | Slowest test (the worksheet-scan memory test) | about 10 s run alone; 21.94 s in the suite at load average 5.66 (`8a558f4`) | 2.87 s run alone; 7.68 s in the suite at load average 16.16 (PLAN.md, Phase 6 figures) |
 | Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses (at `7049fac`; re-run at `ebd1912`, all 31 rows the same) |
 | Contract fixtures and audit schemas | 19 files; 1.0 to 1.9 | the same bytes (`git diff main -- tests/fixtures/contracts schemas` is empty) |
-| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes after X44; 1,973,670 bytes at `ebd1912` (the wheel 447,494) |
+| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes after X44; 1,974,321 bytes at `6dd312a` (the wheel 447,494) |
 
 The suite's duration could not be measured on a quiet machine: other projects' processes held the load average between 5 and 34 through Phase 8, so the durations do not compare.
 
@@ -250,9 +251,9 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
 - The decisions taken along the way are PLAN.md's Decisions 1 to 18.
 
-## Gates at `ebd1912`
+## Gates at `6dd312a`
 
-The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commits after `ebd1912` change only REPORT.md and the final STOP's evidence.
+The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commit after `6dd312a` changes only REPORT.md and the final STOP's evidence.
 
 ```
 ruff check .                     All checks passed!
@@ -260,8 +261,8 @@ mypy --strict src/variance_agent scripts deterministic_conditioning
                                  Success: no issues found in 90 source files
 compileall -q src tests scripts deterministic_conditioning
                                  exit 0
-pytest -q                        2865 passed in 46.88s
-pytest -q -k contract            181 passed, 2684 deselected in 5.10s
+pytest -q                        2868 passed in 49.05s
+pytest -q -k contract            181 passed, 2687 deselected in 5.14s
 pip check                        No broken requirements found.
 build                            Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
 twine check                      PASSED (wheel), PASSED (sdist)
