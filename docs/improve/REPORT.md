@@ -4,7 +4,7 @@ Branch `improve/depth-pass`, cut from `main` at `15100c8`. Nothing is pushed or 
 
 ## What changed for Maya
 
-- **No wrong figure on the paths found.** Eighteen ways a report could show a number the file does not support are closed (X1 to X8, X30, X41, X45 to X50, C1, C2). Among them:
+- **No wrong figure on the paths found.** Nineteen ways a report could show a number the file does not support are closed (X1 to X8, X30, X41, X45 to X50, X53, C1, C2). Among them:
   - a footnote mark read as a digit
   - a unit caption applied twice or missed
   - Budget and Actual headings in two units scaled by one multiplier, or scaled by another column's unit
@@ -12,7 +12,7 @@ Branch `improve/depth-pass`, cut from `main` at `15100c8`. Nothing is pushed or 
   - a chosen period, or columns that run newest first, reading another period's figures
   - a signed ledger's profit lines
   - a rate's tolerance, buffer or headroom read or shown in the wrong unit
-  - a statement's "EPS" line scaled as money by its millions caption
+  - a statement's or a budget file's "EPS" line scaled as money by its millions caption
 
   Each one refuses plainly or reads the figure right, with a test.
 - **Fewer dead ends.** Over the 24 runs of Phase 1's fictional files, 6 ended with no way forward; now 2 do (an uncalculated formula, which refuses on purpose, and a date band merged over Budget and Actual, left open). Merged headers, section headings, "Budget ($000)" headings, two-row headers and bare-year bands now read.
@@ -82,7 +82,7 @@ Every item in the approved backlog, with its final state. "What it became" is th
 | X47 | 8 | done | A Percent limit row shows its headroom and buffer in basis points (found in Phase 8, STOP-ASK) | `27a9bf4` |
 | X49 | after the final STOP | done | A unit only another heading names refuses instead of scaling the amounts (STOP-ASK, Decision 20) | `1c0e7ca` |
 | X50 | after the final STOP | done | A statement's EPS lines are per-share, never money a caption scales (STOP-ASK, Decision 20) | `f08f3d8` |
-| X53 | after the final STOP | asked | A budget file's "Basic EPS" row with no Measure is scaled by its caption, with or without `--per-share-lines`: STOP-ASK, not fixed | none |
+| X53 | after the final STOP | done | A per-share row with no Measure refuses where a caption would scale it (STOP-ASK, Decision 21) | `f8b57e8` |
 | X51 | after the final STOP | done | Limit, statement and filing results offer the Export excel chip (Decision 19) | `118010d` |
 | X52 | after the final STOP | done | A long note in a results panel wraps on a phone (Decision 19) | `c70c5ac` |
 | X32 | 5 (done in 7) | done | Sheets with percentage cells say how a tie rounds; no cell value changes (done in Phase 7) | `6c13d36` |
@@ -109,7 +109,7 @@ Items that ran out of their phase's order:
 - N1's and N2's docs (`154337b`, `fa85643`) came after X33 and X34.
 - N1's Change % test and fix (`c3793f6`, `5e8ccc7`) came after D2 and D3, and its two exact-text checks (`9dd88db`) after the Phase 8 review.
 - X44 to X48 were found in Phase 8. X45 to X48 were STOP-ASKs, approved on 2026-11-03.
-- X43, X51 and X52 were done after the final STOP, under Decision 19. X49 and X50 were found then, asked, and done under Decision 20. X53 was found while checking X50's reach, and is asked.
+- X43, X51 and X52 were done after the final STOP, under Decision 19. X49 and X50 were found then, asked, and done under Decision 20. X53 was found while checking X50's reach, asked, and done under Decision 21.
 
 Every other item ran in its phase's order.
 
@@ -178,22 +178,23 @@ Each proof ran when its fix landed. Phase 4 moved the code around X6, X10 and X4
 | X52 | the `.view-section .facts` column put back to `max-content` (`git apply -R` of the `src` diff), test kept | `pytest tests/test_interface_design.py -k long_note` | 1 failed: the rule reads `1fr max-content`. The phone shots before and after (`evidence/phase-8/`, `evidence/phase-8/x51-x52/`) show the same screen cut off, then wrapped |
 | X49 | `_unit_only_elsewhere` and its use removed, and the title-only fallback put back to "title or another heading" (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_other_heading_units.py` | 5 failed, 4 passed: the three files whose only unit sits on another heading scale by it and don't refuse; `Budget ($000)` beside a bare `Actual` scales Actual by `Headcount (000s)`'s unit; and the command line exits 0. The 4 that pass are the title-caption, no-unit and own-unit controls |
 | X50 | `_EPS_RE` and its two uses removed, and the flag's own check put back (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_eps_lines.py` | 2 failed, 3 passed: the statement keeps "Basic EPS", "Diluted EPS" and "Adjusted EPS" as money lines, and the EDGAR sheet reads Basic EPS as 5,500,000.0 and 6,100,000.0. The 3 that pass are the `--per-share-lines` controls |
+| X53 | `per_share_rows_stop`, `_declares_measure` and their uses in `_unit_scale` and `_apply_unit_caption` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_per_share_rows.py` | 6 failed, 4 passed: `k1` reads Basic EPS as 5,500,000.0 in both readers and on the command line, with and without `--per-share-lines`; a blank Measure cell scales; and the share-count and several-line files scale. The 4 that pass are the declared Per Share and Currency rows, the file with no caption, and "STEPS program costs" |
 
 ## Before and after
 
 | Figure | Before | After |
 |---|---|---|
-| Functions in `src/` (an `ast` walk, `.scratch/size_table.py`) | 732 | 874 |
+| Functions in `src/` (an `ast` walk, `.scratch/size_table.py`) | 732 | 876 |
 | Functions over 80 lines | 36 | 26 |
 | Functions over 150 lines | 9 (longest `_process_raw_table`, 477) | 0 (longest `_read_ixbrl_bytes`, 149) |
 | `chat/handlers.py` | one module of 5,082 lines | the package `chat/handlers/`, 17 modules |
-| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing, at `94bec7f`. The scanner does not see X45's and X49's refusals, which helpers build; their forms were checked with the scanner's own rules and pass. X48's refusal is the command line's own |
+| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing, at `d914676`. The scanner does not see X45's, X49's and X53's refusals, which helpers build; their forms were checked with the scanner's own rules and pass. X48's refusal is the command line's own |
 | Test strength: Phase 1's 25 seeded mutants | 3 survive (`63162aa`) | 0 survive |
-| Suite | 2505 passed in 48.53s (Phase 0) | 2896 passed in 45.73s at `94bec7f`, at load average 2.3 to 3.3; 2810 passed in 51.82s in D3's clean clone |
+| Suite | 2505 passed in 48.53s (Phase 0) | 2906 passed in 47.05s at `d914676`, at load average 3.2 to 6.4; 2810 passed in 51.82s in D3's clean clone |
 | Slowest test (the worksheet-scan memory test) | about 10 s run alone; 21.94 s in the suite at load average 5.66 (`8a558f4`) | 2.87 s run alone; 7.68 s in the suite at load average 16.16 (PLAN.md, Phase 6 figures) |
-| Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses (at `7049fac`; re-run at `ebd1912`, `c70c5ac` and `94bec7f`, all 31 rows the same) |
+| Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses (at `7049fac`; re-run at `ebd1912`, `c70c5ac`, `94bec7f` and `d914676`, all 31 rows the same) |
 | Contract fixtures and audit schemas | 19 files; 1.0 to 1.9 | the same bytes (`git diff main -- tests/fixtures/contracts schemas` is empty) |
-| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes after X44; 1,981,817 bytes at `94bec7f` (the wheel 448,014) |
+| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes after X44; 1,984,893 bytes at `d914676` (the wheel 448,837) |
 
 The suite's duration could not be measured on a quiet machine: other projects' processes held the load average between 5 and 34 through Phase 8, so the durations do not compare.
 
@@ -265,13 +266,13 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - **After the final STOP**, the owner answered "do what you recommend and continue" (Decision 19). That covered the items the final STOP left open and named: X43, the Export excel chip (X51) and the mobile notes (X52), all done. Reproducing the two wrong numbers the Phase 8 reviewer had suspected found both. They were STOP-ASKs under the owner's own rule, and the owner answered "Approve both" (Decision 20):
   - **X49** (`evidence/stop-ask-other-heading-units/`): a "Headcount (000s)" heading scales a $250,000 budget to $250,000,000, on the branch and on `main`.
   - **X50** (`evidence/stop-ask-eps-lines/`): a statement's "Basic EPS" of 6.10 under "$ in Millions" shows as $6,100,000.00, on the branch and on `main`.
-- **STOP-ASK X53** (`evidence/stop-ask-fpa-eps-rows/`), found while checking X50's reach. In a budget CSV with no Measure column, a "Basic EPS" row under "(in millions, except per share data)" reads 5.50 as $5,500,000.00, on the branch and on `main`. With `--per-share-lines` it is the same on the branch, where C2 now applies the caption on the comparison path.
-- One STOP-ASK is open, X53. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
-- The decisions taken along the way are PLAN.md's Decisions 1 to 20.
+- **STOP-ASK X53** (`evidence/stop-ask-fpa-eps-rows/`), found while checking X50's reach. In a budget CSV with no Measure column, a "Basic EPS" row under "(in millions, except per share data)" reads 5.50 as $5,500,000.00, on the branch and on `main`. With `--per-share-lines` it is the same on the branch, where C2 now applies the caption on the comparison path. The owner answered "Approve X53" (Decision 21).
+- No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
+- The decisions taken along the way are PLAN.md's Decisions 1 to 21.
 
-## Gates at `94bec7f`
+## Gates at `d914676`
 
-The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commits after `94bec7f` change only REPORT.md, the CHANGELOG, the input contract and the final STOP's evidence.
+The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commit after `d914676` changes only REPORT.md, the CHANGELOG, the input contract and the final STOP's evidence.
 
 ```
 ruff check .                     All checks passed!
@@ -279,8 +280,8 @@ mypy --strict src/variance_agent scripts deterministic_conditioning
                                  Success: no issues found in 90 source files
 compileall -q src tests scripts deterministic_conditioning
                                  exit 0
-pytest -q                        2896 passed in 45.73s
-pytest -q -k contract            181 passed, 2715 deselected in 4.48s
+pytest -q                        2906 passed in 47.05s
+pytest -q -k contract            181 passed, 2725 deselected in 4.73s
 pip check                        No broken requirements found.
 build                            Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
 twine check                      PASSED (wheel), PASSED (sdist)
@@ -288,7 +289,7 @@ check_distribution.py            Wheel/sdist contents, license, Python support, 
 minimal install (Python 3.11):   Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
                                  No broken requirements found.
 contracts and schemas vs main    identical
-size table                       functions=874 over80=26 over150=0
+size table                       functions=876 over80=26 over150=0
 ```
 
 D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except the panel run's documented 3.
@@ -298,7 +299,7 @@ D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except t
 - Phase 3: 91 screenshots of 26 scenarios, every chat screen Phases 2 and 3 changed, in `evidence/phase-3/` (light theme, desktop and mobile).
 - Phase 5: 16 screenshots of the three export replies N1 changed (a limit run, a balance sheet and a filing's income statement), in `evidence/phase-5/`.
 - Phase 8: 7 screenshots of the three chat screens X45, X46 and X47 changed (the mixed-unit refusal, a target row's 25 bps tolerance, and a limit row's headroom and buffer in basis points), in `evidence/phase-8/`. X48 leaves the chat's screens as they were: the chat asks which period when a file has more than one pair.
-- After the final STOP: 5 screenshots of the same two results screens with X51's chip and X52's wrapped notes, in `evidence/phase-8/x51-x52/`.
+- After the final STOP: 5 screenshots of the same two results screens with X51's chip and X52's wrapped notes, in `evidence/phase-8/x51-x52/`. Then 8 of X49's and X53's refusals and X50's statement read with its EPS lines left out, in `evidence/phase-8/x49-x53/`.
 
 ## Draw G
 
@@ -318,14 +319,13 @@ Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AG
 - **X9, X11:** hosted mode shares one session, and staged downloads sit under guessable names. The per-visitor-sessions branches own both.
 - **X24's merged date band:** "Could not determine period order for Sep 2026, Sep 2026." (`f17_date_headers.xlsx`).
 - **X38, X39, X40:** duplicated number grammar; `export excel`'s memory on the free plan; the hosted build's unpinned dependencies.
-- **X53, asked:** a wrong number, on `main` too, with its evidence and a recommendation (Stops and decisions, above). It waits on the owner's answer.
 
 ## PR description
 
 **Improvement pass: wrong numbers, dead ends, structure, two features, tests and docs**
 
 What changed:
-- Eighteen ways a report could show a figure the file does not support now refuse plainly or read the figure right. Six of them were found at the end and fixed with the owner's approval.
+- Nineteen ways a report could show a figure the file does not support now refuse plainly or read the figure right. Seven of them were found at the end and fixed with the owner's approval.
 - Six of Maya's 24 sample runs used to stop with no way forward; two still do. Every message a chat reader sees says what to do next.
 - Export Excel works for limit, benchmark, target, balance sheet, cash flow and filing income results. A new batch run reads a folder of filings in one command.
 - The largest functions are split (none over 150 lines), and the chat's handler module is now a package. Four fresh-eyes reviewers, one per refactor item, found no behaviour change.
@@ -333,8 +333,6 @@ What changed:
 - Docs: earlier audit records moved to `docs/history/`; the README, input contract and roadmap describe what the tool does now.
 
 Unchanged: the 19 contract fixtures (9 reports, 5 audits and their inputs), audit schemas 1.0 to 1.9, the financial rules and every default. No dependency was added.
-
-Open: one wrong number found at the very end, X53 (also on `main`), waits on the owner with its evidence.
 
 Not verified: the Windows CI job, real Excel, Safari and Firefox, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
 

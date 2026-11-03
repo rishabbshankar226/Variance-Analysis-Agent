@@ -1,8 +1,8 @@
 # Final STOP evidence
 
-- `gates.txt`: the full gate list at `94bec7f`, as printed (`.scratch/gates/final.sh` in the run), after X45 to X48. An earlier run at `7049fac` gave 2814 passed.
+- `gates.txt`: the full gate list at `d914676`, as printed (`.scratch/gates/final.sh` in the run), after X45 to X48. An earlier run at `7049fac` gave 2814 passed.
 - `d3-exits.txt`: the exit code of each of the README's 25 commands, run in order from a clean clone at `5e8a0fc` (D3).
-- `scorecard/`: the friction scorecard in REPORT.md. `before.jsonl` is `main` at `15100c8`, `after.jsonl` is `7049fac`. Re-run at `ebd1912`, `c70c5ac` and `94bec7f`, every row is the same as `after.jsonl`.
+- `scorecard/`: the friction scorecard in REPORT.md. `before.jsonl` is `main` at `15100c8`, `after.jsonl` is `7049fac`. Re-run at `ebd1912`, `c70c5ac`, `94bec7f` and `d914676`, every row is the same as `after.jsonl`.
 
 To reproduce the scorecard on any tree (every file is fictional and built by a script):
 

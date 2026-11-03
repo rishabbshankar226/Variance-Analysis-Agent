@@ -19,6 +19,8 @@ contract fixtures, audit schemas 1.0 to 1.9 and the financial rules are unchange
   percentage reads as that percentage, and a rate limit's headroom and buffer show in basis points.
   A unit only another column's heading names ("Headcount (000s)") refuses instead of scaling the
   amounts, and a statement's "EPS" lines are per-share, left out or kept as Per Share, never scaled.
+  Where a caption would scale the amounts, a row with no Measure whose label names a per-share
+  figure or a share count refuses, naming the line.
 - `--xlsx` and the chat's Export Excel write a workbook for limit, benchmark, target, balance sheet,
   cash flow, covenant metric and filing income comparisons, where they refused. Sheets that hold
   percentages gain a note on how a tie rounds; no existing cell value changes.
