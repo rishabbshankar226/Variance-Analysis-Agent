@@ -269,7 +269,8 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - **STOP-ASK X53** (`evidence/stop-ask-fpa-eps-rows/`), found while checking X50's reach. In a budget CSV with no Measure column, a "Basic EPS" row under "(in millions, except per share data)" reads 5.50 as $5,500,000.00, on the branch and on `main`. With `--per-share-lines` it is the same on the branch, where C2 now applies the caption on the comparison path. The owner answered "Approve X53" (Decision 21).
 - **After the second final STOP**, the owner answered "do what you recommend" (Decision 22). It was read as closing the "Not verified" items this Mac can check without a push. CI's test job passed on Python 3.12, 3.13 and 3.14, and the changed chat screens measured no overflow in Playwright's WebKit and Firefox (`evidence/verify-local/`). The owner declined computer-use access to Excel, so real Excel stays not verified. Nothing in `src/` or `tests/` changed.
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
-- The decisions taken along the way are PLAN.md's Decisions 1 to 22.
+- **Draft PR #28 (2026-11-03):** asked whether to push the branch and open a draft PR against `main` so CI runs, the owner answered "Open draft PR" (Decision 23). It is <https://github.com/rishabbshankar226/Variance-Analysis-Agent/pull/28>, with the description below set in the repository's PR template headings.
+- The decisions taken along the way are PLAN.md's Decisions 1 to 23.
 
 ## Gates at `d914676`
 
@@ -309,7 +310,7 @@ Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AG
 
 ## Not verified
 
-- The Windows output-contract job: not run. CI runs it, but the branch has never been pushed, so CI has not run on it. CI's Ubuntu jobs have not run either. Their test job's steps did pass on this Mac, on Python 3.12.14, 3.13.15 and 3.14.0: ruff, mypy --strict, compileall, 2906 tests and pip check each (`evidence/verify-local/ci-test-job.txt`).
+- The Windows output-contract job: not run here. The branch was pushed for draft PR #28 at the owner's request (Decision 23), so CI's first run on it, Windows included, is that PR's and is not recorded in this report. Their test job's steps did pass on this Mac, on Python 3.12.14, 3.13.15 and 3.14.0: ruff, mypy --strict, compileall, 2906 tests and pip check each (`evidence/verify-local/ci-test-job.txt`).
 - Real Excel. The workbooks were read back with openpyxl, and X32's tie was rendered in LibreOffice 26.8.1. Excel 16.114.3 is installed here, but the owner declined computer-use access to it, so no workbook was opened in Excel.
 - Safari and Firefox as shipped, and a real phone. Phase 8's and Phase 5's chat screens were shot in Playwright's WebKit 26.4 and Firefox 150.0.2 as well as Chromium, at desktop and phone sizes: 62 screenshots, and no page, reply, results section or facts grid wider than its box in any engine (`evidence/verify-local/`). With X52's fix reversed, the same measure reads 210 to 322 px in all three.
 - Real analysts. The scorecard is a scripted policy over fictional files.
