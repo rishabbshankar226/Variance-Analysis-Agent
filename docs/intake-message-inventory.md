@@ -1,6 +1,6 @@
 # Intake Message Inventory
 
-This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `f35a00f`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
+This document lists every user-facing message of the intake workflow (reading a file and preparing it for analysis) in the source at commit `3076c97`: `parsing.py`, `excel.py`, `analysis.py`, `intake.py`, `join.py`, `pdf_tables.py`, `ixbrl.py`, `statement_shape.py`, `ltm.py`, `metrics.py`, `chat/`. [`scripts/message_inventory.py`](../scripts/message_inventory.py) writes it, so it changes only with the code. The inventory before it was written by hand at `a3ce6bb`.
 
 Per the definitions in [`.agents/rules/variance-intake.md`](../.agents/rules/variance-intake.md), which apply to a message Maya sees:
 - **Jargon**: a snake_case key or `repr()` quoting, an exception name, CLI flag syntax (unless the message says it is optional), one of the words "normalize," "alias," "schema," "OOXML," "archive," "XML," "DTD," "payload," "Row Kind," "Unclassified", or an exit code.
@@ -371,46 +371,46 @@ Placeholders such as `{line_item}` show the expression a message prints; they ar
 
 | Source | Message Text | Jargon? | Offers Fix? | Notes / Jargon Rationale |
 |---|---|---|---|---|
-| `intake.py:650` | `{line_item}: required value in {field} is missing.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:653` | `{line_item}: field '{field}' must be numeric, not boolean.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:657` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:663` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:667` | `{line_item}: field '{field}' must be a numeric scalar.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:671` | `{line_item}: field '{field}' has a footnote mark or small digit ({marks}) in: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:680` | `{line_item}: required value in {field} is missing (marked {text}).` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:699` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:703` | `{line_item}: field '{field}' has an unrecognized number format: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:708` | `{line_item}: field '{field}' currency {code} conflicts with reporting currency {currency}; no currency conversion is performed.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:719` | `{line_item}: field '{field}' is not numeric: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:725` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:727` | `{line_item}: field '{field}' exceeds the supported numeric length.` | No | n/a | shown under "Fix these cells and upload the file again" |
-| `intake.py:1349` | `Excel files require the optional Excel tools. Please install with: pip install 'variance-analysis-agent[excel]'` | No | Yes | a clause another message completes |
-| `intake.py:1669` | `I could not read '{filename}' as text. Save it as a UTF-8 CSV (in Excel: Save As, then CSV UTF-8) and upload it again.` | No | Yes |  |
-| `intake.py:1771` | `The file '{filename}' exceeds the supported file size limit of 32 MiB. Save just the sheet with the statement as a new file and upload that.` | No | Yes |  |
-| `intake.py:1832` | `Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), a CSV, TSV, JSON or PDF file.` | No | Yes |  |
-| `intake.py:1878` | `'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read. Delete the columns the analysis doesn't need and upload the file again.` | No | Yes |  |
-| `intake.py:1884` | `'{filename}' has more rows or cells than I can read (limits: {MAX_ROWS} rows and {MAX_CELLS} cells). Save just the rows the analysis needs as a new file and upload that.` | No | Yes |  |
-| `intake.py:1891` | `I could not split '{filename}' into columns: {str(exc).rstrip('.')}. Save it from Excel as CSV and upload that.` | No | Yes |  |
-| `intake.py:1976` | `Could not read JSON data from '{filename}': {str(exc).rstrip('.')}. Save the table as CSV or Excel and upload that instead.` | No | Yes |  |
-| `intake.py:2029` | `The Excel file '{filename}' has a worksheet larger than I can read (at most {MAX_ROWS} rows and {MAX_CELLS} cells on any sheet, hidden sheets included). Export the sheet you need to CSV, or save a copy without the large sheet.` | No | Yes |  |
-| `intake.py:2029` | `The Excel file '{filename}' could not be opened safely. Open it in Excel, save it again as .xlsx, and upload that.` | No | Yes |  |
-| `intake.py:2045` | `Could not read Excel file '{filename}': {str(exc).rstrip('.')}. Open it in Excel, save the sheet with the statement as a new workbook, and upload that.` | No | Yes |  |
-| `intake.py:2061` | `The Excel workbook '{filename}' contains no worksheets. Open it in Excel, check that it holds the statement, then save it and upload it again.` | No | Yes |  |
-| `intake.py:2101` | `Worksheet '{chosen_sheet}' was not found in '{filename}'. Available sheets: {', '.join(sheetnames)}. Choose one of those sheets.` | No | Yes |  |
-| `intake.py:2462` | `Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named}.` | No | Yes |  |
-| `intake.py:2474` | `has lines hidden in Excel, and leaving lines out would break the statement's subtotals. Count them, or unhide them` | No | Yes | a clause another message completes |
-| `intake.py:2477` | `shows some amounts scaled by their number format, so their unit can't be read from the caption. Give the amounts a plain number format` | No | Yes | a clause another message completes |
-| `intake.py:2480` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Choose the income statement's sheet instead.` | No | Yes |  |
-| `intake.py:2503` | `Sheet '{sheet_name}' {problem}, and upload the file again.` | No | Yes |  |
-| `intake.py:2599` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
-| `intake.py:2658` | `'{names_by_line[at]}' prints no figure for {chosen.labels[column]} in the {chosen.name}, and no subtotal there confirms it is 0, so I stopped instead of guessing. Choose another statement from this filing.` | No | Yes |  |
-| `intake.py:2763` | `I couldn't check the {chosen.name}. Upload a CSV or Excel copy of the statement instead.` | No | Yes |  |
-| `intake.py:3081` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
-| `intake.py:3092` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Upload the income statement instead, or a CSV or Excel copy of it.` | No | Yes |  |
-| `intake.py:3307` | `The file '{filename}' contains no data. Upload a file with a header row (such as Line Item, Budget, Actual) and at least one line.` | No | Yes |  |
-| `intake.py:3353` | `Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' (a Forecast or Prior Year column can stand in for Budget). Add a header row that names those columns, and upload the file again.{hint}` | No | Yes |  |
-| `intake.py:3353` | `Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, and Actual columns in '{filename}'. Add a header row that names those columns, and upload the file again.` | No | Yes |  |
-| `intake.py:3379` | `Sheet '{sheet_name}' has no separate table in {excel.block}. Choose one of its tables: {tables_named}.` | No | Yes |  |
+| `intake.py:673` | `{line_item}: required value in {field} is missing.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:676` | `{line_item}: field '{field}' must be numeric, not boolean.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:680` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:686` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:690` | `{line_item}: field '{field}' must be a numeric scalar.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:694` | `{line_item}: field '{field}' has a footnote mark or small digit ({marks}) in: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:703` | `{line_item}: required value in {field} is missing (marked {text}).` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:722` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:726` | `{line_item}: field '{field}' has an unrecognized number format: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:731` | `{line_item}: field '{field}' currency {code} conflicts with reporting currency {currency}; no currency conversion is performed.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:742` | `{line_item}: field '{field}' is not numeric: {value}.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:748` | `{line_item}: field '{field}' must be a finite number.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:750` | `{line_item}: field '{field}' exceeds the supported numeric length.` | No | n/a | shown under "Fix these cells and upload the file again" |
+| `intake.py:1378` | `Excel files require the optional Excel tools. Please install with: pip install 'variance-analysis-agent[excel]'` | No | Yes | a clause another message completes |
+| `intake.py:1698` | `I could not read '{filename}' as text. Save it as a UTF-8 CSV (in Excel: Save As, then CSV UTF-8) and upload it again.` | No | Yes |  |
+| `intake.py:1800` | `The file '{filename}' exceeds the supported file size limit of 32 MiB. Save just the sheet with the statement as a new file and upload that.` | No | Yes |  |
+| `intake.py:1861` | `Unsupported input format '{suffix}'. Please use an Excel workbook (.xlsx, .xlsm), a CSV, TSV, JSON or PDF file.` | No | Yes |  |
+| `intake.py:1907` | `'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read. Delete the columns the analysis doesn't need and upload the file again.` | No | Yes |  |
+| `intake.py:1913` | `'{filename}' has more rows or cells than I can read (limits: {MAX_ROWS} rows and {MAX_CELLS} cells). Save just the rows the analysis needs as a new file and upload that.` | No | Yes |  |
+| `intake.py:1920` | `I could not split '{filename}' into columns: {str(exc).rstrip('.')}. Save it from Excel as CSV and upload that.` | No | Yes |  |
+| `intake.py:2005` | `Could not read JSON data from '{filename}': {str(exc).rstrip('.')}. Save the table as CSV or Excel and upload that instead.` | No | Yes |  |
+| `intake.py:2058` | `The Excel file '{filename}' has a worksheet larger than I can read (at most {MAX_ROWS} rows and {MAX_CELLS} cells on any sheet, hidden sheets included). Export the sheet you need to CSV, or save a copy without the large sheet.` | No | Yes |  |
+| `intake.py:2058` | `The Excel file '{filename}' could not be opened safely. Open it in Excel, save it again as .xlsx, and upload that.` | No | Yes |  |
+| `intake.py:2074` | `Could not read Excel file '{filename}': {str(exc).rstrip('.')}. Open it in Excel, save the sheet with the statement as a new workbook, and upload that.` | No | Yes |  |
+| `intake.py:2090` | `The Excel workbook '{filename}' contains no worksheets. Open it in Excel, check that it holds the statement, then save it and upload it again.` | No | Yes |  |
+| `intake.py:2130` | `Worksheet '{chosen_sheet}' was not found in '{filename}'. Available sheets: {', '.join(sheetnames)}. Choose one of those sheets.` | No | Yes |  |
+| `intake.py:2491` | `Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named}.` | No | Yes |  |
+| `intake.py:2503` | `has lines hidden in Excel, and leaving lines out would break the statement's subtotals. Count them, or unhide them` | No | Yes | a clause another message completes |
+| `intake.py:2506` | `shows some amounts scaled by their number format, so their unit can't be read from the caption. Give the amounts a plain number format` | No | Yes | a clause another message completes |
+| `intake.py:2509` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Choose the income statement's sheet instead.` | No | Yes |  |
+| `intake.py:2532` | `Sheet '{sheet_name}' {problem}, and upload the file again.` | No | Yes |  |
+| `intake.py:2628` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
+| `intake.py:2687` | `'{names_by_line[at]}' prints no figure for {chosen.labels[column]} in the {chosen.name}, and no subtotal there confirms it is 0, so I stopped instead of guessing. Choose another statement from this filing.` | No | Yes |  |
+| `intake.py:2792` | `I couldn't check the {chosen.name}. Upload a CSV or Excel copy of the statement instead.` | No | Yes |  |
+| `intake.py:3110` | `No statement called '{sheet}' was found in '{filename}'. Statements found: {', '.join(names)}. Choose one of those statements.` | No | Yes |  |
+| `intake.py:3121` | `'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be compared as revenue and expense yet. Upload the income statement instead, or a CSV or Excel copy of it.` | No | Yes |  |
+| `intake.py:3336` | `The file '{filename}' contains no data. Upload a file with a header row (such as Line Item, Budget, Actual) and at least one line.` | No | Yes |  |
+| `intake.py:3382` | `Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' (a Forecast or Prior Year column can stand in for Budget). Add a header row that names those columns, and upload the file again.{hint}` | No | Yes |  |
+| `intake.py:3382` | `Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, and Actual columns in '{filename}'. Add a header row that names those columns, and upload the file again.` | No | Yes |  |
+| `intake.py:3408` | `Sheet '{sheet_name}' has no separate table in {excel.block}. Choose one of its tables: {tables_named}.` | No | Yes |  |
 
 ### `ixbrl.py`
 
