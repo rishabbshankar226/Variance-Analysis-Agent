@@ -71,7 +71,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
 | N2 | 5 | done | see `feat(N2)` | `batch.py` (new), `cli.py` (`--batch`, `--manifest`, `_run_batch`), `tests/test_batch.py` |
 | T2 | 6 | done | `test(T2)` `2038d4a` | `tests/test_mutation_survivors.py`; 0 of 25 survive (Phase 1: 3) |
-| T3 | 6 | todo | | |
+| T3 | 6 | done | `test(T3)` | `tests/test_excel_archive_hardening.py` (the one test over 5 seconds: 21.94s, now 2.87s alone) |
 | D1 | 7 | todo | | |
 | D2 | 7 | todo | | |
 | D3 | 7 | todo | | |
@@ -626,6 +626,7 @@ Boundary cases:
 | `tests/test_filing_headlines.py::test_the_chat_offers_no_workbook_for_a_filing`, renamed `test_the_chat_exports_a_filings_workbook` | the refusal text becomes "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets."; the chips assertion stays | N1 |
 | `tests/test_ixbrl_statements.py::test_the_cli_refuses_a_workbook_for_a_statement_comparison`, renamed `test_the_cli_writes_a_statement_workbook` | the refusal becomes exit 0 and a workbook whose only sheet is "Lines" | N1 |
 | `tests/test_ixbrl_statements.py::test_the_chat_compares_a_balance_sheet_without_asking_for_labels` | its last assertion, the refusal text, becomes "Excel workbook ready for download: Lines sheet."; every other assertion stays | N1 |
+| `tests/test_excel_archive_hardening.py::test_the_worksheet_scan_keeps_little_beyond_the_numbers_it_returns` | no assertion changes: `peak < 1.3 * budget` stays. Its sheet shrinks from 10,000 rows of 10 to 4,000 rows of 10, and the comment records why that size still pins the bound | T3: 21.94s in the suite, the only test over 5 seconds, almost all of it tracemalloc tracing 100,000 cells. `.scratch/t3_probe.py` puts back the two regressions the test guards (the per-cell coordinate set `405b2fd` removed, and the worksheet read whole before parsing) and measures peak over kept. Python 3.11, 10,000 rows: clean 1.108, set 1.398, whole read 1.352. 4,000 rows: 1.128, 1.527, 1.390. Python 3.14, 4,000 rows: 1.135, 1.589, 1.559. At 4,000 rows both regressions miss the 1.3 bound by more than at 10,000, and the clean scan stays under it. At 1,000 rows the clean scan reaches 1.307 and fails, so the sheet stops at 4,000 |
 
 ## Phase 0 figures (Python 3.11.16, macOS, 10 cores)
 
@@ -739,6 +740,9 @@ Items:
 - **T2, test strength: 3 survivors of 25 before (Phase 1, at `63162aa`), 0 after (at `46fe6c6`).** `test(T2)` (`2038d4a`) adds five tests in `tests/test_mutation_survivors.py`, one per survivor and two parametrized cases each for #4 and #11. Before committing, each survivor was applied by hand and its new test failed: #2 (`raise` in `_read_excel_bytes`' except clause, `intake.py:2044`), #4 (the earnings-layout test negated, `xlsx.py:785`) and #11 (the percentage-points note's test negated, `intake.py:3754`).
 - The re-run (`.scratch/mutants/rerun.py`, results in `.scratch/mutants/rerun.json`) applies Phase 1's 25 draws (Decision 10) to today's code, one at a time, in a detached worktree at HEAD. It runs `pytest -x -q` with `PYTHONPATH` on that worktree's `src` and checks that `variance_agent` imports from there. Each draw sits at a new line after the Phase 4 moves, located by its function and condition text. Three draws had two candidate lines, so the line Phase 1 mutated was chosen: #2 at 2044, #5 at 344 and #13 at 3336. Every draw was killed: 25 of 25.
 - The unmutated worktree gives "2776 passed, 28 skipped in 47.29s" in the same environment, so every kill is the mutant's. The worktrees were removed afterwards.
+- **T3, durations.** Before (`8a558f4`, load average 5.66): `pytest --durations=20` gives "2804 passed in 79.47s". One test ran over 5 seconds, `test_excel_archive_hardening.py::test_the_worksheet_scan_keeps_little_beyond_the_numbers_it_returns` at 21.94s. Next came `test_engine_polish.py::test_an_oversized_worksheet_is_named_in_the_error` at 3.65s and T1's seven `stay_fast` cases at 1.1 to 1.5s each.
+- The slow test was 8.2 of its 10 seconds in tracemalloc when run alone. Its sheet now has 4,000 rows instead of 10,000, and the bound is unchanged (listed under Existing assertions to edit, with the measurements). Run alone, it takes 2.87s. Both regressions it guards, put into `src/variance_agent/excel.py` one at a time and reverted with `git checkout`, still fail it: the coordinate set with `assert 8034965 < (1.3 * 5263245)`, and the whole-worksheet read with `assert 7314126 < (1.3 * 5263245)`.
+- After, the suite gave "2804 passed in 125.44s" at load average 16.16, with headless Chromium and node processes that are not this run's taking most of the CPU. The slow test took 7.68s there, and T1's cases 2.1 to 4.2s. Phase 8's gates re-measure the duration.
 
 ## Phase 4 reviews
 
