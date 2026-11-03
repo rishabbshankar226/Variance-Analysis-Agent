@@ -86,7 +86,7 @@ variance-agent examples/sample_variance.csv \
   --xlsx reports/q3-2026.xlsx
 ```
 
-Omit `--output` to print the report. `--xlsx` writes a formatted Excel workbook (Summary, Material Variances, Root Causes & Actions, All Rows) using only the standard library; Excel stores doubles, so use the CSV or audit JSON when exact decimals matter. In the chat UI, `export excel` downloads the same workbook. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
+Omit `--output` to print the report. `--xlsx` writes a formatted Excel workbook (Summary, Material Variances, Root Causes & Actions, All Rows) using only the standard library. A limit, benchmark or target comparison gets a Limits, Benchmark or Targets sheet instead, a balance sheet or cash flow comparison a Lines sheet, and a filing's income statement a Summary headed by its printed totals; Excel stores doubles, so use the CSV or audit JSON when exact decimals matter. In the chat UI, `export excel` downloads the same workbook. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
 
 ```sh
 variance-agent examples/sample_variance.csv \
