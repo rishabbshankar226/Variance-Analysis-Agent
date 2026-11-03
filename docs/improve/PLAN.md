@@ -895,6 +895,27 @@ Post-T1 suite: 2505 passed in 47.31s (count unchanged).
 - Reported as already on `main`: a "Headcount (000s)" heading scales Budget and Actual by 1,000. I have not reproduced it.
 - Reported as a refusal, not a wrong number: the comparison path refuses qualified headings, so X18's claim does not reach it.
 - Checked and supported by the reviewer: every numeric cell of the Limits, Benchmark and Targets sheets (Currency, Percent, Multiple and Count rows, a zero limit, captioned Buffer and Tolerance). Also the Lines sheet against `measure_rows`, the Filing Summary on a 10-K and a 10-Q, and batch rows, manifest, sha256 and exit code 2. X41's scaled Buffer, and `_ROUNDING_NOTE`'s wording.
+- X45 to X48 were approved on 2026-11-03 (Decision 18) and are done: `6c87e91`, `6c935e3`, `88fa7c5`, `27a9bf4`.
+
+**REPORT claims** (fresh-eyes reviewer, at `61cf060`). I checked each finding at `48614d5`.
+- Confirmed and corrected in REPORT:
+  - S1's edit to the glyph check was missing from "Assertions edited". It is now listed above, marked as recorded after the edit.
+  - Two of N1's checks had loosened to a prefix. They are restored to exact text (`9dd88db`).
+  - The `pytest -k contract` gate line was not in `gates.txt`. The final gates script now prints it.
+  - "Every other item ran in its phase's order" was wrong. N1's and N2's docs came after X33 and X34, and N1's Change % test and fix after D2 and D3.
+  - The slowest-test figures compared a loaded suite run with a run alone. Both are now given like for like.
+  - The message inventory's "before" figure needed its qualifier: it is the final scanner run on `d8542ff`'s source.
+  - The 19 contract fixtures are 9 reports, 5 audits and 5 inputs.
+  - `--batch` needs `--long-output` too.
+  - CI has never run on this branch, which is not pushed.
+- Confirmed, with a caveat added to REPORT: after Phase 4's moves, the saved diffs for X6, X10 and X41 no longer reverse at HEAD. Reverted by hand at `48614d5`, X6 gives "2 failed, 3 passed" and X10 "1 failed, 5 passed", as recorded. X41 was not re-run at HEAD.
+- Not re-measured here: the reviewer's suite timings for the slow test (`main` 6.15 s in the suite; HEAD 2.76 s in the suite and 2.48 s alone), and its `uv build` sdist sizes (6,647,578 and 1,955,445 bytes; the gate builds with `python -m build`).
+- Checked and supported by the reviewer:
+  - every item's commits, the 2814 count and the 4 renames
+  - the size table, and the gates other than the contract line
+  - five revert proofs, which reproduced exactly
+  - the friction scorecard's 31 rows, Decisions 1 to 17, the screenshot counts, Draw G's state and X43
+  - the CHANGELOG and the PR description, apart from the points above
 
 ## Looking at the outputs
 

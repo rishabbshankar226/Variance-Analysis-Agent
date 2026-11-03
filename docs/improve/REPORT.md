@@ -4,11 +4,20 @@ Branch `improve/depth-pass`, cut from `main` at `15100c8`. Nothing is pushed or 
 
 ## What changed for Maya
 
-- **No wrong figure on the paths found.** Twelve ways a report could show a number the file does not support are closed: a footnote mark read as a digit, a unit caption applied twice or missed, amounts in another currency reported as dollars, a chosen period reading the wrong columns, a signed ledger's profit lines, and others (X1 to X8, X30, X41, C1, C2). Each refuses plainly or reads the figure right, with a test.
+- **No wrong figure on the paths found.** Sixteen ways a report could show a number the file does not support are closed (X1 to X8, X30, X41, X45 to X48, C1, C2). Among them:
+  - a footnote mark read as a digit
+  - a unit caption applied twice or missed
+  - Budget and Actual headings in two units scaled by one multiplier
+  - amounts in another currency reported as dollars
+  - a chosen period, or columns that run newest first, reading another period's figures
+  - a signed ledger's profit lines
+  - a rate's tolerance, buffer or headroom read or shown in the wrong unit
+
+  Each one refuses plainly or reads the figure right, with a test.
 - **Fewer dead ends.** Over the 24 runs of Phase 1's fictional files, 6 ended with no way forward; now 2 do (an uncalculated formula, which refuses on purpose, and a date band merged over Budget and Actual, left open). Merged headers, section headings, "Budget ($000)" headings, two-row headers and bare-year bands now read.
 - **Every refusal says what to do.** All 233 intake messages a chat reader can see are plain and give the next step; before, 44 of 235 failed the rules file's checks.
 - **New workbooks and a batch run.** Export Excel and `--xlsx` now write a workbook for limit, benchmark, target, balance sheet, cash flow and filing income comparisons, where they refused. `--batch` reads a folder of filings in one command, with a manifest row per filing.
-- **Nothing else moved.** The 19 contract reports and audits, audit schemas 1.0 to 1.9 and the financial rules are unchanged.
+- **Nothing else moved.** The 19 contract fixtures (9 reports, 5 audits and their 5 inputs), audit schemas 1.0 to 1.9 and the financial rules are unchanged.
 
 ## Items
 
@@ -66,6 +75,10 @@ Every item in the approved backlog, with its final state. "What it became" is th
 | X42 | 3 | done | A measure report and audit say how assisted intake read the file | `77fbfcb` |
 | X43 | none | open | Found in X41's tests: a basis table prints a scaled amount with three decimals ("$89,999.000"); the value is right. | none |
 | X44 | 8 | done | The sdist leaves out this run's review evidence, as it does the others' (found in Phase 8) | `226a82e` |
+| X45 | 8 | done | Amount headings in different units refuse instead of sharing one multiplier (found in Phase 8, STOP-ASK) | `6c87e91` |
+| X48 | 8 | done | A file with a pair per period reads the pair named, else the newest (found in Phase 8, STOP-ASK) | `6c935e3` |
+| X46 | 8 | done | A percent-formatted Tolerance or Buffer reads as the percentage Excel shows (found in Phase 8, STOP-ASK) | `88fa7c5` |
+| X47 | 8 | done | A Percent limit row shows its headroom and buffer in basis points (found in Phase 8, STOP-ASK) | `27a9bf4` |
 | X32 | 5 (done in 7) | done | Sheets with percentage cells say how a tie rounds; no cell value changes (done in Phase 7) | `6c13d36` |
 | X37 | 4 (done in 7) | done | Remove an unused constant and a branch that repeats its neighbour (done in Phase 7) | `51e1de8` |
 | X33 | 7 | done | The README names audit 1.9 and what a long output does to a plain run | `c43b49f` |
@@ -77,19 +90,27 @@ Every item in the approved backlog, with its final state. "What it became" is th
 | S2 | 4 | done | `_process_raw_table` splits into named stages, each under 80 lines | `6dfcc95`, `dba3a7b` |
 | S3 | 4 | done | `cli._run` splits into parse, read, analyse and write stages | `c46dd7e`, `eefa968` |
 | S4 | 4 | done | `_handle_what_if`, `build_audit_record`, `_handle_executive_memo`, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement` and `_read_excel_bytes` split, each new function under 80 lines | `a9c3713`, `ce0bb2b`, `57d37c5`, `efa75ff`, `52b120d`, `53d13a9`, `0b25455`, `4c74e90` |
-| N1 | 5 | done | A workbook for limit, benchmark, target, covenant, statement and filing income comparisons; a filing's Change % reads the audit's stored figure | `27c13f9`, `154337b`, `c3793f6`, `5e8ccc7` |
-| N2 | 5 | done | `--batch FOLDER --manifest FILE`: every filing in a folder read as a single run, with one manifest row per filing | `059a2d6`, `fa85643` |
+| N1 | 5 | done | A workbook for limit, benchmark, target, covenant, statement and filing income comparisons; a filing's Change % reads the audit's stored figure | `27c13f9`, `154337b`, `c3793f6`, `5e8ccc7`, `9dd88db` |
+| N2 | 5 | done | `--batch FOLDER --manifest FILE`: every filing in a folder read as a single run, with one manifest row per filing. It also needs `--long-output`, `--period` and the thresholds | `059a2d6`, `fa85643` |
 | T2 | 6 | done | Three tests kill Phase 1's three surviving mutants; the 25 probes re-run with none surviving | `2038d4a`, `4d4affe` |
 | T3 | 6 | done | The one test over 5 seconds reads 4,000 rows instead of 10,000 and still catches both regressions it guards | `1a604e8` |
 | D1 | 7 | done | The eight earlier records move to `docs/history/`, with an index, and every link is fixed | `8604d1d` |
 | D2 | 7 | done | The roadmap records what this pass closed and what stays open | `5e8a0fc` |
 | D3 | 7 | done | Every README command runs from a clean clone; nothing to fix | `32dfd03` |
 
-X32 and X37 were missed in their own phases (5 and 4) and done in Phase 7, after T3 and D1; X44 was found in Phase 8. Every other item ran in its phase's order.
+Items that ran out of their phase's order:
+- X32 and X37 were missed in their own phases (5 and 4) and done in Phase 7, after T3 and D1.
+- N1's and N2's docs (`154337b`, `fa85643`) came after X33 and X34.
+- N1's Change % test and fix (`c3793f6`, `5e8ccc7`) came after D2 and D3, and its two exact-text checks (`9dd88db`) after the Phase 8 review.
+- X44 to X48 were found in Phase 8. X45 to X48 were STOP-ASKs, approved on 2026-11-03.
+
+Every other item ran in its phase's order.
 
 ## Revert proofs
 
 For every C, M, X and T1 fix: the fix removed with its tests kept, and what failed. Doc items (X33, X34) carry none. X37 removes code that nothing reaches: `_MISSING_MARKERS` has no reference in `src`, tests, scripts or `deterministic_conditioning`, and the merged branch sits after `_what_if_target`'s guard (`chat/handlers/scenarios.py:229`), which answers an Unclassified line before any simulation, so no test can fail on its revert. S items carry a characterization, an `ast.dump` check and a fresh-eyes review instead ([PLAN.md, Phase 4 reviews](PLAN.md)); T2 carries its recorded mutants.
+
+Each proof ran when its fix landed. Phase 4 moved the code around X6, X10 and X41, so their saved diffs no longer reverse at HEAD. At `48614d5`, X6 and X10 were reverted by hand and gave the results below ("2 failed, 3 passed" and "1 failed, 5 passed"). X41 was not re-run at HEAD.
 
 | ID | Fix reverted | Test run | Result with the fix reverted |
 |---|---|---|---|
@@ -140,6 +161,10 @@ For every C, M, X and T1 fix: the fix removed with its tests kept, and what fail
 | T1 | Load, the reason for the change: the old test beside 64 CPU-bound processes, then the new one. | `pytest ...::test_unmatched_questions_on_a_big_file_stay_fast` | old test: "5 failed, 2 passed" on each of 2 runs; new test: "7 passed" on each of 2 runs |
 | X32 | `_ROUNDING_NOTE` and its four uses in `xlsx.py` removed (`git apply -R` of the `src` diff), tests and goldens kept | `pytest tests/test_workbook_rounding_note.py tests/test_xlsx.py` | 5 failed, 21 passed: the four sheets that should carry the note do not (the Summary's last two cells are `[None, ...the existing note]`), and the sample golden lacks Summary A18. The benchmark and target cases pass either way, as they should |
 | X44 | the sdist exclude not yet added (the sdist built at `7049fac`), with the gate's new assertion | `python scripts/check_distribution.py .scratch/dist-final` | `AssertionError: docs/improve/evidence in the sdist`; with the exclude, the rebuilt sdist passes |
+| X45 | `heading_unit`, `_heading_units`, `_heading_units_differ` and their use in `_unit_scale` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_header_unit_conflicts.py` | 9 failed, 7 passed: the five mixed-unit files and the title-against-heading file read with one multiplier and don't refuse; two "(USD m)" headings read 250 and 275 unscaled; "($ in millions)" over two "($000)" headings reads millions; and the command line writes the report. The 7 that pass are the same-unit, title-over-bare, "($)" beside a bare heading, "(USD)" and half-file controls |
+| X48 | `chosen_period_pair` and its two uses in `intake.py`, and `_named_pair_read` and its two uses in `cli.py`, removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_period_pair_choice.py tests/test_intake_comparison.py::test_wide_fiscal_year_layout_stays_budget` | 8 failed, 6 passed: newest-first 2026, Sep 2026 and FY2026 files read the older pair, under the `--period` heading too; `--period jan-26` reads Feb-26; Jan-26 and Feb-26 under `--period "Feb 2026"` exit 0 with Feb-26's figures; and the edited FY test reads FY2024. The 6 that pass are the ascending, unordered and chosen-period controls, `--period 2025` and `Feb-26` (each already the last pair), and the mapping's period |
+| X46 | `percent_points` and the declared-cell reads in `_apply_measure` and `_percent_as_shown` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_percent_declarations.py` | 13 failed, 4 passed: both readers keep 0.0025 and 0.005 as stored; the Fraction oracle fails for every nonzero value; every target row shows a tolerance a hundredth of its size ("0.25 bps" for 25 bps); and the two Near limit rows read Within. The 4 that pass are the General-cell and Currency-row controls, the zero value, and the 0.0029 row, which is Within either way |
+| X47 | `spread` and its two uses in `basis_table` removed (`git apply -R` of the `src` diff), tests kept | `pytest tests/test_limit_rate_units.py` | 4 failed, 1 passed: the three Percent rows show "1 bps", "-0.5 bps" and "-0.25 bps" of headroom and "0.5 bps" buffers, and the Limits sheet reads "1 bps" and "0.5 bps". The Currency row passes either way |
 
 ## Before and after
 
@@ -149,19 +174,19 @@ For every C, M, X and T1 fix: the fix removed with its tests kept, and what fail
 | Functions over 80 lines | 36 | 26 |
 | Functions over 150 lines | 9 (longest `_process_raw_table`, 477) | 0 (longest `_read_ixbrl_bytes`, 149) |
 | `chat/handlers.py` | one module of 5,082 lines | the package `chat/handlers/`, 17 modules |
-| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing (`d8542ff`, before M6) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing |
+| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing |
 | Test strength: Phase 1's 25 seeded mutants | 3 survive (`63162aa`) | 0 survive |
 | Suite | 2505 passed in 48.53s (Phase 0) | 2814 passed in 76.78s at load average 5.6 to 10.3, from processes not this run's; 2810 passed in 51.82s in D3's clean clone |
-| Slowest test | 21.94s (the worksheet-scan memory test) | 2.87s run alone |
+| Slowest test (the worksheet-scan memory test) | about 10 s run alone; 21.94 s in the suite at load average 5.66 (`8a558f4`) | 2.87 s run alone; 7.68 s in the suite at load average 16.16 (PLAN.md, Phase 6 figures) |
 | Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses |
 | Contract fixtures and audit schemas | 19 files; 1.0 to 1.9 | the same bytes (`git diff main -- tests/fixtures/contracts schemas` is empty) |
-| sdist | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes (X44) |
+| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes (X44) |
 
 The suite's duration could not be measured on a quiet machine: other projects' processes held the load average between 5 and 34 through Phase 8, so the two durations do not compare.
 
 ## Assertions edited
 
-Every existing assertion, golden or snapshot this run changed, listed in PLAN.md before the edit. No test was deleted.
+Every existing assertion, golden or snapshot this run changed. Each was listed in PLAN.md before the edit, except S1's change to the glyph check, which PLAN.md recorded only after it (its row says so). No test was deleted.
 
 | Test | Assertion | Reason |
 |---|---|---|
@@ -175,12 +200,14 @@ Every existing assertion, golden or snapshot this run changed, listed in PLAN.md
 | `tests/test_bases.py::test_a_limit_run_refuses_a_workbook`, renamed `test_a_limit_run_writes_its_workbook` | the refusal (`SystemExit`, "--xlsx isn't available for a limit ...") becomes exit 0 and a workbook whose only sheet is "Limits" | N1: the workbook this comparison now gets |
 | `tests/test_comparison_path_guards.py::test_a_filing_workbook_refuses_on_the_comparison_path`, renamed `test_a_filing_workbook_on_the_comparison_path_has_its_own_sheets` | the refusal and "no workbook written" become exit 0 and the FP&A sheets with a Summary headed by the filing's totals | N1, on the comparison path too |
 | `tests/test_filing_headlines.py::test_the_workbook_refuses_for_a_filings_income_statement`, renamed `test_the_workbook_for_a_filings_income_statement_is_written` | `SystemExit` and "no workbook" become exit 0 and the four sheets | N1 |
-| `tests/test_filing_headlines.py::test_the_chat_offers_no_workbook_for_a_filing`, renamed `test_the_chat_exports_a_filings_workbook` | the refusal text becomes "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets."; the chips assertion stays | N1 |
+| `tests/test_filing_headlines.py::test_the_chat_offers_no_workbook_for_a_filing`, renamed `test_the_chat_exports_a_filings_workbook` | the refusal text becomes "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets."; the chips assertion stays. N1 wrote the new check as a prefix (`startswith`), looser than the exact text it replaced; `9dd88db` restores the exact check | N1 |
 | `tests/test_ixbrl_statements.py::test_the_cli_refuses_a_workbook_for_a_statement_comparison`, renamed `test_the_cli_writes_a_statement_workbook` | the refusal becomes exit 0 and a workbook whose only sheet is "Lines" | N1 |
-| `tests/test_ixbrl_statements.py::test_the_chat_compares_a_balance_sheet_without_asking_for_labels` | its last assertion, the refusal text, becomes "Excel workbook ready for download: Lines sheet."; every other assertion stays | N1 |
+| `tests/test_ixbrl_statements.py::test_the_chat_compares_a_balance_sheet_without_asking_for_labels` | its last assertion, the refusal text, becomes "Excel workbook ready for download: Lines sheet."; every other assertion stays. Written as a prefix by N1, as above, and made exact again by `9dd88db` | N1 |
 | `tests/test_xlsx.py::test_every_value_and_address_is_unchanged_by_the_redesign[sample]` (its golden `tests/fixtures/xlsx_values/sample.json`) | the Summary sheet gains one entry, the X32 note in the row after the existing note; every other address and value stays | X32 (approved at STOP 1, BACKLOG question 5): the golden pins every cell of the sample workbook, so a new note row is a new entry. `consensus.json` and `comparison_set.json` are comparison workbooks and do not change |
 | `tests/test_characterization_s3.py::test_every_documented_command_runs_as_before_the_split` (its snapshot `tests/fixtures/characterization/s3_cli.json`) | one value: the README quick start's `reports/q3-2026.xlsx` part `xl/worksheets/sheet1.xml` (the Summary sheet) takes its new digest; every other command, file and part stays | X32: the snapshot pins each written workbook part's digest, and the Summary gains the note's row. Found by the full suite after the fix, and listed here before the snapshot was edited |
 | `tests/test_excel_archive_hardening.py::test_the_worksheet_scan_keeps_little_beyond_the_numbers_it_returns` | no assertion changes: `peak < 1.3 * budget` stays. Its sheet shrinks from 10,000 rows of 10 to 4,000 rows of 10, and the comment records why that size still pins the bound | T3: 21.94s in the suite, the only test over 5 seconds, almost all of it tracemalloc tracing 100,000 cells. `.scratch/t3_probe.py` puts back the two regressions the test guards (the per-cell coordinate set `405b2fd` removed, and the worksheet read whole before parsing) and measures peak over kept. Python 3.11, 10,000 rows: clean 1.108, set 1.398, whole read 1.352. 4,000 rows: 1.128, 1.527, 1.390. Python 3.14, 4,000 rows: 1.135, 1.589, 1.559. At 4,000 rows both regressions miss the 1.3 bound by more than at 10,000, and the clean scan stays under it. At 1,000 rows the clean scan reaches 1.307 and fails, so the sheet stops at 4,000 |
+| `tests/test_interface_design.py::test_reply_text_built_by_chat_has_no_glyphs` (9 cases) | no assert line changes. `3bc6c0a` takes the cases from `_chat_modules()` and the text from `_chat_source(module)`, which reads a package (`chat/handlers/`) whole under its old module's name; the 9 case ids and the count stay | S1: without it, the check would stop reading the handler code the move put in a folder. Recorded in PLAN.md only after the commit, which the Phase 8 REPORT reviewer found |
+| `tests/test_intake_comparison.py::test_wide_fiscal_year_layout_stays_budget` (and its helper) | the FY2025-then-FY2024 file's expected pair, FY2024 (Budget 3, Actual 4), becomes FY2025 (Budget 1, Actual 2); the helper takes the expected amounts as arguments, defaulting to 3 and 4, and the basis checks stay | X48 (Decision 18): the file runs newest first, and the test pinned the last pair by position, the cause X48 removes |
 
 ## Friction scorecard
 
@@ -219,8 +246,9 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - **STOP-ASK X41** (`evidence/stop-ask-buffer-scale/`): a unit caption left Buffer and Tolerance unscaled. Approved at STOP 2: scale them with the amounts.
 - **STOP-ASK M4** (`evidence/stop-ask-m4-period-labels/`): a 10-Q's column label is also the audit's key. Approved at STOP 2: the duration goes into display names only, and every key keeps its label.
 - **STOP 2:** the owner approved S1 to S4 (with `_handle_executive_memo` added to S4), N1, N2 and X42 as recommended.
+- **STOP-ASKs X45 to X48** (`evidence/stop-ask-heading-units/`, `stop-ask-percent-declarations/`, `stop-ask-limit-rate-units/`, `stop-ask-period-pair/`): four wrong numbers the Phase 8 reviewer found, none on a 0.2.0 path. The owner answered "Approve all four" on 2026-11-03, so each took its recommendation (Decision 18).
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
-- The decisions taken along the way are PLAN.md's Decisions 1 to 17.
+- The decisions taken along the way are PLAN.md's Decisions 1 to 18.
 
 ## Gates at `7049fac`
 
@@ -250,6 +278,7 @@ After X44, the rebuilt distributions pass `twine check` and `check_distribution.
 
 - Phase 3: 91 screenshots of 26 scenarios, every chat screen Phases 2 and 3 changed, in `evidence/phase-3/` (light theme, desktop and mobile).
 - Phase 5: 16 screenshots of the three export replies N1 changed (a limit run, a balance sheet and a filing's income statement), in `evidence/phase-5/`.
+- Phase 8: 7 screenshots of the three chat screens X45, X46 and X47 changed (the mixed-unit refusal, a target row's 25 bps tolerance, and a limit row's headroom and buffer in basis points), in `evidence/phase-8/`. X48 leaves the chat's screens as they were: the chat asks which period when a file has more than one pair.
 
 ## Draw G
 
@@ -257,7 +286,7 @@ Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AG
 
 ## Not verified
 
-- The Windows output-contract job: covered by CI only. Python 3.12 to 3.14 likewise run only in CI, apart from T3's measurement on a local 3.14.
+- The Windows output-contract job, and Python 3.12 to 3.14 (apart from T3's measurement on a local 3.14): not run. CI runs them, but the branch has never been pushed, so CI has not run on it.
 - Real Excel. The workbooks were read back with openpyxl, and X32's tie was rendered in LibreOffice 26.8.1, not Excel.
 - Safari and Firefox. The screenshots are Playwright's Chromium.
 - Real analysts. The scorecard is a scripted policy over fictional files.
@@ -271,20 +300,22 @@ Draw G: not measured. The corpus `~/vaa-edgar-corpus` exists, but `EDGAR_USER_AG
 - **X43:** a limit, benchmark or target table prints a scaled amount with three decimals ("$89,999.000"); the value is right.
 - **X38, X39, X40:** duplicated number grammar; `export excel`'s memory on the free plan; the hosted build's unpinned dependencies.
 - **Export Excel chip:** a limit, statement or filing result offers only Export report and Export audit as chips, so a reader must type `export excel`. Offering the chip would edit `test_the_chat_exports_a_filings_workbook`'s check.
+- **Mobile notes:** on a phone, the results panel's "How the file was read" table cuts off a note longer than the screen ("Read the 'Limit' column as each row's limit, ..." in `evidence/phase-8/x47-limit-bps_light_m_02_results-end.jpg`). This was seen on the branch and not checked on `main`. It is text, not a figure.
+- **Suspected by the Phase 8 reviewer, not reproduced:** a PDF title line's unit caption may scale "except per share" rows, and a "Headcount (000s)" heading scales Budget and Actual by 1,000 on `main` (PLAN.md, Phase 8 reviews).
 
 ## PR description
 
 **Improvement pass: wrong numbers, dead ends, structure, two features, tests and docs**
 
 What changed:
-- Twelve ways a report could show a figure the file does not support now refuse plainly or read the figure right.
+- Sixteen ways a report could show a figure the file does not support now refuse plainly or read the figure right. Four of them were found by a final review and fixed with the owner's approval.
 - Six of Maya's 24 sample runs used to stop with no way forward; two still do. Every message a chat reader sees says what to do next.
 - Export Excel works for limit, benchmark, target, balance sheet, cash flow and filing income results. A new batch run reads a folder of filings in one command.
 - The largest functions are split (none over 150 lines), and the chat's handler module is now a package. Four fresh-eyes reviewers, one per refactor item, found no behaviour change.
 - Tests: a timing test that load can't break, every seeded mutant killed, and the one test over 5 seconds now under 3 seconds alone.
 - Docs: earlier audit records moved to `docs/history/`; the README, input contract and roadmap describe what the tool does now.
 
-Unchanged: the 19 contract reports and audits, audit schemas 1.0 to 1.9, the financial rules and every default. No dependency was added.
+Unchanged: the 19 contract fixtures (9 reports, 5 audits and their inputs), audit schemas 1.0 to 1.9, the financial rules and every default. No dependency was added.
 
 Not verified: the Windows CI job, real Excel, Safari and Firefox, real analysts, and Draw G (`EDGAR_USER_AGENT` unset).
 
