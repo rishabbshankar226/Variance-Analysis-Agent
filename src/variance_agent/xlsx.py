@@ -962,9 +962,9 @@ def _filing_summary_sheet(result: AnalysisResult, headline: Mapping[str, object]
             actual_key, comparison_key = item["actual"], item["comparison"]
             assert isinstance(actual_key, Mapping) and isinstance(comparison_key, Mapping)
             actual, comparison = Decimal(str(actual_key["displayed"])), Decimal(str(comparison_key["displayed"]))
-        change = Decimal(str(item["change"]))
+        change, percent = Decimal(str(item["change"])), item["change_percent"]
         sheet.add(_Cell(str(item["line_item"]), S_TEXT), _Cell(comparison, S_MONEY), _Cell(actual, S_MONEY),
-                  _Cell(change, S_MONEY), _pct_cell(ratio(change, abs(comparison)) if comparison != 0 else None, None))
+                  _Cell(change, S_MONEY), _pct_cell(None if percent is None else Decimal(str(percent)), None))
     from .report import _filing_headline_lines
     said = [line.removeprefix("- ")
             for line in _filing_headline_lines(headline, cfg.currency, _report_places(result))[len(items):]]
