@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from decimal import Decimal, Inexact
 from variance_agent.currencies import CURRENCY_SYMBOLS
-from variance_agent.models import LineType, Status
+from variance_agent.models import AnalysisResult, LineType, Status
 from variance_agent.numeric import financial_context, ratio
 from ..intent import ParsedIntent, find_line_item
 from ..responses import (
@@ -220,117 +220,109 @@ def _handle_metrics_count(session: Session) -> Response:
     return Response(text="\n".join(lines), chips=chips, phase=Phase.EXPLORING)
 
 
-def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
-    """Compare two line items side-by-side."""
-    result = session.result
-    assert result is not None
+def _compare_actual_vs_budget(result: AnalysisResult, places: int) -> Response:
+    """The macro comparison of actual totals and operating profit against the comparison's."""
     cfg = result.config
-    places = report_places(result)
-    line_items = [r.line_item for r in result.rows]
+    with financial_context() as context:
+        context.traps[Inexact] = False
+        base_profit = result.revenue.budget - result.expenses.budget
+        actual_profit = result.revenue.actual - result.expenses.actual
+        net_impact = actual_profit - base_profit
+        rev_var = result.revenue.actual - result.revenue.budget
+        exp_var = result.expenses.actual - result.expenses.budget
+        sym = CURRENCY_SYMBOLS.get(cfg.currency, "$")
 
-    name1 = intent.captures.get("item1", "").strip().strip("'\"?")
-    name2 = intent.captures.get("item2", "").strip().strip("'\"?")
-    name1_lower = name1.lower()
-    name2_lower = name2.lower()
+        macro_table = [
+            {
+                "Metric": "Total Revenue",
+                _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
+                "Actual": format_money(result.revenue.actual, cfg.currency, places),
+                f"Variance ({sym})": format_money(rev_var, cfg.currency, places),
+                "Variance (%)": _pct_text(_variance_percent(rev_var, result.revenue.budget), "+.1f"),
+                "Status": _fu(rev_var),
+            },
+            {
+                "Metric": "Total Expenses",
+                _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
+                "Actual": format_money(result.expenses.actual, cfg.currency, places),
+                f"Variance ({sym})": format_money(exp_var, cfg.currency, places),
+                "Variance (%)": _pct_text(_variance_percent(exp_var, result.expenses.budget), "+.1f"),
+                "Status": _fu(exp_var, higher_is_better=False),
+            },
+            {
+                "Metric": "Operating Profit",
+                _heading(cfg): format_money(base_profit, cfg.currency, places),
+                "Actual": format_money(actual_profit, cfg.currency, places),
+                f"Variance ({sym})": format_money(net_impact, cfg.currency, places),
+                "Variance (%)": f"{(ratio(net_impact, abs(base_profit)) * 100):+.1f}%" if base_profit != 0 else "N/A",
+                "Status": _fu(net_impact),
+            },
+        ]
+    status_word = "beat" if net_impact >= 0 else "shortfall"
+    target = "budget target" if _is_budget(cfg) else _noun(cfg)
+    return Response(
+        text=_with_unclassified_note(
+            f"**Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
+            f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, "
+            + ("**in line with**" if net_impact == 0 else
+               f"representing a **{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against")
+            + f" the {target} of {format_money(base_profit, cfg.currency, places)}.", result),
+        table=macro_table,
+        chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
+        phase=Phase.EXPLORING,
+    )
 
-    # Macro Case 1: Actual vs Budget
-    actual_terms = {"actual", "actuals", "act"}
-    budget_terms = {"budget", "budgeted", "plan", "target", "targets", "bgt"}
-    if (name1_lower in actual_terms and name2_lower in budget_terms) or (name1_lower in budget_terms and name2_lower in actual_terms):
-        with financial_context() as context:
-            context.traps[Inexact] = False
-            base_profit = result.revenue.budget - result.expenses.budget
-            actual_profit = result.revenue.actual - result.expenses.actual
-            net_impact = actual_profit - base_profit
-            rev_var = result.revenue.actual - result.revenue.budget
-            exp_var = result.expenses.actual - result.expenses.budget
-            sym = CURRENCY_SYMBOLS.get(cfg.currency, "$")
 
-            macro_table = [
-                {
-                    "Metric": "Total Revenue",
-                    _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
-                    "Actual": format_money(result.revenue.actual, cfg.currency, places),
-                    f"Variance ({sym})": format_money(rev_var, cfg.currency, places),
-                    "Variance (%)": _pct_text(_variance_percent(rev_var, result.revenue.budget), "+.1f"),
-                    "Status": _fu(rev_var),
-                },
-                {
-                    "Metric": "Total Expenses",
-                    _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
-                    "Actual": format_money(result.expenses.actual, cfg.currency, places),
-                    f"Variance ({sym})": format_money(exp_var, cfg.currency, places),
-                    "Variance (%)": _pct_text(_variance_percent(exp_var, result.expenses.budget), "+.1f"),
-                    "Status": _fu(exp_var, higher_is_better=False),
-                },
-                {
-                    "Metric": "Operating Profit",
-                    _heading(cfg): format_money(base_profit, cfg.currency, places),
-                    "Actual": format_money(actual_profit, cfg.currency, places),
-                    f"Variance ({sym})": format_money(net_impact, cfg.currency, places),
-                    "Variance (%)": f"{(ratio(net_impact, abs(base_profit)) * 100):+.1f}%" if base_profit != 0 else "N/A",
-                    "Status": _fu(net_impact),
-                },
-            ]
-        status_word = "beat" if net_impact >= 0 else "shortfall"
-        target = "budget target" if _is_budget(cfg) else _noun(cfg)
-        return Response(
-            text=_with_unclassified_note(
-                f"**Executive Macro Comparison: Actual vs. {_heading(cfg)}**\n\n"
-                f"Operating profit finished at **{format_money(actual_profit, cfg.currency, places)}**, "
-                + ("**in line with**" if net_impact == 0 else
-                   f"representing a **{format_money(abs(net_impact), cfg.currency, places)} {status_word}** against")
-                + f" the {target} of {format_money(base_profit, cfg.currency, places)}.", result),
-            table=macro_table,
-            chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
-            phase=Phase.EXPLORING,
-        )
+def _compare_revenue_vs_expenses(result: AnalysisResult, places: int) -> Response:
+    """The macro comparison of total revenue against total expenses, with margin and cost-to-income ratio."""
+    cfg = result.config
+    with financial_context() as context:
+        context.traps[Inexact] = False
+        actual_profit = result.revenue.actual - result.expenses.actual
+        margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
+        cost_ratio = (ratio(result.expenses.actual, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
 
-    # Macro Case 2: Revenue vs Expenses
-    rev_terms = {"revenue", "revenues", "sales", "topline", "top line", "rev"}
-    exp_terms = {"expense", "expenses", "cost", "costs", "spend", "opex", "exp"}
-    if (name1_lower in rev_terms and name2_lower in exp_terms) or (name1_lower in exp_terms and name2_lower in rev_terms):
-        with financial_context() as context:
-            context.traps[Inexact] = False
-            actual_profit = result.revenue.actual - result.expenses.actual
-            margin = (ratio(actual_profit, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
-            cost_ratio = (ratio(result.expenses.actual, result.revenue.actual) * Decimal(100)) if result.revenue.actual != 0 else None
+        macro_table = [
+            {
+                "Category": "Total Revenue",
+                _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
+                "Actual": format_money(result.revenue.actual, cfg.currency, places),
+                "Operating Flow": "Top-Line Inflow",
+                "% of Revenue": "100.0%" if result.revenue.actual != 0 else "N/A",
+            },
+            {
+                "Category": "Total Expenses",
+                _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
+                "Actual": format_money(result.expenses.actual, cfg.currency, places),
+                "Operating Flow": "Operating Outflow",
+                "% of Revenue": _pct_text(cost_ratio),
+            },
+            {
+                "Category": "Operating Profit",
+                _heading(cfg): format_money(result.revenue.budget - result.expenses.budget, cfg.currency, places),
+                "Actual": format_money(actual_profit, cfg.currency, places),
+                "Operating Flow": "Net Retained Margin",
+                "% of Revenue": _pct_text(margin),
+            },
+        ]
+    return Response(
+        text=_with_unclassified_note(
+            f"**Macro Financial Comparison: Revenue vs. Expenses**\n\n"
+            f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
+            f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of "
+            f"{format_money(actual_profit, cfg.currency, places)}** "
+            f"({_pct_text(margin)} operating margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
+        table=macro_table,
+        chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
+        phase=Phase.EXPLORING,
+    )
 
-            macro_table = [
-                {
-                    "Category": "Total Revenue",
-                    _heading(cfg): format_money(result.revenue.budget, cfg.currency, places),
-                    "Actual": format_money(result.revenue.actual, cfg.currency, places),
-                    "Operating Flow": "Top-Line Inflow",
-                    "% of Revenue": "100.0%" if result.revenue.actual != 0 else "N/A",
-                },
-                {
-                    "Category": "Total Expenses",
-                    _heading(cfg): format_money(result.expenses.budget, cfg.currency, places),
-                    "Actual": format_money(result.expenses.actual, cfg.currency, places),
-                    "Operating Flow": "Operating Outflow",
-                    "% of Revenue": _pct_text(cost_ratio),
-                },
-                {
-                    "Category": "Operating Profit",
-                    _heading(cfg): format_money(result.revenue.budget - result.expenses.budget, cfg.currency, places),
-                    "Actual": format_money(actual_profit, cfg.currency, places),
-                    "Operating Flow": "Net Retained Margin",
-                    "% of Revenue": _pct_text(margin),
-                },
-            ]
-        return Response(
-            text=_with_unclassified_note(
-                f"**Macro Financial Comparison: Revenue vs. Expenses**\n\n"
-                f"Actual Revenue of **{format_money(result.revenue.actual, cfg.currency, places)}** offset by Operating Expenses of "
-                f"**{format_money(result.expenses.actual, cfg.currency, places)}** yields an **Operating Profit of "
-                f"{format_money(actual_profit, cfg.currency, places)}** "
-                f"({_pct_text(margin)} operating margin; cost-to-income ratio of {_pct_text(cost_ratio)}).", result),
-            table=macro_table,
-            chips=["Waterfall", "Run rate", "Sensitivity", "Summary"],
-            phase=Phase.EXPLORING,
-        )
 
+def _compare_line_items(
+    session: Session, result: AnalysisResult, places: int, name1: str, name2: str, line_items: list[str],
+) -> Response:
+    """Two line items side by side, once each name matches exactly one line."""
+    cfg = result.config
     matches1 = find_line_item(_resolve_item_query(name1, session), line_items)
     matches2 = find_line_item(_resolve_item_query(name2, session), line_items)
 
@@ -395,6 +387,33 @@ def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
         chips=[f"Why {row1.line_item}?", f"Why {row2.line_item}?", "Summary"],
         phase=Phase.EXPLORING,
     )
+
+
+def _handle_compare(session: Session, intent: ParsedIntent) -> Response:
+    """Compare two line items side-by-side."""
+    result = session.result
+    assert result is not None
+    places = report_places(result)
+    line_items = [r.line_item for r in result.rows]
+
+    name1 = intent.captures.get("item1", "").strip().strip("'\"?")
+    name2 = intent.captures.get("item2", "").strip().strip("'\"?")
+    name1_lower = name1.lower()
+    name2_lower = name2.lower()
+
+    # Macro Case 1: Actual vs Budget
+    actual_terms = {"actual", "actuals", "act"}
+    budget_terms = {"budget", "budgeted", "plan", "target", "targets", "bgt"}
+    if (name1_lower in actual_terms and name2_lower in budget_terms) or (name1_lower in budget_terms and name2_lower in actual_terms):
+        return _compare_actual_vs_budget(result, places)
+
+    # Macro Case 2: Revenue vs Expenses
+    rev_terms = {"revenue", "revenues", "sales", "topline", "top line", "rev"}
+    exp_terms = {"expense", "expenses", "cost", "costs", "spend", "opex", "exp"}
+    if (name1_lower in rev_terms and name2_lower in exp_terms) or (name1_lower in exp_terms and name2_lower in rev_terms):
+        return _compare_revenue_vs_expenses(result, places)
+
+    return _compare_line_items(session, result, places, name1, name2, line_items)
 
 
 def _handle_concentration(session: Session) -> Response:
