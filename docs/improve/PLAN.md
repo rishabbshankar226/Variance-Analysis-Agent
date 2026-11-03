@@ -70,7 +70,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
 | N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
 | N2 | 5 | done | see `feat(N2)` | `batch.py` (new), `cli.py` (`--batch`, `--manifest`, `_run_batch`), `tests/test_batch.py` |
-| T2 | 6 | todo | | |
+| T2 | 6 | done | `test(T2)` `2038d4a` | `tests/test_mutation_survivors.py`; 0 of 25 survive (Phase 1: 3) |
 | T3 | 6 | todo | | |
 | D1 | 7 | todo | | |
 | D2 | 7 | todo | | |
@@ -733,6 +733,12 @@ Items:
 - Message inventory: 233 seen, 0 failing. The two "A workbook isn't available ..." refusal replies are gone.
 - N2 runs each filing through the CLI's own single-filing run, rather than `api.analyze_file`, whose basis choice and header handling differ in detail from the comparison path. So a filing's batch rows are its single run's rows by construction, and the test asserts it.
 - Looking at the outputs: the limit workbook's "Limits" sheet holds the report's five rows in severity order. Limit, Actual, Headroom and Buffer are money cells (`#,##0.00;[Red]-#,##0.00`), Headroom (% of limit) and Utilization percent cells (`0.0%`), and the count line, rule note and doubles note sit under the table. A batch over two fictional filings and one without statements exits 2, with a three-row manifest whose third row carries the single run's refusal message.
+
+## Phase 6 figures
+
+- **T2, test strength: 3 survivors of 25 before (Phase 1, at `63162aa`), 0 after (at `46fe6c6`).** `test(T2)` (`2038d4a`) adds five tests in `tests/test_mutation_survivors.py`, one per survivor and two parametrized cases each for #4 and #11. Before committing, each survivor was applied by hand and its new test failed: #2 (`raise` in `_read_excel_bytes`' except clause, `intake.py:2044`), #4 (the earnings-layout test negated, `xlsx.py:785`) and #11 (the percentage-points note's test negated, `intake.py:3754`).
+- The re-run (`.scratch/mutants/rerun.py`, results in `.scratch/mutants/rerun.json`) applies Phase 1's 25 draws (Decision 10) to today's code, one at a time, in a detached worktree at HEAD. It runs `pytest -x -q` with `PYTHONPATH` on that worktree's `src` and checks that `variance_agent` imports from there. Each draw sits at a new line after the Phase 4 moves, located by its function and condition text. Three draws had two candidate lines, so the line Phase 1 mutated was chosen: #2 at 2044, #5 at 344 and #13 at 3336. Every draw was killed: 25 of 25.
+- The unmutated worktree gives "2776 passed, 28 skipped in 47.29s" in the same environment, so every kill is the mutant's. The worktrees were removed afterwards.
 
 ## Phase 4 reviews
 
