@@ -7,6 +7,7 @@ audit's exact Decimal, in the existing sheets' format for that kind of figure; e
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -159,3 +160,25 @@ def test_a_filing_with_export_flags_gets_the_same_workbook(tmp_path: Path, capsy
     book, _, _ = _run(tmp_path, capsys, filing, "--period", "FY2025", "--long-output", str(tmp_path / "long.csv"))
     assert book.sheetnames == ["Summary", "Material Variances", "Root Causes & Actions", "All Rows"]
     assert "Net sales" in [row[0] for row in _values(book["Summary"])]
+
+
+@pytest.mark.parametrize("source", ["built", "hal-20250927.htm", "hal-20260328.htm", "ltm"])
+def test_a_filings_change_percent_cells_are_the_audits_stored_figures(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                                       source: str) -> None:
+    """Each headline's Change % cell is float() of the audit's change_percent, with nothing computed again (N1)."""
+    if source == "built":
+        filing = tmp_path / "hal-20250927.htm"
+        filing.write_bytes(all_statements_filing())
+        extra: tuple[str, ...] = ("--period", "FY2025")
+    elif source == "ltm":
+        filing = ANALYSTS / "hal-20260328.htm"
+        extra = ("--ltm-from", str(ANALYSTS / "hal-20250927.htm"), "--period", "LTM Mar 2026")
+    else:
+        filing, extra = ANALYSTS / source, ("--period", "FY2025")
+    book, _, audit = _run(tmp_path, capsys, filing, *extra)
+    items = audit["source"]["document"]["headline"]["items"]
+    assert items
+    rows = {row[0]: row for row in _values(book["Summary"])}
+    for item in items:
+        expected = None if item["change_percent"] is None else float(Decimal(item["change_percent"]))
+        assert rows[item["line_item"]][4] == expected, item["line_item"]
