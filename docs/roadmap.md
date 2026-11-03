@@ -25,7 +25,7 @@ bases, explicit comparison sets, Per Share/Percent/Count measures, one flat
 segment dimension, typed panels and descriptive surprise statistics. These
 are implemented as opt-in extensions of the deterministic single-basis engine.
 The earnings and quant presets serve the new readers; the FP&A default retains
-its existing contracts. See [the implementation report](MULTI_AUDIENCE_2026-10.md)
+its existing contracts. See [the implementation report](history/MULTI_AUDIENCE_2026-10.md)
 for commands, verification and the boundary of this decision.
 
 The decision does not permit nested hierarchy, FX conversion, valuation, price

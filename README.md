@@ -195,7 +195,7 @@ On Windows, use `../variance-minimal/Scripts/python.exe` for that environment.
 
 Strict typing covers `src/variance_agent`, `scripts` and the auxiliary `deterministic_conditioning` package. It is configured in `pyproject.toml` (`[tool.mypy] files`), including bans on explicit and unimported `Any`, and CI runs the command above on each supported Python version. List the package explicitly: when the checkout is also the editable-install target, mypy treats an unlisted package as installed and hides its errors, so a run from a different directory reports errors that CI never showed. Without the `pdf` extra the PDF tests are skipped.
 
-See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
+See the [audit ledger](docs/history/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
 
 ## Reader examples
 
@@ -307,4 +307,4 @@ minimum history and rounding rules are in the [financial rules](docs/financial-r
 Vendor headers, GAAP versus adjusted metrics, count units and fiscal/calendar
 alignment require the user's review. There is no cross-file metric matching,
 nested segment hierarchy, FX conversion, valuation or forecasting. Executed
-checks and remaining boundaries are in the [implementation report](docs/MULTI_AUDIENCE_2026-10.md).
+checks and remaining boundaries are in the [implementation report](docs/history/MULTI_AUDIENCE_2026-10.md).

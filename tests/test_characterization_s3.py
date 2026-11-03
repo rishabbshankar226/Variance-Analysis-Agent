@@ -17,7 +17,7 @@ Not run:
   twine, scripts/check_*.py): not `variance-agent` commands, and pip needs the network.
 - Placeholders that name no file: `variance-agent FILE ...` (README.md), `actuals.csv --assisted --compare-file
   budget.csv` and `<10-Q .htm> --assisted --ltm-from <10-K .htm>` (docs/input-contract.md).
-- docs/MULTI_AUDIENCE_2026-10.md's four commands: the README.md commands again, the panel one with output paths under
+- docs/history/MULTI_AUDIENCE_2026-10.md's four commands: the README.md commands again, the panel one with output paths under
   /workspace/scratch instead of the working directory.
 - Plans, QA logs, prompts and audit evidence (docs/*/PLAN.md, docs/analysts/REPORT.md, docs/qa/, docs/prompts/,
   docs/ui/, docs/improve/evidence/, docs/analysts/evidence/stop-ask-*/): records naming placeholders (<fixture>, FILE,

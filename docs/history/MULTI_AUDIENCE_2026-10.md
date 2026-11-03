@@ -26,8 +26,8 @@ performance or total-session-duration claim is made.
 | 8 | All readers: documentation, reader commands, final evidence; adapter fixes for Priya/Wei | `803b1b3` plus the final documentation commit containing this report | Six CSV/JSON single/set mapping and dispersion-option regressions; 1,964 |
 
 The final documentation commit can identify itself without a circular embedded
-hash: `git log -1 --format='%h %s' -- docs/MULTI_AUDIENCE_2026-10.md`.
-The [implementation plan](superpowers/plans/2026-10-21-multi-audience.md) retains
+hash: `git log -1 --format='%h %s' -- docs/history/MULTI_AUDIENCE_2026-10.md`.
+The [implementation plan](../superpowers/plans/2026-10-21-multi-audience.md) retains
 phase-by-phase commands, red tests, decisions, stops and corrections.
 
 The full suite increased by **192** cases: **178** cases are collected from new
@@ -699,7 +699,7 @@ implementation differences and refinements are:
     nested threshold groups and a separate period-interpretation object. The
     implementation uses visible strings, metric/segment/measure identity,
     explicit nullable audience fields and existing comparison labels. The
-    [final field delta](audit-contract.md#final-18-field-delta) and closed schema
+    [final field delta](../audit-contract.md#final-18-field-delta) and closed schema
     describe the shipped shape; the plan's proposal is retained as history.
 22. Configuration identity covers effective audience/statistic options; explicit
     mapping provenance, basis order and all derived facts are covered by record

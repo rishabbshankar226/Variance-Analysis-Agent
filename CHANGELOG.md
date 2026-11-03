@@ -79,11 +79,11 @@ and every workbook cell value and sheet name is unchanged. Record in `docs/ui/RE
   are unchanged; legacy default remains 1.7. README denominator wording is
   corrected to the existing absolute-comparison calculation.
 - Executed evidence and untested boundaries:
-  [docs/MULTI_AUDIENCE_2026-10.md](docs/MULTI_AUDIENCE_2026-10.md).
+  [docs/history/MULTI_AUDIENCE_2026-10.md](docs/history/MULTI_AUDIENCE_2026-10.md).
 
 ### Bug hunt (2026-10-21) — behavior changes first
 
-Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/BUG_HUNT_2026-10-21.md).
+Details, evidence and remaining boundaries: [docs/history/BUG_HUNT_2026-10-21.md](docs/history/BUG_HUNT_2026-10-21.md).
 
 - **Behavior change (assisted intake, chat, `--mapping`).** An amount that cannot be read (`TBD`,
   `1.234,56`) or a blank Actual now stops the run (CLI exit 2, chat "I could not read every amount…")

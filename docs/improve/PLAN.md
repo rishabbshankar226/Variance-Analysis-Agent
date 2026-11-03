@@ -72,7 +72,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | N2 | 5 | done | see `feat(N2)` | `batch.py` (new), `cli.py` (`--batch`, `--manifest`, `_run_batch`), `tests/test_batch.py` |
 | T2 | 6 | done | `test(T2)` `2038d4a` | `tests/test_mutation_survivors.py`; 0 of 25 survive (Phase 1: 3) |
 | T3 | 6 | done | `test(T3)` | `tests/test_excel_archive_hardening.py` (the one test over 5 seconds: 21.94s, now 2.87s alone) |
-| D1 | 7 | todo | | |
+| D1 | 7 | done | `docs(D1)` | the eight records to `docs/history/` with `README.md`; links in `README.md`, `CHANGELOG.md`, `docs/roadmap.md`, `docs/superpowers/plans/2026-10-21-multi-audience.md`, `tests/test_characterization_s3.py` (docstring) and the two records that link out of `docs/`. A grep for `docs/<NAME>.md` and for relative links to each old path finds hits only inside `docs/history/`, and 39 relative links in the touched files resolve. `docs/analysts/PLAN.md:474` keeps a backticked file name in a past plan's reading list, which is no link |
 | D2 | 7 | todo | | |
 | D3 | 7 | todo | | |
 
