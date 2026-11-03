@@ -122,12 +122,22 @@ def metric_inferences(rows: tuple[AnalyzedRow, ...], config: AnalysisConfig | No
     return notes
 
 
+def _places(value: Decimal) -> int:
+    """The decimal places an amount needs, at least two. A scaled 89999.000 needs none past the cents (X43), and
+    nothing is rounded: only zeros at the end of the stored digits are dropped."""
+    _, digits, exponent = value.as_tuple()
+    places = -int(exponent)
+    while places > 2 and digits and digits[-1] == 0:
+        digits, places = digits[:-1], places - 1
+    return max(2, places)
+
+
 def format_measure(value: Decimal, kind: MeasureKind, currency: str = "USD", *, variance: bool = False) -> str:
     from .report import _money
     if kind is MeasureKind.CURRENCY:
-        return _money(value, currency, max(2, -int(value.as_tuple().exponent)))
+        return _money(value, currency, _places(value))
     if kind is MeasureKind.PER_SHARE:
-        return _money(value, currency, max(2, -int(value.as_tuple().exponent))) + "/sh"
+        return _money(value, currency, _places(value)) + "/sh"
     if kind is MeasureKind.MULTIPLE and value.as_tuple().exponent < -2:  # type: ignore[operator]
         # A computed ratio repeats; it is shown to two places, and the audit keeps it exact.
         from decimal import ROUND_HALF_EVEN, Inexact
