@@ -1,4 +1,4 @@
-## HEAD c70c5ac  load averages: 19.17 18.42 12.07
+## HEAD 94bec7f  load averages: 2.27 6.11 8.32
 ## ruff
 All checks passed!
 ## mypy
@@ -6,10 +6,10 @@ Success: no issues found in 90 source files
 ## compileall
 exit 0
 ## pytest
-2882 passed in 47.40s
-## load after pytest: load averages: 11.11 16.37 11.67
+2896 passed in 45.73s
+## load after pytest: load averages: 3.26 5.87 8.12
 ## pytest -k contract
-181 passed, 2701 deselected in 4.72s
+181 passed, 2715 deselected in 4.48s
 ## pip check
 No broken requirements found.
 ## build
@@ -26,4 +26,4 @@ No broken requirements found.
 ## contracts and schemas against main
 identical
 ## size table
-functions=873 over80=26 over150=0
+functions=874 over80=26 over150=0
