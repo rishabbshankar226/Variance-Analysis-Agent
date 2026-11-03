@@ -321,7 +321,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .figure .status { margin-top: var(--space-1); }
 
 .view-section h4, .table-title { font-size: var(--text-body); font-weight: var(--weight-strong); }
-.view-section .facts { max-width: 48ch; grid-template-columns: 1fr max-content; margin-top: var(--space-2); }
+.view-section .facts { max-width: 48ch; grid-template-columns: 1fr minmax(0, max-content); margin-top: var(--space-2); }
 .view-note { color: var(--text-secondary); max-width: 72ch; }
 .table-title { margin-bottom: calc(-1 * var(--space-1)); }
 .figures-view + .table-block { margin-top: var(--space-3); }

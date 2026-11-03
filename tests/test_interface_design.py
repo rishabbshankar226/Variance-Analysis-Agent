@@ -499,3 +499,12 @@ def test_a_phone_table_leads_with_status_and_variance(run_js: Callable[[str], ob
     drivers = ["Line Item", "Variance", "Model", "Reconciliation", "Driver Components"]
     assert run_js(f"return m.phoneColumnOrder({json.dumps(drivers)});") == drivers
     assert "narrow && groups.length === 0 ? phoneColumnOrder(shown) : shown" in _script()
+
+
+def test_a_long_note_in_a_results_panel_wraps_on_a_phone() -> None:
+    """X52: the value column of a results panel's facts can shrink, so a note longer than the screen wraps."""
+    rule = re.search(r"\.view-section \.facts \{([^}]*)\}", css())
+    assert rule is not None
+    columns = re.search(r"grid-template-columns:\s*([^;]+);", rule.group(1))
+    assert columns is not None and columns.group(1).strip() == "1fr minmax(0, max-content)"
+    assert re.search(r"\.fact dd \{[^}]*overflow-wrap: anywhere", css())
