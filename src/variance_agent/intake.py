@@ -3848,7 +3848,11 @@ def _unit_scale(table: _TableRead) -> IntakeResult | None:
     )
     sides = _heading_units(table, raw_title_text)
     if sides is None:
-        detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(table.header_str_row))
+        detected_mult = detect_unit_scale(raw_title_text)  # the title's caption; another column's unit is its own (X49)
+        if detected_mult == 1 and (elsewhere := _unit_only_elsewhere(table)) is not None:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=elsewhere,
+                                sheet_name=table.call.sheet_name, header_row_number=table.header_row_number,
+                                column_mapping=table.column_mapping)
     elif sides[0][1] != sides[1][1]:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=_heading_units_differ(sides),
                             sheet_name=table.call.sheet_name, header_row_number=table.header_row_number,
@@ -3877,9 +3881,27 @@ def _unit_scale(table: _TableRead) -> IntakeResult | None:
 _HeadingUnit = tuple[str, Decimal | None, str]  # a heading, its unit, and where a unit not its own comes from
 
 
+_UNIT_EXAMPLES = {Decimal("1000"): "($000)", Decimal("1000000"): "($M)", Decimal("1000000000"): "($bn)"}
+
+
+def _unit_only_elsewhere(table: _TableRead) -> str | None:
+    """The refusal when neither amount heading nor the title names a unit but another heading does (X49): that unit
+    is its own column's, so the amounts' unit is not stated."""
+    budget, actual = (table.column_mapping.get(role) for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL))
+    for heading in table.header_str_row:
+        if heading in (budget, actual) or (unit := detect_unit_scale(heading)) == 1:
+            continue
+        word = _UNIT_WORDS[unit]
+        return (f"'{heading}' names {word}, but '{budget}' and '{actual}' name no unit, so I can't tell whether the "
+                f"amounts are in {word}. Give the '{budget}' and '{actual}' headings their unit, such as "
+                f"'{budget} {_UNIT_EXAMPLES[unit]}', or put a caption such as ($ in {word}) above the table, then "
+                "upload the file again.")
+    return None
+
+
 def _heading_units(table: _TableRead, title: str) -> tuple[_HeadingUnit, _HeadingUnit] | None:
     """Budget's (or the comparison's) and Actual's units when either heading names its own (X45): each its own, else
-    the caption the title and the other headings give, else none. None when neither names one, to scale as before."""
+    the title's caption (X49), else none. None when neither names one."""
     half = _HALF.get()
     placeholder = half["missing"] if half is not None and half["filled"] else None
     headings = [(role, table.column_mapping.get(role)) for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL)]
@@ -3889,17 +3911,14 @@ def _heading_units(table: _TableRead, title: str) -> tuple[_HeadingUnit, _Headin
         return None if unit is None else (("", unit, ""), ("", unit, ""))
     if all(unit is None for unit in own.values()):
         return None
-    others = " ".join(h for h in table.header_str_row if h not in {heading for _, heading in headings})
-    caption, source = detect_unit_scale(title), "the title says"
-    if caption == 1:
-        caption, source = detect_unit_scale(others), "another heading says"
+    caption = detect_unit_scale(title)
     found = caption if caption != 1 else None
 
     def side(role: CanonicalRole, heading: str | None) -> _HeadingUnit:
         unit = own[role]
         if unit is not None:
             return cast(str, heading), unit, ""
-        return cast(str, heading), found, source if found is not None else ""
+        return cast(str, heading), found, "the title says" if found is not None else ""
     return side(*headings[0]), side(*headings[1])
 
 
