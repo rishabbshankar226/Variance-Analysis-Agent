@@ -170,19 +170,19 @@ Each proof ran when its fix landed. Phase 4 moved the code around X6, X10 and X4
 
 | Figure | Before | After |
 |---|---|---|
-| Functions in `src/` (an `ast` walk, `.scratch/size_table.py`) | 732 | 861 |
+| Functions in `src/` (an `ast` walk, `.scratch/size_table.py`) | 732 | 872 |
 | Functions over 80 lines | 36 | 26 |
 | Functions over 150 lines | 9 (longest `_process_raw_table`, 477) | 0 (longest `_read_ixbrl_bytes`, 149) |
 | `chat/handlers.py` | one module of 5,082 lines | the package `chat/handlers/`, 17 modules |
-| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing |
+| Message inventory: intake messages a chat reader sees | 235 seen, 10 with jargon, 37 of 86 errors with no fix, 44 failing: the final scanner run on `d8542ff`'s source, before M6. The scanner as frozen before M6 gave 228 seen, 17 with jargon, 34 of 82 with no fix and 48 failing at `ff8abcb` (PLAN.md, Decision 15) | 233 seen, 0 with jargon, 0 errors with no fix, 0 failing, at `ebd1912`. The scanner does not see X45's refusal, which a helper builds; its three forms were checked with the scanner's own rules and pass. X48's refusal is the command line's own |
 | Test strength: Phase 1's 25 seeded mutants | 3 survive (`63162aa`) | 0 survive |
-| Suite | 2505 passed in 48.53s (Phase 0) | 2814 passed in 76.78s at load average 5.6 to 10.3, from processes not this run's; 2810 passed in 51.82s in D3's clean clone |
+| Suite | 2505 passed in 48.53s (Phase 0) | 2865 passed in 46.88s at `ebd1912`, at load average 8.6 to 7.1 from processes not this run's; 2810 passed in 51.82s in D3's clean clone |
 | Slowest test (the worksheet-scan memory test) | about 10 s run alone; 21.94 s in the suite at load average 5.66 (`8a558f4`) | 2.87 s run alone; 7.68 s in the suite at load average 16.16 (PLAN.md, Phase 6 figures) |
-| Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses |
+| Maya's 24 runs over Phase 1's fictional files | 6 dead ends, 18 analyses | 2 dead ends, 22 analyses (at `7049fac`; re-run at `ebd1912`, all 31 rows the same) |
 | Contract fixtures and audit schemas | 19 files; 1.0 to 1.9 | the same bytes (`git diff main -- tests/fixtures/contracts schemas` is empty) |
-| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes (X44) |
+| sdist, built by `python -m build` | 6,627,852 bytes (with this run's evidence) | 1,946,420 bytes after X44; 1,973,670 bytes at `ebd1912` (the wheel 447,494) |
 
-The suite's duration could not be measured on a quiet machine: other projects' processes held the load average between 5 and 34 through Phase 8, so the two durations do not compare.
+The suite's duration could not be measured on a quiet machine: other projects' processes held the load average between 5 and 34 through Phase 8, so the durations do not compare.
 
 ## Assertions edited
 
@@ -250,9 +250,9 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - No STOP-ASK is open. No dependency, CLI default, contract fixture, audit schema or financial rule changed.
 - The decisions taken along the way are PLAN.md's Decisions 1 to 18.
 
-## Gates at `7049fac`
+## Gates at `ebd1912`
 
-As printed, in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt):
+The summary lines, as printed in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt) (`.scratch/gates/final.sh`). The commits after `ebd1912` change only REPORT.md and the final STOP's evidence.
 
 ```
 ruff check .                     All checks passed!
@@ -260,8 +260,8 @@ mypy --strict src/variance_agent scripts deterministic_conditioning
                                  Success: no issues found in 90 source files
 compileall -q src tests scripts deterministic_conditioning
                                  exit 0
-pytest -q                        2814 passed in 76.78s (0:01:16)
-pytest -q -k contract            181 passed, 2633 deselected in 31.23s
+pytest -q                        2865 passed in 46.88s
+pytest -q -k contract            181 passed, 2684 deselected in 5.10s
 pip check                        No broken requirements found.
 build                            Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
 twine check                      PASSED (wheel), PASSED (sdist)
@@ -269,10 +269,10 @@ check_distribution.py            Wheel/sdist contents, license, Python support, 
 minimal install (Python 3.11):   Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
                                  No broken requirements found.
 contracts and schemas vs main    identical
-size table                       functions=861 over80=26 over150=0
+size table                       functions=872 over80=26 over150=0
 ```
 
-After X44, the rebuilt distributions pass `twine check` and `check_distribution.py` again. D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except the panel run's documented 3.
+D3 ran every README command from a clean clone at `5e8a0fc`; all exit 0 except the panel run's documented 3.
 
 ## Screenshots
 
