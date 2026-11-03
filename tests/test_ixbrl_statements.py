@@ -334,7 +334,7 @@ def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
     assert IDENTITY in reply.text
     assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export audit"]
     assert handle_message(session, "waterfall").text.startswith("# Statement Comparison")
-    assert handle_message(session, "export excel").text.startswith("Excel workbook ready for download: Lines sheet.")
+    assert handle_message(session, "export excel").text == "Excel workbook ready for download: Lines sheet."
 
 
 def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_total() -> None:

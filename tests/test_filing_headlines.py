@@ -338,7 +338,7 @@ def test_the_chat_exports_a_filings_workbook() -> None:
     from variance_agent.chat.handlers import handle_message
     session, reply = _filing_session()
     assert "Export Excel" not in (reply.chips or [])
-    assert handle_message(session, "export excel").text.startswith(  # N1
+    assert handle_message(session, "export excel").text == (  # N1
         "Excel workbook ready for download: Summary, Material Variances, Root Causes & Actions, and All Rows sheets.")
 
 
