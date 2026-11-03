@@ -1,4 +1,4 @@
-"""Screenshots of the chat screens Phase 8's fixes changed (docs/improve/PLAN.md, X45 to X47).
+"""Screenshots of the chat screens Phase 8's fixes changed (docs/improve/PLAN.md, X45 to X53).
 
 X45 refuses a file whose Budget and Actual headings name different units, X46 reads a percent-formatted
 Tolerance as the percentage Excel shows, and X47 shows a Percent limit row's headroom and buffer in basis
@@ -32,6 +32,9 @@ def scenarios() -> dict[str, list[tuple[str, str, str]]]:
         "x47-limit-bps": [("upload", str(EVIDENCE / "stop-ask-limit-rate-units" / "c1.csv"), ""),
                           ("say", "Looks right", ""), ("say", "Q3 2026", ""), ("say", "$1 or 1%", ""),
                           ("say", "USD", ""), ("say", "1", "results")],
+        "x49-other-heading-unit": [("upload", str(EVIDENCE / "stop-ask-other-heading-units" / "h1.csv"), "refusal")],
+        "x50-eps-lines": [("upload", str(EVIDENCE / "stop-ask-eps-lines" / "e1.xlsx"), "intake")],
+        "x53-per-share-row": [("upload", str(EVIDENCE / "stop-ask-fpa-eps-rows" / "k1.csv"), "refusal")],
     }
 
 
