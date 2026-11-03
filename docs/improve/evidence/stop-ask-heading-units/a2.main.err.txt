@@ -1,0 +1,1 @@
+variance-agent: error: Could not find a header row with Line Item, Budget, and Actual columns in 'a2.csv' (a Forecast or Prior Year column can stand in for Budget).
