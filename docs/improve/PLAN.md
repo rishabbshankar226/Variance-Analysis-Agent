@@ -857,3 +857,8 @@ Post-T1 suite: 2505 passed in 47.31s (count unchanged).
 ## Looking at the outputs
 
 One sentence each per phase, on one report, one workbook and one chat reply the phase changed.
+
+- **Phase 4** changes no output: the characterizations and the three reviewers' comparisons are its check.
+- **Phase 5, chat** (constraint 1's browser check; `docs/improve/evidence/phase-5/`, taken with `shots_phase5.py` on the redesign harness, light theme, desktop and mobile). After results, typing `export excel` gives "Excel workbook ready for download: Limits sheet." for Ines's limits, "... Lines sheet." for a balance sheet comparison, and "... Summary, Material Variances, Root Causes & Actions, and All Rows sheets." for a filing's income statement, each with its download link. Finding, left for the owner: these results offer only Export report and Export audit as chips, so a reader has to know to type `export excel`. Adding the chip would edit `test_the_chat_exports_a_filings_workbook`'s check that no Export Excel chip is offered, so it is not done here.
+- **Phase 6** changes tests only.
+- **Phase 7, workbook** (X32): LibreOffice 26.8.1 renders a tie run's All Rows as 12.3% and 2.5% where the report says 12.2% and 2.4%, and the Summary's last row is the new note. **Report**: unchanged. **Chat**: X32 changes no reply. The README's commands ran from a clean clone (D3).
