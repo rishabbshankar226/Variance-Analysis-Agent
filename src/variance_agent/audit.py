@@ -5,7 +5,7 @@ import json
 import re
 from decimal import Decimal
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, NamedTuple
 
 from .models import (Aggregate, AnalysisConfig, AnalysisResult, AnalyzedRow, BasisDetails, ComparisonBasis, ComparisonDetails,
                      LineType, MeasureKind)
@@ -299,22 +299,16 @@ def needs_schema_19(result: AnalysisResult, transformations: Mapping[str, object
     return None
 
 
-@financial_context()
-def build_audit_record(
+def _audit_schema(
     result: AnalysisResult,
-    *,
-    source_name: str | None = None,
-    source_sha256: str | None = None,
-    schema_version: str | None = None,
-    type_map_sha256: str | None = None,
-    source_worksheet: str | None = None,
-    transformations: Mapping[str, object] | None = None,
-    source_document: Mapping[str, object] | None = None,
-) -> JSONObject:
-    """Build a JSON-safe, versioned record of deterministic analysis facts.
+    schema_version: str | None,
+    transformations: Mapping[str, object] | None,
+    source_document: Mapping[str, object] | None,
+) -> tuple[str, object, bool, bool]:
+    """Verify the result and settle the schema version, refusing one that cannot hold the record.
 
-    Raw source rows are excluded. Downstream report consumers receive verified
-    facts and selected source metadata; source text remains untrusted data.
+    Returns the version, the workbook examination finding, whether the comparison is opt-in, and whether
+    the source document records its own headline.
     """
     verify_result(result)
     extended = is_audience_result(result)
@@ -351,6 +345,13 @@ def build_audit_record(
             f"Audit schema {schema_version} records the comparison amount as a budget; "
             "use --audit-schema-version 1.6 for forecast or prior-period comparisons."
         )
+    return schema_version, workbook, opt_in, headline
+
+
+def _check_source_identity(
+    source_name: str | None, source_sha256: str | None, type_map_sha256: str | None, source_worksheet: str | None,
+) -> None:
+    """Refuse a source name, digest or worksheet name the record cannot carry."""
     if source_name is not None:
         validate_text(source_name, field="source_name")
     if source_sha256 is not None and (not isinstance(source_sha256, str)
@@ -363,8 +364,22 @@ def build_audit_record(
         raise ValueError("source_worksheet must be a nonempty worksheet name or null.")
     if source_worksheet is not None:
         validate_text(source_worksheet, field="source_worksheet", nonblank=True)
-    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}
 
+
+class _AuditCounts(NamedTuple):
+    """The row counts and completeness facts the data quality section and the totals record."""
+
+    row_count: int
+    classified_count: int
+    unclassified_count: int
+    classification_coverage: Decimal
+    has_revenue: bool
+    has_expenses: bool
+    totals_complete: bool
+    supported_driver_count: int
+
+
+def _audit_counts(result: AnalysisResult) -> _AuditCounts:
     quality_rows = tuple(row for row in result.rows if currency_row(row))
     row_count = len(quality_rows)
     unclassified_count = sum(row.line_type == LineType.UNCLASSIFIED for row in quality_rows)
@@ -384,12 +399,32 @@ def build_audit_record(
     )
     totals_complete = (unclassified_count == 0 and has_revenue and has_expenses
                        and not any(row.segment for row in result.rows))
-    net_operating_available = totals_complete
     supported_driver_count = sum(
         bool(row.driver_evidence and row.driver_evidence.reconciles)
         for row in result.material_rows
     )
+    return _AuditCounts(row_count, classified_count, unclassified_count, classification_coverage, has_revenue,
+                        has_expenses, totals_complete, supported_driver_count)
 
+
+def _base_record(
+    result: AnalysisResult,
+    schema_version: str,
+    counts: _AuditCounts,
+    *,
+    source_name: str | None,
+    source_sha256: str | None,
+    opt_in: bool,
+    headline: bool,
+    include_diagnostics: bool,
+) -> tuple[JSONObject, JSONObject, JSONObject]:
+    """The record every schema version holds, with its source and data quality sections.
+
+    The source and data quality sections are returned too: later sections add to those same dicts.
+    """
+    (row_count, classified_count, unclassified_count, classification_coverage, has_revenue, has_expenses,
+     totals_complete, supported_driver_count) = counts
+    net_operating_available = totals_complete
     source: JSONObject = {
         "name": source_name,
         "sha256": source_sha256.lower() if source_sha256 is not None else None,
@@ -446,6 +481,20 @@ def build_audit_record(
             "driver_claims_require_reconciled_evidence": True,
         },
     }
+    return record, source, data_quality
+
+
+def _add_versioned_sections(
+    record: JSONObject,
+    source: JSONObject,
+    result: AnalysisResult,
+    schema_version: str,
+    *,
+    source_worksheet: str | None,
+    source_document: Mapping[str, object] | None,
+    type_map_sha256: str | None,
+) -> None:
+    """Add the comparison, currency, worksheet, document and provenance sections each version holds."""
     comparison: JSONObject = {
         "basis": str(result.config.comparison_basis),
         "label": result.config.comparison_label,
@@ -482,11 +531,25 @@ def build_audit_record(
             "analysis_fingerprint_recipe": "record-and-derived-rows-v1",
             "payload_digest_recipe": "public-record-without-payload-sha256-v1",
         }
-    if include_diagnostics:
-        data_quality["completeness_basis"] = "supplied_classified_rows_with_both_categories"
-        data_quality["summary_verifications"] = [
-            _summary_record(row) for row in result.rows if row.summary_verification is not None
-        ]
+
+
+def _add_diagnostics(data_quality: JSONObject, result: AnalysisResult) -> None:
+    data_quality["completeness_basis"] = "supplied_classified_rows_with_both_categories"
+    data_quality["summary_verifications"] = [
+        _summary_record(row) for row in result.rows if row.summary_verification is not None
+    ]
+
+
+def _add_transformations(
+    record: JSONObject,
+    result: AnalysisResult,
+    schema_version: str,
+    *,
+    transformations: Mapping[str, object] | None,
+    workbook: object,
+    opt_in: bool,
+) -> None:
+    """Add how the input was read (1.5 and later) and the workbook and basis details (1.9)."""
     if schema_version in {"1.5", "1.6", "1.7", "1.8", "1.9"}:
         t_raw = dict(transformations) if transformations is not None else {}
         zero_reads_raw = t_raw.get("zero_reads")
@@ -513,15 +576,22 @@ def build_audit_record(
         if opt_in:
             record["basis_details"] = [basis_details_record(row.line_item, row.basis_details)
                                        for row in result.rows if row.basis_details is not None]
-    if schema_version in {"1.8", "1.9"}:
-        record["audience"] = audience_configuration(result.config)
-        record["segments"] = segment_records(result)
-        record["inferences"] = list(metric_inferences(result.rows, result.config))
-        record["measure_rows"] = [dict(_measure_record(row), display_label=display_outcome(row, result.config.comparison_basis))
-                                  for row in result.rows]
-        record["comparisons"] = []
-        record["unavailable_comparisons"] = []
-        record["comparison_details"] = [_comparison_record(row) for row in result.rows]
+
+
+def _add_audience_sections(record: JSONObject, result: AnalysisResult) -> None:
+    """Add the 1.8 and 1.9 audience, segment, inference and per-row measure sections."""
+    record["audience"] = audience_configuration(result.config)
+    record["segments"] = segment_records(result)
+    record["inferences"] = list(metric_inferences(result.rows, result.config))
+    record["measure_rows"] = [dict(_measure_record(row), display_label=display_outcome(row, result.config.comparison_basis))
+                              for row in result.rows]
+    record["comparisons"] = []
+    record["unavailable_comparisons"] = []
+    record["comparison_details"] = [_comparison_record(row) for row in result.rows]
+
+
+def _add_digests(record: JSONObject, result: AnalysisResult, schema_version: str, include_diagnostics: bool) -> None:
+    """Seal the record: the analysis fingerprint, then the payload digest over everything else."""
     record["analysis_fingerprint"] = sha256_bytes(_canonical(
         {"record": record, "analyzed_rows": [
             (_measure_record(row) if schema_version in {"1.8", "1.9"} else
@@ -530,6 +600,41 @@ def build_audit_record(
     ))
     if schema_version in {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}:
         record["payload_sha256"] = payload_sha256(record)
+
+
+@financial_context()
+def build_audit_record(
+    result: AnalysisResult,
+    *,
+    source_name: str | None = None,
+    source_sha256: str | None = None,
+    schema_version: str | None = None,
+    type_map_sha256: str | None = None,
+    source_worksheet: str | None = None,
+    transformations: Mapping[str, object] | None = None,
+    source_document: Mapping[str, object] | None = None,
+) -> JSONObject:
+    """Build a JSON-safe, versioned record of deterministic analysis facts.
+
+    Raw source rows are excluded. Downstream report consumers receive verified
+    facts and selected source metadata; source text remains untrusted data.
+    """
+    # Every helper below runs inside this function's financial context.
+    schema_version, workbook, opt_in, headline = _audit_schema(result, schema_version, transformations, source_document)
+    _check_source_identity(source_name, source_sha256, type_map_sha256, source_worksheet)
+    include_diagnostics = schema_version in {"1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"}
+
+    record, source, data_quality = _base_record(
+        result, schema_version, _audit_counts(result), source_name=source_name, source_sha256=source_sha256,
+        opt_in=opt_in, headline=headline, include_diagnostics=include_diagnostics)
+    _add_versioned_sections(record, source, result, schema_version, source_worksheet=source_worksheet,
+                            source_document=source_document, type_map_sha256=type_map_sha256)
+    if include_diagnostics:
+        _add_diagnostics(data_quality, result)
+    _add_transformations(record, result, schema_version, transformations=transformations, workbook=workbook, opt_in=opt_in)
+    if schema_version in {"1.8", "1.9"}:
+        _add_audience_sections(record, result)
+    _add_digests(record, result, schema_version, include_diagnostics)
     return record
 
 
