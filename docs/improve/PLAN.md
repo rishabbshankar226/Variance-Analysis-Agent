@@ -58,6 +58,10 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | X42 | 3 | done | see `fix(X42)` | `audience.py`, `measures.py`, `cli.py`, `chat/handlers.py`, `tests/test_measure_source_notes.py` |
 | X44 | 8 | done | `fix(X44)` | `pyproject.toml` excludes `/docs/improve/evidence` from the sdist, as it does the UI and analysts evidence, and `scripts/check_distribution.py` asserts it. The sdist goes from 6,627,852 to 1,946,420 bytes; the wheel is unchanged (445,465 bytes); `docs/improve/PLAN.md` still ships |
 | X43 | — | open | | found in X41's tests: a limit, benchmark or target table prints a scaled amount with three decimal places as it holds them ("$89,999.000" from 89.999 in thousands); the value is right, so it is a display finding for the final STOP, not changed here |
+| X45 | 8 | asked | | from X23: amount headings naming different units ("Budget ($000)", "Actual ($M)") are scaled by one multiplier; `intake.py`, `tests/test_header_units.py`; asked in [evidence/stop-ask-heading-units/ASK.md](evidence/stop-ask-heading-units/ASK.md) |
+| X46 | 8 | asked | | from X31: a Percent row's Tolerance or Buffer cell under a percent number format keeps its stored fraction; `intake.py`, `comparisons.py`, `tests/test_percent_formats.py`; asked in [evidence/stop-ask-percent-declarations/ASK.md](evidence/stop-ask-percent-declarations/ASK.md) |
+| X47 | 8 | asked | | on `main`, exported by N1: a Percent limit row prints headroom and buffer in points labelled "bps"; `report.py`, `tests/test_bases.py`, `tests/test_workbook_comparisons.py`; asked in [evidence/stop-ask-limit-rate-units/ASK.md](evidence/stop-ask-limit-rate-units/ASK.md) |
+| X48 | 8 | asked | | on `main`, widened by M3: period-paired columns read the last pair by position under the `--period` heading; `intake.py`, `tests/test_intake_comparison.py`; asked in [evidence/stop-ask-period-pair/ASK.md](evidence/stop-ask-period-pair/ASK.md) |
 | X32 | 5 (done in 7) | done | `fix(X32)` | `xlsx.py` (`_ROUNDING_NOTE` on the FP&A Summary, Limits, Lines and filing Summary sheets), `tests/test_workbook_rounding_note.py` (new), `tests/fixtures/xlsx_values/sample.json` (+1 cell), `tests/fixtures/characterization/s3_cli.json` (1 digest). No cell value changes. LibreOffice 26.8.1 shows the 12.25% and 2.45% ties as 12.3% and 2.5%, the report 12.2% and 2.4%; Excel not checked |
 | X37 | 4 (done in 7) | done | `refactor(X37)` | `intake.py` (`_MISSING_MARKERS`, referenced nowhere in `src`, tests, scripts or `deterministic_conditioning`), `chat/handlers/scenarios.py` (`_simulate`'s last `else` had the Expense branch's body, and `_what_if_target` answers an Unclassified line before any simulation, so the two branches merge). Missed in Phase 4 and found while writing D2; suite 2804 before and after, ruff and mypy clean. No test can fail on its revert, since both removals are behaviour-neutral by construction |
 | X33 | 7 | done | `docs(X33)` | `README.md`: 1.0–1.9 where it said 1.0–1.8, what 1.9 adds and when a run selects it (`audit.py` `needs_schema_19`), and that `--long-output` or `--long-output-jsonl` alone takes a plain run to the measure path and audit 1.8 (checked: `sample_variance.csv` gives 1.7 plain and with `--xlsx`, 1.8 with either long output). Doc only, so no revert proof |
@@ -855,6 +859,15 @@ The repository has no release tag. Released 0.2.0 is taken as `5e288bb` (2026-10
 - A finding counts as on a 0.2.0 path only when the cause sits in one of the eleven modules above, on a CLI path that 0.2.0 already offered.
 
 Post-T1 suite: 2505 passed in 47.31s (count unchanged).
+
+## Phase 8 reviews
+
+**Unsupported numbers** (fresh-eyes reviewer, at `61cf060`). It confirmed four. I reproduced each one on the branch and on `main` (in a detached worktree of `main`, with `PYTHONPATH` set to its `src`). None is on a 0.2.0 path, so each is a STOP-ASK, not a halt: X45 to X48 above.
+- X45 and X46 are new on this branch: `main` refuses those files. X47 and X48 are on `main`. For X48 the reviewer found bare years. Month and fiscal-year pairs show the same cause on `main` (`d3.csv`, `d4.csv` in the evidence).
+- Suspected by the reviewer, not reproduced: a unit caption on a PDF table's title line (`pdf_tables.py` `_TITLE_UNIT_RE`) may scale "except per share" rows.
+- Reported as already on `main`: a "Headcount (000s)" heading scales Budget and Actual by 1,000. I have not reproduced it.
+- Reported as a refusal, not a wrong number: the comparison path refuses qualified headings, so X18's claim does not reach it.
+- Checked and supported by the reviewer: every numeric cell of the Limits, Benchmark and Targets sheets (Currency, Percent, Multiple and Count rows, a zero limit, captioned Buffer and Tolerance). Also the Lines sheet against `measure_rows`, the Filing Summary on a 10-K and a 10-Q, and batch rows, manifest, sha256 and exit code 2. X41's scaled Buffer, and `_ROUNDING_NOTE`'s wording.
 
 ## Looking at the outputs
 
