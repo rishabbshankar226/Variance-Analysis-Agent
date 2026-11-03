@@ -266,6 +266,13 @@ def percent_shown(value: Decimal) -> str:
         return f"{format((value * 100).normalize(), 'f')}%"
 
 
+def percent_points(value: Decimal) -> Decimal:
+    """A Tolerance or Buffer stored under a percent number format, in the percentage points Excel shows: 0.0025 reads
+    0.25 (X46), since a rate's declarations are in points (docs/financial-rules.md)."""
+    with financial_context():
+        return value * 100
+
+
 def percent_shown_note(line_item: str, fields: list[str], code: str) -> str:
     named = fields[0] if len(fields) == 1 else f"{', '.join(fields[:-1])} and {fields[-1]}"
     return (f"{line_item}: read {named} as the percentage{'s' if len(fields) > 1 else ''} Excel shows "
@@ -3761,9 +3768,16 @@ def _apply_measure(
                 raw_budget = percent_shown(cast(Decimal, raw_budget))
             else:
                 raw_actual = percent_shown(cast(Decimal, raw_actual))
-        if shown:
+        # So is its Tolerance or Buffer, in the points the rules read it in (X46).
+        declared = [(header, entry[0]) for idx, header in table.passthrough
+                    if normalize_key(header) in UNIT_DECLARATIONS and isinstance(row_dict.get(header), Decimal)
+                    and (entry := excel.display.get(cell_key(physical_idx, idx + 1))) is not None and entry[2]]
+        for header, _ in declared:
+            row_dict[header] = percent_points(cast(Decimal, row_dict[header]))
+        fields = [field_name for _, field_name, _ in shown] + [header for header, _ in declared]
+        if fields:
             visible_transformations.append(
-                percent_shown_note(line_item_str, [field_name for _, field_name, _ in shown], shown[0][2]))
+                percent_shown_note(line_item_str, fields, shown[0][2] if shown else declared[0][1]))
     if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
         # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
         # a multiple keeps its x, which the analysis reads as turns.

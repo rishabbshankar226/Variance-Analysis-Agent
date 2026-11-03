@@ -446,7 +446,7 @@ def _percent_as_shown(
     display: dict[tuple[int, int], tuple[str, Decimal | None, bool]], notes: list[str],
 ) -> None:
     """Read a Percent row's cell that Excel shows as a percentage as that percentage, as FP&A intake does (X31)."""
-    from .intake import percent_shown, percent_shown_note
+    from .intake import UNIT_DECLARATIONS, percent_points, percent_shown, percent_shown_note
     measure = next((h for h in headers if normalize_key(h) == "measure"), None)
     line = next((h for h in headers if normalize_key(h) in _ALL_LINE_ITEM_KEYS), None)
     for row, number in zip(rows, positions, strict=True):
@@ -460,8 +460,14 @@ def _percent_as_shown(
                  if isinstance(row.get(headers[index]), Decimal) and display.get((number, index + 1), ("", None, False))[2]]
         for header, _ in shown:
             row[header] = percent_shown(cast(Decimal, row[header]))
-        if shown:
-            notes.append(percent_shown_note(name, [header for header, _ in shown], shown[0][1]))
+        # Its Tolerance or Buffer too, in the points the rules read it in (X46).
+        declared = [(header, display[number, index + 1][0]) for index, header in enumerate(headers)
+                    if normalize_key(header) in UNIT_DECLARATIONS and isinstance(row.get(header), Decimal)
+                    and display.get((number, index + 1), ("", None, False))[2]]
+        for header, _ in declared:
+            row[header] = percent_points(cast(Decimal, row[header]))
+        if shown or declared:
+            notes.append(percent_shown_note(name, [header for header, _ in [*shown, *declared]], [*shown, *declared][0][1]))
 
 
 def _apply_unit_caption(
