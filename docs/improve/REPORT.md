@@ -184,7 +184,7 @@ Every existing assertion, golden or snapshot this run changed, listed in PLAN.md
 
 ## Friction scorecard
 
-Each fixture driven through the chat as Maya would, by Phase 1's policy (`.scratch/audit-maya/drive.py`: a chip where one is offered, "Q3 2026" typed for a period question). A typed answer counts 1 step, a chip 0.5, a confirmation 0. The policy was extended by one rule only, for X22's new offer: Maya clicks "Leave ... out" (0.5). Before is `main` at `15100c8` in a detached worktree; after is `7049fac`. Script: `.scratch/scorecard.py`; rows in `.scratch/scorecard-before.jsonl` and `-after.jsonl`.
+Each fixture driven through the chat as Maya would, by Phase 1's policy (`evidence/stop-3/scorecard/drive.py`: a chip where one is offered, "Q3 2026" typed for a period question). A typed answer counts 1 step, a chip 0.5, a confirmation 0. The policy was extended by one rule only, for X22's new offer: Maya clicks "Leave ... out" (0.5). Before is `main` at `15100c8` in a detached worktree; after is `7049fac`. Script, policy, file builder and rows: [evidence/stop-3/scorecard/](evidence/stop-3/scorecard/), with the steps to reproduce in [its README](evidence/stop-3/README.md).
 
 The M items, per fixture:
 
@@ -223,6 +223,8 @@ Still dead ends: `f08_formula_no_cache.xlsx` (an uncalculated formula refuses by
 - The decisions taken along the way are PLAN.md's Decisions 1 to 17.
 
 ## Gates at `7049fac`
+
+As printed, in [evidence/stop-3/gates.txt](evidence/stop-3/gates.txt):
 
 ```
 ruff check .                     All checks passed!

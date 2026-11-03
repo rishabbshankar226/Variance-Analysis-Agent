@@ -1,0 +1,26 @@
+## HEAD 7049fac  load averages: 5.56 11.87 13.03
+## ruff
+All checks passed!
+## mypy
+Success: no issues found in 90 source files
+## compileall
+exit 0
+## pytest
+2814 passed in 76.78s (0:01:16)
+## load after pytest: load averages: 10.26 11.96 12.96
+## pip check
+No broken requirements found.
+## build
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+## twine
+Checking .scratch/dist-final/variance_analysis_agent-0.3.0-py3-none-any.whl: PASSED
+Checking .scratch/dist-final/variance_analysis_agent-0.3.0.tar.gz: PASSED
+## check_distribution
+Wheel/sdist contents, license, Python support, and entry point verified
+## minimal install
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+## contracts and schemas against main
+identical
+## size table
+functions=861 over80=26 over150=0
