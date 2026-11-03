@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Mapping, cast
+from typing import TYPE_CHECKING, Mapping, cast
 
 from .analysis import analyze_rows, verify_result
 from .audience import AudienceConfig, audience_config, validate_audience_config, effective_layout
@@ -22,6 +22,9 @@ from .segments import SEGMENT_KEYS, read_segment
 from .surprise import (SurpriseOptions, SurpriseStatistic, attach_statistics, verify_statistics,
                        statistic_record, statistics_configuration, render_statistics)
 from .report import _pct, _safe_inline
+
+if TYPE_CHECKING:
+    from .excel import WorkbookFacts
 
 
 @dataclass(frozen=True)
@@ -511,17 +514,12 @@ def _apply_unit_caption(
     return caption
 
 
-def read_comparison_input(
-    data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
-    column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
-    metadata: dict[str, object] | None = None, hidden_rows: str | None = None,
-) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
-    """Bounded captured-file intake for opt-in headers, retaining raw header identity."""
-    import io
-    from .parsing import load_input, load_json_value, _normalized_headers, _excel_loader
-    from .excel import (HIDDEN_ROW_CHOICES, WorkbookFacts, cell_value, hidden_data_rows, hidden_rows_note,
-                        hidden_rows_question, inspect_workbook, table_formulas_message)
-    from .intake import _decode_text, _sniff_delimiter, _delimited_rows, _display_entry
+def _checked_suffix(
+    data: bytes, suffix: str, *, filename: str, hidden_rows: str | None, assisted: bool,
+    column_mapping: Mapping[str, str] | None,
+) -> str:
+    """Refuse input over the size limit or a hidden-row choice it cannot take; an Office Open XML .xls reads as .xlsx."""
+    from .excel import HIDDEN_ROW_CHOICES
     from .limits import MAX_INPUT_BYTES
     if len(data) > MAX_INPUT_BYTES:
         raise ValueError("Input exceeds the supported size (32 MiB).")
@@ -535,30 +533,50 @@ def read_comparison_input(
             raise ValueError("hidden_rows must be include or exclude.")
         if suffix.lower() not in {".xlsx", ".xlsm"} or not (assisted or column_mapping):
             raise ValueError("hidden_rows requires assisted or mapped Excel input; strict intake reads every row as given.")
-    if metadata is not None and column_mapping:
-        metadata["transformations"] = {"column_mapping": dict(column_mapping)}
-    if suffix.lower() in {".pdf", ".htm", ".html"}:
-        if not assisted:
-            raise ValueError("PDF and HTML filings require --assisted.")
-        if column_mapping:
-            raise ValueError("PDF columns are selected by statement and period, not CSV column mappings.")
-        from .intake import read_input_assisted, audit_transformations, CanonicalRole
-        intake = read_input_assisted(data, suffix, filename=filename, sheet=sheet, per_share_lines=per_share_lines)
-        if intake.has_fatal_errors or not intake.rows:
-            raise ValueError(intake.fatal_error_message or "No comparable financial statement was found.")
-        rows = []
-        for pdf_row in intake.rows:
-            row = normalize_row(pdf_row)
-            row["Prior Period"] = row.pop("budget")
-            rows.append(row)
-        headers = tuple(dict.fromkeys(key for row in rows for key in row))
-        if metadata is not None:
-            metadata.update(intake_result=intake, document=intake.source_document(), transformations=audit_transformations(intake),
-                            comparison_label=intake.comparison_label, comparison_basis=str(intake.comparison_basis),
-                            comparison_name=intake.period_names.get(intake.comparison_label or ""),
-                            actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
-        return rows, headers, intake.sheet_name, tuple([*intake.visible_transformations, *intake.reader_notes])
-    notes: list[str] = []
+    return suffix
+
+
+def _read_filing_input(
+    data: bytes, suffix: str, *, filename: str, sheet: str | None, assisted: bool,
+    column_mapping: Mapping[str, str] | None, per_share_lines: bool, metadata: dict[str, object] | None,
+) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
+    """A PDF or HTML filing's statement, read by assisted intake, with its prior period as the comparison."""
+    if not assisted:
+        raise ValueError("PDF and HTML filings require --assisted.")
+    if column_mapping:
+        raise ValueError("PDF columns are selected by statement and period, not CSV column mappings.")
+    from .intake import read_input_assisted, audit_transformations, CanonicalRole
+    intake = read_input_assisted(data, suffix, filename=filename, sheet=sheet, per_share_lines=per_share_lines)
+    if intake.has_fatal_errors or not intake.rows:
+        raise ValueError(intake.fatal_error_message or "No comparable financial statement was found.")
+    rows = []
+    for pdf_row in intake.rows:
+        row = normalize_row(pdf_row)
+        row["Prior Period"] = row.pop("budget")
+        rows.append(row)
+    headers = tuple(dict.fromkeys(key for row in rows for key in row))
+    if metadata is not None:
+        metadata.update(intake_result=intake, document=intake.source_document(), transformations=audit_transformations(intake),
+                        comparison_label=intake.comparison_label, comparison_basis=str(intake.comparison_basis),
+                        comparison_name=intake.period_names.get(intake.comparison_label or ""),
+                        actual_label=intake.column_mapping.get(CanonicalRole.ACTUAL))
+    return rows, headers, intake.sheet_name, tuple([*intake.visible_transformations, *intake.reader_notes])
+
+
+def _read_cells(
+    data: bytes, suffix: str, *, filename: str, sheet: str | None, assisted: bool,
+    column_mapping: Mapping[str, str] | None, notes: list[str],
+) -> tuple[list[list[object]] | None, str | None, WorkbookFacts | None, str,
+           dict[tuple[int, int], tuple[str, Decimal | None, bool]]]:
+    """The cells of delimited text, or of assisted or mapped Excel; None for input the strict readers take.
+
+    Returns the cells, the worksheet name, the workbook examination, the worksheet's path in the workbook, and
+    how each cell's number format shows it.
+    """
+    import io
+    from .parsing import _excel_loader
+    from .excel import cell_value, inspect_workbook
+    from .intake import _decode_text, _sniff_delimiter, _delimited_rows, _display_entry
     worksheet = None
     raw: list[list[object]] | None = None
     workbook_facts: WorkbookFacts | None = None
@@ -566,9 +584,6 @@ def read_comparison_input(
     # (row, column) -> how a cell's number format shows it scaled, as FP&A intake records it (E1).
     display: dict[tuple[int, int], tuple[str, Decimal | None, bool]] = {}
     format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
-    if suffix.lower() == ".csv" and not assisted and not column_mapping:
-        parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
-        return parsed.rows, parsed.raw_headers, parsed.worksheet, ()
     if suffix.lower() == ".csv" or (assisted and suffix.lower() in {".tsv", ".txt"}):
         if sheet is not None:
             raise ValueError("Worksheet selection requires Excel input.")
@@ -600,7 +615,16 @@ def read_comparison_input(
                 worksheet_path = ws._worksheet_path
             finally:
                 workbook.close()
-    if raw is None and suffix.lower() == ".json" and column_mapping:
+    return raw, worksheet, workbook_facts, worksheet_path, display
+
+
+def _read_without_cells(
+    data: bytes, suffix: str, *, filename: str, sheet: str | None, column_mapping: Mapping[str, str] | None,
+    notes: list[str],
+) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
+    """Mapped JSON rows, or the strict reader's rows with any explicit column mapping applied."""
+    from .parsing import load_input, load_json_value, _normalized_headers
+    if suffix.lower() == ".json" and column_mapping:
         payload = load_json_value(data.decode("utf-8-sig"))
         table = payload.get("rows", payload.get("data")) if isinstance(payload, dict) else payload
         if not isinstance(table, list) or not all(isinstance(row, dict) for row in table):
@@ -611,15 +635,20 @@ def read_comparison_input(
         renames = dict(zip(headers, mapped_headers, strict=True))
         output = [{renames[key]: value for key, value in row.items()} for row in table]
         return output, mapped_headers, None, ("Applied explicit column mapping.", *ignored)
-    if raw is None:
-        parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
-        rows, headers, worksheet = parsed.rows, parsed.raw_headers, parsed.worksheet
-        if column_mapping:
-            inverse = {source: target for target, source in column_mapping.items()}
-            replacements = {normalize_key(source): target for source, target in inverse.items()}
-            rows = [{replacements.get(k, k): v for k, v in row.items()} for row in rows]
-            headers = tuple(inverse.get(header, header) for header in headers)
-        return rows, headers, worksheet, tuple(notes)
+    parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
+    rows, headers, worksheet = parsed.rows, parsed.raw_headers, parsed.worksheet
+    if column_mapping:
+        inverse = {source: target for target, source in column_mapping.items()}
+        replacements = {normalize_key(source): target for source, target in inverse.items()}
+        rows = [{replacements.get(k, k): v for k, v in row.items()} for row in rows]
+        headers = tuple(inverse.get(header, header) for header in headers)
+    return rows, headers, worksheet, tuple(notes)
+
+
+def _find_header_row(
+    raw: list[list[object]], *, assisted: bool, column_mapping: Mapping[str, str] | None, filename: str,
+) -> int:
+    """Where the header row is: the first of the top 25 naming a line item and an Actual or two periods, when assisted."""
     header_at = 0
     if assisted:
         candidates = []
@@ -636,7 +665,15 @@ def read_comparison_input(
         header_at = candidates[0]
     if not raw:
         raise ValueError("Input contains no data.")
-    headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
+    return header_at
+
+
+def _hidden_rows_excluded(
+    raw: list[list[object]], headers: tuple[str, ...], header_at: int, workbook_facts: WorkbookFacts | None,
+    worksheet_path: str, *, filename: str, hidden_rows: str | None, notes: list[str],
+) -> set[int]:
+    """The sheet rows left out as hidden in Excel, after refusing a table whose formulas Excel never calculated."""
+    from .excel import hidden_data_rows, hidden_rows_note, hidden_rows_question, table_formulas_message
     line_items = [i for i, h in enumerate(headers) if normalize_key(h) in _ALL_LINE_ITEM_KEYS]
     excluded: set[int] = set()
     hidden: list[tuple[int, str, bool]] = []
@@ -659,11 +696,14 @@ def read_comparison_input(
             raise ValueError(f"{hidden_rows_question(hidden)}\nChoose whether to count them "
                              "(hidden_rows='include' or 'exclude'; --hidden-rows on the command line).")
         notes.append(hidden_rows_note(hidden_rows, hidden))
-    if metadata is not None:
-        metadata["transformations"] = {"header_row_number": header_at + 1, "column_mapping": dict(column_mapping or {})}
-    mapped_headers, ignored = _mapped_headers(headers, column_mapping or {})
-    notes.extend(ignored)
-    _normalized_headers(mapped_headers)  # collision, column, and header-text limits
+    return excluded
+
+
+def _data_rows(
+    raw: list[list[object]], headers: tuple[str, ...], mapped_headers: tuple[str, ...], header_at: int,
+    excluded: set[int], *, suffix: str,
+) -> tuple[list[dict[str, object]], list[int]]:
+    """The rows below the header under their mapped headers, and the sheet row of each, skipping blank and excluded rows."""
     output = []
     positions: list[int] = []  # the sheet row of each output row
     for index, record in enumerate(raw[header_at + 1:], header_at + 2):
@@ -678,6 +718,41 @@ def read_comparison_input(
         if any(not header and value is not None and value != "" for header, value in zip(headers, record, strict=False)):
             raise ValueError(f"Row {index}: data appears under a blank header.")
         output.append({header: value for header, value in zip(mapped_headers, record, strict=False) if header})
+    return output, positions
+
+
+def read_comparison_input(
+    data: bytes, suffix: str, *, filename: str = "input", sheet: str | None = None, assisted: bool = False,
+    column_mapping: Mapping[str, str] | None = None, per_share_lines: bool = False,
+    metadata: dict[str, object] | None = None, hidden_rows: str | None = None,
+) -> tuple[list[dict[str, object]], tuple[str, ...], str | None, tuple[str, ...]]:
+    """Bounded captured-file intake for opt-in headers, retaining raw header identity."""
+    from .parsing import load_input, _normalized_headers
+    suffix = _checked_suffix(data, suffix, filename=filename, hidden_rows=hidden_rows, assisted=assisted,
+                             column_mapping=column_mapping)
+    if metadata is not None and column_mapping:
+        metadata["transformations"] = {"column_mapping": dict(column_mapping)}
+    if suffix.lower() in {".pdf", ".htm", ".html"}:
+        return _read_filing_input(data, suffix, filename=filename, sheet=sheet, assisted=assisted,
+                                  column_mapping=column_mapping, per_share_lines=per_share_lines, metadata=metadata)
+    notes: list[str] = []
+    if suffix.lower() == ".csv" and not assisted and not column_mapping:
+        parsed = load_input(data, suffix, source_name=filename, sheet=sheet)
+        return parsed.rows, parsed.raw_headers, parsed.worksheet, ()
+    raw, worksheet, workbook_facts, worksheet_path, display = _read_cells(
+        data, suffix, filename=filename, sheet=sheet, assisted=assisted, column_mapping=column_mapping, notes=notes)
+    if raw is None:
+        return _read_without_cells(data, suffix, filename=filename, sheet=sheet, column_mapping=column_mapping, notes=notes)
+    header_at = _find_header_row(raw, assisted=assisted, column_mapping=column_mapping, filename=filename)
+    headers = tuple("" if v is None else str(v).strip() for v in raw[header_at])
+    excluded = _hidden_rows_excluded(raw, headers, header_at, workbook_facts, worksheet_path, filename=filename,
+                                     hidden_rows=hidden_rows, notes=notes)
+    if metadata is not None:
+        metadata["transformations"] = {"header_row_number": header_at + 1, "column_mapping": dict(column_mapping or {})}
+    mapped_headers, ignored = _mapped_headers(headers, column_mapping or {})
+    notes.extend(ignored)
+    _normalized_headers(mapped_headers)  # collision, column, and header-text limits
+    output, positions = _data_rows(raw, headers, mapped_headers, header_at, excluded, suffix=suffix)
     title = " ".join(str(v).strip() for r in raw[:header_at] for v in r if v is not None and str(v).strip())
     scale = _apply_unit_caption(output, positions, mapped_headers, f"{title} {' '.join(headers)}", display, filename,
                                 notes)
