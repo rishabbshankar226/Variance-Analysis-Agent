@@ -67,7 +67,7 @@ States: `todo`, `done`, `asked`, `open`, `closed`, `struck`. The ranked backlog,
 | S1 | 4 | done | `test(S1)` x3, `refactor(S1)` x2 | `chat/handlers/` (17 modules and `__init__`), `pyproject.toml`, `tests/test_characterization_s1.py`, `tests/test_interface_design.py` (glyph check reads a package whole), `scripts/message_inventory.py` |
 | S2 | 4 | done | `test(S2)` `6dfcc95`, `refactor(S2)` `dba3a7b` | `intake.py` (`_process_raw_table` 48 lines over 19 stages, longest 58), `tests/test_characterization_s2.py` |
 | S3 | 4 | done | `test(S3)` `c46dd7e`, `refactor(S3)` `eefa968` | `cli.py` (`_run` 42 lines over 12 stages, longest 66), `tests/test_characterization_s3.py` |
-| S4 | 4 | done (reviewer pending) | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
+| S4 | 4 | done | `refactor(S4)` x8, `a9c3713`..`4c74e90` | what-if, audit record, executive memo, `analyze_rows`, `_handle_compare`, `read_comparison_input`, `shape_income_statement`, `_read_excel_bytes`: every new function under 80 lines |
 | N1 | 5 | done | see `feat(N1)` | `xlsx.py` (`build_workbook` and four sheet builders), `report.py` (`basis_rows`), `cli.py`, `chat/handlers/export.py`, `router.py`, `summary.py`, `tests/test_workbook_comparisons.py`, six refusal tests converted |
 | N2 | 5 | done | see `feat(N2)` | `batch.py` (new), `cli.py` (`--batch`, `--manifest`, `_run_batch`), `tests/test_batch.py` |
 | T2 | 6 | done | `test(T2)` `2038d4a` | `tests/test_mutation_survivors.py`; 0 of 25 survive (Phase 1: 3) |
@@ -764,6 +764,14 @@ Items:
   - Six injected mutations to the new code (note order in `layout_notes` and `visible_transformations`, the dash and minus notes swapped, a `sheet_name` on the measure-kind refusal, `_reread` dropping its note, the `_HALF` fill skipped on a reread) were each caught within 3,000 fuzz cases.
   - It read the stages for in-place mutation of `roles`, the rebinding of `raw_rows`, `_reread`'s arguments, note and problem order, the early returns, each `continue` that became `return None`, the two `field(init=False)` fields and names bound by `:=`, and found no difference.
   - Limit it noted: exceptions were compared at the `_process_raw_table` boundary, not through `_read_excel_bytes`, whose handlers use only `str(exc)`.
+
+- **S4** (the eight `refactor(S4)` commits, `a9c3713`..`4c74e90`). The fresh-eyes reviewer found no behaviour change.
+  - It compared `4c74e90` against a `git archive eefa968` copy, each run printing `variance_agent.__file__` to show which tree it imported.
+  - Chat, about 47,000 calls: what-if over 33 amount forms, 7 directions, 4 suffixes and 16 targets; the memo; compare over 18 by 18 name pairs; 13 routed messages; nine fictional datasets (forecast and prior bases, EUR, zero revenue and profit, in-line results, inexact thirds, unclassified rows). Text, table, chips, view, phase, download digests and the Decimal flags and traps left in the caller's context all match.
+  - Analysis and audit, about 26,500 cases: 35 refusal inputs, and schema versions None, 1.0 to 1.9, "2.0" and "1.10" crossed with name, digest, worksheet, transformation and document options, measure rows, Multiple and opt-in bases. Sorted JSON, insertion-order JSON and top-level key order all match.
+  - File reads and shapes, about 19,600 cases: `read_comparison_input` and `read_input_assisted` over hidden rows and sheets, an Office Open XML `.xls`, a legacy `.xls`, a workbook with no sheets, corrupt and non-Excel zips, uncalculated formulas, EDGAR-style sheets, a balance sheet, Latin-1 text, mapped JSON, input over 32 MiB and PDF or HTML without assisted mode, crossed with sheet, hidden-rows, compare-to, blank-budget, period and mapping options; `shape_income_statement` over 17 grids and every option. Metadata, returned objects, input rows after the call, and exception type and message all match, and a grep of the outputs shows the rare paths were reached.
+  - It read each commit for context boundaries (`financial_context` and its traps), check order, in-place mutation, section order in the audit record and the try/except/finally of `_read_excel_bytes`, and found them unchanged. Module names and signatures are unchanged, and the message inventory matches apart from line numbers.
+  - Noted, not a behaviour change: a strict-CSV or refused `read_comparison_input` call no longer imports `variance_agent.intake`, whose import only compiles regexes and makes one `ContextVar`.
 
 ## Looking at the outputs, Phase 3
 
