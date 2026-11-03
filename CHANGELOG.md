@@ -32,7 +32,9 @@ contract fixtures, audit schemas 1.0 to 1.9 and the financial rules are unchange
 - Chat: every intake message a reader sees names the next step. Merged and two-row headers, section
   headings, bare-year bands, a zero under a scaled format, `.xls` sheets, unreconciled totals (now
   offered to leave out) and lines missing from one file of a pair (offered as 0) no longer end the
-  session. A zero total reads Neutral; unlabeled lines are "not yet labeled", never "Unclassified".
+  session. A zero total reads Neutral; unlabeled lines are "not yet labeled", never "Unclassified". Limit, statement
+  and filing results offer the Export excel chip, a scaled amount shows its cents ("$89,999.00", not
+  "$89,999.000"), and a long note in a results panel wraps on a phone.
 - The chat server cuts off a request body that arrives too slowly, and only an upload that replaces
   the file discards what belonged to it.
 - `chat/handlers.py` is now the package `chat/handlers/`; every import path the repository used still
