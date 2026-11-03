@@ -370,6 +370,12 @@ def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str
     def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
         return format_measure(value, row.measure, cfg.currency, variance=variance)
 
+    def spread(value: Decimal, row: AnalyzedRow) -> str:
+        """A rate's headroom or buffer is in percentage points; it is shown in basis points, as its tolerance is (X47)."""
+        if row.measure is MeasureKind.PERCENT:
+            return format_measure(value * 100, MeasureKind.PERCENT, variance=True)
+        return amount(value, row, variance=True)
+
     table: list[list[str]] = []
     if basis == "limit":
         counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
@@ -378,10 +384,10 @@ def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str
             d = row.basis_details
             assert d is not None and d.headroom is not None
             table.append([row.line_item, str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
-                          amount(d.headroom, row, variance=True),
+                          spread(d.headroom, row),
                           "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
                           "NM" if d.utilization is None else _rate(d.utilization),
-                          "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome])
+                          "" if d.buffer is None else spread(d.buffer, row), d.outcome])
         columns = ["Line Item", "Kind", "Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer",
                    "Status"]
         return columns, table, f"{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within."
