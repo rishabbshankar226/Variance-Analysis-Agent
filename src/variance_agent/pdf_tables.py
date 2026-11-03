@@ -127,6 +127,7 @@ _STATEMENT_END_RE = re.compile(r"^(?:see\s+)?(?:the\s+)?accompanying\b.*\bnotes\
 _FOOTER_RE = re.compile(r"\bform\s+10-?[kq]\b", re.IGNORECASE)
 _ENTITY_RE = re.compile(r"^[A-Z0-9&.,'\- ]*\b(?:INC|CORP|CORPORATION|COMPANY|CO|LLC|LP|PLC|LTD)\b\.?$")
 _SHARE_SUBROW_RE = re.compile(r"^(?:basic|diluted)\b", re.IGNORECASE)
+_EPS_RE = re.compile(r"\beps\b", re.IGNORECASE)
 _PER_SHARE_NOTE = "(per-share and share counts are not money totals)"
 
 _LINE_TOLERANCE = 3.0  # points between word tops on one printed line
@@ -630,10 +631,11 @@ def _statement_table(
             if not label or _FOOTER_RE.search(label):
                 continue
             measure, better = "Currency", ""
-            if _PER_SHARE_RE.search(label) or (per_share_lines and re.search(r"\beps\b", label, re.IGNORECASE)) or (
+            # "Basic EPS" is per-share with or without the flag: never a money line a caption scales (X50).
+            if _PER_SHARE_RE.search(label) or _EPS_RE.search(label) or (
                     _SHARE_SUBROW_RE.match(label) and _PER_SHARE_RE.search(section)):
                 shown = (f"{section}: {label}" if not _PER_SHARE_RE.search(label) and section
-                         and not (per_share_lines and re.search(r"\beps\b", label, re.IGNORECASE)) else label)
+                         and not _EPS_RE.search(label) else label)
                 measure = _retained_measure(label, section) if per_share_lines else ""
                 if not measure:
                     notes.append(f"Left out '{shown}' {_PER_SHARE_NOTE}")
