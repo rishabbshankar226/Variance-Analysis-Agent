@@ -122,13 +122,13 @@ def test_an_older_audit_schema_cannot_record_a_limit_run(tmp_path: Path, capsys:
         capsys.readouterr().err.replace("\n", " "))
 
 
-def test_a_limit_run_refuses_a_workbook(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_limit_run_writes_its_workbook(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from openpyxl import load_workbook
     path = tmp_path / "input.csv"
     path.write_text(INES_LIMITS, encoding="utf-8")
-    with pytest.raises(SystemExit):
-        cli.main([str(path), "--assisted", "--compare-to", "limit", "--period", "Oct", "--dollar-threshold", "1",
-                  "--percent-threshold", "1", "--xlsx", str(tmp_path / "o.xlsx")])
-    assert "--xlsx isn't available for a limit, benchmark or target comparison yet" in capsys.readouterr().err.replace("\n", " ")
+    assert cli.main([str(path), "--assisted", "--compare-to", "limit", "--period", "Oct", "--dollar-threshold", "1",
+                     "--percent-threshold", "1", "--xlsx", str(tmp_path / "o.xlsx")]) == 0, capsys.readouterr().err
+    assert load_workbook(tmp_path / "o.xlsx").sheetnames == ["Limits"]  # N1
 
 
 def test_strict_mode_points_the_new_bases_at_assisted_intake(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

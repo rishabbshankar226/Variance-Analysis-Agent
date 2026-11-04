@@ -1,0 +1,3 @@
+[assisted intake] Comparing Actual against the target.
+[assisted intake] Fictional yield: read Measure as Percent.
+variance-agent: error: Fictional yield: bare rate in Target needs --percent-values points or fractions.

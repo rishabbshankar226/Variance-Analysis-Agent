@@ -109,12 +109,15 @@ def test_a_dtd_after_a_long_prolog_comment_is_still_refused(member: str, encodin
         f'<root xmlns="{SHEET_NS}"/>'
     ).encode(encoding)
     members[member] = hostile
-    with pytest.raises(ValueError, match="DTD"):
+    with pytest.raises(ValueError, match="declares entities of its own"):
         inspect_archive(_zip(members))
 
 
 def test_the_worksheet_scan_keeps_little_beyond_the_numbers_it_returns() -> None:
-    rows: list[list[object]] = [list(range(i, i + 10)) for i in range(10_000)]
+    # 4,000 rows keep tracemalloc's cost low while the bound still separates the two cases: the scan
+    # peaks near 1.13x what it keeps, a coordinate set near 1.53x and a whole-worksheet read near 1.39x.
+    # At 1,000 rows fixed costs alone reach 1.3x (docs/improve/PLAN.md, T3).
+    rows: list[list[object]] = [list(range(i, i + 10)) for i in range(4_000)]
     members = _workbook_members(rows)
     data = _zip(members)
     result: dict[str, dict[str, str]] = {}
@@ -141,5 +144,5 @@ def test_a_dtd_straddling_a_read_boundary_is_still_found(offset: int) -> None:
     hostile = prefix + padding + b'--><!DOCTYPE x [<!ENTITY e "boom">]><sst/>'
     members = _workbook_members()
     members[SHARED] = hostile
-    with pytest.raises(ValueError, match="DTD"):
+    with pytest.raises(ValueError, match="declares entities of its own"):
         inspect_archive(_zip(members))

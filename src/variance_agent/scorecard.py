@@ -14,8 +14,10 @@ import hashlib
 import io
 from decimal import Decimal
 
-from .intake import CanonicalRole, IntakeResult, _decode_text
+from .excel import cell_value, column_letters, inspect_workbook
+from .intake import CanonicalRole, IntakeResult, _decode_text, _excel_loader
 from .models import AnalysisResult, ComparisonBasis
+from .number_formats import display_divisor, shows_percent
 from .numeric import financial_context, ratio
 from .parsing import parse_decimal
 
@@ -24,12 +26,45 @@ def _fail(message: str) -> IntakeResult:
     return IntakeResult(has_fatal_errors=True, fatal_error_message=message)
 
 
+def _printed(value: object, code: object, row: int, column: int, name: str) -> str:
+    """A workbook cell as Excel prints it: a percentage format reads as stored x 100 with its % sign."""
+    if value is None:
+        return ""
+    if not isinstance(value, Decimal):
+        return str(value)
+    code = code if isinstance(code, str) else "General"
+    if shows_percent(code, value):
+        with financial_context():
+            return f"{value.scaleb(2):f}%"
+    if display_divisor(code, value) != 1:
+        raise ValueError(f"Cell {column_letters(column)}{row} of '{name}' is shown scaled by its number format "
+                         f"('{code}'); give the figure as it should be read.")
+    return f"{value:f}"
+
+
+def _workbook_cells(data: bytes, name: str) -> list[list[str]]:
+    """The first worksheet's cells as printed, from the stored decimals (never binary floats)."""
+    stored = inspect_workbook(data).numbers
+    with io.BytesIO(data) as source:
+        workbook = _excel_loader()(source, read_only=True, data_only=True)
+        try:
+            if not workbook.sheetnames:
+                raise ValueError(f"'{name}' has no worksheet.")
+            sheet = workbook[workbook.sheetnames[0]]
+            sheet.reset_dimensions()
+            numbers = stored.get(sheet._worksheet_path, {})
+            return [[_printed(cell_value(cell, numbers=numbers, row=i, column=j), getattr(cell, "number_format", None),
+                              i, j, name)
+                     for j, cell in enumerate(cells, 1)]
+                    for i, cells in enumerate(sheet.iter_rows(), 1)]
+        finally:
+            workbook.close()
+
+
 def _table(data: bytes, name: str) -> list[dict[str, str]]:
     """A CSV or a workbook's first sheet as rows of text, keyed by the header row."""
     if name.lower().endswith((".xlsx", ".xlsm")):
-        from openpyxl import load_workbook  # type: ignore[import-untyped]
-        sheet = load_workbook(io.BytesIO(data), read_only=True, data_only=True).worksheets[0]
-        cells = [["" if v is None else str(v) for v in row] for row in sheet.iter_rows(values_only=True)]
+        cells = _workbook_cells(data, name)
     else:
         text, _ = _decode_text(data, name)
         cells = list(csv.reader(io.StringIO(text)))

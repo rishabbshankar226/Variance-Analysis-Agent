@@ -287,7 +287,9 @@ cannot record what the workbook examination found; use --audit-schema-version 1.
   actuals from two files (`--compare-file`, or two uploads in the chat). `key` names the join
   column (an account ID both files carry) or `line item`. `documents` gives both files' `name`,
   `sha256` and `role` (`actual` or `comparison`). Each line gives its `line_item` (from the
-  actuals file), its `key`, and its `comparison_line_item` (the label in the other file).
+  actuals file), its `key`, and its `comparison_line_item` (the label in the other file). That
+  label is empty for a line the analyst chose to read as 0 because the other file lacks it; the
+  `reader_notes` name each such line.
 
 - A `limit`, `benchmark` or `target` run (`comparison.basis`), a `Multiple` row, a
   `--multiple-threshold` (recorded as `audience.multiple_threshold`), or derived metrics select

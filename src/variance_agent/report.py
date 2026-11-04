@@ -312,7 +312,7 @@ def render_statement_report(result: AnalysisResult, checks: list[str]) -> str:
     """A balance sheet or cash flow comparison: the checks the read passed, then each line's change (PLAN.md R7)."""
     cfg = result.config
     places = _report_places(result)
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     lines = [f"# Statement Comparison: {_safe_inline(cfg.period)}", "", f"Reporting currency: {cfg.currency}", "",
              *("- " + _safe_inline(check) for check in checks),
              "- Lines marked (Total) are the statement's own subtotals.",
@@ -350,31 +350,44 @@ _BASIS_NOTES = {
 }
 
 
+def basis_rows(result: AnalysisResult) -> list[AnalyzedRow]:
+    """A limit, benchmark or target comparison's rows in the report's order: limits by severity, then headroom."""
+    rows = [row for row in result.rows if row.basis_details is not None]
+    if result.config.comparison_basis.value == "limit":
+        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
+    return rows
+
+
 @financial_context()
 def basis_table(result: AnalysisResult) -> tuple[list[str], list[list[str]], str | None]:
     """A limit, benchmark or target comparison's table (PLAN.md R13-R15): its columns, its rows as plain text (limits
     by severity), and a limit run's count sentence. The report and the chat's results panel both show it."""
     cfg = result.config
     basis = cfg.comparison_basis.value
-    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_label)
-    rows = [row for row in result.rows if row.basis_details is not None]
+    heading = comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label)
+    rows = basis_rows(result)
 
     def amount(value: Decimal, row: AnalyzedRow, *, variance: bool = False) -> str:
         return format_measure(value, row.measure, cfg.currency, variance=variance)
 
+    def spread(value: Decimal, row: AnalyzedRow) -> str:
+        """A rate's headroom or buffer is in percentage points; it is shown in basis points, as its tolerance is (X47)."""
+        if row.measure is MeasureKind.PERCENT:
+            return format_measure(value * 100, MeasureKind.PERCENT, variance=True)
+        return amount(value, row, variance=True)
+
     table: list[list[str]] = []
     if basis == "limit":
-        rows.sort(key=lambda r: (r.basis_details.severity, r.basis_details.headroom))  # type: ignore[union-attr]
         counts = [sum(1 for r in rows if r.basis_details is not None and r.basis_details.outcome == word)
                   for word in ("Breach", "At limit", "Near", "Within")]
         for row in rows:
             d = row.basis_details
             assert d is not None and d.headroom is not None
             table.append([row.line_item, str(d.limit_kind), amount(row.budget, row), amount(row.actual, row),
-                          amount(d.headroom, row, variance=True),
+                          spread(d.headroom, row),
                           "NM" if d.headroom_percent is None else _rate(d.headroom_percent),
                           "NM" if d.utilization is None else _rate(d.utilization),
-                          "" if d.buffer is None else amount(d.buffer, row, variance=True), d.outcome])
+                          "" if d.buffer is None else spread(d.buffer, row), d.outcome])
         columns = ["Line Item", "Kind", "Limit", "Actual", "Headroom", "Headroom (% of limit)", "Utilization", "Buffer",
                    "Status"]
         return columns, table, f"{counts[0]} Breach, {counts[1]} At limit, {counts[2]} Near, {counts[3]} Within."
@@ -399,7 +412,7 @@ def render_basis_report(result: AnalysisResult) -> str:
     """A limit, benchmark or target comparison (PLAN.md R13-R15): outcomes in their own words, limits by severity."""
     cfg = result.config
     basis = cfg.comparison_basis.value
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     rows = [row for row in result.rows if row.basis_details is not None]
     currency = [f"Reporting currency: {cfg.currency}", ""] if any(currency_row(r) for r in rows) else []
     lines = [f"# {heading} Comparison: {_safe_inline(cfg.period)}", "", *currency, "- " + _BASIS_NOTES[basis], ""]
@@ -437,10 +450,10 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
                               metric_order=tuple(_identity(row) for row in result.rows))
         return render_earnings(table)
     if is_audience_result(result):
-        return render_measure_report(result)
+        return render_measure_report(result, filing_headline=filing_headline)
     cfg = result.config
     places = _report_places(result)
-    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_label))
+    heading = _safe_inline(comparison_heading(cfg.comparison_basis, cfg.comparison_name or cfg.comparison_label))
     classification_incomplete = any(
         row.line_type == LineType.UNCLASSIFIED for row in result.rows
     )
@@ -553,8 +566,12 @@ def render_markdown(result: AnalysisResult, *, top_root_causes: int = 5, stateme
 
 
 @financial_context()
-def render_measure_report(result: AnalysisResult, *, segment_view: bool = False) -> str:
-    """Describe declared metrics without adding incompatible units."""
+def render_measure_report(result: AnalysisResult, *, segment_view: bool = False,
+                          filing_headline: Mapping[str, object] | None = None) -> str:
+    """Describe declared metrics without adding incompatible units.
+
+    A filing's income statement is headed by its own printed totals, never by added-up ones (Decision 39, X8).
+    """
     cfg = result.config
     if not segment_view and any(row.segment_declared for row in result.rows):
         from dataclasses import replace
@@ -575,14 +592,18 @@ def render_measure_report(result: AnalysisResult, *, segment_view: bool = False)
     complete = (all(row.line_type is not LineType.UNCLASSIFIED for row in money)
                 and any(row.line_type is LineType.REVENUE for row in money)
                 and any(row.line_type is LineType.EXPENSE for row in money))
-    lines.extend(["## Currency totals", ""])
-    if complete:
-        lines.extend([_aggregate_line("Total Revenue", result.revenue, cfg.currency),
+    if filing_headline is not None:
+        unit = [f"- Units: {_safe_inline(str(filing_headline['unit']))}"] if filing_headline.get("unit") else []
+        lines.extend(["## Headline figures", "", *unit,
+                      *_filing_headline_lines(filing_headline, cfg.currency, _report_places(result))])
+    elif complete:
+        lines.extend(["## Currency totals", "",
+                      _aggregate_line("Total Revenue", result.revenue, cfg.currency),
                       _aggregate_line("Total Expenses", result.expenses, cfg.currency),
                       "- Net operating variance: " + _money(result.revenue.variance_dollars -
                                                              result.expenses.variance_dollars, cfg.currency)])
     else:
-        lines.append("Currency totals are incomplete; net operating impact is unavailable.")
+        lines.extend(["## Currency totals", "", "Currency totals are incomplete; net operating impact is unavailable."])
     for label, rows in (("Currency variances", money),
                         ("Other measures", tuple(row for row in result.rows if not currency_row(row)))):
         if not rows:

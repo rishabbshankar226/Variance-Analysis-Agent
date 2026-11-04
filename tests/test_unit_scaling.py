@@ -12,8 +12,11 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from variance_agent.intake import (
     detect_unit_scale,
+    read_input_assisted,
     scale_rows_by_unit,
 )
 from variance_agent.chat.handlers import handle_message, handle_upload
@@ -81,3 +84,29 @@ def test_fixture_d_chat_flow_unit_scaling() -> None:
     assert salaries_row.actual == Decimal("520000")
     assert salaries_row.variance_dollars == Decimal("20000")
     assert salaries_row.material is True
+
+
+# X4: the caption forms a fictional title or header can use, and phrases that only look like one.
+@pytest.mark.parametrize(("text", "scale"), [
+    ("($ in thousands)", "1000"), ("(in thousands)", "1000"), ("($000)", "1000"), ("($000s)", "1000"),
+    ("($000's)", "1000"), ("(000's)", "1000"), ("(000)", "1000"), ("(£000)", "1000"), ("(€000)", "1000"),
+    ("£'000", "1000"), ("$'000", "1000"), ("USD '000", "1000"), ("Dollars in Thousands", "1000"),
+    ("Amounts in $K", "1000"), ("(USD thousands)", "1000"), ("in USD thousands", "1000"),
+    ("(thousands of dollars)", "1000"), ("In thousands of U.S. dollars", "1000"),
+    ("(in millions)", "1000000"), ("($ in millions)", "1000000"), ("(£m)", "1000000"), ("(€m)", "1000000"),
+    ("£m", "1000000"), ("$m", "1000000"), ("($MM)", "1000000"), ("$ in MM", "1000000"), ("EUR millions", "1000000"),
+    ("(millions)", "1000000"), ("Millions of dollars", "1000000"), ("(in M)", "1000000"),
+    ("(in billions)", "1000000000"), ("($ in billions)", "1000000000"), ("$bn", "1000000000"),
+    ("Costs incurred in M&A review", "1"), ("Fictional Co. in Malmo", "1"), ("Budget vs Actual", "1"),
+    ("Spend in M. region", "1"),
+])
+def test_caption_forms_name_their_unit(text: str, scale: str) -> None:
+    assert detect_unit_scale(f"Fictional Northwind Co. {text} Q3 2026") == Decimal(scale)
+
+
+def test_a_billions_caption_scales_and_says_so() -> None:
+    data = b"Fictional Holdings ($ in billions)\nLine Item,Type,Budget,Actual\nRevenue,Revenue,1.5,1.75\n"
+    result = read_input_assisted(data, ".csv", filename="fictional.csv")
+    assert result.rows[0]["actual"] == Decimal("1750000000.00")
+    assert ("Amounts scaled from billions (x1,000,000,000). Thresholds stay in the reporting unit (full currency "
+            "units, not thousands).") in result.visible_transformations

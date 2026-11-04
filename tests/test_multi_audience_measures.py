@@ -152,7 +152,8 @@ def test_existing_public_constructors_and_functions_keep_their_parameters():
     from inspect import signature
     from variance_agent import AnalysisResult
     assert list(signature(AnalysisConfig).parameters) == [
-        "period", "dollar_threshold", "percent_threshold", "type_map", "currency", "comparison_basis", "comparison_label"]
+        "period", "dollar_threshold", "percent_threshold", "type_map", "currency", "comparison_basis", "comparison_label",
+        "comparison_name"]
     assert list(signature(AnalysisResult).parameters) == ["config", "rows", "material_rows", "revenue", "expenses", "warnings"]
     assert list(signature(analyze_rows).parameters) == ["rows", "config"]
     assert list(signature(build_audit_record).parameters) == [

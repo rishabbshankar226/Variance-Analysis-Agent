@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import difflib
 import subprocess
 import sys
-import time
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -197,12 +198,47 @@ def _big_session(lines: int = 20_000) -> Session:
     "tell me something about zebra crossing nothing",
     "profit sharing looks high",
 ], ids=["long-query", "partial-name", "typo", "sentence", "show-me", "unknown-sentence", "keyword"])
-def test_unmatched_questions_on_a_big_file_stay_fast(prompt: str) -> None:
-    session = _big_session()
-    start = time.perf_counter()
-    response = handle_message(session, prompt)
-    assert time.perf_counter() - start < 0.5
-    assert response.text
+def test_unmatched_questions_on_a_big_file_stay_fast(prompt: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unmatched question does bounded work, however big the file.
+
+    On 20,000 lines such a question once took 1-3 s: a difflib comparison for every name and
+    several passes over the names (fixed in 1fc32b8). This test used to bound the wall clock at
+    0.5 s, which failed under load (T1 in docs/improve/PLAN.md). It now counts the two costs
+    instead, so a busy machine cannot fail it: the difflib comparisons stop at the suggestion cap
+    (the same count on 5,000 lines as on 20,000), and each name is folded at most three times (one
+    pass each for the intent match, the named-items scan and the sentence match).
+    """
+    small_matches, small_folds, _ = _work_done(monkeypatch, 5_000, prompt)
+    big_matches, big_folds, text = _work_done(monkeypatch, 20_000, prompt)
+    assert big_folds >= 20_000, "the fold counter is not reaching the name matching"
+    assert big_matches == small_matches
+    assert big_folds - small_folds <= 3 * (20_000 - 5_000)
+    assert text
+
+
+def _work_done(monkeypatch: pytest.MonkeyPatch, lines: int, prompt: str) -> tuple[int, int, str]:
+    """(difflib comparisons, routing folds, reply text) for one question on a ``lines``-line file."""
+    session = _big_session(lines)
+    counts = {"matches": 0, "folds": 0}
+    real_matcher, real_fold = difflib.SequenceMatcher, intent_module.normalize_for_routing
+
+    def counting_matcher(*args: Any, **kwargs: Any) -> difflib.SequenceMatcher[str]:
+        counts["matches"] += 1
+        return real_matcher(*args, **kwargs)
+
+    def counting_fold(text: str) -> str:
+        counts["folds"] += 1
+        return real_fold(text)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(difflib, "SequenceMatcher", counting_matcher)
+        # Every module that imported the fold by name, so the count survives handlers moving.
+        for module in list(sys.modules.values()):
+            if getattr(module, "__name__", "").startswith("variance_agent") and \
+                    getattr(module, "normalize_for_routing", None) is real_fold:
+                patch.setattr(module, "normalize_for_routing", counting_fold)
+        text = handle_message(session, prompt).text
+    return counts["matches"], counts["folds"], text
 
 
 def test_a_typo_still_gets_a_suggestion_on_a_big_file() -> None:

@@ -1,0 +1,29 @@
+## HEAD d914676  load averages: 3.24 3.61 6.11
+## ruff
+All checks passed!
+## mypy
+Success: no issues found in 90 source files
+## compileall
+exit 0
+## pytest
+2906 passed in 47.05s
+## load after pytest: load averages: 6.37 4.40 6.26
+## pytest -k contract
+181 passed, 2725 deselected in 4.73s
+## pip check
+No broken requirements found.
+## build
+Successfully built variance_analysis_agent-0.3.0.tar.gz and variance_analysis_agent-0.3.0-py3-none-any.whl
+## twine
+Checking .scratch/dist-final/variance_analysis_agent-0.3.0-py3-none-any.whl: [32mPASSED[0m
+Checking .scratch/dist-final/variance_analysis_agent-0.3.0.tar.gz: [32mPASSED[0m
+## check_distribution
+Wheel/sdist contents, license, Python support, and entry point verified
+## minimal install
+[notice] To update, run: /Users/rishabbshankar/Desktop/projects/Automated Variance Analysis/Variance Analysis Agent/.scratch/minimal-final/bin/python -m pip install --upgrade pip
+Installed 0.3.0: console, CSV/JSON, audit provenance, chat page verified
+No broken requirements found.
+## contracts and schemas against main
+identical
+## size table
+functions=876 over80=26 over150=0

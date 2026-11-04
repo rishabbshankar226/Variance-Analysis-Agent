@@ -601,3 +601,89 @@ def test_downloads_are_not_cacheable_and_not_sniffed(httpd: HTTPServer) -> None:
     assert response.status == 200 and body == b"# private"
     assert response.getheader("Cache-Control") == "no-store"
     assert response.getheader("X-Content-Type-Options") == "nosniff"
+
+
+# ---- X12: a body that arrives too slowly is cut off, not waited for ----------------------------
+
+
+def test_a_dripped_body_is_cut_off_at_its_deadline(httpd: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    monkeypatch.setattr(server_module, "_BODY_GRACE_SECONDS", 0.3)
+    monkeypatch.setattr(server_module, "_BODY_SECONDS_PER_MIB", 0.0)
+    with socket.create_connection(("127.0.0.1", httpd.server_address[1]), timeout=10) as conn:
+        conn.sendall(f"POST /message HTTP/1.1\r\nHost: {_host(httpd)}\r\nContent-Type: application/json\r\n"
+                     "Content-Length: 40\r\n\r\n".encode())
+        reply, sent = b"", 0
+        for _ in range(40):  # one byte every 0.1 s: the whole body would take 4 s
+            try:
+                conn.sendall(b" ")
+            except OSError:
+                break
+            sent += 1
+            conn.settimeout(0.1)
+            try:
+                reply = conn.recv(4096)
+            except TimeoutError:
+                continue
+            if reply:
+                break
+        conn.settimeout(2)
+        while chunk := conn.recv(4096):  # the server closes the connection after a 408: read the whole reply
+            reply += chunk
+        assert reply.startswith(b"HTTP/1.0 408"), reply[:80]
+        assert b"The upload arrived too slowly. Please try again." in reply
+        assert sent < 40  # answered before the body was complete: no clock to flake under load (T1)
+
+
+def test_a_body_sent_whole_still_reads(httpd: HTTPServer) -> None:
+    status, data = _post_message(httpd, {"Host": _host(httpd)})
+    assert status == 200 and data["text"]
+
+
+# ---- X19, X26: only an upload that replaces the file discards what belonged to the old one -----
+
+
+def _loaded(httpd: HTTPServer) -> None:
+    status, _ = _upload(httpd, b'filename="first.csv"')
+    assert status == 200 and _ChatHandler.session.source_bytes is not None
+
+
+def _refused_upload(httpd: HTTPServer) -> None:
+    body, headers = _multipart(b'filename="broken.xlsx"', b"not a workbook")
+    response, data = _request(httpd, "POST", "/upload", body, headers)
+    assert response.status == 200 and json.loads(data)["level"] == "error"
+
+
+def test_a_refused_upload_keeps_the_current_file_s_downloads(httpd: HTTPServer) -> None:
+    _loaded(httpd)
+    server_module._downloads["variance_report_q3_2026.md"] = "current report"
+    _refused_upload(httpd)
+    response, content = _request(httpd, "GET", "/download/variance_report_q3_2026.md")
+    assert response.status == 200 and content == b"current report"
+
+
+def _status(httpd: HTTPServer) -> dict[str, Any]:
+    response, data = _request(httpd, "GET", "/status", headers={"Host": _host(httpd)})
+    return json.loads(data)
+
+
+def test_the_start_up_reply_goes_when_its_file_is_replaced(httpd: HTTPServer) -> None:
+    from variance_agent.chat.responses import Response
+
+    _loaded(httpd)
+    _ChatHandler.initial_response = Response(text="Loaded 'first.csv' (2 data rows).", phase=Phase.AWAITING_PERIOD)
+    _refused_upload(httpd)
+    assert "initial_response" in _status(httpd)  # its file is still the current one
+    status, _ = _upload(httpd, b'filename="second.csv"')
+    assert status == 200 and "initial_response" not in _status(httpd)
+
+
+def test_the_start_up_reply_goes_on_reset(httpd: HTTPServer) -> None:
+    from variance_agent.chat.responses import Response
+
+    _loaded(httpd)
+    _ChatHandler.session.phase = Phase.EXPLORING
+    _ChatHandler.initial_response = Response(text="Loaded 'first.csv'.", phase=Phase.AWAITING_PERIOD)
+    _post_message(httpd, {}, b'{"text": "reset"}')
+    assert "initial_response" not in _status(httpd)

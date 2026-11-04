@@ -179,7 +179,7 @@ def _json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     output: dict[str, object] = {}
     for key, value in pairs:
         if key in output:
-            raise ValueError(f"Duplicate JSON key: {key!r}.")
+            raise ValueError(f"Duplicate JSON key: '{key}'.")
         output[key] = value
     return output
 
@@ -212,7 +212,7 @@ def _validate_json_depth(payload: object) -> None:
 
 
 def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"JSON constant {value!r} is not a finite number.")
+    raise ValueError(f"JSON constant '{value}' is not a finite number.")
 
 
 def load_json_value(text: str) -> object:
@@ -268,8 +268,16 @@ def validate_input_format(suffix: str, *, assisted: bool = False, filename: str 
                 "filing and lists every adjustment it makes."
             )
         return
+    if suffix in {".tsv", ".txt"}:  # assisted intake's delimited reader, as for a pasted table (X15)
+        if not assisted:
+            raise ValueError(
+                "Tab-separated files are read with --assisted, which detects the delimiter and lists "
+                "every adjustment it makes."
+            )
+        return
     if suffix not in {".csv", ".json", ".xlsx", ".xlsm", ".xls"}:
-        raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, or XLSM.")
+        raise ValueError(f"Unsupported input format '{suffix}'. Use CSV, JSON, XLSX, XLSM or XLS; "
+                         "with --assisted, also TSV, PDF or an EDGAR .htm filing.")
     if suffix in {".xlsx", ".xlsm", ".xls"}:
         _excel_loader()
 
@@ -370,10 +378,13 @@ def load_input(
                     # Without declared dimensions, physical rows may be short.
                     padded = list(values) + [None] * max(0, len(headers) - len(values))
                     output.append({h: v for h, v in zip(headers, padded, strict=False) if h})
-                # A formula Excel never calculated reads as blank; name it instead (R4).
+                # A formula Excel never calculated reads as blank; name it instead (R4). A computed variance
+                # column ("Var $") is never read, here as in assisted intake, so it is not checked (C1).
+                from .intake import CanonicalRole, match_column_synonym
                 stop = None if not track_formulas else table_formulas_message(
                     facts, ws._worksheet_path, source_name, header_row=1,
-                    headers=["" if h is None else str(h) for h in raw_headers], rows=read_rows,
+                    headers=["" if h is None or match_column_synonym(str(h))[0] is CanonicalRole.IGNORED_COMPUTED
+                             else str(h) for h in raw_headers], rows=read_rows,
                     line_item_column=headers.index("line_item") if "line_item" in headers else None)
                 if stop is not None:
                     raise ValueError(stop)
@@ -389,7 +400,7 @@ def load_input(
 def get_workbook_sheets(data: bytes, suffix: str) -> list[str]:
     """Return list of sheet names from Excel bytes without parsing data rows."""
     suffix = suffix.lower()
-    if suffix not in {".xlsx", ".xlsm"}:
+    if suffix not in {".xlsx", ".xlsm", ".xls"}:  # a legacy .xls fails to open and lists none
         return []
     load_workbook = _excel_loader()
     with io.BytesIO(data) as source:

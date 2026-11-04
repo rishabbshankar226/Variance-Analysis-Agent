@@ -2,6 +2,48 @@
 
 ## 0.3.0 — Unreleased
 
+### Improvement pass: behavior changes first
+
+Record in `docs/improve/REPORT.md`; plan, rules and decisions in `docs/improve/PLAN.md`. The 19
+contract fixtures, audit schemas 1.0 to 1.9 and the financial rules are unchanged.
+
+- Figures the file does not support now refuse plainly or read right: a footnote mark beside an
+  amount refuses instead of reading as a digit; amounts marked in another currency refuse; more unit
+  captions are read (a PDF's on its title line, "($000)" in a heading), applied once on every path,
+  and scale a row's Buffer and Tolerance with its amounts; a chosen period reads its own columns; a
+  signed ledger's profit lines turn with revenue when that adds up; scorecard workbook weights read
+  as printed; strict and assisted reads agree on uncalculated formulas. Budget and Actual headings
+  that name different units ("($000)" beside "($M)") refuse, naming both. A file with a Budget and
+  Actual pair per period reads the pair `--period` names, else the newest, and the command line
+  refuses pairs whose order it can't tell. A Percent row's Tolerance or Buffer that Excel shows as a
+  percentage reads as that percentage, and a rate limit's headroom and buffer show in basis points.
+  A unit only another column's heading names ("Headcount (000s)") refuses instead of scaling the
+  amounts, and a statement's "EPS" lines are per-share, left out or kept as Per Share, never scaled.
+  Where a caption would scale the amounts, a row with no Measure whose label names a per-share
+  figure or a share count refuses, naming the line.
+- `--xlsx` and the chat's Export Excel write a workbook for limit, benchmark, target, balance sheet,
+  cash flow, covenant metric and filing income comparisons, where they refused. Sheets that hold
+  percentages gain a note on how a tie rounds; no existing cell value changes.
+- A filing's 10-Q columns show their duration in headings ("3 months ended Mar 2026"); every key,
+  label and audit field keeps the end-month label. A measure report and audit now list how assisted
+  intake read the file. A comparison audit that needs 1.9 is written at 1.9.
+- The command line refuses what the comparison path cannot do, refuses an output that would
+  overwrite `--compare-file`, `--ltm-from`, `--metrics` or `--panel`, refuses `--long-output` with
+  `--check-only`, reads `.tsv` on `--assisted`, and keeps `--chat --no-browser` local where `RENDER`
+  is set.
+- New, opt-in: `--batch FOLDER --long-output FILE --manifest FILE` reads every filing in a folder as a
+  single run reads one, with a `file` column and one manifest row per filing; exit 2 if any refuses.
+- Chat: every intake message a reader sees names the next step. Merged and two-row headers, section
+  headings, bare-year bands, a zero under a scaled format, `.xls` sheets, unreconciled totals (now
+  offered to leave out) and lines missing from one file of a pair (offered as 0) no longer end the
+  session. A zero total reads Neutral; unlabeled lines are "not yet labeled", never "Unclassified". Limit, statement
+  and filing results offer the Export excel chip, a scaled amount shows its cents ("$89,999.00", not
+  "$89,999.000"), and a long note in a results panel wraps on a phone.
+- The chat server cuts off a request body that arrives too slowly, and only an upload that replaces
+  the file discards what belonged to it.
+- `chat/handlers.py` is now the package `chat/handlers/`; every import path the repository used still
+  works. The sdist leaves out `docs/improve/evidence`.
+
 ### Analyst coverage (filings, Excel, five new readers) — behavior changes first
 
 Record in `docs/analysts/REPORT.md`; plan and every decision in `docs/analysts/PLAN.md`. The 19
@@ -79,11 +121,11 @@ and every workbook cell value and sheet name is unchanged. Record in `docs/ui/RE
   are unchanged; legacy default remains 1.7. README denominator wording is
   corrected to the existing absolute-comparison calculation.
 - Executed evidence and untested boundaries:
-  [docs/MULTI_AUDIENCE_2026-10.md](docs/MULTI_AUDIENCE_2026-10.md).
+  [docs/history/MULTI_AUDIENCE_2026-10.md](docs/history/MULTI_AUDIENCE_2026-10.md).
 
 ### Bug hunt (2026-10-21) — behavior changes first
 
-Details, evidence and remaining boundaries: [docs/BUG_HUNT_2026-10-21.md](docs/BUG_HUNT_2026-10-21.md).
+Details, evidence and remaining boundaries: [docs/history/BUG_HUNT_2026-10-21.md](docs/history/BUG_HUNT_2026-10-21.md).
 
 - **Behavior change (assisted intake, chat, `--mapping`).** An amount that cannot be read (`TBD`,
   `1.234,56`) or a blank Actual now stops the run (CLI exit 2, chat "I could not read every amount…")

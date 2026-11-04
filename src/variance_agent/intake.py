@@ -24,11 +24,13 @@ from dataclasses import dataclass, field, replace
 from decimal import ROUND_FLOOR, Decimal, Inexact, InvalidOperation
 from enum import StrEnum
 from typing import cast
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
-from .classification import infer_line_type
-from .currencies import SYMBOL_CURRENCIES
+from .classification import infer_line_type, is_profit_measure
+from .currencies import CURRENCY_SYMBOLS, SYMBOL_CURRENCIES
 from .excel import (
+    ExcelWorkbook,
+    ExcelWorksheet,
     SheetLayout,
     WorkbookFacts,
     WorkbookLoader,
@@ -56,7 +58,8 @@ from .limits import (
 from .mapping import LayoutMapping, mapping_sha256
 from .models import ComparisonBasis, LineType
 from .numeric import financial_context, ratio
-from .pdf_tables import PdfReadError, StatementTable, extract_statement_tables, statement_tables_from_grid, statement_title
+from .pdf_tables import (_EPS_RE, _PER_SHARE_RE, PdfReadError, StatementTable, extract_statement_tables,
+                         statement_tables_from_grid, statement_title)
 from .ixbrl import BOTTOM_LINE, BOTTOM_LINE_LABEL, FILING_SUBTOTALS, IxbrlError, LineKey, read_statements
 from .number_formats import display_divisor, shown_places, shows_percent
 from .statement_shape import ShapedStatement, names_subtotal, shape_income_statement
@@ -188,7 +191,6 @@ _CURRENCY_SYNONYMS = {"currency", "ccy"}
 _TYPE_SYNONYMS = {"type", "line_type", "classification"}
 
 _ACCOUNTING_DASHES = {"-", "–", "—"}
-_MISSING_MARKERS = {"", "na", "n/a", "none", "null"}
 
 _NUMBER_RE = re.compile(
     r"(?P<prefix>[+-]?[$€£]?|[$€£][+-]?)\s*"
@@ -255,6 +257,27 @@ def _shown_as(divisor: Decimal | None, percent: bool) -> str:
 
 def _quoted_format(code: str) -> str:
     return f"'{code[:40]}{'...' if len(code) > 40 else ''}'"
+
+
+def percent_shown(value: Decimal) -> str:
+    """The percentage Excel shows for a rate stored under a percent number format: 0.4 reads "40%" (X31)."""
+    if value == 0:
+        return "0%"
+    with financial_context():
+        return f"{format((value * 100).normalize(), 'f')}%"
+
+
+def percent_points(value: Decimal) -> Decimal:
+    """A Tolerance or Buffer stored under a percent number format, in the percentage points Excel shows: 0.0025 reads
+    0.25 (X46), since a rate's declarations are in points (docs/financial-rules.md)."""
+    with financial_context():
+        return value * 100
+
+
+def percent_shown_note(line_item: str, fields: list[str], code: str) -> str:
+    named = fields[0] if len(fields) == 1 else f"{', '.join(fields[:-1])} and {fields[-1]}"
+    return (f"{line_item}: read {named} as the percentage{'s' if len(fields) > 1 else ''} Excel shows "
+            f"(number format {_quoted_format(code)}).")
 
 
 def _unsaved_formulas_stop(
@@ -447,6 +470,10 @@ class IntakeResult:
     comparison_candidates: list[str] = field(default_factory=list)
     comparison_choices: list[ComparisonBasis] = field(default_factory=list)
     source_kind: str | None = None  # "pdf" when the rows were read out of a PDF statement
+    # The currency a filing's monetary facts are in, and amount cells whose text marks a currency (X5, X30).
+    document_currency: str = ""
+    # (file, "Row 2, Sales, Budget column: €100", "EUR")
+    symbol_cells: list[tuple[str, str, str]] = field(default_factory=list)
     source_pages: tuple[int, ...] = ()
     reader_notes: list[str] = field(default_factory=list)
     comparable_sheets: list[str] = field(default_factory=list)  # PDF statements that can be compared
@@ -481,6 +508,9 @@ class IntakeResult:
     report_appendix: list[str] = field(default_factory=list)
     # A filing's income statement: its own printed totals, which head the report in place of computed ones (Decision 39).
     filing_headline: dict[str, object] | None = None
+    # A filing column label's display name where it names a duration ("3 months ended Mar 2026"); keys keep the
+    # label (M4).
+    period_names: dict[str, str] = field(default_factory=dict)
 
     def source_document(self) -> dict[str, object] | None:
         """How a PDF or EDGAR-style statement was read, for the audit record; None for other files."""
@@ -565,6 +595,32 @@ def normalize_header(raw: str) -> str:
     return text.strip("_")
 
 
+_HEADER_UNIT = r"(?:'?000'?s?|thousands?|millions?|billions?|k|mm?|bn)"
+_HEADER_CURRENCY = r"(?:[$€£]|usd|eur|gbp|dollars|euros|pounds)"
+# A unit or currency qualifier at the end of an amount heading, and nothing else: never "(Q3)" (X23).
+_HEADER_QUALIFIER = re.compile(
+    rf"\s*(?:\(\s*(?:{_HEADER_CURRENCY}\s*)?(?:in\s+)?(?:{_HEADER_CURRENCY}\s*)?{_HEADER_UNIT}?\s*\)"
+    rf"|{_HEADER_CURRENCY}\s*'?{_HEADER_UNIT}?|'?000'?s)\s*$", re.IGNORECASE)
+_HEADER_CURRENCY_CODE = re.compile(r"[$€£]|\b(?:usd|eur|gbp)\b", re.IGNORECASE)
+# The unit word inside a qualifier; "m" and "mm" are millions, as "$M" is in a caption (X45).
+_QUALIFIER_UNIT = re.compile(rf"(?<![a-z]){_HEADER_UNIT}(?![a-z])", re.IGNORECASE)
+
+
+def heading_unit(heading: str) -> Decimal | None:
+    """The unit an amount heading's own qualifier names: "Budget ($000)" thousands, "Actual (USD m)" millions. None
+    when it names none, "($)" and "(USD)" included (X45)."""
+    qualifier = _HEADER_QUALIFIER.search(heading)
+    word = _QUALIFIER_UNIT.search(qualifier.group()) if qualifier is not None else None
+    if word is None:
+        return None
+    token = word.group().strip("'").lower()
+    if token.startswith(("000", "thousand")) or token == "k":
+        return Decimal("1000")
+    if token.startswith("billion") or token == "bn":
+        return Decimal("1000000000")
+    return Decimal("1000000")
+
+
 def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
     """Map a raw header name to its canonical role and an optional transformation note."""
     norm = normalize_header(header)
@@ -584,8 +640,23 @@ def match_column_synonym(header: str) -> tuple[CanonicalRole, str | None]:
         return CanonicalRole.CURRENCY, None
     if norm in _TYPE_SYNONYMS:
         return CanonicalRole.TYPE, None
+    # "Budget ($000)", "Actual (USD)": the words before a unit or currency qualifier name the amount (X23).
+    bare = _HEADER_QUALIFIER.sub("", header).strip()
+    if bare and bare != header.strip():
+        role, note = match_column_synonym(bare)
+        if role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL):
+            return role, note
 
     return CanonicalRole.UNKNOWN, None
+
+
+def _footnote_marks(text: str) -> str:
+    """Characters that are not digits but that NFKC folds into digits: superscripts, circled numbers."""
+    return "".join(dict.fromkeys(
+        ch for ch in text
+        if not ch.isascii() and unicodedata.category(ch) != "Nd"
+        and any(c in "0123456789" for c in unicodedata.normalize("NFKC", ch))
+    ))
 
 
 def parse_assisted_decimal(
@@ -619,6 +690,11 @@ def parse_assisted_decimal(
     if not isinstance(value, str):
         raise ValueError(f"{line_item}: field '{field}' must be a numeric scalar.")
 
+    # NFKC would also turn a footnote mark into digits ("950\u00b9" -> "9501", "\u2460" -> "1"): refuse it.
+    if marks := _footnote_marks(value):
+        raise ValueError(
+            f"{line_item}: field '{field}' has a footnote mark or small digit ({marks}) in: {value}."
+        )
     # NFKC folds full-width digits/signs and non-breaking spaces; U+2212 is the typographic minus.
     text = unicodedata.normalize("NFKC", value).strip().replace("\u2212", "-")
     if text in _ACCOUNTING_DASHES:
@@ -681,6 +757,7 @@ def parse_assisted_decimal(
     return number, None
 
 
+_BARE_YEAR_RE = re.compile(r"\b((?:19|20)\d{2})\b")
 _PERIOD_RE = re.compile(
     r"\b((?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-_ ]?\d{2,4})|"
     r"(?:Q[1-4](?:[-_ ]?\d{2,4})?)|"
@@ -690,13 +767,71 @@ _PERIOD_RE = re.compile(
     re.IGNORECASE,
 )
 
-_THOUSANDS_RE = re.compile(r"(\(\$000s?\)|in\s+thousands|\(\s*thousands\b|\$000s?|\b000s\b)", re.IGNORECASE)
-_MILLIONS_RE = re.compile(r"(\(in\s+millions\)|in\s+millions|\(\s*millions\b|\$m\b|in\s+m\b)", re.IGNORECASE)
+_CURRENCY_LEAD = r"(?:[$€£]\s*|(?:usd|eur|gbp|us\s*dollars?|dollars|euros|pounds)\s+)"
+_LETTER_UNIT_END = r"\b(?![&'\w.])"  # "in M" names millions, "in M&A" and "in M." do not
+
+
+def _unit_caption_re(word: str, short_forms: str) -> re.Pattern[str]:
+    """A unit caption naming `word` ("thousands") in a title or header, or one of its short forms (X4)."""
+    return re.compile(
+        rf"\bin\s+{_CURRENCY_LEAD}?{word}\b"  # in thousands, in $ thousands, in USD thousands
+        rf"|\(\s*{_CURRENCY_LEAD}?(?:in\s+)?{word}\b"  # (thousands, ($ in thousands), (USD thousands)
+        rf"|\b(?:usd|eur|gbp|dollars|euros|pounds)\s+(?:in\s+)?{word}\b"  # Dollars in Thousands, EUR millions
+        rf"|\b{word}\s+of\s+(?:u\.?s\.?\s+)?(?:dollars|euros|pounds)\b"  # (thousands of dollars)
+        rf"|{short_forms}",
+        re.IGNORECASE,
+    )
+
+
+_THOUSANDS_RE = _unit_caption_re(
+    "thousands", r"(?:[$€£]|\b(?:usd|eur|gbp)\b)\s*'?\s*000(?:'?s)?\b|\(\s*'?000(?:'?s)?\s*\)|\b000s\b"
+                 r"|[$€£]\s*k\b|\(\s*k\s*\)")
+_MILLIONS_RE = _unit_caption_re("millions", rf"[$€£]\s*mm?\b|\(\s*mm?\s*\)|\bin\s+mm?{_LETTER_UNIT_END}")
+_BILLIONS_RE = _unit_caption_re("billions", rf"[$€£]\s*bn\b|\(\s*bn\s*\)|\bin\s+bn{_LETTER_UNIT_END}")
 _TOTAL_KEYWORD_RE = re.compile(
     r"\b(total|sub\s*total|subtotal|gross\s+profit|net\s+income|operating\s+income|ebitda)\b",
     re.IGNORECASE,
 )
 _ACCOUNT_NUM_RE = re.compile(r"\b([1-9]\d{3,4})\b")
+
+
+_TITLE_MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?"
+                r"|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")
+# The ways a title names a reporting period, most specific first: a span one form takes is not read again by
+# a later one, so "Q3 FY2026" is one period, not two (X35).
+_TITLE_PERIODS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    rf"\b(?:(?:three|six|nine|twelve|\d{{1,2}})\s+months|(?:13|26|39|52)\s+weeks|(?:fiscal\s+)?(?:year|quarter|period))"
+    rf"\s+end(?:ed|ing)\s+{_TITLE_MONTH}\.?\s+\d{{1,2}},?\s+\d{{4}}\b",
+    r"\bQ[1-4]\s*(?:FY\s*)?['’]?\d{2,4}\b|\bFY\s*\d{2,4}\s*Q[1-4]\b",
+    r"\bH[12]\s*(?:FY\s*)?\d{4}\b",
+    r"\bFY\s*\d{2,4}\b",
+    rf"\b{_TITLE_MONTH}\.?\s+\d{{4}}\b",
+))
+
+
+def title_periods(text: str, limit: int = 3) -> list[str]:
+    """The reporting periods a title names, as it prints them and in its order: at most `limit`, distinct (X35)."""
+    taken: list[tuple[int, int, str]] = []
+    for pattern in _TITLE_PERIODS:
+        for match in pattern.finditer(text):
+            if not any(start < match.end() and match.start() < end for start, end, _ in taken):
+                taken.append((match.start(), match.end(), " ".join(match.group().split())))
+    found: list[str] = []
+    for _, _, period in sorted(taken):
+        period = period[0].upper() + period[1:]
+        if period.lower() not in {named.lower() for named in found}:
+            found.append(period)
+    return found[:limit]
+
+
+def chosen_period_pair(pairs: list[PeriodColumnPair], selected_period: str | None) -> PeriodColumnPair:
+    """The pair a chosen period names; else the newest by period order, whatever the column order; else, when the
+    labels give no order, the last pair, as before (X48)."""
+    named = next((p for p in pairs if selected_period is not None and p.period.lower() == selected_period.lower()), None)
+    if named is not None:
+        return named
+    newest = order_period_labels([p.period for p in pairs])
+    return next(p for p in pairs if p.period == newest[0]) if newest else pairs[-1]
 
 
 def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
@@ -706,7 +841,7 @@ def detect_period_pairs(headers: list[str]) -> list[PeriodColumnPair]:
     period_order: list[str] = []
 
     for h in headers:
-        m = _PERIOD_RE.search(h)
+        m = _PERIOD_RE.search(h) or _BARE_YEAR_RE.search(h)  # "2026 Budget", from a bare-year band (M3)
         if not m:
             continue
         p = m.group(1).strip()
@@ -747,13 +882,40 @@ def detect_unit_scale(text: str) -> Decimal:
     """Detect whether numbers are in thousands, millions, or base dollars."""
     if _MILLIONS_RE.search(text):
         return Decimal("1000000")
+    if _BILLIONS_RE.search(text):
+        return Decimal("1000000000")
     if _THOUSANDS_RE.search(text):
         return Decimal("1000")
     return Decimal("1")
 
 
+# Declared in the row's unit (docs/financial-rules.md), so a unit caption scales them with its amounts (X41).
+UNIT_DECLARATIONS = {"buffer": "Buffer", "tolerance": "Tolerance"}
+
+
+def scaled_declaration(value: object, multiplier: Decimal, *, field: str, line_item: str) -> object:
+    """A Buffer or Tolerance times the unit, exactly; a cell the engine can't read is left for it to refuse (X41)."""
+    from .parsing import is_missing, parse_decimal
+    if is_missing(value):
+        return value
+    try:
+        amount = parse_decimal(value, field=field, line_item=line_item)
+    except ValueError:
+        return value
+    with financial_context():
+        return amount * multiplier
+
+
+def unit_declarations(rows: list[dict[str, object]]) -> list[str]:
+    """The declarations a unit scales in these rows, as headings ("Buffer", "Tolerance"), in that order."""
+    from .parsing import is_missing
+    present = {normalize_key(str(key)) for row in rows if _row_measure(row) is MeasureKind.CURRENCY
+               for key, value in row.items() if not is_missing(value)}
+    return [label for key, label in UNIT_DECLARATIONS.items() if key in present]
+
+
 def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> list[dict[str, object]]:
-    """Scale budget and actual amounts by exact Decimal multiplication."""
+    """Scale budget and actual amounts, and each Buffer and Tolerance (X41), by exact Decimal multiplication."""
     if multiplier == Decimal("1"):
         return rows
     scaled: list[dict[str, object]] = []
@@ -766,8 +928,17 @@ def scale_rows_by_unit(rows: list[dict[str, object]], multiplier: Decimal) -> li
             rc["budget"] = rc["budget"] * multiplier
         if "actual" in rc and isinstance(rc["actual"], Decimal):
             rc["actual"] = rc["actual"] * multiplier
+        for key in [key for key in rc if normalize_key(str(key)) in UNIT_DECLARATIONS]:
+            rc[key] = scaled_declaration(rc[key], multiplier, field=str(key), line_item=str(rc.get("line_item", "Row")))
         scaled.append(rc)
     return scaled
+
+
+def scaling_note(unit_label: str, declarations: list[str]) -> str:
+    """The note for amounts scaled by a unit, naming the declarations scaled with them (X41)."""
+    included = f", {' and '.join(declarations)} included" if declarations else ""
+    return (f"Amounts scaled from {unit_label}{included}. Thresholds stay in the reporting unit "
+            "(full currency units, not thousands).")
 
 
 def detect_signed_ledger(rows: list[dict[str, object]]) -> SignedLedgerDetection:
@@ -825,6 +996,22 @@ def flip_ledger_signs(
                 rc["actual"] = rc["actual"].copy_negate()
         flipped.append(rc)
     return flipped, affected
+
+
+def _signed_profit_lines(rows: list[dict[str, object]]) -> list[str]:
+    """The profit lines of a signed ledger whose sign turns with revenue's (X7).
+
+    A profit line turns when turning it makes it add up as a subtotal, or when it adds up neither
+    way (the ledger's own convention); it keeps its stored sign when only that sign adds up.
+    """
+    money = [r for r in rows if _row_measure(r) is MeasureKind.CURRENCY]
+    profit = [name for r in money if is_profit_measure(name := str(r.get("line_item", "")).strip())]
+    if not profit:
+        return []
+    turned, _ = flip_ledger_signs(money, profit)
+    adds_up_turned = {t.line_item for t in detect_subtotals_and_totals(turned).reconciled_totals}
+    adds_up_stored = {t.line_item for t in detect_subtotals_and_totals(money).reconciled_totals}
+    return [name for name in profit if name in adds_up_turned or name not in adds_up_stored]
 
 
 class _ToleranceIndex:
@@ -1094,11 +1281,7 @@ def detect_header_row(
                             roles[CanonicalRole.LINE_ITEM] = col_idx
                             break
             if CanonicalRole.LINE_ITEM in roles:
-                chosen_pair = None
-                if selected_period is not None:
-                    chosen_pair = next((p for p in pairs if p.period.lower() == selected_period.lower()), None)
-                if chosen_pair is None:
-                    chosen_pair = pairs[-1]
+                chosen_pair = chosen_period_pair(pairs, selected_period)
                 for col_idx, cell in enumerate(row):
                     if cell is not None and str(cell).strip():
                         cs = str(cell).strip()
@@ -1617,7 +1800,8 @@ def _read_input_assisted(
     if len(data) > MAX_INPUT_BYTES:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"The file '{filename}' exceeds the supported file size limit of 32 MiB.",
+            fatal_error_message=(f"The file '{filename}' exceeds the supported file size limit of 32 MiB. Save just the "
+                                 "sheet with the statement as a new file and upload that."),
         )
 
     norm_suffix = suffix.lower()
@@ -1722,17 +1906,20 @@ def _delimited_rows(text: str, delimiter: str, filename: str) -> list[list[objec
         for record in csv.reader(io.StringIO(text, newline=""), delimiter=delimiter):
             if len(record) > MAX_COLUMNS:
                 raise ValueError(
-                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read."
+                    f"'{filename}' has more than {MAX_COLUMNS} columns, which is more than I can read. Delete the "
+                    "columns the analysis doesn't need and upload the file again."
                 )
             cells += len(record)
             if len(rows) >= MAX_ROWS or cells > MAX_CELLS:
                 raise ValueError(
                     f"'{filename}' has more rows or cells than I can read "
-                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells)."
+                    f"(limits: {MAX_ROWS:,} rows and {MAX_CELLS:,} cells). Save just the rows the analysis needs "
+                    "as a new file and upload that."
                 )
             rows.append(cast(list[object], record))
     except csv.Error as exc:
-        raise ValueError(f"I could not split '{filename}' into columns: {exc}.") from exc
+        raise ValueError(f"I could not split '{filename}' into columns: {str(exc).rstrip('.')}. Save it from "
+                         "Excel as CSV and upload that.") from exc
     return rows
 
 
@@ -1818,7 +2005,8 @@ def _read_json_bytes(
     except Exception as exc:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"Could not read JSON data from '{filename}': {exc}",
+            fatal_error_message=(f"Could not read JSON data from '{filename}': {str(exc).rstrip('.')}. Save the "
+                                 "table as CSV or Excel and upload that instead."),
         )
 
 
@@ -1828,6 +2016,19 @@ def _hidden_sheets_last(ranked: list[SheetScore], hidden: set[str]) -> list[Shee
         replace(s, rationale=f"{s.rationale}; hidden worksheet") if s.name in hidden else s for s in ranked
     ]
     return sorted(marked, key=lambda s: s.name in hidden)
+
+
+@dataclass(frozen=True)
+class _SheetChoice:
+    """A workbook's sheets, ranked on their first rows, and the one a read uses (with the duration its name chose)."""
+
+    sheetnames: list[str]
+    all_sheets_raw: list[tuple[str, list[list[object]]]]
+    ranked: list[SheetScore]
+    sheet_states: list[tuple[str, str]]
+    hidden: set[str]
+    chosen_sheet: str
+    duration: str | None
 
 
 def _read_excel_bytes(
@@ -1853,7 +2054,8 @@ def _read_excel_bytes(
                 "Export the sheet you need to CSV, or save a copy without the large sheet."
             )
         else:
-            message = f"The Excel file '{filename}' could not be opened safely."
+            message = (f"The Excel file '{filename}' could not be opened safely. Open it in Excel, save it again "
+                       "as .xlsx, and upload that.")
         return IntakeResult(has_fatal_errors=True, fatal_error_message=message)
 
     loader = _excel_loader()
@@ -1861,145 +2063,210 @@ def _read_excel_bytes(
         wb = None
         try:
             wb = loader(src, read_only=True, data_only=True)
-            sheetnames = list(wb.sheetnames)
-            if not sheetnames:
-                return IntakeResult(
-                    has_fatal_errors=True,
-                    fatal_error_message=f"The Excel workbook '{filename}' contains no worksheets.",
-                )
-
-            # Pre-extract rows for ranking if multiple sheets
-            all_sheets_raw: list[tuple[str, list[list[object]]]] = []
-            for name in sheetnames:
-                ws = wb[name]
-                ws.reset_dimensions()
-                sheet_rows: list[list[object]] = []
-                numbers = stored_numbers.get(ws._worksheet_path, {})
-                for r_idx, cells in enumerate(ws.iter_rows(), start=1):
-                    if r_idx > 30:  # Scan up to 30 rows for ranking
-                        break
-                    row_vals = [
-                        cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
-                        for c_idx, c in enumerate(cells, start=1)
-                    ]
-                    if any(v is not None and str(v).strip() != "" for v in row_vals):
-                        sheet_rows.append(row_vals)
-                all_sheets_raw.append((name, sheet_rows))
-
-            ranked = rank_workbook_sheets(all_sheets_raw)
-            sheet_states = [(n, str(getattr(wb[n], "sheet_state", "visible"))) for n in sheetnames]
-            hidden = {n for n, state in sheet_states if state != "visible"}
-            if hidden:
-                ranked = _hidden_sheets_last(ranked, hidden)
-
-            # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
-            chosen_sheet = sheet
-            duration = None
-            band = re.fullmatch(r"(?P<sheet>.+) \((?P<duration>[^()]+)\)", chosen_sheet or "")
-            if chosen_sheet not in sheetnames and band is not None and band["sheet"] in sheetnames:
-                # "Sheet (9 Months Ended)" names one duration of an EDGAR-style statement sheet.
-                chosen_sheet, duration = band["sheet"], band["duration"]
-            if chosen_sheet is None:
-                chosen_sheet = ranked[0].name if ranked else sheetnames[0]
-            elif chosen_sheet not in sheetnames:
-                return IntakeResult(
-                    has_fatal_errors=True,
-                    fatal_error_message=(
-                        f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
-                        f"Available sheets: {', '.join(sheetnames)}."
-                    ),
-                    available_sheets=sheetnames,
-                )
-
-            target_ws = wb[chosen_sheet]
-            target_ws.reset_dimensions()
-            numbers = stored_numbers.get(target_ws._worksheet_path, {})
-
-            full_raw_rows: list[list[object]] = []
-            display: dict[int, tuple[str, Decimal | None, bool]] = {}
-            format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
-            places: dict[int, int] = {}
-            edgar_like = False
-            for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
-                row_vals = [
-                    cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
-                    for c_idx, c in enumerate(cells, start=1)
-                ]
-                if r_idx == 1:
-                    edgar_like = bool(row_vals) and _looks_like_edgar_title(row_vals[0])
-                for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
-                    code = getattr(c, "number_format", None)
-                    entry = _display_entry(code, value, format_cache)
-                    if entry is not None:
-                        display[cell_key(r_idx, c_idx)] = entry
-                    if edgar_like and isinstance(value, Decimal) and isinstance(code, str):
-                        shown = shown_places(code, value)
-                        if shown is not None:
-                            places[cell_key(r_idx, c_idx)] = shown
-                full_raw_rows.append(row_vals)
-
-            excel = _ExcelSheet(
-                layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
-                recalculate_on_open=facts.recalculate_on_open,
-                display=display,
-                hidden_rows=hidden_rows,
-                shown_places=places,
-            )
-            statement_notes: list[str] = []
-            statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
-                          else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines,
-                                                       shown_places=excel.shown_places, notes=statement_notes))
-            if statements:
-                # Only a sheet today's read can't find a header on: files that read today read the same.
-                statement = _read_edgar_statement(
-                    statements, duration, full_raw_rows, filename, chosen_sheet, excel,
-                    treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
-                    compare_to=compare_to, sheet_notes=statement_notes)
-                statement.available_sheets = sheetnames
-                if not statement.has_fatal_errors:
-                    statement.workbook_examination = _examine(
-                        statement, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
-                return statement
-            if duration is not None:
-                excel = replace(excel, block=duration)
-            result = _process_raw_table(
-                full_raw_rows,
-                filename,
-                sheet_name=chosen_sheet,
-                treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
-                selected_period=selected_period,
-                compare_to=compare_to,
-                excel=excel,
-            )
-            if result.comparison_basis is not ComparisonBasis.BUDGET:
-                # Same scores; the rationale names the comparison this file was read against.
-                ranked = rank_workbook_sheets(
-                    all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
-                )
-                if hidden:
-                    ranked = _hidden_sheets_last(ranked, hidden)
-            result.candidate_sheets = ranked
-            result.available_sheets = sheetnames
-            if not result.has_fatal_errors:
-                result.workbook_examination = _examine(
-                    result, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
-            if chosen_sheet != sheetnames[0] and ranked:
-                rationale = (
-                    ranked[0].rationale if ranked[0].name == chosen_sheet
-                    else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
-                )
-                result.visible_transformations.insert(
-                    0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
-                )
-            return result
+            choice = _choose_sheet(wb, filename, sheet, stored_numbers)
+            if isinstance(choice, IntakeResult):
+                return choice
+            target_ws, full_raw_rows, excel = _sheet_rows(wb, choice.chosen_sheet, facts, stored_numbers, hidden_rows)
+            return _read_chosen_sheet(choice, target_ws, full_raw_rows, excel, facts, filename,
+                                      treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+                                      selected_period=selected_period, compare_to=compare_to,
+                                      per_share_lines=per_share_lines)
         except Exception as exc:
             return IntakeResult(
                 has_fatal_errors=True,
-                fatal_error_message=f"Could not read Excel file '{filename}': {exc}",
+                fatal_error_message=(f"Could not read Excel file '{filename}': {str(exc).rstrip('.')}. Open it in "
+                                     "Excel, save the sheet with the statement as a new workbook, and upload that."),
             )
         finally:
             if wb is not None:
                 wb.close()
+
+
+def _choose_sheet(
+    wb: ExcelWorkbook, filename: str, sheet: str | None, stored_numbers: dict[str, dict[str, str]],
+) -> IntakeResult | _SheetChoice:
+    """Rank the workbook's sheets on their first rows, then choose the one named, else the best ranked."""
+    sheetnames = list(wb.sheetnames)
+    if not sheetnames:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(f"The Excel workbook '{filename}' contains no worksheets. Open it in "
+                                 "Excel, check that it holds the statement, then save it and upload it again."),
+        )
+
+    # Pre-extract rows for ranking if multiple sheets
+    all_sheets_raw: list[tuple[str, list[list[object]]]] = []
+    for name in sheetnames:
+        ws = wb[name]
+        ws.reset_dimensions()
+        sheet_rows: list[list[object]] = []
+        numbers = stored_numbers.get(ws._worksheet_path, {})
+        for r_idx, cells in enumerate(ws.iter_rows(), start=1):
+            if r_idx > 30:  # Scan up to 30 rows for ranking
+                break
+            row_vals = [
+                cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
+                for c_idx, c in enumerate(cells, start=1)
+            ]
+            if any(v is not None and str(v).strip() != "" for v in row_vals):
+                sheet_rows.append(row_vals)
+        all_sheets_raw.append((name, sheet_rows))
+
+    ranked = rank_workbook_sheets(all_sheets_raw)
+    sheet_states = [(n, str(getattr(wb[n], "sheet_state", "visible"))) for n in sheetnames]
+    hidden = {n for n, state in sheet_states if state != "visible"}
+    if hidden:
+        ranked = _hidden_sheets_last(ranked, hidden)
+
+    # If user explicitly specified sheet, use that; otherwise pick top ranked sheet
+    chosen_sheet = sheet
+    duration = None
+    band = re.fullmatch(r"(?P<sheet>.+) \((?P<duration>[^()]+)\)", chosen_sheet or "")
+    if chosen_sheet not in sheetnames and band is not None and band["sheet"] in sheetnames:
+        # "Sheet (9 Months Ended)" names one duration of an EDGAR-style statement sheet.
+        chosen_sheet, duration = band["sheet"], band["duration"]
+    if chosen_sheet is None:
+        chosen_sheet = ranked[0].name if ranked else sheetnames[0]
+    elif chosen_sheet not in sheetnames:
+        return IntakeResult(
+            has_fatal_errors=True,
+            fatal_error_message=(
+                f"Worksheet '{chosen_sheet}' was not found in '{filename}'. "
+                f"Available sheets: {', '.join(sheetnames)}. Choose one of those sheets."
+            ),
+            available_sheets=sheetnames,
+        )
+    return _SheetChoice(sheetnames, all_sheets_raw, ranked, sheet_states, hidden, chosen_sheet, duration)
+
+
+def _sheet_rows(
+    wb: ExcelWorkbook, chosen_sheet: str, facts: WorkbookFacts, stored_numbers: dict[str, dict[str, str]],
+    hidden_rows: str | None,
+) -> tuple[ExcelWorksheet, list[list[object]], _ExcelSheet]:
+    """Every row of the chosen sheet, and what the preflight and the cells' number formats say about it (R2, E3)."""
+    target_ws = wb[chosen_sheet]
+    target_ws.reset_dimensions()
+    numbers = stored_numbers.get(target_ws._worksheet_path, {})
+
+    full_raw_rows: list[list[object]] = []
+    display: dict[int, tuple[str, Decimal | None, bool]] = {}
+    format_cache: dict[tuple[str, int], tuple[Decimal | None, bool]] = {}
+    places: dict[int, int] = {}
+    edgar_like = False
+    for r_idx, cells in enumerate(target_ws.iter_rows(), start=1):
+        row_vals = [
+            cell_value(c, numbers=numbers, row=r_idx, column=c_idx)
+            for c_idx, c in enumerate(cells, start=1)
+        ]
+        if r_idx == 1:
+            edgar_like = bool(row_vals) and _looks_like_edgar_title(row_vals[0])
+        for c_idx, (c, value) in enumerate(zip(cells, row_vals, strict=True), start=1):
+            code = getattr(c, "number_format", None)
+            entry = _display_entry(code, value, format_cache)
+            if entry is not None:
+                display[cell_key(r_idx, c_idx)] = entry
+            if edgar_like and isinstance(value, Decimal) and isinstance(code, str):
+                shown = shown_places(code, value)
+                if shown is not None:
+                    places[cell_key(r_idx, c_idx)] = shown
+        full_raw_rows.append(row_vals)
+
+    excel = _ExcelSheet(
+        layout=facts.layouts.get(target_ws._worksheet_path, SheetLayout()),
+        recalculate_on_open=facts.recalculate_on_open,
+        display=display,
+        hidden_rows=hidden_rows,
+        shown_places=places,
+    )
+    return target_ws, full_raw_rows, excel
+
+
+def _read_chosen_sheet(
+    choice: _SheetChoice, target_ws: ExcelWorksheet, full_raw_rows: list[list[object]], excel: _ExcelSheet,
+    facts: WorkbookFacts, filename: str, *, treat_blank_budgets_as_zero: bool, selected_period: str | None,
+    compare_to: ComparisonBasis | None, per_share_lines: bool,
+) -> IntakeResult:
+    """Read the chosen sheet as an EDGAR-style statement or as a table, and say which sheet was read and why."""
+    sheetnames, all_sheets_raw, hidden, sheet_states = choice.sheetnames, choice.all_sheets_raw, choice.hidden, choice.sheet_states
+    ranked, chosen_sheet, duration = choice.ranked, choice.chosen_sheet, choice.duration
+    statement_notes: list[str] = []
+    statements = ([] if detect_header_row(_dated_header_rows(full_raw_rows)[0])[0] is not None
+                  else _edgar_statement_tables(full_raw_rows, excel.layout, per_share_lines=per_share_lines,
+                                               shown_places=excel.shown_places, notes=statement_notes))
+    if statements:
+        # Only a sheet today's read can't find a header on: files that read today read the same.
+        statement = _read_edgar_statement(
+            statements, duration, full_raw_rows, filename, chosen_sheet, excel,
+            treat_blank_budgets_as_zero=treat_blank_budgets_as_zero, selected_period=selected_period,
+            compare_to=compare_to, sheet_notes=statement_notes)
+        statement.available_sheets = sheetnames
+        if not statement.has_fatal_errors:
+            statement.workbook_examination = _examine(
+                statement, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
+        return statement
+    if duration is not None:
+        excel = replace(excel, block=duration)
+    result = _process_raw_table(
+        full_raw_rows,
+        filename,
+        sheet_name=chosen_sheet,
+        treat_blank_budgets_as_zero=treat_blank_budgets_as_zero,
+        selected_period=selected_period,
+        compare_to=compare_to,
+        excel=excel,
+    )
+    if result.comparison_basis is not ComparisonBasis.BUDGET:
+        # Same scores; the rationale names the comparison this file was read against.
+        ranked = rank_workbook_sheets(
+            all_sheets_raw, basis=result.comparison_basis, label=result.comparison_label
+        )
+        if hidden:
+            ranked = _hidden_sheets_last(ranked, hidden)
+    result.candidate_sheets = ranked
+    result.available_sheets = sheetnames
+    if not result.has_fatal_errors:
+        result.workbook_examination = _examine(
+            result, facts, target_ws._worksheet_path, chosen_sheet, sheet_states, full_raw_rows)
+    if chosen_sheet != sheetnames[0] and ranked:
+        rationale = (
+            ranked[0].rationale if ranked[0].name == chosen_sheet
+            else f"better matches {basis_noun(result.comparison_basis)}-vs-actual data"
+        )
+        result.visible_transformations.insert(
+            0, f"Selected worksheet '{chosen_sheet}' ({rationale}) over '{sheetnames[0]}'"
+        )
+    return result
+
+
+def _two_row_header(rows: list[list[object]], max_scan: int = 25) -> tuple[int, list[object], str] | None:
+    """A header split over two rows: names on the upper row stand for blank cells of the lower one (X24).
+
+    Returns the lower row's index, the combined header and the note that says so, when the combined
+    row is a header and no single row was.
+    """
+    def blank(cell: object) -> bool:
+        return cell is None or str(cell).strip() == ""
+
+    for upper_at in range(min(len(rows), max_scan) - 1):
+        upper, lower = rows[upper_at], rows[upper_at + 1]
+        if all(blank(cell) for cell in lower):
+            continue
+        width = max(len(upper), len(lower))
+        combined: list[object] = []
+        taken: list[str] = []
+        for column in range(width):
+            below = lower[column] if column < len(lower) else None
+            above = upper[column] if column < len(upper) else None
+            if blank(below) and not blank(above):
+                combined.append(above)
+                taken.append(str(above).strip())
+            else:
+                combined.append(below)
+        if taken and detect_header_row([combined])[0] is not None:
+            names = ", ".join(f"'{name}'" for name in taken)
+            return upper_at + 1, combined, (f"Read the column names from rows {upper_at + 1} and {upper_at + 2} together: "
+                                            f"{names} (row {upper_at + 1}) above blank cells of row {upper_at + 2}.")
+    return None
 
 
 def _period_bands(
@@ -2025,7 +2292,8 @@ def _period_bands(
         else:
             bands[column] = carried
     labels = list(dict.fromkeys(band for band in bands if band))
-    if len(labels) < 2 or not all(_PERIOD_RE.fullmatch(label) for label in labels):
+    # A band is a period heading, or a bare year: 2025 | 2026 over Budget/Actual (M3).
+    if len(labels) < 2 or not all(_PERIOD_RE.fullmatch(label) or _BARE_YEAR_RE.fullmatch(label) for label in labels):
         return None
     combined: list[object] = []
     for column, cell in enumerate(header):
@@ -2220,9 +2488,9 @@ def _read_edgar_statement(
 
     chosen = tables[0] if duration is None else next((t for t in tables if duration_of(t) == duration), None)
     if chosen is None:
-        named = ", ".join(f"'{sheet_name} ({duration_of(t)})'" for t in tables if duration_of(t))
+        named = ", ".join(f"'{sheet_name} ({duration_of(t)})'" for t in tables if duration_of(t)) or f"'{sheet_name}'"
         return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
-            f"Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named or repr(sheet_name)}."))
+            f"Sheet '{sheet_name}' has no {duration} columns. Choose one of: {named}."))
     # A machine-written statement has no formulas, hidden lines or scaled formats; refuse any.
     stop = _unsaved_formulas_stop(excel, filename, lambda r, c: True, describe_cell, sheet_name)
     if stop is not None:
@@ -2315,6 +2583,22 @@ def _unique_names(lines: list[tuple[str, str]], keep: int | None = None, closers
     return names
 
 
+_COUNT_WORDS = {2: "twice", 3: "three times", 4: "four times"}
+
+
+def _numbered_notes(labels: list[str], names: list[str]) -> list[str]:
+    """Which numbered copy of a repeated label is which, by the printed line each follows (M5)."""
+    notes: list[str] = []
+    for label in dict.fromkeys(label for label, name in zip(labels, names, strict=True) if name == f"{label} (1)"):
+        at = [i for i, name in enumerate(names) if re.fullmatch(rf"{re.escape(label)} \(\d+\)", name)]
+        places = [f"({n}) is " + ("the first line" if i == 0 else f"the one after '{labels[i - 1]}'")
+                  for n, i in enumerate(at, start=1)]
+        times = _COUNT_WORDS.get(len(at), f"{len(at)} times")
+        notes.append(f"'{label}' is printed {times} with no section to tell the copies apart: "
+                     + ", ".join([places[0], *(place.replace(" is ", " ", 1) for place in places[1:])]) + ".")
+    return notes
+
+
 def _key_record(label: str, key: LineKey | None) -> dict[str, object] | None:
     if key is None:
         return None
@@ -2351,7 +2635,7 @@ def _read_ixbrl_bytes(
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
         result = _read_ixbrl_position(chosen, filename, treat_blank_budgets_as_zero, selected_period, compare_to)
         result.candidate_sheets, result.available_sheets, result.comparable_sheets = ranked, names, comparable
-        return result
+        return _with_period_names(result, chosen.names)
     all_lines = chosen.lines
     # A comprehensive-income statement opens with net income, so only an income statement ends there. The
     # bottom line is found by its concept or printed label before repeated labels are told apart (Decision 39).
@@ -2393,6 +2677,8 @@ def _read_ixbrl_bytes(
             break
         hints -= demote
     fail = _footing_failure(shaped, lines, names_by_line, chosen.name)
+    if fail is not None and chosen.runs_on:
+        fail = _runs_on_refusal(chosen.name)
     if fail is not None:
         return IntakeResult(has_fatal_errors=True, fatal_error_message=fail, sheet_name=chosen.name, source_kind="ixbrl")
     confirmed = {total for total, _ in shaped.matches} | {term for _, terms in shaped.matches for term, _ in terms}
@@ -2440,6 +2726,7 @@ def _read_ixbrl_bytes(
             for name in zero:
                 if note == f"Labeled '{name}' as expense, a credit among costs":
                     shaped.audit_notes[at] = f"Labeled '{name}' as expense"
+        credits = _credits_by_year(credits, result, shaped)
     left_out = [f"Left out {item}" for item in chosen.left_out]
     if below and bottom is not None:
         left_out.append(f"Left out {_plural(len(below), 'line')} below '{all_names[bottom]}' (how net income is "
@@ -2453,8 +2740,10 @@ def _read_ixbrl_bytes(
         result.report_appendix = ["## How the filing was read", "", *(f"- {_safe_inline(note)}" for note in reading)]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
+    result.document_currency = chosen.currency
     unit_note = [f"Units: {unit_text}"] if (unit_text := _unit_sentence(lines)) else []
-    result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes]
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, *shaped.audit_notes, *credits, *blank_notes,
+                           *_numbered_notes([line.label for line in all_lines], all_names)]
     result.xbrl_lines = [
         {"line_item": all_names[i], "concept": all_lines[i].concept, "measure": all_lines[i].measure,
          "subtotal": i < len(lines) and i not in shaped.kept, "left_out": i >= len(lines),
@@ -2466,6 +2755,19 @@ def _read_ixbrl_bytes(
     result.detected_totals[:0] = shaped.subtotals
     result.visible_transformations[:0] = [f"Read '{chosen.name}' from the Inline XBRL filing", *left_out, *shaped.notes,
                                           *blank_notes]
+    return _with_period_names(result, chosen.names)
+
+
+def _with_period_names(result: IntakeResult, names: dict[str, str]) -> IntakeResult:
+    """Each column label's display name ("3 months ended Mar 2026"), and the comparing note in those words (M4)."""
+    result.period_names = dict(names)
+    actual = str(result.column_mapping.get(CanonicalRole.ACTUAL, ""))
+    comparison = result.comparison_label or ""
+    said = f"Comparing {actual} against {comparison} ("
+    for at, note in enumerate(result.visible_transformations):
+        if names and note.startswith(said):
+            result.visible_transformations[at] = (f"Comparing {names.get(actual, actual)} against "
+                                                  f"{names.get(comparison, comparison)} (" + note[len(said):])
     return result
 
 
@@ -2487,8 +2789,10 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
         for key in line.keys), line.balance) for i, line in enumerate(money)]
     checked = (check_balance_sheet if chosen.kind == "balance_sheet" else check_cash_flow)(figures, chosen.name, chosen.labels)
     if checked.problem or checked.closing is None or checked.sides is None:
+        problem = _runs_on_refusal(chosen.name) if chosen.runs_on else checked.problem
         return IntakeResult(has_fatal_errors=True, sheet_name=chosen.name, source_kind="ixbrl",
-                            fatal_error_message=checked.problem or f"I couldn't check the {chosen.name}.")
+                            fatal_error_message=problem or f"I couldn't check the {chosen.name}. Upload a CSV or "
+                                                                   "Excel copy of the statement instead.")
     closing, totals = checked.closing, {row for row, _ in checked.matches}
     # Every subtotal the check footed closes its section too ("Property and equipment, net"), so a repeated label
     # after it is never named by that section (Decision 41).
@@ -2515,6 +2819,7 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
               "with it at 0" for row, column in checked.blanks if not money[row].dash]
     result.source_kind = "ixbrl"
     result.source_statement = chosen.name
+    result.document_currency = chosen.currency
     result.statement_kind = chosen.kind
     result.statement_checks = [*unit_note, identity, *left_out, *blanks, _CHANGE_NOTE]
     left, right = checked.sides
@@ -2526,7 +2831,8 @@ def _read_ixbrl_position(chosen: IxStatement, filename: str, treat_blank_budgets
                           "footing": [{"subtotal": names[total], "terms": [{"line_item": names[term], "weight": weight}
                                                                            for term, weight in terms]}
                                       for total, terms in checked.matches]}]
-    result.reader_notes = [*chosen.notes, *unit_note, *left_out, identity, *blanks, _CHANGE_NOTE]
+    result.reader_notes = [*chosen.notes, *unit_note, *left_out, identity, *blanks, _CHANGE_NOTE,
+                           *_numbered_notes([line.label for line in money], names)]
     result.xbrl_lines = [
         {"line_item": names[i], "concept": line.concept, "measure": line.measure,
          "subtotal": i in totals, "left_out": i > closing,
@@ -2628,6 +2934,39 @@ def _filing_headline(shaped: ShapedStatement, lines: list[IxLine], names: list[s
     return {"items": items, "notes": notes}
 
 
+def _credits_by_year(credits: list[str], result: IntakeResult, shaped: ShapedStatement) -> list[str]:
+    """Call a line among costs a credit only where it adds to income in every compared year it prints.
+
+    A line read among costs with its sign turned is a credit where its compared value comes out
+    negative; where one comes out positive, that year it reduced income (a loss), and the note names
+    the years each way instead (C4). Values and labels are unchanged.
+    """
+    years = (str(result.column_mapping.get(CanonicalRole.ACTUAL, "")),
+             str(result.column_mapping.get(CanonicalRole.BUDGET, "")))
+    rows = {str(row["line_item"]): row for row in result.rows}
+    reworded: list[str] = []
+    for note in credits:
+        name = next((n for n in rows if note.startswith(f"Read '{n}' as a credit among costs: ")), None)
+        if name is None:
+            reworded.append(note)
+            continue
+        values = (Decimal(str(rows[name].get("actual") or 0)), Decimal(str(rows[name].get("budget") or 0)))
+        adds = [year for year, value in zip(years, values, strict=True) if value < 0]
+        reduces = [year for year, value in zip(years, values, strict=True) if value > 0]
+        if not reduces:
+            reworded.append(note)
+            continue
+        revenue = note.split(": the filing's revenue is ", 1)[1].removesuffix(", and this line is not part of it")
+        ways = ([f"adds to income in {' and '.join(adds)}"] if adds else []) + \
+               [f"reduces {'it' if adds else 'income'} in {' and '.join(reduces)}"]
+        reworded.append(f"Read '{name}' among costs with its sign turned: it {' and '.join(ways)}, and the filing's "
+                        f"revenue is {revenue}, which it is not part of")
+        shaped.audit_notes = [f"Labeled '{name}' as expense, among costs with its sign turned"
+                              if audit == f"Labeled '{name}' as expense, a credit among costs" else audit
+                              for audit in shaped.audit_notes]
+    return reworded
+
+
 def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: list[str]) -> list[str]:
     """Keep Total Revenue to the filing's revenue: lines outside it that add to income are cost-side credits.
 
@@ -2684,6 +3023,12 @@ def _revenue_block_credits(shaped: ShapedStatement, lines: list[IxLine], names: 
 _LABEL_COUNT = re.compile(r"^Labeled (?P<revenue>\d+) lines? revenue and (?P<expense>\d+) lines? expense(?P<rest> .*)$")
 
 
+def _runs_on_refusal(statement: str) -> str:
+    """A statement that failed its checks and is followed by an untitled table of other periods (M2)."""
+    return (f"The {statement} seems to run on into the next table, which shows other periods, so I couldn't read it "
+            "whole and stopped instead of guessing. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
+
+
 def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[str], statement: str) -> str | None:
     """R5's refusal, or None when every subtotal foots within its facts' rounding."""
     fix = "Upload a CSV or Excel copy of the statement, or the filing's PDF."
@@ -2693,6 +3038,12 @@ def _footing_failure(shaped: ShapedStatement, lines: list[IxLine], names: list[s
     unchecked = [names[i] for i in range(len(lines)) if i not in shaped.kept and i not in matched]
     if unchecked:
         missing = unchecked[0]
+        row = next(i for i in range(len(lines)) if names[i] == missing)
+        if unsure := shaped.ambiguous.get(row):  # two sign readings fit within rounding (C3m)
+            which = " and ".join(f"'{names[r]}'" for r in unsure)
+            return (f"I couldn't tell whether {which} adds to or takes away from '{missing}' in the {statement}: "
+                    "within the rounding of the printed figures, both readings add up, so I stopped instead of "
+                    f"guessing. {fix}")
         return (f"I couldn't tell which lines '{missing}' adds up in the {statement}, so I can't check it "
                 f"and stopped instead of guessing. {fix}")
     for total_row, terms in shaped.matches:
@@ -2761,19 +3112,20 @@ def _read_pdf_bytes(
             has_fatal_errors=True,
             fatal_error_message=(
                 f"No statement called '{sheet}' was found in '{filename}'. "
-                f"Statements found: {', '.join(names)}."
+                f"Statements found: {', '.join(names)}. Choose one of those statements."
             ),
             available_sheets=names,
             source_kind="pdf",
         )
     if chosen.kind in _NOT_REVENUE_AND_EXPENSE:
         income = [t.name for t in tables if t.kind not in _NOT_REVENUE_AND_EXPENSE]
-        instead = f" Choose an income statement instead: {', '.join(income)}." if income else ""
         return IntakeResult(
             has_fatal_errors=True,
             fatal_error_message=(
                 f"'{chosen.name}' lists {_NOT_REVENUE_AND_EXPENSE[chosen.kind]}, which can't be "
-                f"compared as revenue and expense yet.{instead}"
+                "compared as revenue and expense yet. "
+                + (f"Choose an income statement instead: {', '.join(income)}." if income
+                   else "Upload the income statement instead, or a CSV or Excel copy of it.")
             ),
             available_sheets=income,  # the statements that can be chosen instead
             source_kind="pdf",
@@ -2810,6 +3162,9 @@ def _plain_cell_detail(detail: str, field_label: str) -> str:
     """Say what is wrong with a cell the way a person would, not in parser terms."""
     if match := re.search(r"has an unrecognized number format: (.*)\.$", detail):
         return f"'{match.group(1)}' is not an amount I can read."
+    if match := re.search(r"has a footnote mark or small digit \((.+?)\) in: (.*)\.$", detail):
+        return (f"'{match.group(2)}' has a footnote mark ({match.group(1)}) next to the amount. "
+                "Remove the mark so the cell holds only the amount.")
     if match := re.search(r"is missing \(marked (.+)\)\.$", detail):
         return f"the amount is marked {match.group(1)}."
     if detail.startswith("required value in") and "is missing" in detail:
@@ -2850,6 +3205,78 @@ def _unreadable_cells_message(filename: str, cells: list[IntakeProblem], *, from
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class _TableCall:
+    """The settings of one ``_process_raw_table`` call, which each stage of its read takes."""
+
+    filename: str
+    sheet_name: str | None
+    treat_blank_budgets_as_zero: bool
+    selected_period: str | None
+    compare_to: ComparisonBasis | None
+    signs_resolved: bool
+    from_pdf: bool
+    excel: _ExcelSheet | None
+    layout_retry: bool
+
+
+@dataclass
+class _TableRead:
+    """A table read once its header and comparison basis are known: what each later stage reads and adds."""
+
+    call: _TableCall
+    raw_rows: list[list[object]]
+    header_idx: int
+    roles: dict[CanonicalRole, int]
+    ignored_col_indices: list[int]
+    date_note: str | None
+    detection: ComparisonDetection
+    basis: ComparisonBasis  # detection.basis, which a read that goes on always has
+    comparison_field: str = ""
+    header_str_row: list[str] = field(default_factory=list)
+    period_pairs: list[PeriodColumnPair] = field(default_factory=list)
+    column_mapping: dict[CanonicalRole, str] = field(default_factory=dict)
+    ignored_columns: list[str] = field(default_factory=list)
+    visible_transformations: list[str] = field(default_factory=list)
+    line_item_idx: int = 0
+    budget_idx: int = 0
+    actual_idx: int = 0
+    acct_id_idx: int | None = None
+    period_idx: int | None = None
+    curr_idx: int | None = None
+    type_idx: int | None = None
+    passthrough: list[tuple[int, str]] = field(default_factory=list)
+    hidden_rows: list[tuple[int, str, bool]] = field(default_factory=list)
+    excluded_rows: set[int] = field(default_factory=set)
+    output_rows: list[dict[str, object]] = field(default_factory=list)
+    problems: list[IntakeProblem] = field(default_factory=list)
+    unreadable_cells: list[IntakeProblem] = field(default_factory=list)  # amounts that must never be read as 0
+    symbol_cells: list[tuple[str, str, str]] = field(default_factory=list)  # amounts whose text marks a currency (X5)
+    section_rows: list[str] = field(default_factory=list)  # labels with nothing beside them: section headings (X16)
+    blank_budget_items: list[str] = field(default_factory=list)
+    # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
+    currency_cells: list[tuple[int, int, str, str]] = field(default_factory=list)
+    dash_count: int = 0
+    minus_count: int = 0  # trailing / typographic minus signs read as negative
+    layout_notes: list[str] = field(default_factory=list)
+    hidden_read_columns: list[str] = field(default_factory=list)
+    raw_title_text: str = ""
+    detected_mult: Decimal = Decimal("1")
+    display_cells: list[DisplayScaledCell] = field(default_factory=list)
+    signed_det: SignedLedgerDetection = field(init=False)
+    flipped_items: list[str] = field(default_factory=list)
+    subtotals_det: SubtotalDetectionResult = field(init=False)
+    reconciled_names: list[str] = field(default_factory=list)
+
+    @property
+    def header_row(self) -> list[object]:
+        return self.raw_rows[self.header_idx]
+
+    @property
+    def header_row_number(self) -> int:
+        return self.header_idx + 1
+
+
 def _process_raw_table(
     raw_rows: list[list[object]],
     filename: str,
@@ -2867,10 +3294,50 @@ def _process_raw_table(
     signed-ledger flip and sum-based subtotal detection are skipped. ``excel`` carries what the
     workbook preflight saw on the sheet; raw row ``i`` is physical row ``i + 1``. ``layout_retry``
     allows one re-read of a workbook as period bands (E4) or side-by-side tables (E5)."""
+    call = _TableCall(filename, sheet_name, treat_blank_budgets_as_zero, selected_period, compare_to, signs_resolved,
+                      from_pdf, excel, layout_retry)
+    found = _find_header(raw_rows, call)
+    if isinstance(found, IntakeResult):
+        return found
+    raw_rows, header_idx, roles, ignored_col_indices, date_note = found
+    stop = _named_block_retry(raw_rows, header_idx, call)
+    if stop is not None:
+        return stop
+    detected = _detect_basis(raw_rows, header_idx, call)
+    if isinstance(detected, IntakeResult):
+        return detected
+    detection, basis = detected
+    table = _TableRead(call, raw_rows, header_idx, roles, ignored_col_indices, date_note, detection, basis)
+    _map_columns(table)
+    _row_columns(table)
+    stop = _check_layout(table)
+    if stop is not None:
+        return stop
+    _start_rows(table)
+    stop = _read_data_rows(table)
+    if stop is not None:
+        return stop
+    stop = _post_row_notes(table)
+    if stop is not None:
+        return stop
+    stop = _unit_scale(table)
+    if stop is not None:
+        return stop
+    _signs_and_totals(table)
+    return _table_result(table)
+
+
+def _find_header(
+    raw_rows: list[list[object]], call: _TableCall,
+) -> IntakeResult | tuple[list[list[object]], int, dict[CanonicalRole, int], list[int], str | None]:
+    """The rows as read, their header row, its roles and ignored columns, and the note on dated headings; or the stop."""
+    filename, sheet_name, selected_period, compare_to = call.filename, call.sheet_name, call.selected_period, call.compare_to
+    excel = call.excel
     if not raw_rows:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=f"The file '{filename}' contains no data.",
+            fatal_error_message=(f"The file '{filename}' contains no data. Upload a file with a header row (such "
+                                 "as Line Item, Budget, Actual) and at least one line."),
             sheet_name=sheet_name,
         )
     half = _HALF.get()
@@ -2881,6 +3348,10 @@ def _process_raw_table(
     dated_rows, has_dates = _dated_header_rows(raw_rows)
     header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)
     date_note = None
+    if header_idx is None and (split := _two_row_header(dated_rows)) is not None:
+        lower, split_header, date_note = split  # a header split over two rows, read together (X24)
+        raw_rows = dated_rows = [*dated_rows[:lower], split_header, *dated_rows[lower + 1:]]
+        header_idx, roles, ignored_col_indices = detect_header_row(dated_rows, selected_period=selected_period)
     if header_idx is not None and has_dates and dated_rows[header_idx] != raw_rows[header_idx]:
         # Only the header row takes the labels; a date in a data cell keeps its value.
         original = raw_rows[header_idx]
@@ -2900,44 +3371,58 @@ def _process_raw_table(
         if compare_to is None:
             message = (
                 f"Could not find a header row with Line Item, Budget, and Actual columns in '{filename}' "
-                f"(a Forecast or Prior Year column can stand in for Budget).{hint}"
+                f"(a Forecast or Prior Year column can stand in for Budget). Add a header row that names those "
+                f"columns, and upload the file again.{hint}"
             )
         else:
             message = (
                 f"Could not find a header row with Line Item, {comparison_heading(compare_to, None)}, "
-                f"and Actual columns in '{filename}'."
+                f"and Actual columns in '{filename}'. Add a header row that names those columns, and upload the "
+                "file again."
             )
         return IntakeResult(has_fatal_errors=True, fatal_error_message=message, sheet_name=sheet_name,
                             opt_in_hint=opt_in)
+    return raw_rows, header_idx, roles, ignored_col_indices, date_note
 
-    def reread(rows: list[list[object]], note: str, period: str | None) -> IntakeResult:
-        result = _process_raw_table(rows, filename, sheet_name, treat_blank_budgets_as_zero, period, compare_to,
-                                    signs_resolved, from_pdf, None if excel is None else replace(excel, block=None),
-                                    layout_retry=False)
-        if not result.has_fatal_errors:
-            result.visible_transformations.insert(0, note)
-            result.layout_notes.insert(0, note)
-            result.layout_read = True
-        return result
 
-    if excel is not None and excel.block is not None and layout_retry:
+def _reread(call: _TableCall, rows: list[list[object]], note: str, period: str | None) -> IntakeResult:
+    """Read a workbook's rows again as laid out (E4, E5), once, and lead its notes with how they were read."""
+    excel = call.excel
+    result = _process_raw_table(rows, call.filename, call.sheet_name, call.treat_blank_budgets_as_zero, period,
+                                call.compare_to, call.signs_resolved, call.from_pdf,
+                                None if excel is None else replace(excel, block=None), layout_retry=False)
+    if not result.has_fatal_errors:
+        result.visible_transformations.insert(0, note)
+        result.layout_notes.insert(0, note)
+        result.layout_read = True
+    return result
+
+
+def _named_block_retry(raw_rows: list[list[object]], header_idx: int, call: _TableCall) -> IntakeResult | None:
+    """The read of the one side-by-side table a sheet choice names (E5), or None when it names none."""
+    excel, sheet_name = call.excel, call.sheet_name
+    if excel is not None and excel.block is not None and call.layout_retry:
         blocks = _table_blocks(raw_rows, header_idx)
         chosen_block = next((b for b in blocks if _block_name(b) == excel.block), None)
         if chosen_block is None:
+            tables_named = ", ".join(_block_name(b) for b in blocks)
             return IntakeResult(has_fatal_errors=True, sheet_name=sheet_name, fatal_error_message=(
-                f"Sheet '{sheet_name}' has no separate table in {excel.block}."))
-        return reread(_only_block(raw_rows, header_idx, chosen_block),
-                      _block_note(raw_rows, header_idx, chosen_block, blocks, sheet_name), selected_period)
+                f"Sheet '{sheet_name}' has no separate table in {excel.block}. "
+                + (f"Choose one of its tables: {tables_named}." if tables_named else "Choose the whole sheet instead.")))
+        return _reread(call, _only_block(raw_rows, header_idx, chosen_block),
+                       _block_note(raw_rows, header_idx, chosen_block, blocks, sheet_name), call.selected_period)
+    return None
 
+
+def _detect_basis(
+    raw_rows: list[list[object]], header_idx: int, call: _TableCall,
+) -> IntakeResult | tuple[ComparisonDetection, ComparisonBasis]:
+    """The comparison the header row reads against and its basis; else one re-read as period bands (E4) or side-by-side
+    tables (E5), or the stop that asks which comparison to use."""
+    excel, sheet_name, selected_period, compare_to = call.excel, call.sheet_name, call.selected_period, call.compare_to
     header_row = raw_rows[header_idx]
-    header_row_number = header_idx + 1
-    skipped_count = header_idx
-    skip_reasons = []
-    if skipped_count > 0:
-        skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
-
     detection = detect_comparison_columns(header_row, compare_to=compare_to)
-    if detection.basis is None and excel is not None and layout_retry:
+    if detection.basis is None and excel is not None and call.layout_retry:
         # Only a read that stops is tried again, so a sheet that reads today reads the same.
         banded = _period_bands(raw_rows, header_idx, excel.layout)
         if banded is not None:
@@ -2947,12 +3432,12 @@ def _process_raw_table(
             combined = [str(c) for c in rows[header_idx] if c is not None and str(c).strip()]
             band_note = ("Read the period headings above the header row with the columns below them: "
                          f"{', '.join(c for c in combined if any(c.startswith(label) for label in labels))}.")
-            return reread(rows, band_note, named or (newest[0] if newest else selected_period))
+            return _reread(call, rows, band_note, named or (newest[0] if newest else selected_period))
         blocks = _table_blocks(raw_rows, header_idx)
         readable = [b for b in blocks if _block_reads(raw_rows, header_idx, b, compare_to)]
         if readable:
-            return reread(_only_block(raw_rows, header_idx, readable[0]),
-                          _block_note(raw_rows, header_idx, readable[0], blocks, sheet_name), selected_period)
+            return _reread(call, _only_block(raw_rows, header_idx, readable[0]),
+                           _block_note(raw_rows, header_idx, readable[0], blocks, sheet_name), selected_period)
     if detection.basis is None:
         return IntakeResult(
             has_fatal_errors=True,
@@ -2961,39 +3446,49 @@ def _process_raw_table(
             comparison_choices=list(detection.choices),
             sheet_name=sheet_name,
         )
+    return detection, detection.basis
 
-    comparison_field = comparison_heading(detection.basis, detection.label)
+
+def _map_columns(table: _TableRead) -> None:
+    """Map the header's columns to roles, take a chosen period's pair, and start the notes on how they were read."""
+    roles, header_row, detection, selected_period = table.roles, table.header_row, table.detection, table.call.selected_period
+    table.comparison_field = comparison_heading(table.basis, detection.label)
 
     if detection.comparison_column is not None:
         roles[CanonicalRole.BUDGET] = detection.comparison_column
     if detection.actual_column is not None:
         roles[CanonicalRole.ACTUAL] = detection.actual_column
 
-    header_str_row = [str(c).strip() for c in header_row if c is not None]
-    period_pairs = detect_period_pairs(header_str_row)
+    table.header_str_row = header_str_row = [str(c).strip() for c in header_row if c is not None]
+    table.period_pairs = period_pairs = detect_period_pairs(header_str_row)
+    # A chosen period reads its own Budget/Actual pair, even beside "Budget YTD"/"Actual YTD" synonyms (X6).
+    chosen_pair = next((p for p in period_pairs if selected_period and p.period.lower() == selected_period.lower()), None)
+    if chosen_pair is not None and detection.basis is ComparisonBasis.BUDGET:
+        names = [None if c is None else str(c).strip() for c in header_row]
+        if chosen_pair.budget_column in names and chosen_pair.actual_column in names:
+            roles[CanonicalRole.BUDGET] = names.index(chosen_pair.budget_column)
+            roles[CanonicalRole.ACTUAL] = names.index(chosen_pair.actual_column)
 
-    column_mapping: dict[CanonicalRole, str] = {}
+    column_mapping = table.column_mapping
     for role, col_idx in roles.items():
         if col_idx < len(header_row):
             column_mapping[role] = str(header_row[col_idx]).strip()
 
-    ignored_columns = [
+    table.ignored_columns = ignored_columns = [
         str(header_row[idx]).strip()
-        for idx in ignored_col_indices
+        for idx in table.ignored_col_indices
         if idx < len(header_row) and str(header_row[idx]).strip()
     ]
 
-    visible_transformations: list[str] = [date_note] if date_note is not None else []
+    visible_transformations = table.visible_transformations
+    if table.date_note is not None:
+        visible_transformations.append(table.date_note)
 
     if detection.basis != ComparisonBasis.BUDGET and detection.message:
         visible_transformations.append(detection.message)
 
     if period_pairs:
-        chosen_pair = None
-        if selected_period is not None:
-            chosen_pair = next((p for p in period_pairs if p.period.lower() == selected_period.lower()), None)
-        if chosen_pair is None:
-            chosen_pair = period_pairs[-1]
+        chosen_pair = chosen_period_pair(period_pairs, selected_period)
         visible_transformations.append(
             f"Analyzed period: {chosen_pair.period} (Budget from '{chosen_pair.budget_column}', Actual from '{chosen_pair.actual_column}')"
         )
@@ -3009,32 +3504,42 @@ def _process_raw_table(
     if CanonicalRole.ACCOUNT_ID in column_mapping:
         visible_transformations.append(f"Used '{column_mapping[CanonicalRole.ACCOUNT_ID]}' as the account ID")
 
-    line_item_idx = roles[CanonicalRole.LINE_ITEM]
-    budget_idx = roles[CanonicalRole.BUDGET]
-    actual_idx = roles[CanonicalRole.ACTUAL]
-    acct_id_idx = roles.get(CanonicalRole.ACCOUNT_ID)
-    period_idx = roles.get(CanonicalRole.PERIOD)
-    curr_idx = roles.get(CanonicalRole.CURRENCY)
-    type_idx = roles.get(CanonicalRole.TYPE)
+
+def _row_columns(table: _TableRead) -> None:
+    """The columns each data row is read from: one per role, and the columns passed through without one."""
+    roles, header_row, ignored_col_indices = table.roles, table.header_row, table.ignored_col_indices
+    table.line_item_idx = roles[CanonicalRole.LINE_ITEM]
+    table.budget_idx = roles[CanonicalRole.BUDGET]
+    table.actual_idx = roles[CanonicalRole.ACTUAL]
+    table.acct_id_idx = roles.get(CanonicalRole.ACCOUNT_ID)
+    table.period_idx = roles.get(CanonicalRole.PERIOD)
+    table.curr_idx = roles.get(CanonicalRole.CURRENCY)
+    table.type_idx = roles.get(CanonicalRole.TYPE)
 
     # Columns without a canonical role (Row Kind, volume/price drivers, ...) pass through
     # unchanged so analysis still sees them; aliases of mapped roles are left out.
     mapped = set(roles.values()) | set(ignored_col_indices)
-    passthrough = [
+    table.passthrough = [
         (idx, str(header_row[idx]).strip())
         for idx in range(len(header_row))
         if idx not in mapped and header_row[idx] is not None and str(header_row[idx]).strip()
         and normalize_key(str(header_row[idx])) not in _ROLE_ALIAS_KEYS
     ]
 
+
+def _check_layout(table: _TableRead) -> IntakeResult | None:
+    """Stop on a formula Excel never calculated in a cell the read uses, or ask about rows hidden in Excel (R3)."""
+    excel, filename, sheet_name = table.call.excel, table.call.filename, table.call.sheet_name
+    raw_rows, roles, column_mapping, header_row_number = table.raw_rows, table.roles, table.column_mapping, table.header_row_number
     hidden_rows = (hidden_data_rows(excel.layout, raw_rows, header_row=header_row_number,
                                     line_item_column=roles[CanonicalRole.LINE_ITEM]) if excel is not None else [])
     excluded_rows = {number for number, _, _ in hidden_rows} if excel and excel.hidden_rows == "exclude" else set()
+    table.hidden_rows, table.excluded_rows = hidden_rows, excluded_rows
     if excel is not None:
         # Every column this read uses, named the way the amount messages name them.
-        read_columns: dict[int, str] = {idx: header for idx, header in passthrough}
+        read_columns: dict[int, str] = {idx: header for idx, header in table.passthrough}
         for role, idx in roles.items():
-            read_columns[idx] = (comparison_field if role is CanonicalRole.BUDGET else "Actual"
+            read_columns[idx] = (table.comparison_field if role is CanonicalRole.BUDGET else "Actual"
                                  if role is CanonicalRole.ACTUAL else column_mapping.get(role, ""))
         line_item_column = roles[CanonicalRole.LINE_ITEM]
 
@@ -3055,18 +3560,21 @@ def _process_raw_table(
                             sheet_name=sheet_name, header_row_number=header_row_number,
                             column_mapping=column_mapping, hidden_data_rows=hidden_rows,
                             needs_hidden_rows_choice=True)
+    return None
 
-    output_rows: list[dict[str, object]] = []
-    problems: list[IntakeProblem] = []
-    unreadable_cells: list[IntakeProblem] = []  # amounts that must never be read as 0
-    blank_budget_items: list[str] = []
-    # Numeric Currency amounts read from cells: (row, column, line item, field), for R2.
-    currency_cells: list[tuple[int, int, str, str]] = []
-    dash_count = 0
-    minus_count = 0  # trailing / typographic minus signs read as negative
 
-    layout_notes: list[str] = [date_note] if date_note is not None else []
-    hidden_read_columns: list[str] = []
+def _start_rows(table: _TableRead) -> None:
+    """Before the data rows: a currency a column heading names (X23), and the notes on what the read uses that Excel hides."""
+    excel, filename, roles, column_mapping = table.call.excel, table.call.filename, table.roles, table.column_mapping
+    hidden_rows, visible_transformations, layout_notes = table.hidden_rows, table.visible_transformations, table.layout_notes
+    for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL):  # a heading that names a currency marks its column (X23)
+        heading = column_mapping.get(role, "")
+        if (qualifier := _HEADER_QUALIFIER.search(heading)) and (mark := _HEADER_CURRENCY_CODE.search(qualifier.group())):
+            heading_code = SYMBOL_CURRENCIES.get(mark.group(), mark.group().upper())
+            table.symbol_cells.append((filename, f"the '{heading}' column heading", heading_code))
+
+    if table.date_note is not None:
+        layout_notes.append(table.date_note)
     if hidden_rows and excel is not None and excel.hidden_rows is not None:
         layout_notes.append(hidden_rows_note(excel.hidden_rows, hidden_rows))
         visible_transformations.append(layout_notes[-1])
@@ -3075,147 +3583,238 @@ def _process_raw_table(
             if role in {CanonicalRole.LINE_ITEM, CanonicalRole.BUDGET, CanonicalRole.ACTUAL} \
                     and idx + 1 in excel.layout.hidden_columns:
                 what = ("line items" if role is CanonicalRole.LINE_ITEM
-                        else comparison_field if role is CanonicalRole.BUDGET else "Actual")
-                hidden_read_columns.append(column_letters(idx + 1))
+                        else table.comparison_field if role is CanonicalRole.BUDGET else "Actual")
+                table.hidden_read_columns.append(column_letters(idx + 1))
                 layout_notes.append(
                     f"Read {what} from {_column_name(idx)} ('{column_mapping.get(role, '')}'), which is hidden in Excel.")
                 visible_transformations.append(layout_notes[-1])
 
-    data_rows = raw_rows[header_idx + 1:]
-    for physical_idx, row in enumerate(data_rows, start=header_row_number + 1):
-        if not row or all(c is None or str(c).strip() == "" for c in row):
-            continue
-        if physical_idx in excluded_rows:
-            continue
 
-        line_item_val = row[line_item_idx] if line_item_idx < len(row) else None
-        line_item_str = "" if line_item_val is None else str(line_item_val).strip()
-        if not line_item_str:
-            problems.append(
-                IntakeProblem(
-                    row=physical_idx,
-                    column=column_mapping.get(CanonicalRole.LINE_ITEM, "Line Item"),
-                    line_item="(Blank)",
-                    message=f"Row {physical_idx}: Line item description is blank.",
-                )
+def _read_data_rows(table: _TableRead) -> IntakeResult | None:
+    """Read each row below the header in turn, or the stop a row's Measure makes."""
+    data_rows = table.raw_rows[table.header_idx + 1:]
+    for physical_idx, row in enumerate(data_rows, start=table.header_row_number + 1):
+        stop = _read_data_row(table, physical_idx, row)
+        if stop is not None:
+            return stop
+    return None
+
+
+def _read_data_row(table: _TableRead, physical_idx: int, row: list[object]) -> IntakeResult | None:
+    """One data row: left out, read into ``table.output_rows``, or the stop for a Measure no reader knows."""
+    if not row or all(c is None or str(c).strip() == "" for c in row):
+        return None
+    if physical_idx in table.excluded_rows:
+        return None
+
+    line_item_str = _row_line_item(table, physical_idx, row)
+    if line_item_str is None:
+        return None
+
+    header_row = table.header_row
+    measure_column = next((i for i, h in enumerate(header_row) if h is not None and normalize_key(str(h)) == "measure"), None)
+    try:
+        kind = measure_kind(row[measure_column] if measure_column is not None and measure_column < len(row) else None,
+                            line_item_str)
+    except ValueError as exc:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
+    raw_budget, budget_dec, raw_actual, actual_dec = _row_amounts(table, physical_idx, row, line_item_str, kind)
+    row_dict = _row_record(table, row, line_item_str, budget_dec, actual_dec)
+    _apply_measure(table, physical_idx, row, row_dict, line_item_str, kind, measure_column, raw_budget, raw_actual)
+    table.output_rows.append(row_dict)
+    return None
+
+
+def _row_line_item(table: _TableRead, physical_idx: int, row: list[object]) -> str | None:
+    """The row's line item; None for a row left out, as a blank line item (a problem) or a section heading (X16)."""
+    line_item_idx, acct_id_idx = table.line_item_idx, table.acct_id_idx
+    line_item_val = row[line_item_idx] if line_item_idx < len(row) else None
+    line_item_str = "" if line_item_val is None else str(line_item_val).strip()
+    if not line_item_str:
+        table.problems.append(
+            IntakeProblem(
+                row=physical_idx,
+                column=table.column_mapping.get(CanonicalRole.LINE_ITEM, "Line Item"),
+                line_item="(Blank)",
+                message=f"Row {physical_idx}: Line item description is blank.",
             )
-            continue
+        )
+        return None
+    # A label with nothing in any other column is a section heading, not an amount to fill in (X16).
+    if all(c is None or str(c).strip() == "" for j, c in enumerate(row) if j not in (line_item_idx, acct_id_idx)):
+        table.section_rows.append(f"Row {physical_idx} ({line_item_str})")
+        return None
+    return line_item_str
 
-        measure_column = next((i for i, h in enumerate(header_row) if h is not None and normalize_key(str(h)) == "measure"), None)
-        try:
-            kind = measure_kind(row[measure_column] if measure_column is not None and measure_column < len(row) else None,
-                                line_item_str)
-        except ValueError as exc:
-            return IntakeResult(has_fatal_errors=True, fatal_error_message=str(exc))
-        raw_budget = row[budget_idx] if budget_idx < len(row) else None
-        budget_dec: Decimal | None = None
-        try:
-            budget_dec, b_note = parse_assisted_decimal(
-                _rate_number(raw_budget, kind),
-                field=comparison_field,
-                line_item=line_item_str,
-                allow_blank=True,
-            )
-            if b_note == "blank":
-                blank_budget_items.append(f"Row {physical_idx}: {line_item_str}")
-                if treat_blank_budgets_as_zero:
-                    budget_dec = Decimal("0")
-            elif b_note and "dash" in b_note:
-                dash_count += 1
-            elif b_note and "minus" in b_note:
-                minus_count += 1
-        except ValueError as exc:
-            problem = _cell_problem(
-                physical_idx, line_item_str,
-                column_mapping.get(CanonicalRole.BUDGET, comparison_field), comparison_field, exc,
-            )
-            problems.append(problem)
-            unreadable_cells.append(problem)
 
-        raw_actual = row[actual_idx] if actual_idx < len(row) else None
-        actual_dec: Decimal | None = None
-        try:
-            actual_dec, a_note = parse_assisted_decimal(
-                _rate_number(raw_actual, kind),
-                field="Actual",
-                line_item=line_item_str,
-                allow_blank=False,
-            )
-            if a_note and "dash" in a_note:
-                dash_count += 1
-            elif a_note and "minus" in a_note:
-                minus_count += 1
-        except ValueError as exc:
-            problem = _cell_problem(
-                physical_idx, line_item_str,
-                column_mapping.get(CanonicalRole.ACTUAL, "Actual"), "Actual", exc,
-            )
-            problems.append(problem)
-            unreadable_cells.append(problem)
+def _row_amounts(
+    table: _TableRead, physical_idx: int, row: list[object], line_item_str: str, kind: MeasureKind,
+) -> tuple[object, Decimal | None, object, Decimal | None]:
+    """The row's comparison and Actual cells and the amounts read from them; a cell that can't be read is a problem."""
+    filename, comparison_field, column_mapping = table.call.filename, table.comparison_field, table.column_mapping
+    budget_idx, actual_idx = table.budget_idx, table.actual_idx
+    raw_budget = row[budget_idx] if budget_idx < len(row) else None
+    budget_dec: Decimal | None = None
+    try:
+        budget_dec, b_note = parse_assisted_decimal(
+            _rate_number(raw_budget, kind),
+            field=comparison_field,
+            line_item=line_item_str,
+            allow_blank=True,
+        )
+        if b_note == "blank":
+            table.blank_budget_items.append(f"Row {physical_idx}: {line_item_str}")
+            if table.call.treat_blank_budgets_as_zero:
+                budget_dec = Decimal("0")
+        elif b_note and "dash" in b_note:
+            table.dash_count += 1
+        elif b_note and "minus" in b_note:
+            table.minus_count += 1
+    except ValueError as exc:
+        problem = _cell_problem(
+            physical_idx, line_item_str,
+            column_mapping.get(CanonicalRole.BUDGET, comparison_field), comparison_field, exc,
+        )
+        table.problems.append(problem)
+        table.unreadable_cells.append(problem)
 
-        row_dict: dict[str, object] = {
-            "line_item": line_item_str,
-            "budget": budget_dec if budget_dec is not None else Decimal("0"),
-            "actual": actual_dec if actual_dec is not None else Decimal("0"),
-        }
+    raw_actual = row[actual_idx] if actual_idx < len(row) else None
+    actual_dec: Decimal | None = None
+    try:
+        actual_dec, a_note = parse_assisted_decimal(
+            _rate_number(raw_actual, kind),
+            field="Actual",
+            line_item=line_item_str,
+            allow_blank=False,
+        )
+        if a_note and "dash" in a_note:
+            table.dash_count += 1
+        elif a_note and "minus" in a_note:
+            table.minus_count += 1
+    except ValueError as exc:
+        problem = _cell_problem(
+            physical_idx, line_item_str,
+            column_mapping.get(CanonicalRole.ACTUAL, "Actual"), "Actual", exc,
+        )
+        table.problems.append(problem)
+        table.unreadable_cells.append(problem)
 
-        if acct_id_idx is not None and acct_id_idx < len(row):
-            acct_val = row[acct_id_idx]
-            if acct_val is not None:
-                row_dict["account_id"] = str(acct_val).strip()
+    for raw, field_label in ((raw_budget, comparison_field), (raw_actual, "Actual")):
+        if isinstance(raw, str) and (code := next((c for s, c in SYMBOL_CURRENCIES.items() if s in raw), None)):
+            table.symbol_cells.append(
+                (filename, f"Row {physical_idx}, {line_item_str}, {field_label} column: {raw.strip()}", code))
+    return raw_budget, budget_dec, raw_actual, actual_dec
 
-        if period_idx is not None and period_idx < len(row):
-            pval = row[period_idx]
-            if pval is not None:
-                row_dict["period"] = str(pval).strip()
 
-        if curr_idx is not None and curr_idx < len(row):
-            cval = row[curr_idx]
-            if cval is not None:
-                row_dict["currency"] = str(cval).strip()
+def _row_record(
+    table: _TableRead, row: list[object], line_item_str: str, budget_dec: Decimal | None, actual_dec: Decimal | None,
+) -> dict[str, object]:
+    """The row as the analysis reads it: line item, amounts, the optional role columns and the passthrough columns."""
+    acct_id_idx, period_idx, curr_idx, type_idx = table.acct_id_idx, table.period_idx, table.curr_idx, table.type_idx
+    row_dict: dict[str, object] = {
+        "line_item": line_item_str,
+        "budget": budget_dec if budget_dec is not None else Decimal("0"),
+        "actual": actual_dec if actual_dec is not None else Decimal("0"),
+    }
 
-        if type_idx is not None and type_idx < len(row):
-            tval = row[type_idx]
-            if tval is not None:
-                row_dict["type"] = str(tval).strip()
+    if acct_id_idx is not None and acct_id_idx < len(row):
+        acct_val = row[acct_id_idx]
+        if acct_val is not None:
+            row_dict["account_id"] = str(acct_val).strip()
 
-        for idx, header in passthrough:
-            value = row[idx] if idx < len(row) else None
-            if value is not None and str(value).strip():
-                row_dict[header] = value
+    if period_idx is not None and period_idx < len(row):
+        pval = row[period_idx]
+        if pval is not None:
+            row_dict["period"] = str(pval).strip()
 
-        if kind is MeasureKind.CURRENCY:
-            for column_idx, raw_value, field_name in ((budget_idx, raw_budget, comparison_field),
-                                                      (actual_idx, raw_actual, "Actual")):
-                if isinstance(raw_value, Decimal):
-                    currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
-        if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
-            # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
-            # a multiple keeps its x, which the analysis reads as turns.
-            row_dict["budget"] = raw_budget
-            row_dict["actual"] = raw_actual
-            if any(str(value).strip().endswith("%") for value in (raw_budget, raw_actual)):
-                visible_transformations.append(f"{line_item_str}: read % values as percentage points.")
-        if measure_column is not None:
-            visible_transformations.append(f"{line_item_str}: read Measure as {kind}.")
-            better_value = next((row[i] for i, h in enumerate(header_row)
-                                 if h is not None and normalize_key(str(h)) == "better" and i < len(row)), None)
-            if kind is MeasureKind.PER_SHARE and not str(better_value or "").strip():
-                visible_transformations.append(f"{line_item_str}: defaulted Better to Higher.")
-            elif str(better_value or "").strip():
-                visible_transformations.append(f"{line_item_str}: read Better as {better_value}.")
-        output_rows.append(row_dict)
+    if curr_idx is not None and curr_idx < len(row):
+        cval = row[curr_idx]
+        if cval is not None:
+            row_dict["currency"] = str(cval).strip()
 
+    if type_idx is not None and type_idx < len(row):
+        tval = row[type_idx]
+        if tval is not None:
+            row_dict["type"] = str(tval).strip()
+
+    for idx, header in table.passthrough:
+        value = row[idx] if idx < len(row) else None
+        if value is not None and str(value).strip():
+            row_dict[header] = value
+    return row_dict
+
+
+def _apply_measure(
+    table: _TableRead, physical_idx: int, row: list[object], row_dict: dict[str, object], line_item_str: str,
+    kind: MeasureKind, measure_column: int | None, raw_budget: object, raw_actual: object,
+) -> None:
+    """What the row's Measure does to its amounts: the currency cells R2 checks, a percent Excel shows (X31), a percent
+    or multiple kept as written, and the notes that say so."""
+    excel, header_row, visible_transformations = table.call.excel, table.header_row, table.visible_transformations
+    budget_idx, actual_idx, comparison_field = table.budget_idx, table.actual_idx, table.comparison_field
+    if kind is MeasureKind.CURRENCY:
+        for column_idx, raw_value, field_name in ((budget_idx, raw_budget, comparison_field),
+                                                  (actual_idx, raw_actual, "Actual")):
+            # A zero shows the same in any unit, so it can't disagree with a caption (X20).
+            if isinstance(raw_value, Decimal) and raw_value != 0:
+                table.currency_cells.append((physical_idx, column_idx + 1, line_item_str, field_name))
+    if kind is MeasureKind.PERCENT and excel is not None:
+        # A cell Excel shows as a percentage is that percentage, not a bare rate for the flag to scale (X31).
+        shown = [(column_idx, field_name, entry[0]) for column_idx, raw_value, field_name in
+                 ((budget_idx, raw_budget, comparison_field), (actual_idx, raw_actual, "Actual"))
+                 if isinstance(raw_value, Decimal)
+                 and (entry := excel.display.get(cell_key(physical_idx, column_idx + 1))) is not None and entry[2]]
+        for column_idx, _, _ in shown:
+            if column_idx == budget_idx:
+                raw_budget = percent_shown(cast(Decimal, raw_budget))
+            else:
+                raw_actual = percent_shown(cast(Decimal, raw_actual))
+        # So is its Tolerance or Buffer, in the points the rules read it in (X46).
+        declared = [(header, entry[0]) for idx, header in table.passthrough
+                    if normalize_key(header) in UNIT_DECLARATIONS and isinstance(row_dict.get(header), Decimal)
+                    and (entry := excel.display.get(cell_key(physical_idx, idx + 1))) is not None and entry[2]]
+        for header, _ in declared:
+            row_dict[header] = percent_points(cast(Decimal, row_dict[header]))
+        fields = [field_name for _, field_name, _ in shown] + [header for header, _ in declared]
+        if fields:
+            visible_transformations.append(
+                percent_shown_note(line_item_str, fields, shown[0][2] if shown else declared[0][1]))
+    if kind is MeasureKind.PERCENT or kind is MeasureKind.MULTIPLE:
+        # Preserve the explicit percent sign / bare scale until a flag or chat confirmation settles it;
+        # a multiple keeps its x, which the analysis reads as turns.
+        row_dict["budget"] = raw_budget
+        row_dict["actual"] = raw_actual
+        if any(str(value).strip().endswith("%") for value in (raw_budget, raw_actual)):
+            visible_transformations.append(f"{line_item_str}: read % values as percentage points.")
+    if measure_column is not None:
+        visible_transformations.append(f"{line_item_str}: read Measure as {kind}.")
+        better_value = next((row[i] for i, h in enumerate(header_row)
+                             if h is not None and normalize_key(str(h)) == "better" and i < len(row)), None)
+        if kind is MeasureKind.PER_SHARE and not str(better_value or "").strip():
+            visible_transformations.append(f"{line_item_str}: defaulted Better to Higher.")
+        elif str(better_value or "").strip():
+            visible_transformations.append(f"{line_item_str}: read Better as {better_value}.")
+
+
+def _post_row_notes(table: _TableRead) -> IntakeResult | None:
+    """After the rows: the notes on section headings, dashes, minus signs and blank comparisons, or the stop for amounts
+    that can't be read."""
+    visible_transformations, dash_count, minus_count = table.visible_transformations, table.dash_count, table.minus_count
+    section_rows, unreadable_cells, blank_budget_items = table.section_rows, table.unreadable_cells, table.blank_budget_items
+    if section_rows:
+        visible_transformations.append(
+            f"Left out {len(section_rows)} section heading row{'s' if len(section_rows) != 1 else ''} with no "
+            f"amounts in any column: {', '.join(section_rows)}.")
     if unreadable_cells:
         return IntakeResult(
             has_fatal_errors=True,
-            fatal_error_message=_unreadable_cells_message(filename, unreadable_cells, from_pdf=from_pdf),
-            problems=problems,
-            sheet_name=sheet_name,
-            header_row_number=header_row_number,
-            column_mapping=column_mapping,
-            comparison_basis=detection.basis,
-            comparison_label=detection.label,
+            fatal_error_message=_unreadable_cells_message(table.call.filename, unreadable_cells, from_pdf=table.call.from_pdf),
+            problems=table.problems,
+            sheet_name=table.call.sheet_name,
+            header_row_number=table.header_row_number,
+            column_mapping=table.column_mapping,
+            comparison_basis=table.basis,
+            comparison_label=table.detection.label,
         )
 
     if dash_count > 0:
@@ -3228,54 +3827,173 @@ def _process_raw_table(
             f"amount across {minus_count} amount{'s' if minus_count != 1 else ''}"
         )
 
-    if treat_blank_budgets_as_zero and blank_budget_items:
+    if table.call.treat_blank_budgets_as_zero and blank_budget_items:
         count = len(blank_budget_items)
         plural = "s" if count != 1 else ""
-        if detection.basis is ComparisonBasis.BUDGET:
+        if table.detection.basis is ComparisonBasis.BUDGET:
             visible_transformations.append(f"Treated blank budgets as 0 on {count} unbudgeted line{plural}")
         else:
             visible_transformations.append(
-                f"Treated blank {basis_noun(detection.basis)} values as 0 on {count} "
-                f"line{plural} {zero_comparison_phrase(detection.basis)}"
+                f"Treated blank {basis_noun(table.basis)} values as 0 on {count} "
+                f"line{plural} {zero_comparison_phrase(table.basis)}"
             )
+    return None
 
+
+def _unit_scale(table: _TableRead) -> IntakeResult | None:
+    """Scale the amounts by a unit the title or header names, unless their number formats already show them scaled (R2)."""
+    filename, excel, currency_cells = table.call.filename, table.call.excel, table.currency_cells
     # 1. Unit scaling check (from title block rows and header row)
-    raw_title_text = " ".join(
-        str(c).strip() for r in raw_rows[:header_idx] for c in r if c is not None and str(c).strip()
+    table.raw_title_text = raw_title_text = " ".join(
+        str(c).strip() for r in table.raw_rows[:table.header_idx] for c in r if c is not None and str(c).strip()
     )
-    detected_mult = detect_unit_scale(raw_title_text + " " + " ".join(header_str_row))
-    display_cells = _display_scaled_cells(excel, currency_cells)
+    sides = _heading_units(table, raw_title_text)
+    if sides is None:
+        detected_mult = detect_unit_scale(raw_title_text)  # the title's caption; another column's unit is its own (X49)
+        if detected_mult == 1 and (elsewhere := _unit_only_elsewhere(table)) is not None:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=elsewhere,
+                                sheet_name=table.call.sheet_name, header_row_number=table.header_row_number,
+                                column_mapping=table.column_mapping)
+    elif sides[0][1] != sides[1][1]:
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=_heading_units_differ(sides),
+                            sheet_name=table.call.sheet_name, header_row_number=table.header_row_number,
+                            column_mapping=table.column_mapping)
+    else:
+        detected_mult = cast(Decimal, sides[0][1])
+    table.display_cells = display_cells = _display_scaled_cells(excel, currency_cells)
     display_note, display_stop = _reconcile_display(filename, detected_mult, display_cells, len(currency_cells))
     if display_stop is not None:
-        return IntakeResult(has_fatal_errors=True, fatal_error_message=display_stop, sheet_name=sheet_name,
-                            header_row_number=header_row_number, column_mapping=column_mapping)
+        return IntakeResult(has_fatal_errors=True, fatal_error_message=display_stop, sheet_name=table.call.sheet_name,
+                            header_row_number=table.header_row_number, column_mapping=table.column_mapping)
     if display_note is not None:
         if detected_mult != Decimal("1"):
             detected_mult = Decimal("1")  # the cells already hold full amounts
-        visible_transformations.append(display_note)
-        layout_notes.append(display_note)
+        table.visible_transformations.append(display_note)
+        table.layout_notes.append(display_note)
     if detected_mult != Decimal("1"):
-        output_rows = scale_rows_by_unit(output_rows, detected_mult)
-        unit_label = "thousands (x1,000)" if detected_mult == Decimal("1000") else "millions (x1,000,000)"
-        visible_transformations.append(
-            f"Amounts scaled from {unit_label}. Thresholds stay in the reporting unit "
-            "(full currency units, not thousands)."
-        )
+        undeclared = [str(row.get("line_item", "")) for row in table.output_rows
+                      if not _declares_measure(row) and _row_measure(row) is MeasureKind.CURRENCY]
+        if (per_share := per_share_rows_stop(undeclared, detected_mult)) is not None:
+            return IntakeResult(has_fatal_errors=True, fatal_error_message=per_share, sheet_name=table.call.sheet_name,
+                                header_row_number=table.header_row_number, column_mapping=table.column_mapping)
+        declarations = unit_declarations(table.output_rows)
+        table.output_rows = scale_rows_by_unit(table.output_rows, detected_mult)
+        unit_label = f"{_UNIT_WORDS[detected_mult]} (x{detected_mult:,})"
+        table.visible_transformations.append(scaling_note(unit_label, declarations))
+    table.detected_mult = detected_mult
+    return None
 
+
+_HeadingUnit = tuple[str, Decimal | None, str]  # a heading, its unit, and where a unit not its own comes from
+
+
+_UNIT_EXAMPLES = {Decimal("1000"): "($000)", Decimal("1000000"): "($M)", Decimal("1000000000"): "($bn)"}
+# A per-share figure, as against a share count, among the statement readers' per-share labels (X53).
+_PER_SHARE_FIGURE_RE = re.compile(r"\beps\b|per\s+(?:common\s+|basic\s+|diluted\s+)?share", re.IGNORECASE)
+
+
+def _declares_measure(row: dict[str, object]) -> bool:
+    return any(normalize_key(str(key)) == "measure" and str(value).strip() for key, value in row.items() if value is not None)
+
+
+def per_share_rows_stop(lines: Sequence[str], multiplier: Decimal) -> str | None:
+    """The refusal when a unit would scale, as money, rows that declare no Measure but whose labels name a per-share
+    figure or a share count, as the statement readers read them (X53); None when there are none."""
+    found = [line for line in dict.fromkeys(lines) if _PER_SHARE_RE.search(line) or _EPS_RE.search(line)]
+    if not found:
+        return None
+    figures, one = sum(1 for line in found if _PER_SHARE_FIGURE_RE.search(line)), len(found) == 1
+    if figures == len(found):
+        kind, measure = ("a per-share figure" if one else "per-share figures"), "Per Share"
+    elif figures == 0:
+        kind, measure = ("a share count" if one else "share counts"), "Count"
+    else:
+        kind, measure = "per-share figures or share counts", "Per Share or Count"
+    named = [f"'{line}'" for line in found[:3]]
+    listed = (named[0] if one else f"{', '.join(named[:-1])} and {named[-1]}" if len(found) <= 3
+              else f"{', '.join(named)} and {len(found) - 3} more")
+    return (f"{listed} {'looks' if one else 'look'} like {kind}, which the caption's {_UNIT_WORDS[multiplier]} would "
+            f"scale as money. Add a Measure column that says {measure} for {'it' if one else 'them'}, or leave "
+            f"{'the line' if one else 'those lines'} out, then upload the file again.")
+
+
+def _unit_only_elsewhere(table: _TableRead) -> str | None:
+    """The refusal when neither amount heading nor the title names a unit but another heading does (X49): that unit
+    is its own column's, so the amounts' unit is not stated."""
+    budget, actual = (table.column_mapping.get(role) for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL))
+    for heading in table.header_str_row:
+        if heading in (budget, actual) or (unit := detect_unit_scale(heading)) == 1:
+            continue
+        word = _UNIT_WORDS[unit]
+        return (f"'{heading}' names {word}, but '{budget}' and '{actual}' name no unit, so I can't tell whether the "
+                f"amounts are in {word}. Give the '{budget}' and '{actual}' headings their unit, such as "
+                f"'{budget} {_UNIT_EXAMPLES[unit]}', or put a caption such as ($ in {word}) above the table, then "
+                "upload the file again.")
+    return None
+
+
+def _heading_units(table: _TableRead, title: str) -> tuple[_HeadingUnit, _HeadingUnit] | None:
+    """Budget's (or the comparison's) and Actual's units when either heading names its own (X45): each its own, else
+    the title's caption (X49), else none. None when neither names one."""
+    half = _HALF.get()
+    placeholder = half["missing"] if half is not None and half["filled"] else None
+    headings = [(role, table.column_mapping.get(role)) for role in (CanonicalRole.BUDGET, CanonicalRole.ACTUAL)]
+    own = {role: heading_unit(heading) for role, heading in headings if heading is not None and role is not placeholder}
+    if len(own) < 2:  # a half file's placeholder column takes its partner's unit
+        unit = next(iter(own.values()), None)
+        return None if unit is None else (("", unit, ""), ("", unit, ""))
+    if all(unit is None for unit in own.values()):
+        return None
+    caption = detect_unit_scale(title)
+    found = caption if caption != 1 else None
+
+    def side(role: CanonicalRole, heading: str | None) -> _HeadingUnit:
+        unit = own[role]
+        if unit is not None:
+            return cast(str, heading), unit, ""
+        return cast(str, heading), found, "the title says" if found is not None else ""
+    return side(*headings[0]), side(*headings[1])
+
+
+def _heading_units_differ(sides: tuple[_HeadingUnit, _HeadingUnit]) -> str:
+    """The refusal for amount headings in different units, or a unit beside none, naming both (X45)."""
+    def said(heading: str, unit: Decimal | None, source: str) -> str:
+        if unit is None:
+            return f"'{heading}' names no unit"
+        return f"'{heading}' is in {_UNIT_WORDS[unit]}" + (f", as {source}" if source else "")
+    first, second = sides
+    if first[1] is not None and second[1] is not None:
+        return (f"{said(*first)}{', and ' if first[2] else ' and '}{said(*second)}. Change one column so both use "
+                "the same unit, then upload the file again.")
+    named, unnamed = (first, second) if first[1] is not None else (second, first)
+    qualifier = _HEADER_QUALIFIER.search(named[0])
+    assert qualifier is not None  # a unit beside none is always the heading's own
+    return (f"{said(*first)}, but {said(*second)}, so I can't tell what '{unnamed[0]}' is in. Give both headings the "
+            f"same unit, such as {qualifier.group().strip()}, then upload the file again.")
+
+
+def _signs_and_totals(table: _TableRead) -> None:
+    """Flip a signed ledger's revenue and profit lines, and leave out subtotal rows that reconcile."""
+    signs_resolved, output_rows, visible_transformations = table.call.signs_resolved, table.output_rows, table.visible_transformations
     # 2. Signed ledger check
     signed_det = (SignedLedgerDetection(False, 0, [])
                   if signs_resolved else detect_signed_ledger([r for r in output_rows if _row_measure(r) is MeasureKind.CURRENCY]))
     flipped_items: list[str] = []
     if signed_det.is_signed_ledger:
         output_rows, flipped_items = flip_ledger_signs(output_rows, signed_det.negative_revenue_items)
+        output_rows, profit_items = flip_ledger_signs(output_rows, _signed_profit_lines(output_rows))
+        revenue_lines = f"{len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}"
+        profit_lines = (f" and {len(profit_items)} profit line{'s' if len(profit_items) != 1 else ''} "
+                        f"({', '.join(profit_items)})" if profit_items else "")
         visible_transformations.append(
             "Revenue looks like it's stored as negative (credits). Flipped signs to positive-cost "
-            f"convention for {len(flipped_items)} revenue line{'s' if len(flipped_items) != 1 else ''}."
+            f"convention for {revenue_lines}{profit_lines}."
         )
+        flipped_items = [*flipped_items, *profit_items]
 
     # 3. Subtotals and totals detection. An explicit Row Kind column already marks totals,
     # and the analysis reconciles and excludes those rows itself, so they are kept.
-    has_row_kind = any(normalize_key(header) == "row_kind" for _, header in passthrough)
+    has_row_kind = any(normalize_key(header) == "row_kind" for _, header in table.passthrough)
     subtotals_det = (
         SubtotalDetectionResult(reconciled_totals=[], unreconciled_totals=[])
         if has_row_kind or signs_resolved
@@ -3290,42 +4008,54 @@ def _process_raw_table(
             f"Detected {len(reconciled_names)} subtotal/total rows: {', '.join(reconciled_names)}. "
             "Excluded from line items to avoid double-counting."
         )
+    table.output_rows, table.signed_det, table.flipped_items = output_rows, signed_det, flipped_items
+    table.subtotals_det, table.reconciled_names = subtotals_det, reconciled_names
+
+
+def _table_result(table: _TableRead) -> IntakeResult:
+    """The read table, with everything the read found and did."""
+    excel, output_rows, hidden_rows = table.call.excel, table.output_rows, table.hidden_rows
+    skipped_count = table.header_idx
+    skip_reasons = []
+    if skipped_count > 0:
+        skip_reasons.append(f"{skipped_count} title block row{'s' if skipped_count != 1 else ''} above header")
 
     single_periods = detect_single_period_column_values(output_rows)
 
     return IntakeResult(
         rows=output_rows,
-        sheet_name=sheet_name,
-        header_row_number=header_row_number,
-        column_mapping=column_mapping,
-        ignored_columns=ignored_columns,
+        sheet_name=table.call.sheet_name,
+        header_row_number=table.header_row_number,
+        column_mapping=table.column_mapping,
+        ignored_columns=table.ignored_columns,
         rows_read=len(output_rows),
         rows_skipped_count=skipped_count,
         skip_reasons=skip_reasons,
-        visible_transformations=visible_transformations,
-        problems=problems,
-        blank_budget_items=blank_budget_items,
-        blank_budgets_as_zero=treat_blank_budgets_as_zero,
-        dash_count=dash_count,
-        detected_totals=reconciled_names,
-        unreconciled_totals=subtotals_det.unreconciled_totals,
-        detected_unit_multiplier=detected_mult,
-        detected_signed_ledger=signed_det.is_signed_ledger,
-        negative_revenue_items=flipped_items,
-        detected_period_pairs=period_pairs,
+        visible_transformations=table.visible_transformations,
+        problems=table.problems,
+        blank_budget_items=table.blank_budget_items,
+        blank_budgets_as_zero=table.call.treat_blank_budgets_as_zero,
+        dash_count=table.dash_count,
+        detected_totals=table.reconciled_names,
+        unreconciled_totals=table.subtotals_det.unreconciled_totals,
+        detected_unit_multiplier=table.detected_mult,
+        symbol_cells=table.symbol_cells,
+        detected_signed_ledger=table.signed_det.is_signed_ledger,
+        negative_revenue_items=table.flipped_items,
+        detected_period_pairs=table.period_pairs,
         detected_single_periods=single_periods,
-        raw_headers=header_str_row,
-        raw_title_text=raw_title_text,
-        comparison_basis=detection.basis,
-        comparison_label=detection.label,
-        comparison_candidates=list(detection.candidates),
-        display_scaled_cells=display_cells,
-        currency_amount_cells=len(currency_cells),
+        raw_headers=table.header_str_row,
+        raw_title_text=table.raw_title_text,
+        comparison_basis=table.basis,
+        comparison_label=table.detection.label,
+        comparison_candidates=list(table.detection.candidates),
+        display_scaled_cells=table.display_cells,
+        currency_amount_cells=len(table.currency_cells),
         hidden_data_rows=hidden_rows,
         hidden_rows_choice=excel.hidden_rows if hidden_rows and excel is not None else None,
-        hidden_read_columns=hidden_read_columns,
-        layout_notes=layout_notes,
-        layout_read=date_note is not None,
+        hidden_read_columns=table.hidden_read_columns,
+        layout_notes=table.layout_notes,
+        layout_read=table.date_note is not None,
     )
 
 
@@ -3379,6 +4109,32 @@ def _reconcile_display(
     change = "unit_scale in the mapping" if mapping else "the title"
     lines.append(f"Give every amount the same number format, or change {change}, and upload the file again.")
     return None, "\n".join(lines)
+
+
+def currency_conflict(result: IntakeResult, currency: str, filename: str) -> tuple[str, str] | None:
+    """Why amounts marked in another currency cannot report in `currency` (X5, X30), and the currency they are in.
+
+    No currency is ever converted. Returns (problem, marked currency or "") for the caller to add its own fix,
+    or None when they agree.
+    """
+    if result.document_currency and result.document_currency != currency:
+        found = result.document_currency
+        if found not in CURRENCY_SYMBOLS:
+            return (f"'{filename}' reports its amounts in {found}. This tool reports in USD, EUR or GBP only and "
+                    "converts no currency.", "")
+        return (f"'{filename}' reports its amounts in {found}, but the reporting currency is {currency}, and no "
+                "currency is converted.", found)
+    marked = [(cell, code) for _, cell, code in result.symbol_cells if code != currency]
+    if not marked:
+        return None
+    codes = sorted({code for _, code in marked})
+    files = " and ".join(f"'{name}'" for name in dict.fromkeys(f for f, _, c in result.symbol_cells if c != currency))
+    lines = [f"Some amounts in {files} are marked in {' and '.join(codes)}, but the reporting currency is "
+             f"{currency}, and no currency is converted:"]
+    lines.extend(f"- {cell}" for cell, _ in marked[:_MAX_LISTED_CELLS])
+    if len(marked) > _MAX_LISTED_CELLS:
+        lines.append(f"- ...and {len(marked) - _MAX_LISTED_CELLS} more.")
+    return "\n".join(lines), codes[0] if len(codes) == 1 else ""
 
 
 def reconcile_declared_unit(
@@ -3454,10 +4210,11 @@ def format_intake_summary(result: IntakeResult) -> str:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         col_details.append(f"Account ID from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'")
     if CanonicalRole.BUDGET in result.column_mapping:
-        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        heading = comparison_heading(result.comparison_basis, result.period_names.get(result.comparison_label or "",
+                                                                                      result.comparison_label))
         col_details.append(f"{heading} from '{result.column_mapping[CanonicalRole.BUDGET]}'")
     if CanonicalRole.ACTUAL in result.column_mapping:
-        col_details.append(f"Actual from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
+        col_details.append(f"{_actual_heading(result)} from '{result.column_mapping[CanonicalRole.ACTUAL]}'")
     lines.append(f"- **Columns mapped:** {', '.join(col_details)}")
 
     read_text = f"- **Rows read:** {result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
@@ -3523,10 +4280,11 @@ def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
     if CanonicalRole.ACCOUNT_ID in result.column_mapping:
         rows.append(("Account ID", f"from '{result.column_mapping[CanonicalRole.ACCOUNT_ID]}'"))
     if CanonicalRole.BUDGET in result.column_mapping:
-        heading = comparison_heading(result.comparison_basis, result.comparison_label)
+        heading = comparison_heading(result.comparison_basis, result.period_names.get(result.comparison_label or "",
+                                                                                      result.comparison_label))
         rows.append((heading, f"from '{result.column_mapping[CanonicalRole.BUDGET]}'"))
     if CanonicalRole.ACTUAL in result.column_mapping:
-        rows.append(("Actual", f"from '{result.column_mapping[CanonicalRole.ACTUAL]}'"))
+        rows.append((_actual_heading(result), f"from '{result.column_mapping[CanonicalRole.ACTUAL]}'"))
     read = f"{result.rows_read} data row{'s' if result.rows_read != 1 else ''}"
     if result.rows_skipped_count > 0:
         skipped = result.rows_skipped_count
@@ -3542,6 +4300,12 @@ def intake_summary_rows(result: IntakeResult) -> IntakeSummaryRows:
 _INTERNAL_FIELD_NAMES = frozenset(_ROLE_ALIAS_KEYS | {
     "row_kind", "account_id", "budget_amount", "actual_amount", "line_type", "revenue_expense_type",
 })
+
+
+def _actual_heading(result: IntakeResult) -> str:
+    """"Actual", with the filing's duration where it names one: "Actual (3 months ended Mar 2026)" (M4)."""
+    name = result.period_names.get(str(result.column_mapping.get(CanonicalRole.ACTUAL, "")))
+    return f"Actual ({name})" if name else "Actual"
 
 
 def plain_analysis_error(error_text: str) -> str:
@@ -3577,7 +4341,8 @@ def plain_analysis_error(error_text: str) -> str:
 
     # 6. Unreconciled summaries
     m_reconcile = re.search(
-        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+([^;]+)", text, re.IGNORECASE
+        r"Summary\s+(?:'([^']+)'|\"([^\"]+)\"|(\S+))\s+does not reconcile to\s+(\w+)\s+detail rows", text,
+        re.IGNORECASE,
     )
     if m_reconcile:
         summary_name = m_reconcile.group(1) or m_reconcile.group(2) or m_reconcile.group(3)

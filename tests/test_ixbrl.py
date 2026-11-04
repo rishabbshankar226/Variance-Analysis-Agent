@@ -197,7 +197,7 @@ def test_a_balance_sheet_without_its_identity_lines_refuses_plainly() -> None:
 @pytest.mark.parametrize("prolog", [b'<!DOCTYPE html [<!ENTITY x "y">]>', b'<!ENTITY x "y">', b"<!doctype x [ ]>"])
 def test_entity_declarations_and_doctype_subsets_are_refused_before_reading(prolog: bytes) -> None:
     assert _read(prolog + income_filing()).fatal_error_message == (
-        "'hal-20250927.htm' declares an XML entity or document type subset, which this reader refuses. "
+        "'hal-20250927.htm' declares entities of its own, which filings on EDGAR don't, so this reader refuses it. "
         "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
 
 
@@ -558,3 +558,73 @@ def test_revenue_breakdown_lines_on_one_axis_are_not_the_filing_s_revenue() -> N
     assert not result.has_fatal_errors, result.fatal_error_message
     notes = [*result.visible_transformations, *result.reader_notes]
     assert not any("credit among costs" in note or "the filing's revenue is" in note for note in notes)
+
+
+def test_a_statement_that_runs_on_into_other_periods_says_so() -> None:
+    """M2: assets here, liabilities in an untitled table of other periods: the refusal names that cause."""
+    sheet = statement("CONSOLIDATED BALANCE SHEETS", [
+        row("Cash", fact("us-gaap:Cash", "I25", "500"), fact("us-gaap:Cash", "I24", "400")),
+        row("Total assets", fact("us-gaap:Assets", "I25", "500"), fact("us-gaap:Assets", "I24", "400")),
+        row("Accounts payable", fact("us-gaap:AccountsPayableCurrent", "I25", "200"),
+            fact("us-gaap:AccountsPayableCurrent", "I24", "150"))])
+    untitled = "<table>" + "".join(income_rows()) + "</table>"
+    marked = read_statements(document(sheet + untitled).encode("utf-8"), "hal.htm")[0]
+    assert marked.runs_on
+    result = _read(document(sheet + untitled).encode("utf-8"), sheet="Consolidated Balance Sheets")
+    assert result.has_fatal_errors
+    assert (result.fatal_error_message or "").startswith(
+        "The Consolidated Balance Sheets seems to run on into the next table, which shows other periods, so I couldn't "
+        "read it whole and stopped instead of guessing.")
+
+
+def test_numbered_copies_of_a_label_say_which_is_which() -> None:
+    """M5: two 'Deferred income taxes' lines with no section to name them: a note places each copy."""
+    rows = [row("Net sales", fact("us-gaap:Revenues", "FY25", "1,000"), fact("us-gaap:Revenues", "FY24", "900")),
+            row("Depreciation", fact("us-gaap:Depreciation", "FY25", "100"), fact("us-gaap:Depreciation", "FY24", "90")),
+            row("Deferred income taxes", fact("us-gaap:DeferredIncomeTaxExpenseBenefit", "FY25", "20"),
+                fact("us-gaap:DeferredIncomeTaxExpenseBenefit", "FY24", "10")),
+            row("Other costs", fact("us-gaap:OtherCostAndExpenseOperating", "FY25", "30"),
+                fact("us-gaap:OtherCostAndExpenseOperating", "FY24", "25")),
+            row("Deferred income taxes", fact("us-gaap:DeferredIncomeTaxesAndTaxCredits", "FY25", "5"),
+                fact("us-gaap:DeferredIncomeTaxesAndTaxCredits", "FY24", "4")),
+            row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "845"), fact("us-gaap:NetIncomeLoss", "FY24", "771"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    assert ("'Deferred income taxes' is printed twice with no section to tell the copies apart: (1) is the one after "
+            "'Depreciation', (2) the one after 'Other costs'.") in result.reader_notes
+
+
+def test_a_line_that_is_a_loss_in_one_year_is_not_called_a_credit() -> None:
+    """C4: +50 in FY25 and -40 in FY24 is read among costs as before, but its note doesn't call it a credit."""
+    rows = income_rows()
+    rows[4:6] = [row("Other income, net", fact("us-gaap:OtherNonoperatingIncomeExpense", "FY25", "50"),
+                     "(" + fact("us-gaap:OtherNonoperatingIncomeExpense", "FY24", "40", sign="-") + ")"),
+                 row("Net income", fact("us-gaap:NetIncomeLoss", "FY25", "1,550"), fact("us-gaap:NetIncomeLoss", "FY24", "1,330"))]
+    result = _read(income_filing(rows))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    other = next(r for r in result.rows if r["line_item"] == "Other income, net")
+    assert (other["type"], Decimal(str(other["actual"])), Decimal(str(other["budget"]))) == ("Expense", -50 * M, 40 * M)
+    assert ("Read 'Other income, net' among costs with its sign turned: it adds to income in FY2025 and reduces it "
+            "in FY2024, and the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part "
+            "of") in result.visible_transformations
+    assert not any("'Other income, net' as a credit" in note for note in result.visible_transformations)
+
+
+def test_a_line_that_adds_to_income_only_in_a_year_not_compared_is_not_called_a_credit() -> None:
+    """C4: a credit only in the third year printed; in both compared years it reduces income."""
+    from tests.fixtures.ixbrl.build_ixbrl import quarter_filing
+    years = {"Y25": ("2025-01-01", "2025-12-31"), "Y24": ("2024-01-01", "2024-12-31"), "Y23": ("2023-01-01", "2023-12-31")}
+
+    def line(label: str, concept: str, *cells: str) -> str:
+        return row(label, *("(" + fact(concept, context, text.strip("()"), sign="-") + ")" if text.startswith("(")
+                            else fact(concept, context, text) for context, text in zip(years, cells, strict=True)))
+    rows = [line("Net sales", "us-gaap:Revenues", "1,004", "1,145", "1,412"),
+            line("Cost of sales", "us-gaap:CostOfRevenue", "500", "560", "700"),
+            line("Other income, net", "us-gaap:OtherNonoperatingIncomeExpense", "(30)", "(20)", "40"),
+            line("Net income", "us-gaap:NetIncomeLoss", "474", "565", "752")]
+    result = _read(quarter_filing(rows, title="CONSOLIDATED STATEMENTS OF INCOME", periods=years))
+    assert not result.has_fatal_errors, result.fatal_error_message
+    other = next(r for r in result.rows if r["line_item"] == "Other income, net")
+    assert (other["type"], Decimal(str(other["actual"])), Decimal(str(other["budget"]))) == ("Expense", 30 * M, 20 * M)
+    assert ("Read 'Other income, net' among costs with its sign turned: it reduces income in FY2025 and FY2024, and "
+            "the filing's revenue is 'Net sales' (us-gaap:Revenues), which it is not part of") in result.visible_transformations

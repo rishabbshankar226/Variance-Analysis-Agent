@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from .intake import CanonicalRole, IntakeResult, _read_ixbrl_bytes, read_input_assisted
+from .currencies import CURRENCY_SYMBOLS
 from .ixbrl import IxbrlError, Statement, fact_values, read_statements
 from .models import ComparisonBasis
 from .numeric import financial_context, ratio
@@ -93,12 +94,14 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
         return result
     ytd, year = _flow_statement(quarter_statements, kind), _flow_statement(annual_statements, kind)
     if ytd is None:
-        return _fail(f"'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from.")
+        return _fail(f"'{quarter_name}' has no {kind.replace('_', ' ')} statement to build LTM from. Compare the "
+                     "10-Q on its own instead.")
     if year is None or _months(year.periods[0]) != 12:
-        return _fail(f"'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. --ltm-from takes the 10-K "
-                     "whose year the 10-Q continues.")
+        return _fail(f"'{annual_name}' has no fiscal-year {kind.replace('_', ' ')} statement. Give the 10-K whose "
+                     "fiscal year the 10-Q continues instead.")
     if len(ytd.periods) < 2:
-        return _fail(f"'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built.")
+        return _fail(f"'{quarter_name}' prints no prior year to date beside its current one, so LTM can't be built. "
+                     "Compare the 10-Q on its own instead.")
     fiscal, current, prior = year.periods[0], ytd.periods[0], ytd.periods[1]
     fy_label = year.labels[0]
     if _months(current) == 12:
@@ -118,6 +121,13 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
                                ComparisonBasis.PRIOR_PERIOD)
     if k_read.has_fatal_errors:
         return k_read
+    currency = q_read.document_currency or k_read.document_currency or "USD"  # the filings' own currency (X30)
+    if k_read.document_currency and q_read.document_currency and k_read.document_currency != q_read.document_currency:
+        return _fail(f"'{quarter_name}' reports in {q_read.document_currency} and '{annual_name}' in "
+                     f"{k_read.document_currency}; LTM adds them, so give two filings in one currency.")
+    if currency not in CURRENCY_SYMBOLS:
+        return _fail(f"'{quarter_name}' reports its amounts in {currency}. This tool reports in USD, EUR or GBP "
+                     "only and converts no currency. Use filings that report in one of those to build LTM.")
     q_keys, k_keys = _keys(q_read), _keys(k_read)
     k_by_key = {(concept, dims): name for name, (concept, dims, _) in k_keys.items()}
     q_by_key = {(concept, dims): name for name, (concept, dims, _) in q_keys.items()}
@@ -173,8 +183,8 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
         prior_key = q_columns[1] if len(q_columns) > 1 else None
         reported = annual_facts.get((concept, prior, dims))
         if prior_key is not None and reported is not None and reported != Decimal(str(prior_key["stored"])):
-            recast.append(f"'{q_name}': '{annual_name}' reports {_money(reported)} for {columns[1]}, but '{quarter_name}' "
-                          f"prints {_money(Decimal(str(prior_key['stored'])))}; the 10-Q's figure is used")
+            recast.append(f"'{q_name}': '{annual_name}' reports {_money(reported, currency)} for {columns[1]}, but '{quarter_name}' "
+                          f"prints {_money(Decimal(str(prior_key['stored'])), currency)}; the 10-Q's figure is used")
     notes = [built, continuity, *recast, *left_out]
     record: dict[str, object] = {"kind": "ltm", "statement": ytd.name,
               "documents": [{"name": name, "sha256": hashes[name], "statement": statement}
@@ -196,7 +206,8 @@ def build_ltm(quarter: bytes, quarter_name: str, annual: bytes, annual_name: str
         *(q_read.report_appendix and [*q_read.report_appendix, ""]),  # the 10-Q's reading notes (Decision 39)
         "## LTM build", "", *("- " + _safe_inline(note) for note in notes), "",
         f"| Line Item | {_safe_inline(fy_label)} | + {columns[0]} | - {columns[1]} | = LTM |", "|---|---:|---:|---:|---:|",
-        *(f"| {_safe_inline(name)} | {_money(fy)} | {_money(now)} | {_money(before)} | {_money(ltm)} |"
+        *(f"| {_safe_inline(name)} | {_money(fy, currency)} | {_money(now, currency)} | "
+          f"{_money(before, currency)} | {_money(ltm, currency)} |"
           for name, fy, now, before, ltm in build)]
     return result
 
@@ -252,6 +263,6 @@ def _safe_inline(text: str) -> str:
     return safe(text)
 
 
-def _money(value: Decimal) -> str:
+def _money(value: Decimal, currency: str) -> str:
     from .report import _money as money
-    return money(value)
+    return money(value, currency)

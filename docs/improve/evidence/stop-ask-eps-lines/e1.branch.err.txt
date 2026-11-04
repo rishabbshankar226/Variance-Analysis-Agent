@@ -1,0 +1,9 @@
+[assisted intake] Read 'Consolidated Statements of Operations' from sheet 'Consolidated Statements of Ope', laid out as in an EDGAR Financial_Report.xlsx
+[assisted intake] Read column '12 Months Ended Sep. 27, 2025' as Sep 2025
+[assisted intake] Read column '12 Months Ended Sep. 28, 2024' as Sep 2024
+[assisted intake] Labeled 1 line revenue and 1 line expense from how the statement adds up
+[assisted intake] Couldn't tell from the statement's arithmetic whether 'Basic EPS', 'Diluted EPS' add to or reduce income; you'll be asked to label them
+[assisted intake] Comparing Sep 2025 against Sep 2024 (prior period).
+[assisted intake] Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands).
+[workbook] Sheets: Consolidated Statements of Ope (visible).
+[workbook] Merged header cells: B1:C1.

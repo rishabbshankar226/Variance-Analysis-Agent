@@ -1,0 +1,3 @@
+[assisted intake] Comparing Actual against the limit.
+[assisted intake] Fictional margin: read Measure as Percent.
+variance-agent: error: Fictional margin: bare rate in Limit needs --percent-values points or fractions.

@@ -1,0 +1,3 @@
+[comparison intake] Comparing Actual against Budget.
+[comparison intake] Amounts scaled from millions (x1,000,000). Thresholds stay in the reporting unit (full currency units, not thousands).
+[comparison intake] Read header row 2; skipped 1 title rows.

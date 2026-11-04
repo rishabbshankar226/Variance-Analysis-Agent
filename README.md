@@ -86,7 +86,7 @@ variance-agent examples/sample_variance.csv \
   --xlsx reports/q3-2026.xlsx
 ```
 
-Omit `--output` to print the report. `--xlsx` writes a formatted Excel workbook (Summary, Material Variances, Root Causes & Actions, All Rows) using only the standard library; Excel stores doubles, so use the CSV or audit JSON when exact decimals matter. In the chat UI, `export excel` downloads the same workbook. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
+Omit `--output` to print the report. `--xlsx` writes a formatted Excel workbook (Summary, Material Variances, Root Causes & Actions, All Rows) using only the standard library. A limit, benchmark or target comparison gets a Limits, Benchmark or Targets sheet instead, a balance sheet or cash flow comparison a Lines sheet, and a filing's income statement a Summary headed by its printed totals; Excel stores doubles, so use the CSV or audit JSON when exact decimals matter. In the chat UI, `export excel` downloads the same workbook. `--percent-threshold 5` means 5%; the Python API accepts the ratio `Decimal("0.05")`. Threshold equality is not material. To validate without writing outputs:
 
 ```sh
 variance-agent examples/sample_variance.csv \
@@ -149,7 +149,7 @@ For the supplied sample and the command above, material variances are Subscripti
 
 ![The same results on a phone, dark theme](docs/ui/screenshots/chat-results-phone-dark.jpg)
 
-`variance-agent --chat` opens the chatbot locally; add `--no-browser` to print the local URL without opening a browser. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
+`variance-agent --chat` opens the chatbot locally; add `--no-browser` to print the local URL without opening a browser. `variance-agent --chat --hosted` serves it on `0.0.0.0:$PORT` (default 10000) without opening a browser. A `RENDER` environment variable, which the Render platform sets, implies `--hosted` unless `--no-browser` is given. In hosted mode, "export ... to <path>" is refused and files are offered as downloads instead. `render.yaml` deploys this to a free Render web service: in the Render dashboard choose **New → Blueprint** and select this repository. Every visitor shares one chat session, so treat the hosted chatbot as a single-user demo. Free instances sleep after 15 idle minutes and take about a minute to wake.
 
 ## Architecture and trust boundary
 
@@ -164,7 +164,7 @@ The page itself is in `src/variance_agent/static/`.
 
 The source capture is limited to 32 MiB. Excel permits at most 2,048 archive members, 64 MiB total expanded content, 100,000 physical row positions including the header, 256 columns, and 1,000,000 cells per worksheet. CSV/JSON permit up to 100,000 data rows subject to the column/value limits. Text fields are limited to 128 KiB, numeric text to 4,096 characters, and JSON/XML nesting to 128 containers. Duplicate archive members, XML DTD/entities, invalid or unordered physical coordinates, and malformed structures are rejected before worksheet expansion. Inflated producer dimensions do not override physical content checks.
 
-Legacy runs default to audit 1.7; new semantics use unreleased 1.8. `--audit-schema-version` retains versions 1.0–1.8; 1.0 is USD-only. Schema 1.6 records the comparison (`basis`, `label`) in the record and configuration identity; 1.0–1.5 are refused for Forecast and Prior Period runs. Schema 1.7 adds `source.document`, which records how a PDF statement was read; 1.0–1.6 are refused for PDF input. Schema 1.8 adds measure, direction, comparison-set, flat-segment, presentation and optional descriptive-statistic facts; older schemas refuse these new semantics. Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
+Legacy runs default to audit 1.7. New semantics use unreleased 1.8, and so does a plain run given `--long-output` or `--long-output-jsonl`, which takes the measure path and its report layout. `--audit-schema-version` retains versions 1.0–1.9; 1.0 is USD-only. Schema 1.6 records the comparison (`basis`, `label`) in the record and configuration identity; 1.0–1.5 are refused for Forecast and Prior Period runs. Schema 1.7 adds `source.document`, which records how a PDF statement was read; 1.0–1.6 are refused for PDF input. Schema 1.8 adds measure, direction, comparison-set, flat-segment, presentation and optional descriptive-statistic facts; older schemas refuse these new semantics. Schema 1.9, also unreleased, adds workbook examination findings, statements read from Inline XBRL filings and EDGAR-style sheets, LTM builds, two-file joins, holdings scorecards, limit, benchmark and target comparisons, Multiple measures and derived metrics; a run selects it only when 1.8 cannot hold its record (see [the audit contract](docs/audit-contract.md)). Published JSON schemas forbid additional properties. Source SHA-256 identifies captured bytes; the analysis fingerprint includes all derived rows; the public payload digest is recomputable. Hashes detect changes and do not authenticate authorship or establish source completeness. Report and audit creation reverify financial identities, including results supplied through the Python API.
 
 Source labels and periods are untrusted data. Reports escape Markdown/HTML and render terminal/bidirectional controls visibly. Audit JSON retains source text as data and excludes raw row dictionaries. The [commentary prompt](prompt/variance_report_prompt.md) consumes verified audit facts only; it is not a runtime agent or an enforcement boundary. Any separate LLM integration needs strict runtime argument/output schemas, bounded calls and tokens, timeouts, retry limits, and environment-loaded credentials. Those integrations are outside this CLI and are not implicitly supplied by a prompt.
 
@@ -195,7 +195,7 @@ On Windows, use `../variance-minimal/Scripts/python.exe` for that environment.
 
 Strict typing covers `src/variance_agent`, `scripts` and the auxiliary `deterministic_conditioning` package. It is configured in `pyproject.toml` (`[tool.mypy] files`), including bans on explicit and unimported `Any`, and CI runs the command above on each supported Python version. List the package explicitly: when the checkout is also the editable-install target, mypy treats an unlisted package as installed and hides its errors, so a run from a different directory reports errors that CI never showed. Without the `pdf` extra the PDF tests are skipped.
 
-See the [audit ledger](docs/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
+See the [audit ledger](docs/history/INSTITUTIONAL_AUDIT_2026-10-16.md) for executed results, the [financial rules](docs/financial-rules.md) for exact semantics, and the [audit contract](docs/audit-contract.md) for integrity recipes. Forecasting, valuation, budget creation, and automatic model commentary are outside this application.
 
 ## Reader examples
 
@@ -265,6 +265,18 @@ measure cutoffs and ambiguous choices. With Period as a group key, omit
 256-column and 1,000,000-cell caps across the whole panel. Split larger universes
 into several files.
 
+A folder of filings runs as a batch. Each `.htm`, `.html` or `.pdf` file directly in
+the folder is read as a single `--assisted` run reads one, and its long rows gain a
+`file` column. The manifest has one row per filing: its name, sha256, outcome (`ok`,
+`refused` or `error`), row count and message. A filing that refuses never stops the
+rest; the batch exits 0 when every filing reads and 2 when any does not.
+
+```sh
+variance-agent --batch tests/fixtures/analysts --period FY2025 \
+  --dollar-threshold 1 --percent-threshold 1 \
+  --long-output filings.csv --manifest manifest.csv
+```
+
 ## Earnings and quant presets
 
 Presets supply presentation/intake defaults; every explicit option wins and no
@@ -292,7 +304,8 @@ variance-agent tests/fixtures/multi_audience/consensus.csv --preset earnings \
   -o earnings.md --xlsx earnings.xlsx --audit-json earnings.audit.json
 ```
 
-Export or layout flags alone keep existing FP&A metadata inert. Extended headers
+Export or layout flags alone keep existing FP&A metadata inert, though a long output
+moves the run to the measure path, so its report takes that layout and its audit is 1.8. Extended headers
 require an earnings/quant preset, a new comparison basis, an explicit mapping or
 confirmed earnings review. The new Python API itself is an explicit opt-in;
 `AudienceOptions.extended_headers=False` can preserve legacy header meanings.
@@ -307,4 +320,4 @@ minimum history and rounding rules are in the [financial rules](docs/financial-r
 Vendor headers, GAAP versus adjusted metrics, count units and fiscal/calendar
 alignment require the user's review. There is no cross-file metric matching,
 nested segment hierarchy, FX conversion, valuation or forecasting. Executed
-checks and remaining boundaries are in the [implementation report](docs/MULTI_AUDIENCE_2026-10.md).
+checks and remaining boundaries are in the [implementation report](docs/history/MULTI_AUDIENCE_2026-10.md).

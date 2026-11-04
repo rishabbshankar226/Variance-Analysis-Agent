@@ -1,10 +1,11 @@
 """Measure vocabulary and exact input units. No monetary label is inferred."""
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from .audience import AudienceConfig
-from .models import AnalysisConfig, AnalyzedRow, BetterDirection, LineType, MeasureKind
+from .models import AnalysisConfig, AnalyzedRow, BetterDirection, ComparisonBasis, LineType, MeasureKind
 from .numeric import financial_context
 from .parsing import is_missing, normalize_key, parse_decimal
 
@@ -87,8 +88,22 @@ def currency_row(row: AnalyzedRow) -> bool:
     return row.measure is MeasureKind.CURRENCY
 
 
+# An intake note a row's own note restates: said once, by the row (X42).
+_RESTATED = re.compile(r": read (?:Measure as|Better (?:as|to)|% values as percentage points)\b")
+_RATE_KEYS = ("actual", *(basis.value for basis in ComparisonBasis))
+
+
+def _bare_rate(row: AnalyzedRow) -> bool:
+    """A Percent row holding a rate without a % sign, which --percent-values scales (X42)."""
+    return row.measure is MeasureKind.PERCENT and any(
+        not is_missing(row.raw.get(key)) and not str(row.raw.get(key)).strip().endswith("%") for key in _RATE_KEYS)
+
+
 def metric_inferences(rows: tuple[AnalyzedRow, ...], config: AnalysisConfig | None = None) -> list[str]:
     notes: list[str] = []
+    if isinstance(config, AudienceConfig):
+        # How assisted intake read the file comes first: the report and the audit carry it (X42).
+        notes.extend(note for note in config.source_notes if not _RESTATED.search(note))
     for row in rows:
         if row.segment_declared:
             from .segments import SEGMENT_KEYS
@@ -102,17 +117,27 @@ def metric_inferences(rows: tuple[AnalyzedRow, ...], config: AnalysisConfig | No
         if row.better is not None:
             label = "defaulted" if row.direction_source == "default_higher" else "read"
             notes.append(f"{row.line_item}: {label} Better to {row.better}.")
-    if isinstance(config, AudienceConfig) and config.percent_values is not None:
+    if isinstance(config, AudienceConfig) and config.percent_values is not None and any(map(_bare_rate, rows)):
         notes.append(f"Read bare Percent values as {config.percent_values}.")
     return notes
+
+
+def _places(value: Decimal) -> int:
+    """The decimal places an amount needs, at least two. A scaled 89999.000 needs none past the cents (X43), and
+    nothing is rounded: only zeros at the end of the stored digits are dropped."""
+    _, digits, exponent = value.as_tuple()
+    places = -int(exponent)
+    while places > 2 and digits and digits[-1] == 0:
+        digits, places = digits[:-1], places - 1
+    return max(2, places)
 
 
 def format_measure(value: Decimal, kind: MeasureKind, currency: str = "USD", *, variance: bool = False) -> str:
     from .report import _money
     if kind is MeasureKind.CURRENCY:
-        return _money(value, currency, max(2, -int(value.as_tuple().exponent)))
+        return _money(value, currency, _places(value))
     if kind is MeasureKind.PER_SHARE:
-        return _money(value, currency, max(2, -int(value.as_tuple().exponent))) + "/sh"
+        return _money(value, currency, _places(value)) + "/sh"
     if kind is MeasureKind.MULTIPLE and value.as_tuple().exponent < -2:  # type: ignore[operator]
         # A computed ratio repeats; it is shown to two places, and the audit keeps it exact.
         from decimal import ROUND_HALF_EVEN, Inexact

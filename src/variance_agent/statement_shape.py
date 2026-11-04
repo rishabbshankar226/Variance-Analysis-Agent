@@ -64,6 +64,8 @@ class ShapedStatement:
     matches: list[tuple[int, list[tuple[int, int]]]] = field(default_factory=list)
     unmatched: list[str] = field(default_factory=list)
     openings: list[int] = field(default_factory=list)  # a statement's first figure, carried in (OCI's net income)
+    # Subtotals two sign readings fit within rounding: each one's data row -> the lines the readings disagree on (C3m).
+    ambiguous: dict[int, list[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -129,43 +131,37 @@ def _term(item: _Item) -> int:
     return item.total_row if item.total_row is not None else item.rows[0]
 
 
-def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = None,
-                           extra_subtotals: re.Pattern[str] | None = None,
-                           subtotal_rows_hint: frozenset[int] = frozenset(),
-                           section_total_rows_hint: frozenset[int] = frozenset(),
-                           zero_lines_signless: bool = False, openings_as_lines: bool = False,
-                           keep_printed_signs: bool = False) -> ShapedStatement:
-    """Label each line of an income statement by how the statement's subtotals add up.
-
-    ``unit`` sets the rounding unit of the printed figures; by default it is the finest place any
-    figure shows, as for a PDF statement printed in its caption's unit. ``extra_subtotals`` names
-    more subtotal labels for one reader, ``subtotal_rows_hint`` data rows its source marks as
-    totals, and ``section_total_rows_hint`` those among them that may sum just the lines above them,
-    as a "Total" row does; with ``zero_lines_signless``, sign readings that differ only on lines that
-    are zero in every period count as one; with ``openings_as_lines``, a subtotal-named first figure (OCI's
-    net income, a lone "Total revenues") is read as a line. The PDF reader passes none, so its reading
-    is unchanged.
-    """
-    header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
-    if header_at is None:
-        return ShapedStatement(rows=raw_rows, shaped=False)
-    if "Measure" in raw_rows[header_at]:
-        return _shape_with_measures(raw_rows, header_at)
-    header, data = raw_rows[header_at], raw_rows[header_at + 1:]
-    periods = len(header) - 1
+def _read_amounts(data: list[list[object]], periods: int) -> list[list[Decimal]] | None:
+    """Each data row's printed figures as exact Decimals, or None when any figure is unreadable."""
     # Parsing runs in the policy context: an unreadable figure raises InvalidOperation, and
     # that flag must not stay behind in the caller's Decimal context.
     with financial_context():
         parsed = [[_amount(cell) for cell in row[1:1 + periods]] for row in data]
     if any(value is None for values in parsed for value in values):
-        return ShapedStatement(rows=raw_rows, shaped=False)
-    amounts = [[value for value in values if value is not None] for values in parsed]
-    if unit is None:
-        unit = min((Decimal(1).scaleb(min(v.as_tuple().exponent, 0))  # type: ignore[arg-type]
-                    for values in amounts for v in values), default=Decimal(1))
+        return None
+    return [[value for value in values if value is not None] for values in parsed]
+
+
+@dataclass
+class _Walk:
+    """What walking the statement found: each line's sign, the subtotal rows, and how each subtotal footed."""
+
+    signs: dict[int, int]
+    subtotal_rows: list[int]
+    matches: list[tuple[int, list[tuple[int, int]]]]
+    unmatched: list[str]
+    openings: list[int]
+    ambiguous: dict[int, list[int]]
+
+
+def _walk_subtotals(data: list[list[object]], amounts: list[list[Decimal]], unit: Decimal, periods: int, *,
+                    extra_subtotals: re.Pattern[str] | None, subtotal_rows_hint: frozenset[int],
+                    section_total_rows_hint: frozenset[int], zero_lines_signless: bool, openings_as_lines: bool) -> _Walk:
+    """Walk the statement top to bottom, checking each subtotal against the lines above it."""
     matches: list[tuple[int, list[tuple[int, int]]]] = []
     unmatched: list[str] = []
     openings: list[int] = []
+    ambiguous: dict[int, list[int]] = {}
     previous_total: int | None = None
 
     signs: dict[int, int] = {}
@@ -210,6 +206,9 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
                     matches.append((i, [*base_terms, *((_term(item), s) for s, item in zip(fits[0], pending, strict=True))]))
                 elif not fits:
                     unmatched.append(str(row[0]).strip())
+                else:  # several readings fit: name the lines whose sign they disagree on (C3m)
+                    ambiguous[i] = sorted(r for k, item in enumerate(pending)
+                                          if len({combo[k] for combo in fits}) > 1 for r in item.rows)
             elif not pending and running is None:
                 openings.append(i)
             elif not pending and running is not None and previous_total is not None:
@@ -220,9 +219,16 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
                 else:
                     unmatched.append(str(row[0]).strip())
             running, pending, previous_total = values, [], i
+    return _Walk(signs, subtotal_rows, matches, unmatched, openings, ambiguous)
 
-    shaped = ShapedStatement(rows=[*raw_rows[:header_at], [*header, "Type"]], matches=matches, unmatched=unmatched,
-                             openings=openings)
+
+def _label_lines(shaped: ShapedStatement, data: list[list[object]], amounts: list[list[Decimal]], periods: int,
+                 walk: _Walk, *, keep_printed_signs: bool) -> tuple[list[tuple[str, str]], list[str]]:
+    """Label each line Revenue or Expense by its sign in the walk, flipping a figure printed against its label.
+
+    Adds each row to ``shaped``; returns each labeled line with its label, and a note for each flip.
+    """
+    signs, subtotal_rows = walk.signs, walk.subtotal_rows
     labels: list[tuple[str, str]] = []
     flips: list[str] = []
     for i, row in enumerate(data):
@@ -263,7 +269,11 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
             shaped.unlabeled.append(label)
         shaped.rows.append([label, *cells, kind])
         shaped.kept.append(i)
+    return labels, flips
 
+
+def _add_notes(shaped: ShapedStatement, labels: list[tuple[str, str]], flips: list[str]) -> None:
+    """Add the notes shown to the user and the audit's notes: subtotals left out, labels, flips and lines left unlabeled."""
     # Intake already lists excluded subtotals in its summary; the audit gets them here too.
     subtotal_note = (
         [f"Left out {_plural(len(shaped.subtotals), 'subtotal')} the statement computes from "
@@ -283,6 +293,47 @@ def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = 
             f"you'll be asked to label {'it' if one else 'them'}")
     shaped.audit_notes = [*subtotal_note, *shaped.notes,
                           *(f"Labeled '{label}' as {kind.lower()}" for label, kind in labels)]
+
+
+def shape_income_statement(raw_rows: list[list[object]], unit: Decimal | None = None,
+                           extra_subtotals: re.Pattern[str] | None = None,
+                           subtotal_rows_hint: frozenset[int] = frozenset(),
+                           section_total_rows_hint: frozenset[int] = frozenset(),
+                           zero_lines_signless: bool = False, openings_as_lines: bool = False,
+                           keep_printed_signs: bool = False) -> ShapedStatement:
+    """Label each line of an income statement by how the statement's subtotals add up.
+
+    ``unit`` sets the rounding unit of the printed figures; by default it is the finest place any
+    figure shows, as for a PDF statement printed in its caption's unit. ``extra_subtotals`` names
+    more subtotal labels for one reader, ``subtotal_rows_hint`` data rows its source marks as
+    totals, and ``section_total_rows_hint`` those among them that may sum just the lines above them,
+    as a "Total" row does; with ``zero_lines_signless``, sign readings that differ only on lines that
+    are zero in every period count as one; with ``openings_as_lines``, a subtotal-named first figure (OCI's
+    net income, a lone "Total revenues") is read as a line. The PDF reader passes none, so its reading
+    is unchanged.
+    """
+    header_at = next((i for i, row in enumerate(raw_rows) if row and row[0] == "Line Item"), None)
+    if header_at is None:
+        return ShapedStatement(rows=raw_rows, shaped=False)
+    if "Measure" in raw_rows[header_at]:
+        return _shape_with_measures(raw_rows, header_at)
+    header, data = raw_rows[header_at], raw_rows[header_at + 1:]
+    periods = len(header) - 1
+    amounts = _read_amounts(data, periods)
+    if amounts is None:
+        return ShapedStatement(rows=raw_rows, shaped=False)
+    if unit is None:
+        unit = min((Decimal(1).scaleb(min(v.as_tuple().exponent, 0))  # type: ignore[arg-type]
+                    for values in amounts for v in values), default=Decimal(1))
+    walk = _walk_subtotals(data, amounts, unit, periods, extra_subtotals=extra_subtotals,
+                           subtotal_rows_hint=subtotal_rows_hint, section_total_rows_hint=section_total_rows_hint,
+                           zero_lines_signless=zero_lines_signless, openings_as_lines=openings_as_lines)
+
+    # Labeling and its sign flips run outside the financial context, as they did before the split.
+    shaped = ShapedStatement(rows=[*raw_rows[:header_at], [*header, "Type"]], matches=walk.matches, unmatched=walk.unmatched,
+                             openings=walk.openings, ambiguous=walk.ambiguous)
+    labels, flips = _label_lines(shaped, data, amounts, periods, walk, keep_printed_signs=keep_printed_signs)
+    _add_notes(shaped, labels, flips)
     return shaped
 
 

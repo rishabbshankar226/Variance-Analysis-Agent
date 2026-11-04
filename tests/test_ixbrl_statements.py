@@ -302,12 +302,10 @@ def test_the_cli_records_a_statement_comparison_in_audit_19(tmp_path: Path) -> N
     assert "# Statement Comparison" in (tmp_path / "r.md").read_text(encoding="utf-8")
 
 
-def test_the_cli_refuses_a_workbook_for_a_statement_comparison(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        cli.main(_cli(tmp_path, FLOWS, "FY2025", "--xlsx", str(tmp_path / "out.xlsx")))
-    assert ("--xlsx isn't available for a balance sheet or cash flow comparison yet. Leave out --xlsx; the report and "
-            "the audit file hold every figure.") in capsys.readouterr().err.replace("\n", " ")
-    assert not (tmp_path / "out.xlsx").exists()
+def test_the_cli_writes_a_statement_workbook(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from openpyxl import load_workbook
+    assert cli.main(_cli(tmp_path, FLOWS, "FY2025", "--xlsx", str(tmp_path / "out.xlsx"))) == 0, capsys.readouterr().err
+    assert load_workbook(tmp_path / "out.xlsx").sheetnames == ["Lines"]  # N1
 
 
 def test_a_balance_sheet_that_does_not_balance_refuses_on_the_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -334,11 +332,9 @@ def test_the_chat_compares_a_balance_sheet_without_asking_for_labels() -> None:
     reply = handle_message(session, "USD")
     assert reply.text.startswith("# Statement Comparison: Sep 2025")
     assert IDENTITY in reply.text
-    assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export audit"]
+    assert "labeled revenue or expense" not in reply.text and reply.chips == ["Export report", "Export excel", "Export audit"]
     assert handle_message(session, "waterfall").text.startswith("# Statement Comparison")
-    assert handle_message(session, "export excel").text == (
-        "A workbook isn't available for this comparison yet. The report and the audit file are; type "
-        "`export report` or `export audit`.")
+    assert handle_message(session, "export excel").text == "Excel workbook ready for download: Lines sheet."
 
 
 def test_an_unlabeled_subtotal_is_named_by_its_concept_not_as_the_section_s_total() -> None:

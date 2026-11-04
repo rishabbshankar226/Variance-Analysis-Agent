@@ -168,6 +168,14 @@ class Statement:
     left_out: list[str] = field(default_factory=list)
     problem: str = ""  # why this statement cannot be read; other statements of the filing still can
     heading: str = ""  # the text printed before and atop the statement's table (titles, "As Restated")
+    currency: str = ""  # the ISO code of its monetary facts ("EUR"), comma-joined if they disagree (X30)
+    runs_on: bool = False  # an untitled table of other periods follows it, not joined (M2)
+
+    @property
+    def names(self) -> dict[str, str]:
+        """Each column label's display name, where it differs from the label: "3 months ended Mar 2026" (M4)."""
+        return {label: name for period, label in zip(self.periods, self.labels, strict=True)
+                if (name := period_name(period, label)) != label}
 
 
 def _transform(fmt: str, text: str) -> Decimal:
@@ -406,6 +414,23 @@ def _period_labels(periods: list[tuple[str, ...]]) -> list[str]:
     return labels
 
 
+def period_name(period: tuple[str, ...], label: str) -> str:
+    """How a column reads in display text: a duration labelled by its end month names its length (M4).
+
+    The label itself stays the key; a fiscal-year label and a balance sheet's instant are their own names.
+    """
+    if period[0] != "duration" or label.startswith("FY"):
+        return label
+    months = _months(period)
+    return f"{months} month{'s' if months != 1 else ''} ended {label}"
+
+
+def _column_note(period: tuple[str, ...], label: str) -> str:
+    name = period_name(period, label)
+    length = f"the {name.removesuffix(' ' + label)} " if name != label else ""
+    return f"Read the column for {length}{period[-1]} as {label}"
+
+
 def _months(period: tuple[str, ...]) -> int:
     if period[0] != "duration":
         return 0
@@ -435,11 +460,24 @@ def _measure(unit: str) -> str:
     return "Currency" if _monetary(unit) else ""
 
 
+# An exhibit 13 link with a plain file name: the HTML is untrusted, so nothing else of it is quoted (M1).
+_EXHIBIT_13_LINK = re.compile(rb'href\s*=\s*["\']([A-Za-z0-9._-]{1,80}?(?:ex-?13|exhibit-?13)[A-Za-z0-9._-]{0,40}\.html?)["\']',
+                              re.IGNORECASE)
+_EXHIBIT_13_TEXT = re.compile(rb"\bexhibit\s+13\b", re.IGNORECASE)
+
+
+def _statements_elsewhere(data: bytes) -> str | None:
+    """Where a filing without statement tables says its statements are: Exhibit 13, named if linked (M1)."""
+    if (link := _EXHIBIT_13_LINK.search(data)) is not None:
+        return f"Exhibit 13 ('{link.group(1).decode('ascii')}')"
+    return "Exhibit 13" if _EXHIBIT_13_TEXT.search(data) else None
+
+
 def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False) -> list[Statement]:
     """Every face statement the filing prints, first copy of each kind, in document order."""
     if _DECLARATION.search(data):
-        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses. "
-                         "Upload a CSV or Excel copy of the statement, or the filing's PDF.")
+        raise IxbrlError(f"'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader "
+                         "refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -496,13 +534,22 @@ def read_statements(data: bytes, filename: str, *, per_share_lines: bool = False
         elif pending is not None and money and not table.title.strip() and _same_periods(pending[2][0], table, reader):
             pending[2].append(table)  # the statement runs on in the next table, untitled, over the same periods
         elif pending is not None and money:
-            statements.extend(_build(pending, reader, by_id, per_share_lines))
+            built = _build(pending, reader, by_id, per_share_lines)
+            for one in built if not table.title.strip() else ():
+                one.runs_on = True  # it may run on into this table, which shows other periods (M2)
+            statements.extend(built)
             pending = None
     if pending is not None:
         statements.extend(_build(pending, reader, by_id, per_share_lines))
     if not statements:
+        if (elsewhere := _statements_elsewhere(data)) is not None:  # name the document to upload next (M1)
+            raise IxbrlError(f"The financial statements aren't in '{filename}' itself: it points to {elsewhere}, the "
+                             "annual report that holds them. Upload that document from the same EDGAR filing, or the "
+                             "statements as Excel or CSV.")
         raise IxbrlError(f"I could not find the financial statements in '{filename}': no table there is titled as an "
-                         "income statement, balance sheet or cash flow statement and holds their tagged figures.")
+                         "income statement, balance sheet or cash flow statement and holds their tagged figures. If the "
+                         "filing puts them in another document (often Exhibit 13, the annual report), upload that "
+                         "document from the same EDGAR filing; otherwise upload the statements as Excel or CSV.")
     return statements
 
 
@@ -618,7 +665,8 @@ def _build(found: tuple[str, str, list[_Table]], reader: _Reader, by_id: dict[st
 def fact_values(data: bytes, filename: str) -> dict[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]], Decimal]:
     """Every readable money fact's stored value, by concept, period and dimensions (for LTM's recast check)."""
     if _DECLARATION.search(data):
-        raise IxbrlError(f"'{filename}' declares an XML entity or document type subset, which this reader refuses.")
+        raise IxbrlError(f"'{filename}' declares entities of its own, which filings on EDGAR don't, so this reader "
+                         "refuses it. Upload a CSV or Excel copy of the statement, or the filing's PDF.")
     reader = _Reader()
     reader.feed(data.decode("utf-8", "replace"))
     reader.close()
@@ -673,9 +721,10 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
                per_share_lines: bool, durations: list[tuple[str, ...]] | None = None) -> Statement:
     labels = _period_labels(periods)
     statement = Statement(kind, name, periods, labels, [])
+    currencies: set[str] = set()
     if len(set(labels)) != len(labels):
         statement.notes.append("Two columns share a period label")
-    statement.notes.extend(f"Read the column for {p[-1]} as {label}" for p, label in zip(periods, labels, strict=True))
+    statement.notes.extend(_column_note(p, label) for p, label in zip(periods, labels, strict=True))
     breakdowns: list[str] = []
     for label, section, figures, dash in rows:
         keys: list[LineKey | None] = [None] * len(periods)
@@ -711,6 +760,8 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             fact_measure = _measure(unit)
             if not fact_measure:
                 continue
+            if unit.lower().startswith("iso4217:"):
+                currencies.add(unit.split(":", 1)[1].split("/", 1)[0].upper())
             if fact.nil:
                 continue  # xsi:nil: the filing states there is no value, so the cell is blank
             if fact.problem or fact.stored is None or fact.magnitude is None:
@@ -737,6 +788,7 @@ def _statement(kind: str, name: str, periods: list[tuple[str, ...]],
             statement.left_out.append(f"'{label}' (per-share and share counts are not money totals)")
             continue
         statement.lines.append(Line(label, section, concept, measure, keys, dash, balance))
+    statement.currency = ",".join(sorted(currencies))
     if breakdowns:
         statement.notes.append(f"Read {len(breakdowns)} line{'s' if len(breakdowns) != 1 else ''} that break a total down "
                                f"by one axis (such as '{breakdowns[0]}') as printed lines; the audit names each axis and member")

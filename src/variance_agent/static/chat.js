@@ -461,7 +461,7 @@ export const STATUS_WORDS = {
   F: 'Favorable',
   U: 'Unfavorable',
   Neutral: 'Neutral',
-  Unclassified: 'Unclassified',
+  Unclassified: 'Not yet labeled',  // the plain words for the engine's term (X27)
 };
 
 /**

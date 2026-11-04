@@ -271,7 +271,7 @@ def extended_heading(config: AnalysisConfig) -> str:
     from .audience import AudienceConfig
     if isinstance(config, AudienceConfig) and config.comparison_title is not None:
         return config.comparison_title
-    return comparison_heading(config.comparison_basis, config.comparison_label)
+    return comparison_heading(config.comparison_basis, config.comparison_name or config.comparison_label)
 
 
 def display_outcome(row: AnalyzedRow, basis: ComparisonBasis) -> str:

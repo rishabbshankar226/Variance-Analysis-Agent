@@ -60,3 +60,12 @@ def test_invalid_port_is_a_clear_error(
         cli.main(["--chat", "--hosted"])
     assert exit_info.value.code == 2
     assert "PORT" in capsys.readouterr().err
+
+
+def test_no_browser_keeps_the_chat_local_even_where_render_is_set(
+    monkeypatch: pytest.MonkeyPatch, calls: list[dict[str, object]],
+) -> None:
+    """X10: --no-browser asks for a local URL, so the RENDER announcement does not open all interfaces."""
+    monkeypatch.setenv("RENDER", "true")
+    assert cli.main(["--chat", "--no-browser"]) == 0
+    assert calls == [{"initial_input": None, "initial_sheet": None, "open_browser": False}]

@@ -200,7 +200,15 @@ def load_mapping(data: bytes | str) -> LayoutMapping:
     raw = data if isinstance(data, bytes) else data.encode("utf-8")
     if len(raw) > MAX_MAPPING_BYTES:
         raise ValueError("Mapping file is too large (the limit is 1 MiB).")
-    parsed = json.loads(raw.decode("utf-8-sig"))
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise ValueError("Mapping file is not UTF-8 text.") from None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:  # the contract promises "Mapping file ...", never parser text (X28)
+        raise ValueError(f"Mapping file is not valid JSON at line {exc.lineno}, column {exc.colno}. Save it again "
+                         "from the chat (\"save mapping\"), or fix the JSON there.") from None
     if not isinstance(parsed, dict):
         raise ValueError("Mapping file must be a JSON object.")
 

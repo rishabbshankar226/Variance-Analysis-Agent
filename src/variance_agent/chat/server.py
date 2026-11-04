@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import time
 import traceback
 import urllib.parse
 import webbrowser
@@ -55,6 +56,10 @@ _DOWNLOAD_TYPES = {".xlsx": XLSX_MEDIA_TYPE}
 
 # Request bodies beyond these sizes are refused before they are read.
 _MAX_UPLOAD_BODY = MAX_INPUT_BYTES + 1024 * 1024  # file plus multipart framing
+# A body must arrive at a usable pace, or it would hold the single worker for as long as it drips (X12).
+_BODY_GRACE_SECONDS = 20.0
+_BODY_SECONDS_PER_MIB = 1.0
+_BODY_CHUNK = 64 * 1024
 _MAX_MESSAGE_BODY = 2 * MAX_TEXT_LENGTH
 # A real upload has a file plus two small fields; anything near this many parts is hostile.
 _MAX_FORM_PARTS = 8
@@ -354,8 +359,11 @@ class _ChatHandler(BaseHTTPRequestHandler):
             )
             return
 
-        _downloads.clear()  # exports of the previous file must not outlive it
+        previous = self.session.source_bytes
         response = handle_upload(self.session, file_bytes, filename, sheet, first_visit=first_visit)
+        if self.session.source_bytes is not previous:  # a refused upload keeps the current file (X19)
+            _downloads.clear()  # exports of the previous file must not outlive it
+            type(self).initial_response = None  # nor its start-up reply, replayed on a reload (X26)
         self._send_response(response)
 
     def _handle_message(self) -> None:
@@ -390,6 +398,7 @@ class _ChatHandler(BaseHTTPRequestHandler):
         response = handle_message(self.session, text, first_visit=first_visit)
         if phase_before is not Phase.AWAITING_FILE and self.session.phase is Phase.AWAITING_FILE:
             _downloads.clear()  # the session was reset; its exports go with it
+            type(self).initial_response = None  # and the start-up file's first reply (X26)
         self._send_response(response)
 
     # ------------------------------------------------------------------
@@ -405,9 +414,26 @@ class _ChatHandler(BaseHTTPRequestHandler):
             return None
         length = int(raw_length)
         if length > limit:
-            self._json_error("Request body is too large.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+            # The page shows this text in its warning bubble (M6).
+            self._json_error(
+                f"That file is larger than the {MAX_INPUT_BYTES // (1024 * 1024)} MiB the chat accepts. Save just the "
+                "sheet with the statement as a new file and upload that." if limit == _MAX_UPLOAD_BODY else
+                "That message is too long. Ask a shorter question.", HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return None
-        return self.rfile.read(length)
+        deadline = time.monotonic() + _BODY_GRACE_SECONDS + _BODY_SECONDS_PER_MIB * length / (1024 * 1024)
+        chunks: list[bytes] = []
+        remaining = length
+        while remaining:
+            if time.monotonic() > deadline:
+                self.close_connection = True
+                self._json_error("The upload arrived too slowly. Please try again.", HTTPStatus.REQUEST_TIMEOUT)
+                return None
+            chunk = self.rfile.read1(min(remaining, _BODY_CHUNK))
+            if not chunk:
+                break  # the client closed early: a short body, as before
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
 
     def _send_response(self, response: Response) -> None:
         """Serialize a Response dataclass to JSON and send it."""

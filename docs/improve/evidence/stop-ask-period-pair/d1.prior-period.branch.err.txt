@@ -1,0 +1,1 @@
+variance-agent: error: No prior period column found. Columns found: Line Item, Type, 2026 Budget, 2026 Actual, 2025 Budget, 2025 Actual.

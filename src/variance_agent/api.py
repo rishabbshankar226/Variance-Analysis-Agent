@@ -133,6 +133,10 @@ def analyze_file(path: str | Path, config: AnalysisConfig, *, options: AudienceO
                                                            column_mapping=selected.column_mapping or None,
                                                            per_share_lines=effective_per_share_lines(cfg), metadata=metadata,
                                                            hidden_rows=selected.hidden_rows)
+    from .intake import IntakeResult, currency_conflict
+    if isinstance(intake := metadata.get("intake_result"), IntakeResult) and (
+            conflict := currency_conflict(intake, cfg.currency, source.name)) is not None:
+        raise ValueError(conflict[0])
     if isinstance(metadata.get("comparison_label"), str):
         cfg = replace(cfg, comparison_label=str(metadata["comparison_label"]))
     if isinstance(metadata.get("actual_label"), str):

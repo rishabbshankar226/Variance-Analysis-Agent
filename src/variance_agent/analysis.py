@@ -109,9 +109,10 @@ def _statement_kind(line_item: str, row: dict[str, object]) -> str:
     value = row.get("statement_kind")
     if is_missing(value):
         return ""
-    kind = str(value).strip().casefold()
+    kind = re.sub(r"[\s-]+", "_", str(value).strip().casefold())  # "Balance Sheet" is balance_sheet (M6)
     if kind not in _STATEMENT_KINDS:
-        raise ValueError(f"{line_item}: Statement Kind must be balance_sheet or cash_flow.")
+        raise ValueError(f"{line_item}: Statement Kind must be Balance Sheet or Cash Flow. Type one of those in the "
+                         "Statement Kind column.")
     return kind
 
 
@@ -160,7 +161,8 @@ def _classify(
 
     type_keys = [key for key in _TYPE_KEYS if key in row]
     if len(type_keys) > 1:
-        raise ValueError(f"{line_item}: multiple classification aliases: {', '.join(type_keys)}.")
+        raise ValueError(f"{line_item}: multiple columns give its type ({', '.join(type_keys)}). Keep one Type "
+                         "column and upload the file again.")
     type_field = first_present(row, _TYPE_KEYS)
     if type_field:
         explicit = explicit_line_type(type_field[1])
@@ -320,7 +322,8 @@ def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> l
         if line_type not in detail_types and len(summaries) > 1:
             raise ValueError(
                 f"Multiple {line_type.value} summary rows were supplied without detail rows; "
-                "aggregation would be ambiguous and could double count."
+                "aggregation would be ambiguous and could double count. Keep one total, or add the lines it "
+                "totals, and upload the file again."
             )
 
     for line_type in (LineType.REVENUE, LineType.EXPENSE):
@@ -335,11 +338,11 @@ def _resolve_summary_rows(rows: list[AnalyzedRow], *, scoped: bool = False) -> l
         summary = summaries[0]
         budget_residual = summary.budget - sum((r.budget for r in details), Decimal("0"))
         if abs(budget_residual) > AMOUNT_TOLERANCE:
-            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+            raise ValueError(f"Summary '{summary.line_item}' does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         actual_residual = summary.actual - sum((r.actual for r in details), Decimal("0"))
         if abs(actual_residual) > AMOUNT_TOLERANCE:
-            raise ValueError(f"Summary {summary.line_item!r} does not reconcile to "
+            raise ValueError(f"Summary '{summary.line_item}' does not reconcile to "
                              f"{line_type.value} detail rows; check for missing or overlapping data.")
         verifications[line_type] = SummaryVerification(
             "reconciled_and_excluded", len(details), budget_residual,
@@ -500,8 +503,8 @@ def verify_result(result: AnalysisResult) -> None:
                    result.expenses, result.config)
 
 
-@financial_context()
-def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> AnalysisResult:
+def _validated_config(rows: list[dict[str, object]], config: AnalysisConfig) -> AnalysisConfig:
+    """Check the configuration and the row list; return the configuration with its type map and thresholds read."""
     if not isinstance(config, AnalysisConfig):
         raise ValueError("Configuration must be an AnalysisConfig instance.")
     validate_currency(config.currency)
@@ -547,108 +550,117 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
     # Validate threshold precision/range even if no row reaches a comparison.
     _ = +config.dollar_threshold
     _ = +config.percent_threshold
+    return config
 
-    analyzed: list[AnalyzedRow] = []
+
+def _row_line_item(row: dict[str, object], index: int, config: AnalysisConfig, *, has_period_column: bool) -> str:
+    """Check a row's period and currency against the run's, and return its line item."""
+    if has_period_column:
+        period = validate_text(row.get("period"), field=f"Row {index} Period", nonblank=True)
+        if period.strip() != config.period.strip():
+            raise ValueError(f"Row {index}: Period conflicts with the reporting period. Give every row the "
+                             "reporting period, or leave the Period column out.")
+    line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
+    if isinstance(line_item_raw, (bool, list, dict, tuple, set)):
+        raise ValueError(f"Row {index}: Line Item must be a label, text or a number. Type a label in that "
+                         "cell.")
+    line_item = "" if line_item_raw is None else str(line_item_raw).strip()
+    if not line_item:
+        raise ValueError(f"Row {index}: Line Item is blank. Type a label in that cell, or delete the row.")
+    validate_text(line_item, field=f"Row {index} Line Item", nonblank=True)
+
+    if "currency" in row and not is_missing(row["currency"]):
+        row_currency = row["currency"]
+        if not isinstance(row_currency, str):
+            raise ValueError(f"{line_item}: Currency must be a reporting currency code. Use USD, EUR or GBP "
+                             "in the Currency column.")
+        row_currency = validate_currency(row_currency.strip().upper())
+        if row_currency != config.currency:
+            raise ValueError(f"{line_item}: row currency {row_currency} conflicts with "
+                             f"reporting currency {config.currency}. Run each currency on its own; no currency "
+                             "is converted.")
+    return line_item
+
+
+def _analyze_row(row: dict[str, object], index: int, config: AnalysisConfig, *, has_period_column: bool,
+                 comparison_field: str) -> AnalyzedRow:
+    """Read one normalized row and derive its variance, status, materiality and driver evidence."""
+    line_item = _row_line_item(row, index, config, has_period_column=has_period_column)
+
+    # Budget runs keep 'Budget'; other runs name the comparison and do not list the
+    # internal budget column aliases.
+    segment, segment_declared = read_segment(row, config)
+    kind = measure_kind(row.get("measure"), line_item)
+    absolute_cutoff(config, kind, line_item)
+    if "measure" in row or "better" in row:
+        if any(isinstance(row.get(k), float) for k in (*_BUDGET_KEYS, *_ACTUAL_KEYS)):
+            raise ValueError(f"{line_item}: declared measure amounts cannot be float; supply exact numeric text.")
+    budget = parse_measure_amount(
+        _required_value(
+            row, _BUDGET_KEYS, comparison_field, index,
+            list_accepted_names=config.comparison_basis is ComparisonBasis.BUDGET,
+        ),
+        field=comparison_field,
+        line_item=line_item,
+        kind=kind, config=config,
+    )
+    actual = parse_measure_amount(
+        _required_value(row, _ACTUAL_KEYS, "Actual", index),
+        field="Actual",
+        line_item=line_item,
+        kind=kind, config=config,
+    )
+
+    statement_kind = _statement_kind(line_item, row)
+    opt_in = config.comparison_basis in OPT_IN_BASES
+    metric = not is_missing(row.get("metric_formula"))  # a declared metric (PLAN.md R17), never revenue or expense
+    line_type, classification_source = ((LineType.UNCLASSIFIED, "statement") if statement_kind
+                                         else (LineType.UNCLASSIFIED, "metric") if metric
+                                         else (LineType.UNCLASSIFIED, "basis") if opt_in
+                                         else _classify(line_item, row, config))
+    better, direction_source = _direction(row, kind, line_type, line_item, config.comparison_basis)
+    assessed = basis_details(row, budget, actual, kind, config.comparison_basis, better)
+    summary_candidate, summary_source = (_summary_candidate(line_item, row)
+                                         if kind is MeasureKind.CURRENCY else (False, "noncurrency"))
+    variance = actual - budget
+    pct, pct_label = _percent_variance(budget, actual, config.comparison_basis, kind)
+    material = _is_material(budget, variance, config, kind)
+    driver = (_driver_evidence(row, budget, actual, line_item, config.currency)
+              if kind is MeasureKind.CURRENCY else None)
+
+    details = comparison_details(row, actual, kind, config)
+    validate_guidance_midpoint(budget, details, line_item)
+    return AnalyzedRow(
+        line_item=line_item,
+        line_type=line_type,
+        budget=budget,
+        actual=actual,
+        variance_dollars=variance,
+        variance_percent=pct,
+        percent_label=pct_label,
+        status=_row_status(line_type, variance, better, statement_kind, assessed, metric),
+        material=material,
+        excluded_from_aggregation=summary_candidate,
+        driver_evidence=driver,
+        raw=row,
+        measure=kind, better=better, direction_source=direction_source,
+        measure_declared="measure" in row,
+        comparison_details=details,
+        segment=segment, segment_declared=segment_declared, statement_kind=statement_kind,
+        basis_details=assessed,
+        variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
+        classification_source=classification_source,
+        summary_source=summary_source,
+        materiality_reason=("basis_points" if kind is MeasureKind.PERCENT and material
+                            else "absolute_amount" if abs(variance) > absolute_cutoff(config, kind)
+                            else "absolute_percent" if material
+                            else "below_or_equal_thresholds"),
+    )
+
+
+def _dataset_warnings(analyzed: list[AnalyzedRow], config: AnalysisConfig) -> list[str]:
+    """The run's warnings, in order: inferences, duplicate names, unclassified, excluded and nonreconciling rows."""
     warnings: list[str] = []
-    normalized_rows = [normalize_row(row) for row in rows]
-    has_period_column = any("period" in row for row in normalized_rows)
-    comparison_field = comparison_heading(config.comparison_basis, config.comparison_label)
-
-    for index, row in enumerate(normalized_rows, start=2):
-        if has_period_column:
-            period = validate_text(row.get("period"), field=f"Row {index} Period", nonblank=True)
-            if period.strip() != config.period.strip():
-                raise ValueError(f"Row {index}: Period conflicts with the reporting period.")
-        line_item_raw = _required_value(row, _LINE_ITEM_KEYS, "Line Item", index)
-        if isinstance(line_item_raw, (bool, list, dict, tuple, set)):
-            raise ValueError(f"Row {index}: Line Item must be a scalar text or numeric label.")
-        line_item = "" if line_item_raw is None else str(line_item_raw).strip()
-        if not line_item:
-            raise ValueError(f"Row {index}: Line Item is blank.")
-        validate_text(line_item, field=f"Row {index} Line Item", nonblank=True)
-
-        if "currency" in row and not is_missing(row["currency"]):
-            row_currency = row["currency"]
-            if not isinstance(row_currency, str):
-                raise ValueError(f"{line_item}: Currency must be a reporting currency code.")
-            row_currency = validate_currency(row_currency.strip().upper())
-            if row_currency != config.currency:
-                raise ValueError(f"{line_item}: row currency {row_currency} conflicts with "
-                                 f"reporting currency {config.currency}.")
-
-        # Budget runs keep 'Budget'; other runs name the comparison and do not list the
-        # internal budget column aliases.
-        segment, segment_declared = read_segment(row, config)
-        kind = measure_kind(row.get("measure"), line_item)
-        absolute_cutoff(config, kind, line_item)
-        if "measure" in row or "better" in row:
-            if any(isinstance(row.get(k), float) for k in (*_BUDGET_KEYS, *_ACTUAL_KEYS)):
-                raise ValueError(f"{line_item}: declared measure amounts cannot be float; supply exact numeric text.")
-        budget = parse_measure_amount(
-            _required_value(
-                row, _BUDGET_KEYS, comparison_field, index,
-                list_accepted_names=config.comparison_basis is ComparisonBasis.BUDGET,
-            ),
-            field=comparison_field,
-            line_item=line_item,
-            kind=kind, config=config,
-        )
-        actual = parse_measure_amount(
-            _required_value(row, _ACTUAL_KEYS, "Actual", index),
-            field="Actual",
-            line_item=line_item,
-            kind=kind, config=config,
-        )
-
-        statement_kind = _statement_kind(line_item, row)
-        opt_in = config.comparison_basis in OPT_IN_BASES
-        metric = not is_missing(row.get("metric_formula"))  # a declared metric (PLAN.md R17), never revenue or expense
-        line_type, classification_source = ((LineType.UNCLASSIFIED, "statement") if statement_kind
-                                             else (LineType.UNCLASSIFIED, "metric") if metric
-                                             else (LineType.UNCLASSIFIED, "basis") if opt_in
-                                             else _classify(line_item, row, config))
-        better, direction_source = _direction(row, kind, line_type, line_item, config.comparison_basis)
-        assessed = basis_details(row, budget, actual, kind, config.comparison_basis, better)
-        summary_candidate, summary_source = (_summary_candidate(line_item, row)
-                                             if kind is MeasureKind.CURRENCY else (False, "noncurrency"))
-        variance = actual - budget
-        pct, pct_label = _percent_variance(budget, actual, config.comparison_basis, kind)
-        material = _is_material(budget, variance, config, kind)
-        driver = (_driver_evidence(row, budget, actual, line_item, config.currency)
-                  if kind is MeasureKind.CURRENCY else None)
-
-        details = comparison_details(row, actual, kind, config)
-        validate_guidance_midpoint(budget, details, line_item)
-        analyzed.append(
-            AnalyzedRow(
-                line_item=line_item,
-                line_type=line_type,
-                budget=budget,
-                actual=actual,
-                variance_dollars=variance,
-                variance_percent=pct,
-                percent_label=pct_label,
-                status=_row_status(line_type, variance, better, statement_kind, assessed, metric),
-                material=material,
-                excluded_from_aggregation=summary_candidate,
-                driver_evidence=driver,
-                raw=row,
-                measure=kind, better=better, direction_source=direction_source,
-                measure_declared="measure" in row,
-                comparison_details=details,
-                segment=segment, segment_declared=segment_declared, statement_kind=statement_kind,
-                basis_details=assessed,
-                variance_bps=variance * Decimal("100") if kind is MeasureKind.PERCENT else None,
-                classification_source=classification_source,
-                summary_source=summary_source,
-                materiality_reason=("basis_points" if kind is MeasureKind.PERCENT and material
-                                    else "absolute_amount" if abs(variance) > absolute_cutoff(config, kind)
-                                    else "absolute_percent" if material
-                                    else "below_or_equal_thresholds"),
-            )
-        )
-
-    analyzed = _resolve_summary_rows(analyzed)
     warnings.extend(metric_inferences(tuple(analyzed), config))
 
     normalized_names: dict[tuple[str, str], int] = {}
@@ -700,7 +712,11 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
             + ", ".join(nonreconciling[:5])
             + ("..." if len(nonreconciling) > 5 else "")
         )
+    return warnings
 
+
+def _assemble_result(analyzed: list[AnalyzedRow], warnings: list[str], config: AnalysisConfig) -> AnalysisResult:
+    """Rank the material rows, total revenue and expenses, and verify the result before returning it."""
     material_rows = sorted(
         (
             row
@@ -724,3 +740,22 @@ def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> Analy
         expenses=expenses,
         warnings=tuple(warnings),
     )
+
+
+@financial_context()
+def analyze_rows(rows: list[dict[str, object]], config: AnalysisConfig) -> AnalysisResult:
+    # Every helper below runs inside this function's financial context.
+    config = _validated_config(rows, config)
+
+    analyzed: list[AnalyzedRow] = []
+    normalized_rows = [normalize_row(row) for row in rows]
+    has_period_column = any("period" in row for row in normalized_rows)
+    comparison_field = comparison_heading(config.comparison_basis, config.comparison_label)
+
+    for index, row in enumerate(normalized_rows, start=2):
+        analyzed.append(_analyze_row(row, index, config, has_period_column=has_period_column,
+                                     comparison_field=comparison_field))
+
+    analyzed = _resolve_summary_rows(analyzed)
+    warnings = _dataset_warnings(analyzed, config)
+    return _assemble_result(analyzed, warnings, config)

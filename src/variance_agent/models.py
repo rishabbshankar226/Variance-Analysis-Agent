@@ -52,6 +52,9 @@ class AnalysisConfig:
     currency: str = "USD"
     comparison_basis: ComparisonBasis = ComparisonBasis.BUDGET
     comparison_label: str | None = None
+    # How the label reads in headings, where a filing names its duration ("3 months ended Mar 2025"). Display only:
+    # the label stays the key, and no audit field or fingerprint holds this (M4).
+    comparison_name: str | None = None
 
 
 @dataclass(frozen=True)

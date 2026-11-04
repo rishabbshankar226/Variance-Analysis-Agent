@@ -93,3 +93,45 @@ def test_a_blank_column_inside_one_table_with_data_below_is_not_a_split() -> Non
     result = _read(_book(rows))
     assert result.has_fatal_errors
     assert "more than one Actual column" in (result.fatal_error_message or "")
+
+
+# ---- M3: bare-year bands (2025 / 2026 over Budget/Actual) are period bands too ----------------
+
+
+def _year_bands(merged: bool) -> bytes:
+    import io as _io
+
+    from openpyxl import Workbook as _Workbook
+
+    book = _Workbook()
+    sheet = book.active
+    sheet.append(["Fictional Northwind Co. Budget vs Actual"])
+    sheet.append([None, None, 2025, None, 2026, None])
+    sheet.append(["Line Item", "Type", "Budget", "Actual", "Budget", "Actual"])
+    sheet.append(["Fictional Sales", "Revenue", 100, 110, 200, 230])
+    sheet.append(["Fictional Rent", "Expense", 50, 55, 60, 66])
+    if merged:
+        sheet.merge_cells("C2:D2")
+        sheet.merge_cells("E2:F2")
+    buffer = _io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("merged", [True, False], ids=["merged", "running-right"])
+def test_bare_year_bands_read_the_newest_year(merged: bool) -> None:
+    from variance_agent.intake import read_input_assisted
+
+    result = read_input_assisted(_year_bands(merged), ".xlsx", filename="years.xlsx")
+    assert not result.has_fatal_errors, result.fatal_error_message
+    sales = next(row for row in result.rows if row["line_item"] == "Fictional Sales")
+    assert (sales["budget"], sales["actual"]) == (200, 230)
+    assert any(note.startswith("Read the period headings above the header row") for note in result.visible_transformations)
+
+
+def test_a_chosen_bare_year_reads_its_own_columns() -> None:
+    from variance_agent.intake import read_input_assisted
+
+    result = read_input_assisted(_year_bands(True), ".xlsx", filename="years.xlsx", selected_period="2025")
+    sales = next(row for row in result.rows if row["line_item"] == "Fictional Sales")
+    assert (sales["budget"], sales["actual"]) == (100, 110)

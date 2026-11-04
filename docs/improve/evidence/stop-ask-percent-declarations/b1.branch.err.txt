@@ -1,0 +1,8 @@
+[assisted intake] Comparing Actual against the target.
+[assisted intake] Fictional yield: read Target and Actual as the percentages Excel shows (number format '0.0%').
+[assisted intake] Fictional yield: read % values as percentage points.
+[assisted intake] Fictional yield: read Measure as Percent.
+[measure intake] Comparing Actual against the target.
+[measure intake] Fictional yield: read Target and Actual as the percentages Excel shows (number format '0.0%').
+[measure intake] Fictional yield: read Measure as Percent.
+[measure intake] Fictional yield: read % values as percentage points.
